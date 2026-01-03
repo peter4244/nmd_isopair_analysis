@@ -1,0 +1,539 @@
+---
+title: "Calculate Isoform Proportions - NMD Lung Cells"
+author: "Analysis Script"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+library(data.table)
+library(DT)
+library(rtracklayer)
+```
+
+# Analysis Overview
+
+**Objective:** Calculate per-sample isoform proportions for all genes across DMSO and Smg1i treatments.
+
+**Approach:**
+- Read raw transcript counts
+- Filter out zero-count isoforms across all samples
+- Map transcripts to genes using SQANTI (PB.x) and GTF (ENST)
+- Calculate isoform proportions per sample, per gene
+- Generate separate output files per cell type and treatment
+
+# Source Files
+
+**Input Data:**
+- Raw counts: `data/qdf_raw_counts_2026.1.3.csv`
+- Phenotype: `pheno/nmd_pheno_longreadbamids_2025.1.1.csv`
+- SQANTI classification: `results/sqanti_runs/merged_collapsed/isoforms_classification_TPM.txt`
+- GTF annotations: `reference_files/gencode.v49.primary_assembly.annotation.chrnamesedited.gtf`
+
+**Output Directory:** `tmp/`
+
+# Load Data
+
+## Raw Counts Matrix
+
+```{r load-counts}
+cat("Loading raw counts matrix...\n")
+counts <- fread("../data/qdf_raw_counts_2026.1.3.csv", data.table = FALSE)
+cat("Dimensions:", nrow(counts), "transcripts x", ncol(counts), "columns\n")
+head(counts[, 1:5])
+```
+
+## Phenotype Data
+
+```{r load-pheno}
+cat("Loading phenotype data...\n")
+pheno <- read_csv("../pheno/nmd_pheno_longreadbamids_2025.1.1.csv")
+cat("Dimensions:", nrow(pheno), "samples x", ncol(pheno), "columns\n")
+head(pheno)
+```
+
+## Transcript-to-Gene Mappings
+
+### SQANTI Classification (PB.x isoforms)
+
+```{r load-sqanti}
+cat("Loading SQANTI classification...\n")
+sqanti <- fread("../results/sqanti_runs/merged_collapsed/isoforms_classification_TPM.txt",
+                data.table = FALSE,
+                select = c("isoform", "associated_gene"))
+cat("Dimensions:", nrow(sqanti), "isoforms x", ncol(sqanti), "columns\n")
+
+# Filter to only ENSG-mapped genes (exclude novelGenes)
+sqanti_filtered <- sqanti %>%
+  filter(str_starts(associated_gene, "ENSG"))
+
+cat("After filtering to ENSG genes:", nrow(sqanti_filtered), "isoforms\n")
+cat("Removed", nrow(sqanti) - nrow(sqanti_filtered), "novel gene isoforms\n")
+
+# Keep novelGene isoforms for separate analysis
+sqanti_novel <- sqanti %>%
+  filter(!str_starts(associated_gene, "ENSG"))
+
+cat("\nNovel gene isoforms:", nrow(sqanti_novel), "\n")
+head(sqanti_filtered)
+```
+
+### GTF Annotations (ENST transcripts)
+
+```{r load-gtf}
+cat("Loading GTF file...\n")
+gtf <- import("../reference_files/gencode.v49.primary_assembly.annotation.chrnamesedited.gtf")
+gtf_df <- as.data.frame(gtf)
+
+# Extract transcript to gene mapping
+gtf_mapping <- gtf_df %>%
+  filter(type == "transcript") %>%
+  select(transcript_id, gene_id) %>%
+  distinct()
+
+cat("Dimensions:", nrow(gtf_mapping), "transcripts x", ncol(gtf_mapping), "columns\n")
+head(gtf_mapping)
+```
+
+# Data Processing
+
+## Filter Zero-Count Isoforms
+
+Remove isoforms with zero counts across all 38 samples.
+
+```{r filter-zeros}
+# Get sample columns (skip first two: tname and length)
+sample_cols <- 3:ncol(counts)
+
+# Calculate row sums across samples
+row_sums <- rowSums(counts[, sample_cols])
+
+# Filter to non-zero isoforms
+counts_filtered <- counts[row_sums > 0, ]
+
+cat("Original transcripts:", nrow(counts), "\n")
+cat("After filtering zeros:", nrow(counts_filtered), "\n")
+cat("Removed:", nrow(counts) - nrow(counts_filtered), "zero-count transcripts\n")
+```
+
+## Prepare Counts Matrix
+
+```{r prepare-counts}
+# Extract transcript IDs and sample counts
+transcript_ids <- counts_filtered[[1]]  # First column is transcript name
+count_matrix <- counts_filtered[, sample_cols]
+rownames(count_matrix) <- transcript_ids
+
+cat("Count matrix dimensions:", nrow(count_matrix), "transcripts x", ncol(count_matrix), "samples\n")
+```
+
+## Map BAM Filenames to Sample Metadata
+
+```{r map-samples}
+# Extract BAM filename from full path
+pheno <- pheno %>%
+  mutate(bam_name = basename(bam),
+         bam_name = str_remove(bam_name, "\\.bam$"))
+
+# Get sample column names from count matrix
+count_colnames <- colnames(count_matrix)
+
+# Map count columns to phenotype
+sample_map <- tibble(count_col = count_colnames) %>%
+  left_join(pheno, by = c("count_col" = "bam_name"))
+
+cat("Sample mapping:\n")
+head(sample_map)
+
+cat("\nSamples by treatment:\n")
+table(sample_map$treatment)
+
+cat("\nSamples by cell type:\n")
+table(sample_map$ct)
+```
+
+## Analyze Novel Isoform Expression
+
+```{r analyze-novel}
+# Get expression data for novel isoforms
+novel_transcripts <- sqanti_novel$isoform
+
+# Filter count matrix to novel transcripts
+novel_counts <- count_matrix[rownames(count_matrix) %in% novel_transcripts, ]
+
+cat("Novel isoforms with expression data:", nrow(novel_counts), "\n")
+
+# Calculate statistics per transcript
+novel_expr <- novel_counts %>%
+  as.data.frame() %>%
+  rownames_to_column("transcript_id") %>%
+  pivot_longer(cols = -transcript_id, names_to = "count_col", values_to = "raw_count") %>%
+  left_join(sample_map %>% select(count_col, treatment, ct), by = "count_col") %>%
+  group_by(transcript_id, treatment) %>%
+  summarize(
+    n_samples = n(),
+    mean_count = mean(raw_count, na.rm = TRUE),
+    median_count = median(raw_count, na.rm = TRUE),
+    max_count = max(raw_count, na.rm = TRUE),
+    n_nonzero = sum(raw_count > 0),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = treatment,
+    values_from = c(mean_count, median_count, max_count, n_nonzero),
+    names_glue = "{.value}_{treatment}"
+  ) %>%
+  left_join(sqanti_novel %>% select(isoform, associated_gene),
+            by = c("transcript_id" = "isoform"))
+
+# Add fold change
+novel_expr <- novel_expr %>%
+  mutate(
+    fc_mean = ifelse(mean_count_DMSO > 0, mean_count_Smg1i / mean_count_DMSO, NA),
+    log2fc_mean = log2(fc_mean)
+  ) %>%
+  arrange(desc(mean_count_DMSO + mean_count_Smg1i))
+
+cat("\nTop novel isoforms by expression:\n")
+if (nrow(novel_expr) > 1000) {
+  cat("Showing top 1000 of", nrow(novel_expr), "novel isoforms\n")
+  datatable(head(novel_expr, 1000), options = list(pageLength = 25, scrollX = TRUE), filter = 'top')
+} else {
+  datatable(novel_expr, options = list(pageLength = 25, scrollX = TRUE), filter = 'top')
+}
+
+# Write to file
+novel_output_file <- "../tmp/novel_isoforms_expression_2026.1.3.tsv"
+header_lines <- c(
+  "# Novel Isoform Expression Summary",
+  sprintf("# Generated: %s", Sys.time()),
+  "# Script: code/calculate_isoform_proportions_2026.1.3.Rmd",
+  "# ",
+  "# Description: Expression levels of novel isoforms (not mapped to ENSG genes)",
+  sprintf("# Novel isoforms: %d", nrow(novel_expr)),
+  "# ",
+  "# Columns:",
+  "#   - transcript_id: PB.x.x isoform ID",
+  "#   - mean_count_DMSO/Smg1i: Mean raw counts across all samples",
+  "#   - median_count_DMSO/Smg1i: Median raw counts",
+  "#   - max_count_DMSO/Smg1i: Maximum raw counts",
+  "#   - n_nonzero_DMSO/Smg1i: Number of samples with non-zero counts",
+  "#   - associated_gene: novelGene ID from SQANTI",
+  "#   - fc_mean: Fold change (Smg1i/DMSO)",
+  "#   - log2fc_mean: Log2 fold change",
+  "#"
+)
+
+writeLines(header_lines, novel_output_file)
+write_tsv(novel_expr, novel_output_file, append = TRUE)
+
+cat(sprintf("\nNovel isoform data written to: %s\n", basename(novel_output_file)))
+```
+
+## Create Combined Transcript-to-Gene Mapping
+
+```{r create-mapping}
+# Combine SQANTI and GTF mappings
+# SQANTI uses "isoform" and "associated_gene"
+# GTF uses "transcript_id" and "gene_id"
+
+sqanti_map <- sqanti_filtered %>%
+  dplyr::rename(transcript_id = isoform, gene_id = associated_gene)
+
+combined_mapping <- bind_rows(
+  sqanti_map,
+  gtf_mapping
+) %>%
+  distinct(transcript_id, .keep_all = TRUE)  # Keep first occurrence
+
+cat("Combined mapping dimensions:", nrow(combined_mapping), "transcripts\n")
+cat("Transcripts in counts matrix:", nrow(count_matrix), "\n")
+
+# Check mapping coverage
+mapped_transcripts <- sum(transcript_ids %in% combined_mapping$transcript_id)
+cat("Transcripts successfully mapped:", mapped_transcripts,
+    "(", round(100 * mapped_transcripts / length(transcript_ids), 1), "%)\n")
+```
+
+# Calculate Isoform Proportions
+
+## Function to Calculate Proportions
+
+```{r function-calc-props}
+calculate_isoform_proportions <- function(counts_mat, transcript_to_gene, sample_metadata) {
+  # Convert to long format
+  counts_long <- counts_mat %>%
+    as.data.frame() %>%
+    rownames_to_column("transcript_id") %>%
+    pivot_longer(cols = -transcript_id,
+                 names_to = "count_col",
+                 values_to = "raw_count")
+
+  # Add gene IDs
+  counts_long <- counts_long %>%
+    left_join(transcript_to_gene, by = "transcript_id")
+
+  # Add sample metadata
+  counts_long <- counts_long %>%
+    left_join(sample_metadata, by = "count_col")
+
+  # Calculate gene totals per sample
+  gene_totals <- counts_long %>%
+    group_by(sample, ct, treatment, gene_id) %>%
+    summarize(gene_total = sum(raw_count, na.rm = TRUE),
+              n_isoforms = n_distinct(transcript_id),
+              .groups = "drop")
+
+  # Calculate isoform proportions
+  isoform_props <- counts_long %>%
+    left_join(gene_totals, by = c("sample", "ct", "treatment", "gene_id")) %>%
+    mutate(isoform_proportion = ifelse(gene_total > 0, raw_count / gene_total, NA)) %>%
+    select(cell_type = ct, treatment, sample, gene_id, transcript_id,
+           raw_count, gene_total, isoform_proportion, n_isoforms) %>%
+    filter(!is.na(gene_id))  # Remove unmapped transcripts
+
+  return(isoform_props)
+}
+```
+
+## Calculate for All Samples
+
+```{r calc-all-props}
+cat("Calculating isoform proportions for all samples...\n")
+all_proportions <- calculate_isoform_proportions(count_matrix, combined_mapping, sample_map)
+
+cat("Results dimensions:", nrow(all_proportions), "rows x", ncol(all_proportions), "columns\n")
+head(all_proportions, 20)
+```
+
+## Filter Transcripts by Expression
+
+Apply filtering criteria to remove low-expression, non-reproducible transcripts.
+
+**Filter Criteria:**
+- Total counts > 10 per treatment/cell type
+- At least 2 samples with ≥2 counts
+
+```{r filter-expression}
+cat("Calculating filter statistics per transcript...\n")
+
+# Calculate filter metrics per transcript per treatment per cell type
+filter_stats <- all_proportions %>%
+  group_by(cell_type, treatment, transcript_id, gene_id) %>%
+  summarize(
+    total_counts = sum(raw_count),
+    n_samples_with_2plus = sum(raw_count >= 2),
+    n_samples_total = n(),
+    max_count = max(raw_count),
+    .groups = "drop"
+  )
+
+cat("Initial transcripts:", n_distinct(all_proportions$transcript_id), "\n\n")
+
+# Define filter criteria
+# Keep if: total_counts > 10 AND n_samples_with_2plus >= 2
+transcripts_pass <- filter_stats %>%
+  filter(total_counts > 10 & n_samples_with_2plus >= 2) %>%
+  distinct(transcript_id) %>%
+  pull(transcript_id)
+
+cat("Transcripts passing filter (in at least one treatment/cell type):",
+    length(transcripts_pass), "\n")
+
+# Identify high-count single-sample transcripts (interesting outliers)
+high_count_single_sample <- filter_stats %>%
+  filter(total_counts > 10 & n_samples_with_2plus == 1) %>%
+  arrange(desc(total_counts))
+
+cat("High-count single-sample transcripts (>10 counts, only 1 sample ≥2):",
+    nrow(high_count_single_sample), "\n\n")
+
+# Save high-count single-sample transcripts
+if (nrow(high_count_single_sample) > 0) {
+  high_count_file <- "../tmp/high_count_singlesample_transcripts_2026.1.3.tsv"
+  header_lines <- c(
+    "# High-Count Single-Sample Transcripts",
+    sprintf("# Generated: %s", Sys.time()),
+    "# Script: code/calculate_isoform_proportions_2026.1.3.Rmd",
+    "# ",
+    "# Description: Transcripts with >10 total counts but only 1 sample with ≥2 counts",
+    "# These may represent sample-specific expression, artifacts, or biological outliers",
+    sprintf("# Total transcripts: %d", nrow(high_count_single_sample)),
+    "# ",
+    "# Columns:",
+    "#   - cell_type, treatment: Experimental condition",
+    "#   - transcript_id, gene_id: Identifiers",
+    "#   - total_counts: Sum of raw counts across all samples in this treatment/cell type",
+    "#   - n_samples_with_2plus: Number of samples with ≥2 counts (always 1 for this file)",
+    "#   - n_samples_total: Total samples in this treatment/cell type",
+    "#   - max_count: Maximum count in any single sample",
+    "#"
+  )
+
+  writeLines(header_lines, high_count_file)
+  write_tsv(high_count_single_sample, high_count_file, append = TRUE)
+  cat(sprintf("Saved to: %s\n\n", basename(high_count_file)))
+
+  # Show examples in table
+  cat("Examples of high-count single-sample transcripts:\n")
+  if (nrow(high_count_single_sample) > 1000) {
+    cat("Showing top 1000 of", nrow(high_count_single_sample), "transcripts\n")
+    datatable(head(high_count_single_sample, 1000),
+              options = list(pageLength = 25, scrollX = TRUE), filter = 'top')
+  } else {
+    datatable(high_count_single_sample,
+              options = list(pageLength = 25, scrollX = TRUE), filter = 'top')
+  }
+}
+
+# Filter main dataset
+cat("\nApplying filter to main dataset...\n")
+all_proportions_filtered <- all_proportions %>%
+  filter(transcript_id %in% transcripts_pass)
+
+cat("Rows before filter:", nrow(all_proportions), "\n")
+cat("Rows after filter:", nrow(all_proportions_filtered), "\n")
+cat("Reduction:", round(100 * (1 - nrow(all_proportions_filtered)/nrow(all_proportions)), 1), "%\n\n")
+
+# Update variable name for downstream use
+all_proportions <- all_proportions_filtered
+```
+
+## Summary Statistics
+
+```{r summary-stats}
+cat("\nSummary by cell type and treatment:\n")
+summary_stats <- all_proportions %>%
+  filter(raw_count > 0) %>%  # Only count transcripts with actual expression in this group
+  group_by(cell_type, treatment) %>%
+  summarize(
+    n_samples = n_distinct(sample),
+    n_genes = n_distinct(gene_id),
+    n_transcripts = n_distinct(transcript_id),
+    mean_isoforms_per_gene = n_distinct(transcript_id) / n_distinct(gene_id),
+    .groups = "drop"
+  )
+
+datatable(summary_stats, options = list(pageLength = 20))
+```
+
+# Export Results
+
+Generate separate files for each cell type and treatment combination.
+
+```{r export-files}
+# Cell type mapping
+celltype_map <- c(
+  "AT" = "at2",
+  "DD" = "dd",
+  "DD_ALI" = "ddali",
+  "DO" = "do",
+  "FB" = "fb",
+  "MV" = "mv"
+)
+
+# Treatment mapping
+treatment_map <- c(
+  "DMSO" = "dmso",
+  "Smg1i" = "smg1i"
+)
+
+# Get unique combinations
+combinations <- all_proportions %>%
+  distinct(cell_type, treatment) %>%
+  arrange(cell_type, treatment)
+
+cat("Generating", nrow(combinations), "output files:\n\n")
+
+for (i in 1:nrow(combinations)) {
+  ct <- combinations$cell_type[i]
+  trt <- combinations$treatment[i]
+
+  # Create filename
+  ct_code <- celltype_map[ct]
+  trt_code <- treatment_map[trt]
+  filename <- sprintf("../tmp/isoform_proportions_%s_%s_2026.1.3.tsv", ct_code, trt_code)
+
+  # Filter data
+  subset_data <- all_proportions %>%
+    filter(cell_type == ct, treatment == trt)
+
+  # Create header
+  header_lines <- c(
+    sprintf("# Isoform Proportions: %s - %s", ct, trt),
+    sprintf("# Generated: %s", Sys.time()),
+    sprintf("# Script: code/calculate_isoform_proportions_2026.1.3.Rmd"),
+    "# ",
+    "# Source Data:",
+    "#   - Raw counts: data/qdf_raw_counts_2026.1.3.csv",
+    "#   - Phenotype: pheno/nmd_pheno_longreadbamids_2025.1.1.csv",
+    "#   - SQANTI: results/sqanti_runs/merged_collapsed/isoforms_classification_TPM.txt",
+    "#   - GTF: reference_files/gencode.v49.primary_assembly.annotation.chrnamesedited.gtf",
+    "# ",
+    sprintf("# Samples: %d", n_distinct(subset_data$sample)),
+    sprintf("# Genes: %d", n_distinct(subset_data$gene_id)),
+    sprintf("# Transcripts: %d", n_distinct(subset_data$transcript_id)),
+    "# ",
+    "# Filters applied:",
+    "#   - Removed isoforms with zero counts across all 38 samples",
+    "#   - Filtered to ENSG-mapped genes only (excluded novelGenes)",
+    "#   - Expression filter: total_counts > 10 AND ≥2 samples with ≥2 counts per treatment/cell type",
+    "#   - High-count single-sample transcripts saved separately",
+    sprintf("#   - cell_type == '%s'", ct),
+    sprintf("#   - treatment == '%s'", trt),
+    "#"
+  )
+
+  # Write file with column headers
+  writeLines(header_lines, filename)
+  write_tsv(subset_data, filename, append = TRUE, col_names = TRUE)
+
+  cat(sprintf("%d. %s (%d rows)\n", i, basename(filename), nrow(subset_data)))
+}
+
+cat("\nAll files written to tmp/ directory\n")
+```
+
+# Preview Results
+
+Show a sample of results from DD + DMSO (largest sample size).
+
+```{r preview-results}
+dd_dmso <- all_proportions %>%
+  filter(cell_type == "DD", treatment == "DMSO")
+
+cat("DD + DMSO results:", nrow(dd_dmso), "rows\n")
+cat("Samples:", unique(dd_dmso$sample), "\n\n")
+
+# Show genes with multiple isoforms
+multi_isoform <- dd_dmso %>%
+  filter(n_isoforms > 1) %>%
+  arrange(desc(n_isoforms), gene_id, sample, desc(isoform_proportion))
+
+if (nrow(multi_isoform) > 1000) {
+  cat("Showing top 1000 of", nrow(multi_isoform), "rows\n")
+  datatable(head(multi_isoform, 1000),
+            options = list(pageLength = 25, scrollX = TRUE),
+            filter = 'top')
+} else {
+  datatable(multi_isoform,
+            options = list(pageLength = 25, scrollX = TRUE),
+            filter = 'top')
+}
+```
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```

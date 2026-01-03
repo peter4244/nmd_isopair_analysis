@@ -169,3 +169,81 @@ When comparing long-read and short-read results:
 - BAM files located at: `/proj/regeps/regep00/studies/ExternalCellLines/data/longread/mrna/Randell_Lung_Cells_2025/`
 - Sequencing runs from July-August 2025
 - DGE analysis performed using limma-voom pipeline
+
+## Analysis Workflows
+
+### Isoform Proportion Analysis
+
+**Purpose:** Calculate per-sample isoform proportions to understand transcript diversity and NMD effects
+
+**Scripts:**
+- `code/calculate_isoform_proportions_2026.1.3.Rmd` - Calculate isoform proportions with expression-based filtering
+- `code/interpret_isoform_patterns_2026.1.3.Rmd` - Interpretive analyses (Q1-Q4)
+
+**Workflow:**
+
+1. **Data Processing:**
+   - Load raw transcript counts from `data/qdf_raw_counts_2026.1.3.csv`
+   - Map transcripts to genes using SQANTI and GTF annotations
+   - Filter to ENSG-mapped genes only (exclude novelGenes)
+   - Calculate proportions: `isoform_proportion = transcript_count / gene_total`
+
+2. **Expression Filtering:**
+   - Remove zero-count isoforms across all samples
+   - Apply expression filter: total_counts > 10 AND ≥2 samples with ≥2 counts per treatment/cell type
+   - Transcripts passing in EITHER DMSO OR Smg1i are retained
+   - High-count single-sample transcripts (>10 counts, 1 sample) saved separately
+
+3. **Output Files (in tmp/):**
+   - **Isoform proportions:** `isoform_proportions_{celltype}_{treatment}_2026.1.3.tsv` (12 files: 6 cell types × 2 treatments)
+   - **Novel isoforms:** `novel_isoforms_expression_2026.1.3.tsv` (145K novel transcripts with expression data)
+   - **High-count single-sample:** `high_count_singlesample_transcripts_2026.1.3.tsv` (214K transcripts)
+   - **HTML reports:** `calculate_isoform_proportions_2026.1.3.html` and `interpret_isoform_patterns_2026.1.3.html`
+   - **PROVENANCE files:** `PROVENANCE_isoform_proportions_{celltype}_{treatment}_2026.1.3.md` (12 files)
+
+4. **Interpretive Analyses:**
+   - **Q1:** Isoform diversity - NMD inhibition increases detected isoforms per gene
+   - **Q2:** Dominant isoforms - Percentage of genes with >50% expression from single isoform
+   - **Q3:** NMD target baseline - Upregulated transcripts were predominantly minor isoforms in DMSO
+   - **Q4:** Cell-type specificity - Patterns are largely consistent across cell types
+
+**Data Dimensions:**
+- ~19,600 genes per cell type
+- ~200,000-290,000 transcripts per cell type (after filtering)
+- 38 samples total (19 DMSO + 19 Smg1i across 6 cell types)
+
+**Isoform Proportion File Format:**
+
+Tab-separated with header comments and column names:
+```
+cell_type       treatment       sample          gene_id         transcript_id   raw_count       gene_total      isoform_proportion      n_isoforms
+DD              DMSO            DD010R_DMSO     ENSG00000227232 PB.1.1          15.2            78.6            0.193               23
+```
+
+**Loading Isoform Proportions:**
+```r
+library(data.table)
+
+# Load single file
+dd_dmso <- fread("tmp/isoform_proportions_dd_dmso_2026.1.3.tsv",
+                 skip = 20, data.table = FALSE)  # Skip header + column names
+
+# Load all files
+files <- list.files("tmp", pattern = "^isoform_proportions_.*\\.tsv$", full.names = TRUE)
+all_props <- map_df(files, ~fread(.x, skip = 20, data.table = FALSE))
+```
+
+### Directory Organization
+
+**tmp/** - Working directory for initial analyses
+- Isoform proportion files
+- Interpretive analysis results
+- HTML reports
+- PROVENANCE documentation
+
+**final/** - Paper-ready analyses (after review/approval)
+- Finalized datasets
+- Publication-ready figures
+- Supplementary data files
+
+**Workflow:** Analyses are developed in `tmp/`, reviewed, and moved to `final/` when approved for publication.
