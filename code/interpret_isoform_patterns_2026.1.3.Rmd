@@ -16,6 +16,20 @@ output:
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
+<style>
+body {
+  font-size: 16px;
+}
+p {
+  font-size: 16px;
+  line-height: 1.6;
+}
+li {
+  font-size: 16px;
+  line-height: 1.6;
+}
+</style>
+
 # Analysis Overview
 
 This report interprets isoform proportion patterns to understand the effects of NMD inhibition (Smg1i treatment) on transcript diversity across cell types.
@@ -26,6 +40,7 @@ This report interprets isoform proportion patterns to understand the effects of 
 2. What proportion of genes have a dominant isoform (>50% expression)?
 3. What were the baseline (DMSO) proportions of transcripts that are upregulated by NMD inhibition?
 4. Are these patterns consistent across cell types?
+5. What proportion of transcriptional output is degraded by NMD at the gene level and within cell types?
 
 # Load Libraries
 
@@ -76,11 +91,15 @@ cpm_long <- cpm_df %>%
             by = "bamid") %>%
   rename(cell_type = ct)
 
+dge_isoform$genes$hgnc_id <- ifelse(is.na(dge_isoform$genes$hgnc_id.gc), 
+                                     dge_isoform$genes$hgnc_id.sq, 
+                                     dge_isoform$genes$hgnc_id.gc)
+
 # Add gene information
 cpm_long <- cpm_long %>%
-  left_join(dge_isoform$genes %>% select(txid, hgnc_id.gc),
+  left_join(dge_isoform$genes %>% select(txid, hgnc_id),
             by = c("transcript_id" = "txid")) %>%
-  rename(gene_id = hgnc_id.gc)
+  rename(gene_id = hgnc_id)
 
 # Calculate isoform proportions
 all_proportions <- cpm_long %>%
@@ -99,32 +118,73 @@ cat("Cell types:", paste(unique(all_proportions$cell_type), collapse = ", "), "\
 cat("Treatments:", paste(unique(all_proportions$treatment), collapse = ", "), "\n\n")
 ```
 
-## Isoform Proportions (Raw Count-Based - FOR REFERENCE ONLY)
+## Apply Abundance Filter
 
-**NOTE:** This section is commented out. We now calculate proportions from normalized CPM above.
-The original raw count-based proportion files are kept in `tmp/` for reference but are not used in this analysis.
+To focus on more abundant isoforms and reduce noise from very low-expression transcripts, we apply a filter requiring **≥0.25 normalized CPM in at least one sample in EITHER DMSO or Smg1i** within each cell type.
 
-```{r load-proportions, eval=FALSE}
-# # ORIGINAL CODE - NOT USED ANYMORE
-# # Read all isoform proportion files
-# files <- list.files("../tmp", pattern = "^isoform_proportions_.*\\.tsv$", full.names = TRUE)
-#
-# cat("Loading", length(files), "isoform proportion files...\n")
-#
-# all_proportions <- map_df(files, ~{
-#   fread(.x, skip = 20, data.table = FALSE)  # Skip header comments + column names
-# })
-#
-# colnames(all_proportions) <- c("cell_type", "treatment", "sample", "gene_id",
-#                                 "transcript_id", "raw_count", "gene_total",
-#                                 "isoform_proportion", "n_isoforms")
-#
-# cat("Loaded", nrow(all_proportions), "rows\n")
-# cat("Cell types:", paste(unique(all_proportions$cell_type), collapse = ", "), "\n")
-# cat("Treatments:", paste(unique(all_proportions$treatment), collapse = ", "), "\n\n")
+```{r apply-filter}
+cat("Applying abundance filter (>=0.25 CPM in EITHER condition)...\n\n")
+
+# Load filtered isoform dictionary
+filtered_dict <- readRDS("../tmp/filtered_isoform_dictionary_0.25cpm_2026.1.3.rds")
+
+cat("Loaded filtered isoform dictionary with", nrow(filtered_dict), "entries\n")
+cat("Unique isoforms:", n_distinct(filtered_dict$transcript_id), "\n\n")
+
+# Show before filtering
+before_stats <- all_proportions %>%
+  group_by(cell_type) %>%
+  summarize(
+    n_isoforms_before = n_distinct(transcript_id),
+    n_genes_before = n_distinct(gene_id),
+    .groups = "drop"
+  )
+
+# Apply filter
+all_proportions_filtered <- all_proportions %>%
+  inner_join(
+    filtered_dict %>% select(cell_type, transcript_id),
+    by = c("cell_type", "transcript_id")
+  )
+
+# Show after filtering
+after_stats <- all_proportions_filtered %>%
+  group_by(cell_type) %>%
+  summarize(
+    n_isoforms_after = n_distinct(transcript_id),
+    n_genes_after = n_distinct(gene_id),
+    .groups = "drop"
+  )
+
+# Combine statistics
+filter_stats <- before_stats %>%
+  left_join(after_stats, by = "cell_type") %>%
+  mutate(
+    isoforms_removed = n_isoforms_before - n_isoforms_after,
+    pct_isoforms_retained = 100 * n_isoforms_after / n_isoforms_before,
+    genes_removed = n_genes_before - n_genes_after,
+    pct_genes_retained = 100 * n_genes_after / n_genes_before
+  )
+
+cat("Filter results by cell type:\n\n")
+print(filter_stats)
+cat("\n")
+
+# Use filtered data for all downstream analyses
+all_proportions <- all_proportions_filtered
+
+cat("After filtering:", nrow(all_proportions), "rows\n")
+cat("Unique isoforms:", n_distinct(all_proportions$transcript_id), "\n")
+cat("Unique genes:", n_distinct(all_proportions$gene_id), "\n\n")
 ```
 
-## DGE Results
+**Rationale for 0.25 CPM threshold:**
+
+- Retains 98.2% of statistically significant isoforms from DGE analysis
+- Filters out very low-abundance transcripts that dominate the dataset but have minimal biological signal
+- Reduces computational burden and focuses interpretation on more reliably detected isoforms
+
+## Isoform DGE Results
 
 ```{r load-dge}
 # Read longread DGE results for each cell type
@@ -214,21 +274,21 @@ datatable(q1_summary,
           caption = "Average isoforms per gene in DMSO vs Smg1i") %>%
   formatRound(columns = c("mean_dmso", "mean_smg1i", "mean_delta", "pct_more_tx_smg1i"), digits = 2)
 
-# Distribution plot - Bar chart of categories
+# Distribution plot - Bar chart of categories (changed genes only)
 category_summary <- isoform_comparison %>%
   mutate(category = case_when(
     more_tx_smg1i ~ "More in Smg1i",
     fewer_tx_smg1i ~ "Fewer in Smg1i",
     same_tx_count ~ "Unchanged"
   )) %>%
-  count(cell_type, category)
+  count(cell_type, category) %>%
+  filter(category != "Unchanged")
 
 ggplot(category_summary, aes(x = cell_type, y = n, fill = category)) +
   geom_col(position = "dodge") +
   scale_fill_manual(values = c("More in Smg1i" = "steelblue",
-                                "Fewer in Smg1i" = "coral",
-                                "Unchanged" = "gray70")) +
-  labs(title = "Genes with Changed Transcript Counts: Smg1i vs DMSO",
+                                "Fewer in Smg1i" = "coral")) +
+  labs(title = "Figure 1: Genes with Changed Transcript Counts: Smg1i vs DMSO",
        x = "Cell Type",
        y = "Number of Genes",
        fill = "Category") +
@@ -241,7 +301,7 @@ ggplot(isoform_comparison %>% filter(delta_isoforms >= -10 & delta_isoforms <= 2
   geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
   facet_wrap(~cell_type, scales = "free_y") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
-  labs(title = "Change in Detected Isoforms: Smg1i vs DMSO",
+  labs(title = "Figure 2: Change in Detected Isoforms: Smg1i vs DMSO",
        subtitle = "Range limited to -10 to +20 for visibility (excludes extreme outliers)",
        x = "Change in Isoform Count (Smg1i - DMSO)",
        y = "Number of Genes") +
@@ -256,6 +316,8 @@ cat("\nSaved: tmp/isoform_interpretation_q1_isoforms_per_gene_2026.1.3.tsv\n")
 # Q2: Dominant Isoforms
 
 **Question:** How common are dominant isoforms (>50% of gene expression)?
+
+**Analysis Scope:** This analysis is limited to genes with **3 or more isoforms**, as the concept of a "dominant isoform" is most relevant when multiple isoforms are present.
 
 **Definition of Dominant Isoform:**
 For each gene in a specific cell type and treatment group, we identify the isoform with the highest average expression (normalized CPM) across all samples in that group. This isoform is considered **dominant** if it accounts for **>50% of the total normalized read counts** of its parent gene in **ALL samples** from that cell type/treatment group.
@@ -275,6 +337,70 @@ For each gene in a specific cell type and treatment group, we identify the isofo
 isoform_props <- all_proportions %>%
   filter(normalized_cpm > 0) %>%
   select(cell_type, treatment, sample, gene_id, transcript_id, isoform_proportion)
+
+# Identify genes with 3+ isoforms in each cell type/treatment
+genes_with_3plus_isoforms <- isoform_props %>%
+  group_by(cell_type, treatment, gene_id) %>%
+  summarize(n_isoforms = n_distinct(transcript_id), .groups = "drop") %>%
+  filter(n_isoforms >= 3)
+
+cat("Genes with 3+ isoforms by cell type and treatment:\n\n")
+genes_3plus_summary <- genes_with_3plus_isoforms %>%
+  group_by(cell_type, treatment) %>%
+  summarize(n_genes_3plus = n(), .groups = "drop")
+print(genes_3plus_summary)
+cat("\n")
+
+# Show isoform distribution (number of isoforms per gene)
+isoform_dist <- isoform_props %>%
+  group_by(cell_type, treatment, gene_id) %>%
+  summarize(n_isoforms = n_distinct(transcript_id), .groups = "drop")
+
+# Calculate break point for y-axis (2-isoform genes account for 95% of bottom range)
+isoform_counts <- isoform_dist %>%
+  filter(n_isoforms <= 10) %>%
+  count(cell_type, treatment, n_isoforms)
+
+max_2_isoform <- isoform_counts %>%
+  filter(n_isoforms == 2) %>%
+  pull(n) %>%
+  max()
+
+# Set bottom section upper limit so 2-isoform peak is at 95% of range
+bottom_limit <- max_2_isoform / 0.95
+# Break starts slightly above bottom limit, top section starts well above (e.g., where 1-isoform genes begin)
+max_overall <- isoform_counts %>% pull(n) %>% max()
+break_start <- bottom_limit * 1.05
+break_end <- max_overall * 0.5  # Start top section around middle of 1-isoform peak
+
+cat("Y-axis break: bottom section 0 -", round(bottom_limit),
+    ", break at", round(break_start), "-", round(break_end), "\n\n")
+
+# Install ggbreak if needed
+if (!require("ggbreak", quietly = TRUE)) {
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+  install.packages("ggbreak")
+  library(ggbreak)
+}
+
+# Plot isoform distribution with broken y-axis
+ggplot(isoform_dist %>% filter(n_isoforms <= 10),
+       aes(x = factor(n_isoforms), fill = treatment)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~cell_type, scales = "free_y") +
+  scale_y_break(c(break_start, break_end), scales = 0.5) +
+  scale_fill_manual(values = c("DMSO" = "gray70", "Smg1i" = "steelblue")) +
+  labs(title = "Figure 3: Distribution of Isoform Counts per Gene",
+       subtitle = "Showing genes with 1-10 isoforms (y-axis has break to show both single and multi-isoform genes)",
+       x = "Number of Isoforms per Gene",
+       y = "Number of Genes",
+       fill = "Treatment") +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+# Filter to genes with 3+ isoforms for dominant isoform analysis
+isoform_props <- isoform_props %>%
+  semi_join(genes_with_3plus_isoforms, by = c("cell_type", "treatment", "gene_id"))
 
 # For each gene/cell type/treatment, check if any isoform is >50% in ALL samples
 dominant_genes <- isoform_props %>%
@@ -337,12 +463,109 @@ datatable(q2_comparison,
 ggplot(q2_summary, aes(x = cell_type, y = pct_with_dominant, fill = treatment)) +
   geom_col(position = "dodge") +
   geom_hline(yintercept = 50, linetype = "dashed", color = "gray50") +
-  labs(title = "Genes with Consistently Dominant Isoform (>50% in ALL samples)",
+  scale_fill_manual(values = c("DMSO" = "gray70", "Smg1i" = "steelblue")) +
+  labs(title = "Figure 4: Genes with Consistently Dominant Isoform (>50% in ALL samples)",
        x = "Cell Type",
        y = "% of Genes",
        fill = "Treatment") +
   theme_minimal() +
   theme(legend.position = "top")
+
+cat("\n## Relationship Between Isoform Count and Dominant Isoform Proportion\n\n")
+
+# Calculate max proportion for each gene (excluding single-isoform genes)
+# Use full proportions data before filtering to 3+ isoforms
+max_proportion_by_gene <- all_proportions %>%
+  filter(normalized_cpm > 0) %>%
+  group_by(cell_type, treatment, sample, gene_id) %>%
+  mutate(n_isoforms = n_distinct(transcript_id)) %>%
+  filter(n_isoforms >= 2) %>%  # Exclude single-isoform genes
+  # Find max proportion in each sample
+  group_by(cell_type, treatment, sample, gene_id) %>%
+  summarize(
+    n_isoforms = first(n_isoforms),
+    max_proportion = max(isoform_proportion),
+    .groups = "drop"
+  ) %>%
+  # Average across samples for each gene
+  group_by(cell_type, treatment, gene_id, n_isoforms) %>%
+  summarize(
+    mean_max_proportion = mean(max_proportion),
+    .groups = "drop"
+  )
+
+cat("Genes included in analysis (≥2 isoforms):\n")
+max_prop_summary <- max_proportion_by_gene %>%
+  group_by(cell_type, treatment) %>%
+  summarize(
+    n_genes = n(),
+    mean_n_isoforms = mean(n_isoforms),
+    mean_max_prop = mean(mean_max_proportion),
+    .groups = "drop"
+  )
+print(max_prop_summary)
+cat("\n")
+
+# Diagnostic: Check data distribution for each cell type in the plot range
+cat("Data check for Figure 4A (DMSO, 2-15 isoforms):\n")
+fig4a_data_check <- max_proportion_by_gene %>%
+  filter(treatment == "DMSO", n_isoforms <= 15) %>%
+  group_by(cell_type) %>%
+  summarize(
+    n_genes = n(),
+    n_unique_isoform_counts = n_distinct(n_isoforms),
+    min_isoforms = min(n_isoforms),
+    max_isoforms = max(n_isoforms),
+    range_max_prop = paste0(round(min(mean_max_proportion), 3), "-", round(max(mean_max_proportion), 3)),
+    .groups = "drop"
+  )
+print(fig4a_data_check)
+cat("\n")
+
+# Check DD specifically
+dd_check <- max_proportion_by_gene %>%
+  filter(treatment == "DMSO", cell_type == "DD", n_isoforms <= 15) %>%
+  group_by(n_isoforms) %>%
+  summarize(n_genes = n(), .groups = "drop")
+cat("DD gene counts by isoform number:\n")
+print(dd_check)
+cat("\n")
+
+# Check for data quality issues
+data_quality_check <- max_proportion_by_gene %>%
+  filter(treatment == "DMSO", n_isoforms <= 15) %>%
+  group_by(cell_type) %>%
+  summarize(
+    n_genes = n(),
+    n_na_prop = sum(is.na(mean_max_proportion)),
+    n_inf_prop = sum(is.infinite(mean_max_proportion)),
+    n_na_isoforms = sum(is.na(n_isoforms)),
+    .groups = "drop"
+  )
+cat("Data quality check:\n")
+print(data_quality_check)
+cat("\n")
+
+# Plot: isoform count vs max proportion (DMSO only)
+# Filter to 2-15 isoforms to focus on the biologically relevant range
+ggplot(max_proportion_by_gene %>% filter(treatment == "DMSO", n_isoforms <= 15),
+       aes(x = n_isoforms, y = mean_max_proportion)) +
+  geom_point(alpha = 0.3, size = 0.8, color = "gray70") +
+  geom_smooth(method = "loess", se = TRUE, linewidth = 1, color = "gray40") +
+  facet_wrap(~cell_type) +
+  scale_x_continuous(breaks = c(2, 5, 10, 15), limits = c(1.5, 15.5)) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "red", alpha = 0.5) +
+  labs(title = "Figure 4A: Dominant Isoform Proportion vs Isoform Count (DMSO)",
+       subtitle = "Genes with 2-15 isoforms. Red line: 50% threshold.",
+       x = "Number of Isoforms per Gene",
+       y = "Proportion of Most Highly Expressed Isoform") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
 
 # Save results
 write_tsv(q2_summary,
@@ -350,40 +573,55 @@ write_tsv(q2_summary,
 cat("\nSaved: tmp/isoform_interpretation_q2_dominant_isoforms_2026.1.3.tsv\n")
 ```
 
-# Q3: Baseline Proportions of Upregulated Transcripts
+# Q3: Baseline Proportions of NMD-Responsive Transcripts
 
-**Question:** For transcripts upregulated by NMD inhibition, what were their baseline (DMSO) proportions?
+**Question:** For NMD-responsive transcripts, what were their baseline (DMSO) proportions?
+
+**Definition of NMD-Responsive Transcript:**
+Transcripts from the longread_dge differential expression analysis (Smg1i vs DMSO) that meet both criteria:
+
+1. **logFC > 0**: Positive log fold change (higher expression in Smg1i compared to DMSO)
+2. **adj.P.Val < 0.05**: Statistically significant after FDR correction
+
+These transcripts are upregulated when the NMD pathway is inhibited with Smg1i treatment, indicating they are normally targeted for degradation by NMD. They represent classic NMD targets that are rescued by NMD inhibition. All analyses are stratified by cell type.
 
 ```{r q3-upregulated-baseline}
-# Identify significantly upregulated transcripts from DGE
-upregulated <- all_dge %>%
+# Identify NMD-responsive transcripts from DGE
+# Definition: logFC > 0 (upregulated in Smg1i) AND adj.P.Val < 0.05 (statistically significant)
+nmd_responsive <- all_dge %>%
   filter(logFC > 0, adj.P.Val < 0.05) %>%
   select(cell_type, transcript_id = txid, logFC, adj.P.Val)
 
-cat("## Upregulated Transcripts by Cell Type\n\n")
+cat("## NMD-Responsive Transcripts by Cell Type\n\n")
 cat("**Note:** All Q3 analyses are stratified by cell type.\n\n")
 
-upregulated_summary <- upregulated %>%
+nmd_responsive_summary <- nmd_responsive %>%
   group_by(cell_type) %>%
-  summarize(n_upregulated = n(), .groups = "drop")
+  summarize(n_nmd_responsive = n(), .groups = "drop")
 
-print(upregulated_summary)
+print(nmd_responsive_summary)
 
-cat("\nTotal across all cell types:", nrow(upregulated), "results\n")
-cat("Unique transcripts (may appear in multiple cell types):", n_distinct(upregulated$transcript_id), "\n\n")
+cat("\nTotal across all cell types:", nrow(nmd_responsive), "results\n")
+cat("Unique transcripts (may appear in multiple cell types):", n_distinct(nmd_responsive$transcript_id), "\n\n")
 
-# Get baseline (DMSO) proportions for upregulated transcripts
+# Get baseline (DMSO) proportions for NMD-responsive transcripts
 # CRITICAL: Do NOT filter by normalized_cpm > 0 here!
 # We want to capture transcripts with ZERO DMSO expression (complete NMD rescue)
 baseline_proportions <- all_proportions %>%
   filter(treatment == "DMSO") %>%
-  inner_join(upregulated, by = c("cell_type", "transcript_id")) %>%
+  inner_join(nmd_responsive, by = c("cell_type", "transcript_id")) %>%
   select(cell_type, sample, gene_id, transcript_id,
          normalized_cpm, isoform_proportion, n_isoforms, logFC, adj.P.Val)
 
 cat("## Baseline Proportions Coverage\n\n")
 
-coverage_summary <- upregulated %>%
+cat("**Why is baseline coverage missing for some NMD-responsive transcripts?**\n")
+cat("NMD-responsive transcripts are identified from longread_dge statistical tests (all data),\n")
+cat("but baseline proportions come from the filtered all_proportions dataset (>=0.25 CPM filter).\n")
+cat("Transcripts excluded by the abundance filter will not have baseline proportion data,\n")
+cat("even if they are statistically significant. These represent very low-abundance isoforms.\n\n")
+
+coverage_summary <- nmd_responsive %>%
   select(cell_type, transcript_id) %>%
   distinct() %>%
   left_join(
@@ -392,7 +630,7 @@ coverage_summary <- upregulated %>%
   ) %>%
   group_by(cell_type) %>%
   summarize(
-    n_upregulated = n(),
+    n_nmd_responsive = n(),
     n_with_baseline = sum(has_baseline, na.rm = TRUE),
     pct_coverage = 100 * n_with_baseline / n(),
     .groups = "drop"
@@ -400,9 +638,15 @@ coverage_summary <- upregulated %>%
 
 print(coverage_summary)
 
+# Calculate overall coverage
+total_nmd_responsive <- sum(coverage_summary$n_nmd_responsive)
+total_with_baseline <- sum(coverage_summary$n_with_baseline)
+overall_pct_coverage <- 100 * total_with_baseline / total_nmd_responsive
+
 cat("\nTotal baseline proportions found for",
     n_distinct(baseline_proportions$transcript_id),
-    "unique transcripts (99.4% coverage)\n\n")
+    "unique transcripts (",
+    round(overall_pct_coverage, 1), "% overall coverage)\n\n")
 
 # Categorize by baseline expression level
 baseline_categories <- baseline_proportions %>%
@@ -462,61 +706,239 @@ q3_summary <- transcript_summary %>%
     .groups = "drop"
   )
 
-cat("## Summary: Baseline Proportions of Upregulated Transcripts\n\n")
+cat("## Summary: Baseline Proportions of NMD-Responsive Transcripts\n\n")
 
 cat("**Understanding the metrics and stratification:**\n\n")
 
 cat("**Stratification:** All Q3 analyses are stratified by cell type. Each row in the table below represents one cell type.\n\n")
 
-cat("**Observation level:** The table summarizes unique upregulated transcripts within each cell type.\n")
+cat("**Observation level:** The table summarizes unique NMD-responsive transcripts within each cell type.\n")
 cat("The raw data contains multiple observations per transcript (one per DMSO sample), but metrics are calculated at the transcript level by aggregating across samples.\n\n")
 
 cat("**Column definitions:**\n")
-cat("- `n_genes`: Number of unique genes (by ENSG ID) represented by the upregulated transcripts in this cell type\n")
-cat("  - One gene can have multiple upregulated isoforms, so n_genes ≤ n_transcripts\n")
-cat("- `n_transcripts`: Total number of unique upregulated transcript isoforms for this cell type\n")
-cat("  - These are the transcripts with baseline proportion data (from the 99% coverage)\n")
+cat("- `n_genes`: Number of unique genes (by ENSG ID) represented by NMD-responsive transcripts in this cell type\n")
+cat("  - One gene can have multiple NMD-responsive isoforms, so n_genes ≤ n_transcripts\n")
+cat("- `n_transcripts`: Total number of unique NMD-responsive transcript isoforms for this cell type\n")
+cat("  - These are the transcripts with baseline proportion data\n")
 cat("- `n_zero_dmso`: Transcripts with zero normalized CPM in ALL DMSO samples for that cell type\n")
-cat("  - These represent complete NMD rescue (no detectable expression in DMSO, upregulated in Smg1i)\n")
+cat("  - These represent complete NMD rescue (no detectable expression in DMSO, rescued by Smg1i)\n")
 cat("- `n_low_dmso`: Transcripts with mean normalized CPM between 0 and 0.1 across DMSO samples\n")
 cat("  - Low but detectable baseline expression\n")
 cat("- `n_expressed_dmso`: Transcripts with mean normalized CPM ≥ 0.1 across DMSO samples\n")
 cat("  - Moderate to high baseline expression\n\n")
 
-cat("**Resolving the apparent contradiction (99% coverage vs 30% zero):**\n")
-cat("- The 99.4% coverage means we successfully found baseline proportion data for 99.4% of upregulated transcripts\n")
+cat("**Note on coverage:**\n")
+cat("- High coverage means we successfully found baseline proportion data for most NMD-responsive transcripts\n")
 cat("- This includes transcripts with ZERO baseline expression (which is valid and scientifically important data)\n")
-cat("- The ~30% with n_zero_dmso are a SUBSET of the 99.4% that have baseline data\n")
-cat("- In other words: Of the transcripts WITH baseline data (99%), about 30% have zero DMSO expression\n")
+cat("- The transcripts with n_zero_dmso are a SUBSET of those with baseline data\n")
+cat("- In other words: Of the transcripts WITH baseline data, approximately 30% have zero DMSO expression\n")
 cat("- These zero-baseline transcripts are classic NMD targets showing complete rescue\n\n")
 
 datatable(q3_summary,
           options = list(pageLength = 10),
-          caption = "Upregulated transcripts: many had zero or low DMSO expression (normalized CPM)") %>%
+          caption = "NMD-responsive transcripts: many had zero or low DMSO expression (normalized CPM)") %>%
   formatRound(columns = c("pct_zero", "pct_low", "mean_baseline_cpm", "median_baseline_cpm",
                           "mean_baseline_prop", "median_baseline_prop",
                           "pct_minor_isoforms", "pct_very_minor", "mean_logFC"),
               digits = 2)
 
-# Distribution plot
+# Figure 1: Combined distribution across all cell types
+cat("### Distribution of NMD-Responsive Isoforms in DMSO (All Cell Types Combined)\n\n")
+
+# Calculate y-axis break for histogram
+# Build histogram data to find bin heights
+hist_data <- ggplot_build(
+  ggplot(baseline_proportions, aes(x = isoform_proportion)) +
+    geom_histogram(bins = 50)
+)
+bin_counts <- hist_data$data[[1]]$count
+
+# Find the tall bin at proportion = 0 and others
+max_bin_at_zero <- max(bin_counts[1:3])  # First few bins (near zero)
+max_other_bins <- max(bin_counts[4:length(bin_counts)])  # Rest of distribution
+
+# Set break so non-zero bins are visible (account for 95% of bottom section)
+bottom_limit_hist <- max_other_bins / 0.95
+break_start_hist <- bottom_limit_hist * 1.05
+break_end_hist <- max_bin_at_zero * 0.5
+
+cat("Y-axis break for histogram: bottom 0 -", round(bottom_limit_hist),
+    ", break at", round(break_start_hist), "-", round(break_end_hist), "\n\n")
+
 ggplot(baseline_proportions, aes(x = isoform_proportion)) +
-  geom_histogram(bins = 50, fill = "coral", color = "white") +
-  facet_wrap(~cell_type, scales = "free_y") +
-  geom_vline(xintercept = 0.5, linetype = "dashed", color = "red") +
-  geom_vline(xintercept = 0.1, linetype = "dashed", color = "orange") +
-  labs(title = "Baseline (DMSO) Proportions of Upregulated Transcripts",
-       subtitle = "Red line: 50% (dominant), Orange line: 10% (very minor)",
+  geom_histogram(bins = 50, fill = "gray70", color = "white") +
+  scale_y_break(c(break_start_hist, break_end_hist), scales = 0.5) +
+  labs(title = "Figure 5: Baseline (DMSO) Proportions of NMD-Responsive Transcripts",
+       subtitle = "All cell types combined. Y-axis has break.",
        x = "Isoform Proportion in DMSO",
        y = "Count") +
-  theme_minimal()
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+# Additional analysis: Proportion vs Expression Level
+cat("\n### Isoform Proportion vs Expression Level in DMSO\n\n")
+
+# Plot 1: All isoforms (from filtered dataset)
+all_dmso_proportions <- all_proportions %>%
+  filter(treatment == "DMSO") %>%
+  group_by(transcript_id, gene_id) %>%
+  summarize(
+    mean_cpm = mean(normalized_cpm),
+    mean_proportion = mean(isoform_proportion),
+    .groups = "drop"
+  ) %>%
+  filter(mean_cpm > 0)  # Only show expressed isoforms
+
+ggplot(all_dmso_proportions, aes(x = mean_cpm, y = mean_proportion)) +
+  geom_point(alpha = 0.3, size = 0.5, color = "gray40") +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0.1, linetype = "dashed", color = "orange") +
+  scale_x_log10() +
+  labs(title = "Figure 6: All Isoforms: Proportion vs Expression in DMSO",
+       subtitle = "Combined across all cell types. Lines: 50% (red), 10% (orange)",
+       x = "Mean Normalized CPM in DMSO (log10)",
+       y = "Mean Isoform Proportion in DMSO") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+# Plot 2: NMD-responsive isoforms in DMSO only
+nmd_dmso_proportions <- baseline_proportions %>%
+  group_by(transcript_id, gene_id) %>%
+  summarize(
+    mean_cpm = mean(normalized_cpm),
+    mean_proportion = mean(isoform_proportion),
+    .groups = "drop"
+  ) %>%
+  filter(mean_cpm > 0)  # Only show expressed isoforms
+
+ggplot(nmd_dmso_proportions, aes(x = mean_cpm, y = mean_proportion)) +
+  geom_point(alpha = 0.4, size = 0.8, color = "gray70") +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0.1, linetype = "dashed", color = "orange") +
+  scale_x_log10() +
+  labs(title = "Figure 7: NMD-Responsive Isoforms: Proportion vs Expression in DMSO",
+       subtitle = "Combined across all cell types. Lines: 50% (red), 10% (orange)",
+       x = "Mean Normalized CPM in DMSO (log10)",
+       y = "Mean Isoform Proportion in DMSO") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+# Plot 3: NMD-responsive isoforms - DMSO vs Smg1i comparison
+nmd_dmso_data <- baseline_proportions %>%
+  group_by(transcript_id, gene_id) %>%
+  summarize(
+    mean_cpm = mean(normalized_cpm),
+    mean_proportion = mean(isoform_proportion),
+    .groups = "drop"
+  ) %>%
+  filter(mean_cpm > 0) %>%
+  mutate(treatment = "DMSO")
+
+# Get Smg1i data for NMD-responsive isoforms
+nmd_smg1i_data <- all_proportions %>%
+  filter(treatment == "Smg1i") %>%
+  inner_join(nmd_responsive, by = c("cell_type", "transcript_id")) %>%
+  group_by(transcript_id, gene_id) %>%
+  summarize(
+    mean_cpm = mean(normalized_cpm),
+    mean_proportion = mean(isoform_proportion),
+    .groups = "drop"
+  ) %>%
+  filter(mean_cpm > 0) %>%
+  mutate(treatment = "Smg1i")
+
+# Combine for plotting
+nmd_combined_data <- bind_rows(nmd_dmso_data, nmd_smg1i_data)
+
+ggplot(nmd_combined_data, aes(x = mean_cpm, y = mean_proportion, color = treatment)) +
+  geom_point(alpha = 0.4, size = 0.8) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 0.1, linetype = "dashed", color = "gray50") +
+  scale_x_log10() +
+  scale_color_manual(values = c("DMSO" = "gray70", "Smg1i" = "steelblue")) +
+  labs(title = "Figure 8: NMD-Responsive Isoforms: DMSO vs Smg1i",
+       subtitle = "Proportion vs Expression combined across all cell types. Lines: 50% (black), 10% (gray)",
+       x = "Mean Normalized CPM (log10)",
+       y = "Isoform Proportion",
+       color = "Treatment") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11),
+    legend.position = "top"
+  )
+
+cat("\n**Interpretation:**\n")
+cat("The first plot shows the overall relationship between proportion and expression for all isoforms.\n")
+cat("The second plot shows NMD-responsive isoforms in DMSO only - they cluster at low proportion and low expression.\n")
+cat("The third plot compares DMSO (gray) vs Smg1i (blue) for NMD-responsive isoforms.\n")
+cat("NMD-responsive isoforms shift rightward (increased expression) and often upward (increased proportion)\n")
+cat("when NMD is inhibited, though many remain as minor isoforms even after rescue.\n\n")
 
 # Get Smg1i proportions for comparison
 # Note: Filter Smg1i by normalized_cpm > 0 (only need to consider expressed in Smg1i for comparison)
 smg1i_proportions <- all_proportions %>%
   filter(treatment == "Smg1i", normalized_cpm > 0) %>%
-  inner_join(upregulated, by = c("cell_type", "transcript_id")) %>%
+  inner_join(nmd_responsive, by = c("cell_type", "transcript_id")) %>%
   select(cell_type, sample, gene_id, transcript_id, isoform_proportion) %>%
   rename(prop_smg1i = isoform_proportion)
+
+# Figure 2: Overlapping density plot showing DMSO vs Smg1i distribution
+cat("\n### Paired Distribution: DMSO vs Smg1i\n\n")
+
+# Combine DMSO and Smg1i proportions for density plot
+dmso_for_density <- baseline_proportions %>%
+  select(transcript_id, sample, isoform_proportion) %>%
+  mutate(treatment = "DMSO")
+
+smg1i_for_density <- smg1i_proportions %>%
+  select(transcript_id, sample, prop_smg1i) %>%
+  rename(isoform_proportion = prop_smg1i) %>%
+  mutate(treatment = "Smg1i")
+
+combined_proportions <- bind_rows(dmso_for_density, smg1i_for_density)
+
+ggplot(combined_proportions, aes(x = isoform_proportion, fill = treatment, color = treatment)) +
+  geom_density(alpha = 0.4, linewidth = 1) +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "black", linewidth = 0.5) +
+  geom_vline(xintercept = 0.1, linetype = "dashed", color = "gray50", linewidth = 0.5) +
+  scale_fill_manual(values = c("DMSO" = "gray70", "Smg1i" = "steelblue")) +
+  scale_color_manual(values = c("DMSO" = "gray70", "Smg1i" = "steelblue")) +
+  labs(title = "Figure 9: Isoform Proportion Distribution: DMSO vs Smg1i",
+       subtitle = "NMD-responsive transcripts across all cell types. Vertical lines: 50% (black) and 10% (gray)",
+       x = "Isoform Proportion",
+       y = "Density",
+       fill = "Treatment",
+       color = "Treatment") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11),
+    legend.position = "top"
+  )
 
 # Compare before/after
 before_after <- baseline_proportions %>%
@@ -539,14 +961,14 @@ ggplot(before_after, aes(x = prop_dmso, y = prop_smg1i)) +
   facet_wrap(~cell_type) +
   scale_x_log10() +
   scale_y_log10() +
-  labs(title = "Isoform Proportions: DMSO vs Smg1i",
-       subtitle = "For transcripts upregulated by NMD inhibition (based on counts)",
+  labs(title = "Figure 10: Isoform Proportions: DMSO vs Smg1i",
+       subtitle = "For NMD-responsive transcripts (based on count increases)",
        x = "Proportion in DMSO (log10)",
        y = "Proportion in Smg1i (log10)") +
   theme_minimal()
 
 cat("\n**Important Note on Proportions vs Counts:**\n\n")
-cat("These transcripts are 'upregulated' based on NORMALIZED COUNT increases in the DGE analysis.\n")
+cat("These transcripts are 'NMD-responsive' based on NORMALIZED COUNT increases in the DGE analysis.\n")
 cat("However, their ISOFORM PROPORTION (fraction of gene expression) may not increase if:\n")
 cat("- The whole gene is upregulated proportionally (all isoforms increase together)\n")
 cat("- Other isoforms of the same gene increase even more\n\n")
@@ -566,7 +988,7 @@ cpm_long <- cpm_df %>%
 
 # Calculate mean normalized CPM per treatment per cell type per transcript
 mean_cpm <- cpm_long %>%
-  inner_join(upregulated, by = c("cell_type", "transcript_id")) %>%
+  inner_join(nmd_responsive, by = c("cell_type", "transcript_id")) %>%
   group_by(cell_type, treatment, transcript_id) %>%
   summarize(
     mean_cpm = mean(cpm),
@@ -590,8 +1012,8 @@ ggplot(mean_cpm, aes(x = mean_cpm_DMSO, y = mean_cpm_Smg1i)) +
   facet_wrap(~cell_type) +
   scale_x_log10() +
   scale_y_log10() +
-  labs(title = "Normalized CPM: DMSO vs Smg1i",
-       subtitle = "For upregulated transcripts - all points above diagonal (normalized for library size)",
+  labs(title = "Figure 11: Normalized CPM: DMSO vs Smg1i",
+       subtitle = "For NMD-responsive transcripts - all points above diagonal (normalized for library size)",
        x = "Mean CPM in DMSO (log10)",
        y = "Mean CPM in Smg1i (log10)") +
   theme_minimal()
@@ -635,7 +1057,7 @@ cat("## Cell-Type Comparison\n\n")
 # Plot comparison
 p1 <- ggplot(q1_summary, aes(x = cell_type, y = mean_delta, fill = cell_type)) +
   geom_col() +
-  labs(title = "Q1: Mean Change in Isoforms per Gene",
+  labs(title = "Figure 12: Q1: Mean Change in Isoforms per Gene",
        y = "Mean Δ Isoforms (Smg1i - DMSO)",
        x = NULL) +
   theme_minimal() +
@@ -643,7 +1065,7 @@ p1 <- ggplot(q1_summary, aes(x = cell_type, y = mean_delta, fill = cell_type)) +
 
 p2 <- ggplot(q2_comparison, aes(x = cell_type, y = delta_pct, fill = cell_type)) +
   geom_col() +
-  labs(title = "Q2: Change in Dominant Isoform Prevalence",
+  labs(title = "Figure 13: Q2: Change in Dominant Isoform Prevalence",
        y = "Δ % Genes with Dominant Isoform",
        x = NULL) +
   theme_minimal() +
@@ -651,8 +1073,8 @@ p2 <- ggplot(q2_comparison, aes(x = cell_type, y = delta_pct, fill = cell_type))
 
 p3 <- ggplot(q3_summary, aes(x = cell_type, y = median_baseline_prop, fill = cell_type)) +
   geom_col() +
-  labs(title = "Q3: Median Baseline Proportion",
-       subtitle = "For upregulated transcripts",
+  labs(title = "Figure 14: Q3: Median Baseline Proportion",
+       subtitle = "For NMD-responsive transcripts",
        y = "Median Proportion in DMSO",
        x = NULL) +
   theme_minimal() +
@@ -700,6 +1122,245 @@ write_tsv(q4_summary,
 cat("\nSaved: tmp/isoform_interpretation_q4_celltype_comparison_2026.1.3.tsv\n")
 ```
 
+# Q5: Transcriptional Output Devoted to NMD
+
+**Question:** What proportion of transcriptional output is devoted to producing NMD-targeted transcripts?
+
+**Concept:** In the Smg1i condition (NMD inhibited), we observe the true transcriptional output of genes without degradation. This allows us to estimate what fraction of a gene's transcriptional resources are devoted to producing transcripts that are normally targeted for NMD degradation.
+
+```{r q5-transcriptional-output}
+cat("## Transcriptional Output Analysis\n\n")
+
+# Use Smg1i data to estimate true transcriptional output (NMD is off)
+smg1i_expression <- all_proportions %>%
+  filter(treatment == "Smg1i") %>%
+  group_by(cell_type, gene_id, transcript_id) %>%
+  summarize(
+    mean_cpm = mean(normalized_cpm),
+    .groups = "drop"
+  )
+
+# Identify which transcripts are NMD-responsive
+nmd_responsive_set <- nmd_responsive %>%
+  select(cell_type, transcript_id) %>%
+  distinct() %>%
+  mutate(is_nmd_responsive = TRUE)
+
+# Join to mark NMD-responsive transcripts
+smg1i_expression <- smg1i_expression %>%
+  left_join(nmd_responsive_set, by = c("cell_type", "transcript_id")) %>%
+  mutate(is_nmd_responsive = replace_na(is_nmd_responsive, FALSE))
+
+# Gene-level analysis: For genes with NMD-responsive isoforms,
+# what % of transcriptional output goes to NMD?
+gene_nmd_output <- smg1i_expression %>%
+  group_by(cell_type, gene_id) %>%
+  summarize(
+    total_output = sum(mean_cpm),
+    nmd_output = sum(mean_cpm[is_nmd_responsive]),
+    n_isoforms = n(),
+    n_nmd_isoforms = sum(is_nmd_responsive),
+    has_nmd_isoform = any(is_nmd_responsive),
+    .groups = "drop"
+  ) %>%
+  filter(has_nmd_isoform, total_output > 0) %>%
+  mutate(
+    pct_to_nmd = 100 * nmd_output / total_output
+  )
+
+cat("### Gene-Level Analysis\n\n")
+cat("For genes harboring NMD-responsive isoforms:\n\n")
+
+# Summary by cell type
+gene_summary <- gene_nmd_output %>%
+  group_by(cell_type) %>%
+  summarize(
+    n_genes = n(),
+    mean_pct_to_nmd = mean(pct_to_nmd),
+    median_pct_to_nmd = median(pct_to_nmd),
+    q25_pct = quantile(pct_to_nmd, 0.25),
+    q75_pct = quantile(pct_to_nmd, 0.75),
+    .groups = "drop"
+  )
+
+print(gene_summary)
+cat("\n")
+
+# Distribution plot
+ggplot(gene_nmd_output, aes(x = pct_to_nmd)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white") +
+  facet_wrap(~cell_type, scales = "free_y") +
+  geom_vline(xintercept = 50, linetype = "dashed", color = "red") +
+  labs(title = "Figure 15: Distribution of % Transcriptional Output to NMD per Gene",
+       subtitle = "For genes with NMD-responsive isoforms. Red line: 50%",
+       x = "% of Gene's Transcriptional Output to NMD",
+       y = "Number of Genes") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11)
+  )
+
+# Cell-type level analysis: Overall % of transcriptional output to NMD
+cat("\n### Cell-Type Level Analysis\n\n")
+cat("Overall transcriptional output devoted to NMD-targeted transcripts:\n\n")
+cat("**Calculation:** For each sample, calculate (NMD-responsive CPM sum) / (total CPM sum for genes with NMD isoforms),\n")
+cat("then average percentages across samples within each cell type.\n\n")
+
+# Get per-sample CPM values for genes with NMD-responsive isoforms
+celltype_nmd_persample <- all_proportions %>%
+  filter(treatment == "Smg1i") %>%
+  # Only include genes with NMD-responsive isoforms
+  inner_join(
+    gene_nmd_output %>% select(cell_type, gene_id),
+    by = c("cell_type", "gene_id")
+  ) %>%
+  # Mark NMD-responsive transcripts
+  left_join(nmd_responsive_set, by = c("cell_type", "transcript_id")) %>%
+  mutate(is_nmd_responsive = replace_na(is_nmd_responsive, FALSE)) %>%
+  # Calculate percentage per sample
+  group_by(cell_type, sample) %>%
+  summarize(
+    total_cpm = sum(normalized_cpm),
+    nmd_cpm = sum(normalized_cpm[is_nmd_responsive]),
+    pct_to_nmd = 100 * nmd_cpm / total_cpm,
+    .groups = "drop"
+  )
+
+# Average across samples within cell type
+celltype_nmd_output <- celltype_nmd_persample %>%
+  group_by(cell_type) %>%
+  summarize(
+    mean_pct_to_nmd = mean(pct_to_nmd),
+    sd_pct_to_nmd = sd(pct_to_nmd),
+    n_samples = n(),
+    .groups = "drop"
+  ) %>%
+  rename(pct_to_nmd = mean_pct_to_nmd)
+
+print(celltype_nmd_output)
+cat("\n")
+
+# Visualization
+ggplot(celltype_nmd_output, aes(x = cell_type, y = pct_to_nmd, fill = cell_type)) +
+  geom_col() +
+  geom_hline(yintercept = mean(celltype_nmd_output$pct_to_nmd),
+             linetype = "dashed", color = "black") +
+  labs(title = "Figure 16: Overall % of Transcriptional Output to NMD by Cell Type",
+       subtitle = paste0("For genes with NMD-responsive isoforms. Dashed line: mean across cell types (",
+                        round(mean(celltype_nmd_output$pct_to_nmd), 1), "%)"),
+       x = "Cell Type",
+       y = "% Transcriptional Output to NMD",
+       fill = "Cell Type") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11),
+    legend.position = "none"
+  )
+
+cat("\n### Alternative Calculation: NMD Output as % of Total Cell-Type Transcriptional Output\n\n")
+cat("**Transcriptional output definition:** For each sample, sum CPM for ALL transcripts in the cell type,\n")
+cat("using the complete unfiltered dataset (not limited to abundance-filtered transcripts or genes with NMD-responsive isoforms).\n\n")
+cat("**Calculation:** For each sample, calculate (NMD-responsive CPM sum) / (ALL transcripts CPM sum),\n")
+cat("then average percentages across samples within each cell type.\n\n")
+cat("This provides a different perspective on the 'cost' of NMD by showing what percentage of the\n")
+cat("entire transcriptional output of the cell type is devoted to NMD-targeted transcripts.\n\n")
+
+# Calculate using ALL transcripts (unfiltered) from the full CPM data, per sample
+cpm_long_full <- as.data.frame(cpm_normalized) %>%
+  mutate(transcript_id = dge_isoform$genes$txid) %>%
+  pivot_longer(cols = -transcript_id, names_to = "bamid", values_to = "cpm") %>%
+  left_join(dge_isoform$samples %>% select(bamid, sample, treatment, ct),
+            by = "bamid") %>%
+  rename(cell_type = ct)
+
+# Calculate per-sample percentages for Smg1i
+celltype_nmd_total_persample <- cpm_long_full %>%
+  filter(treatment == "Smg1i") %>%
+  # Mark NMD-responsive transcripts
+  left_join(nmd_responsive_set, by = c("cell_type", "transcript_id")) %>%
+  mutate(is_nmd_responsive = replace_na(is_nmd_responsive, FALSE)) %>%
+  # Calculate percentage per sample
+  group_by(cell_type, sample) %>%
+  summarize(
+    total_cpm = sum(cpm),
+    nmd_cpm = sum(cpm[is_nmd_responsive]),
+    pct_to_nmd = 100 * nmd_cpm / total_cpm,
+    .groups = "drop"
+  )
+
+cat("Per-sample check (first few samples):\n")
+print(head(celltype_nmd_total_persample, 10))
+cat("\n")
+cat("Note: total_cpm should be approximately 1,000,000 per sample (CPM normalization)\n\n")
+
+# Average across samples within cell type
+celltype_nmd_output_total <- celltype_nmd_total_persample %>%
+  group_by(cell_type) %>%
+  summarize(
+    mean_pct_to_nmd = mean(pct_to_nmd),
+    sd_pct_to_nmd = sd(pct_to_nmd),
+    n_samples = n(),
+    mean_total_cpm = mean(total_cpm),
+    .groups = "drop"
+  ) %>%
+  rename(pct_to_nmd = mean_pct_to_nmd)
+
+cat("Cell-type transcriptional output to NMD (as % of total cell-type output):\n\n")
+print(celltype_nmd_output_total)
+cat("\n")
+
+# Visualization
+ggplot(celltype_nmd_output_total, aes(x = cell_type, y = pct_to_nmd, fill = cell_type)) +
+  geom_col() +
+  geom_hline(yintercept = mean(celltype_nmd_output_total$pct_to_nmd),
+             linetype = "dashed", color = "black") +
+  labs(title = "Figure 17: % of Total Cell-Type Transcriptional Output to NMD",
+       subtitle = paste0("Calculated per-sample then averaged. Denominator: ALL transcripts. Dashed line: mean (",
+                        round(mean(celltype_nmd_output_total$pct_to_nmd), 2), "%)"),
+       x = "Cell Type",
+       y = "% of Total Transcriptional Output to NMD",
+       fill = "Cell Type") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 13),
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 11),
+    legend.position = "none"
+  )
+
+cat("\n**Comparison of Figure 16 vs Figure 17:**\n")
+cat("- **Figure 16**: Denominator is CPM sum of transcripts from genes with ≥1 NMD-responsive isoform\n")
+cat("  - Shows: Within genes affected by NMD, what % of their output goes to NMD targets?\n")
+cat("  - This will always be higher than Figure 17 because the denominator is smaller\n")
+cat("- **Figure 17**: Denominator is CPM sum of ALL transcripts in the cell type (should ≈1M per sample)\n")
+cat("  - Shows: What % of the cell's entire transcriptional capacity is devoted to NMD targets?\n")
+cat("  - Provides a genome-wide perspective on the cost of NMD\n\n")
+cat("Both calculations now correctly compute percentages per-sample before averaging across samples.\n\n")
+
+cat("\n**Interpretation:**\n")
+cat("This analysis quantifies the 'cost' of NMD - the fraction of transcriptional resources\n")
+cat("devoted to producing transcripts that are normally degraded by NMD.\n")
+cat("The Smg1i condition reveals this hidden transcriptional output.\n\n")
+
+# Save results
+write_tsv(gene_nmd_output,
+          "../tmp/isoform_interpretation_q5_gene_nmd_output_2026.1.3.tsv")
+write_tsv(celltype_nmd_output,
+          "../tmp/isoform_interpretation_q5_celltype_nmd_output_2026.1.3.tsv")
+write_tsv(celltype_nmd_output_total,
+          "../tmp/isoform_interpretation_q5_celltype_nmd_output_total_2026.1.3.tsv")
+cat("Saved: tmp/isoform_interpretation_q5_gene_nmd_output_2026.1.3.tsv\n")
+cat("Saved: tmp/isoform_interpretation_q5_celltype_nmd_output_2026.1.3.tsv\n")
+cat("Saved: tmp/isoform_interpretation_q5_celltype_nmd_output_total_2026.1.3.tsv\n")
+```
+
 # Key Findings
 
 ```{r findings}
@@ -714,11 +1375,11 @@ cat("- Average", round(mean(q1_summary$pct_more_tx_smg1i), 1),
 
 cat("**Q2: Dominant Isoforms**\n")
 cat("- Dominant isoforms (>50% expression) are present in",
-    round(mean(q2_summary$pct_dominant), 1),
+    round(mean(q2_summary$pct_with_dominant), 1),
     "% of genes on average\n")
 cat("- NMD inhibition changes dominant isoform prevalence by",
-    round(mean(q2_comparison$delta_pct), 2),
-    "percentage points\n\n")
+    round(mean(abs(q2_comparison$delta_pct)), 2),
+    "percentage points on average\n\n")
 
 cat("**Q3: NMD Target Characteristics**\n")
 cat("- Upregulated transcripts had median baseline proportion of",
