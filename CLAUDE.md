@@ -174,64 +174,38 @@ When comparing long-read and short-read results:
 
 ### Isoform Proportion Analysis
 
-**Purpose:** Calculate per-sample isoform proportions to understand transcript diversity and NMD effects
+**Purpose:** Analyze isoform proportions to understand transcript diversity and NMD effects across cell types
 
-**Scripts:**
-- `code/calculate_isoform_proportions_2026.1.3.Rmd` - Calculate isoform proportions with expression-based filtering
-- `code/interpret_isoform_patterns_2026.1.3.Rmd` - Interpretive analyses (Q1-Q4)
+**Script:** `code/interpret_isoform_patterns_2026.1.3.Rmd`
 
 **Workflow:**
 
-1. **Data Processing:**
-   - Load raw transcript counts from `data/qdf_raw_counts_2026.1.3.csv`
-   - Map transcripts to genes using SQANTI and GTF annotations
-   - Filter to ENSG-mapped genes only (exclude novelGenes)
-   - Calculate proportions: `isoform_proportion = transcript_count / gene_total`
+1. **Data Loading:**
+   - Loads DGEList object: `results/rds/dge_isoform_2026.1.3.rds`
+   - Contains normalized transcript counts (TMM normalization, edgeR)
+   - Includes 38 samples across 6 cell types and 2 treatments
 
-2. **Expression Filtering:**
-   - Remove zero-count isoforms across all samples
-   - Apply expression filter: total_counts > 10 AND ≥2 samples with ≥2 counts per treatment/cell type
-   - Transcripts passing in EITHER DMSO OR Smg1i are retained
-   - High-count single-sample transcripts (>10 counts, 1 sample) saved separately
+2. **Isoform Proportion Calculation:**
+   - Calculates normalized CPM values from DGEList
+   - Computes isoform proportions per sample: `proportion = transcript_cpm / gene_total_cpm`
+   - Uses same normalization as differential expression analysis (limma-voom compatible)
 
-3. **Output Files (in tmp/):**
-   - **Isoform proportions:** `isoform_proportions_{celltype}_{treatment}_2026.1.3.tsv` (12 files: 6 cell types × 2 treatments)
-   - **Novel isoforms:** `novel_isoforms_expression_2026.1.3.tsv` (145K novel transcripts with expression data)
-   - **High-count single-sample:** `high_count_singlesample_transcripts_2026.1.3.tsv` (214K transcripts)
-   - **HTML reports:** `calculate_isoform_proportions_2026.1.3.html` and `interpret_isoform_patterns_2026.1.3.html`
-   - **PROVENANCE files:** `PROVENANCE_isoform_proportions_{celltype}_{treatment}_2026.1.3.md` (12 files)
-
-4. **Interpretive Analyses:**
-   - **Q1:** Isoform diversity - NMD inhibition increases detected isoforms per gene
+3. **Research Questions:**
+   - **Q1:** Isoform diversity - How NMD inhibition affects number of detected isoforms per gene
    - **Q2:** Dominant isoforms - Percentage of genes with >50% expression from single isoform
-   - **Q3:** NMD target baseline - Upregulated transcripts were predominantly minor isoforms in DMSO
-   - **Q4:** Cell-type specificity - Patterns are largely consistent across cell types
+   - **Q3:** NMD target baseline - Baseline DMSO proportions of NMD-upregulated transcripts
+   - **Q4:** Cell-type specificity - Whether patterns are consistent across cell types
+   - **Q5:** Transcriptional output degraded by NMD at gene and cell-type levels
+
+4. **Output:**
+   - **HTML report:** `code/interpret_isoform_patterns_2026.1.3.html`
+   - In-memory isoform proportion calculations for all analyses
+   - Integrates with long-read DGE results from `longread_dge/` directory
 
 **Data Dimensions:**
+- 38 samples (19 DMSO + 19 Smg1i across 6 cell types)
+- ~200,000+ transcripts analyzed
 - ~19,600 genes per cell type
-- ~200,000-290,000 transcripts per cell type (after filtering)
-- 38 samples total (19 DMSO + 19 Smg1i across 6 cell types)
-
-**Isoform Proportion File Format:**
-
-Tab-separated with header comments and column names:
-```
-cell_type       treatment       sample          gene_id         transcript_id   raw_count       gene_total      isoform_proportion      n_isoforms
-DD              DMSO            DD010R_DMSO     ENSG00000227232 PB.1.1          15.2            78.6            0.193               23
-```
-
-**Loading Isoform Proportions:**
-```r
-library(data.table)
-
-# Load single file
-dd_dmso <- fread("tmp/isoform_proportions_dd_dmso_2026.1.3.tsv",
-                 skip = 20, data.table = FALSE)  # Skip header + column names
-
-# Load all files
-files <- list.files("tmp", pattern = "^isoform_proportions_.*\\.tsv$", full.names = TRUE)
-all_props <- map_df(files, ~fread(.x, skip = 20, data.table = FALSE))
-```
 
 ### Directory Organization
 

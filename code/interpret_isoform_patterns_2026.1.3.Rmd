@@ -16,6 +16,67 @@ output:
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
+```{r config, include=FALSE}
+# =============================================================================
+# CONFIGURATION: Edit these paths to match your system
+# =============================================================================
+
+# Date stamp for output files (YYYY.M.D format)
+DATE_STAMP <- "2026.1.3"
+
+# Input file paths (relative to code/ directory)
+INPUT_DGELIST <- file.path("..", "results", "rds", paste0("dge_isoform_", DATE_STAMP, ".rds"))
+INPUT_FILTER_DICT <- file.path("..", "tmp", paste0("filtered_isoform_dictionary_0.25cpm_", DATE_STAMP, ".rds"))
+INPUT_DGE_DIR <- file.path("..", "longread_dge")
+
+# Output directory
+OUTPUT_DIR <- file.path("..", "tmp")
+
+# Output file paths
+OUTPUT_Q1 <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q1_isoforms_per_gene_", DATE_STAMP, ".tsv"))
+OUTPUT_Q2 <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q2_dominant_isoforms_", DATE_STAMP, ".tsv"))
+OUTPUT_Q3 <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q3_upregulated_baseline_", DATE_STAMP, ".tsv"))
+OUTPUT_Q4 <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q4_celltype_comparison_", DATE_STAMP, ".tsv"))
+OUTPUT_Q5_GENE <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q5_gene_nmd_output_", DATE_STAMP, ".tsv"))
+OUTPUT_Q5_CELLTYPE <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q5_celltype_nmd_output_", DATE_STAMP, ".tsv"))
+OUTPUT_Q5_TOTAL <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q5_celltype_nmd_output_total_", DATE_STAMP, ".tsv"))
+
+# Analysis parameters
+CPM_THRESHOLD <- 0.25  # Minimum CPM threshold for abundance filter
+DGE_FILE_PATTERN <- "^nmd_dge_.*\\.csv$"  # Pattern for DGE result files
+
+# Cell type mapping (file codes to display names)
+CELLTYPE_MAP <- c(
+  "at2" = "AT",
+  "dd" = "DD",
+  "ddali" = "DD_ALI",
+  "doali" = "DO",
+  "fb" = "FB",
+  "mv" = "MV"
+)
+
+# Check that input files exist
+if (!file.exists(INPUT_DGELIST)) {
+  stop("DGEList file not found: ", INPUT_DGELIST)
+}
+if (!file.exists(INPUT_FILTER_DICT)) {
+  stop("Filter dictionary file not found: ", INPUT_FILTER_DICT)
+}
+if (!dir.exists(INPUT_DGE_DIR)) {
+  stop("DGE directory not found: ", INPUT_DGE_DIR)
+}
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+  cat("Created output directory:", OUTPUT_DIR, "\n")
+}
+
+cat("Configuration loaded successfully\n")
+cat("Input DGEList:", INPUT_DGELIST, "\n")
+cat("Input filter dict:", INPUT_FILTER_DICT, "\n")
+cat("Input DGE directory:", INPUT_DGE_DIR, "\n")
+cat("Output directory:", OUTPUT_DIR, "\n\n")
+```
+
 <style>
 body {
   font-size: 16px;
@@ -57,7 +118,7 @@ library(edgeR)
 
 ```{r load-dgelist}
 cat("Loading DGEList for normalized CPM values...\n")
-dge_isoform <- readRDS("../results/rds/dge_isoform_2026.1.3.rds")
+dge_isoform <- readRDS(INPUT_DGELIST)
 
 cat("DGEList dimensions:", nrow(dge_isoform), "transcripts x", ncol(dge_isoform), "samples\n")
 
@@ -120,13 +181,13 @@ cat("Treatments:", paste(unique(all_proportions$treatment), collapse = ", "), "\
 
 ## Apply Abundance Filter
 
-To focus on more abundant isoforms and reduce noise from very low-expression transcripts, we apply a filter requiring **≥0.25 normalized CPM in at least one sample in EITHER DMSO or Smg1i** within each cell type.
+To focus on more abundant isoforms and reduce noise from very low-expression transcripts, we apply a filter requiring **≥`r CPM_THRESHOLD` normalized CPM in at least one sample in EITHER DMSO or Smg1i** within each cell type.
 
 ```{r apply-filter}
-cat("Applying abundance filter (>=0.25 CPM in EITHER condition)...\n\n")
+cat("Applying abundance filter (>=", CPM_THRESHOLD, " CPM in EITHER condition)...\n\n")
 
 # Load filtered isoform dictionary
-filtered_dict <- readRDS("../tmp/filtered_isoform_dictionary_0.25cpm_2026.1.3.rds")
+filtered_dict <- readRDS(INPUT_FILTER_DICT)
 
 cat("Loaded filtered isoform dictionary with", nrow(filtered_dict), "entries\n")
 cat("Unique isoforms:", n_distinct(filtered_dict$transcript_id), "\n\n")
@@ -178,9 +239,9 @@ cat("Unique isoforms:", n_distinct(all_proportions$transcript_id), "\n")
 cat("Unique genes:", n_distinct(all_proportions$gene_id), "\n\n")
 ```
 
-**Rationale for 0.25 CPM threshold:**
+**Rationale for `r CPM_THRESHOLD` CPM threshold:**
 
-- Retains 98.2% of statistically significant isoforms from DGE analysis
+- Retains ~98% of statistically significant isoforms from DGE analysis
 - Filters out very low-abundance transcripts that dominate the dataset but have minimal biological signal
 - Reduces computational burden and focuses interpretation on more reliably detected isoforms
 
@@ -188,7 +249,7 @@ cat("Unique genes:", n_distinct(all_proportions$gene_id), "\n\n")
 
 ```{r load-dge}
 # Read longread DGE results for each cell type
-dge_files <- list.files("../longread_dge", pattern = "^nmd_dge_.*\\.csv$", full.names = TRUE)
+dge_files <- list.files(INPUT_DGE_DIR, pattern = DGE_FILE_PATTERN, full.names = TRUE)
 
 cat("Loading", length(dge_files), "DGE result files...\n")
 
@@ -206,16 +267,7 @@ all_dge <- map_df(dge_files, ~{
 
 # Map cell type codes to match proportion data
 # Note: DO cells were only cultured at ALI, so doali maps to DO
-celltype_map <- c(
-  "at2" = "AT",
-  "dd" = "DD",
-  "ddali" = "DD_ALI",
-  "doali" = "DO",
-  "fb" = "FB",
-  "mv" = "MV"
-)
-
-all_dge$cell_type <- celltype_map[all_dge$cell_type_file]
+all_dge$cell_type <- CELLTYPE_MAP[all_dge$cell_type_file]
 
 # Filter out any unmapped cell types
 all_dge <- all_dge %>% filter(!is.na(cell_type))
@@ -308,9 +360,8 @@ ggplot(isoform_comparison %>% filter(delta_isoforms >= -10 & delta_isoforms <= 2
   theme_minimal()
 
 # Save results
-write_tsv(isoform_comparison,
-          "../tmp/isoform_interpretation_q1_isoforms_per_gene_2026.1.3.tsv")
-cat("\nSaved: tmp/isoform_interpretation_q1_isoforms_per_gene_2026.1.3.tsv\n")
+write_tsv(isoform_comparison, OUTPUT_Q1)
+cat("\nSaved:", OUTPUT_Q1, "\n")
 ```
 
 # Q2: Dominant Isoforms
@@ -568,9 +619,8 @@ ggplot(max_proportion_by_gene %>% filter(treatment == "DMSO", n_isoforms <= 15),
   )
 
 # Save results
-write_tsv(q2_summary,
-          "../tmp/isoform_interpretation_q2_dominant_isoforms_2026.1.3.tsv")
-cat("\nSaved: tmp/isoform_interpretation_q2_dominant_isoforms_2026.1.3.tsv\n")
+write_tsv(q2_summary, OUTPUT_Q2)
+cat("\nSaved:", OUTPUT_Q2, "\n")
 ```
 
 # Q3: Baseline Proportions of NMD-Responsive Transcripts
@@ -1024,9 +1074,8 @@ cat("Using NORMALIZED CPM accounts for differences in sequencing depth across sa
 cat("making the plot consistent with DGE results (which also use normalized counts).\n\n")
 
 # Save results
-write_tsv(baseline_proportions,
-          "../tmp/isoform_interpretation_q3_upregulated_baseline_2026.1.3.tsv")
-cat("\nSaved: tmp/isoform_interpretation_q3_upregulated_baseline_2026.1.3.tsv\n")
+write_tsv(baseline_proportions, OUTPUT_Q3)
+cat("\nSaved:", OUTPUT_Q3, "\n")
 ```
 
 # Q4: Cell-Type Specificity
@@ -1117,9 +1166,8 @@ datatable(q4_summary,
   formatRound(columns = 2:5, digits = 3)
 
 # Save results
-write_tsv(q4_summary,
-          "../tmp/isoform_interpretation_q4_celltype_comparison_2026.1.3.tsv")
-cat("\nSaved: tmp/isoform_interpretation_q4_celltype_comparison_2026.1.3.tsv\n")
+write_tsv(q4_summary, OUTPUT_Q4)
+cat("\nSaved:", OUTPUT_Q4, "\n")
 ```
 
 # Q5: Transcriptional Output Devoted to NMD
@@ -1350,15 +1398,12 @@ cat("devoted to producing transcripts that are normally degraded by NMD.\n")
 cat("The Smg1i condition reveals this hidden transcriptional output.\n\n")
 
 # Save results
-write_tsv(gene_nmd_output,
-          "../tmp/isoform_interpretation_q5_gene_nmd_output_2026.1.3.tsv")
-write_tsv(celltype_nmd_output,
-          "../tmp/isoform_interpretation_q5_celltype_nmd_output_2026.1.3.tsv")
-write_tsv(celltype_nmd_output_total,
-          "../tmp/isoform_interpretation_q5_celltype_nmd_output_total_2026.1.3.tsv")
-cat("Saved: tmp/isoform_interpretation_q5_gene_nmd_output_2026.1.3.tsv\n")
-cat("Saved: tmp/isoform_interpretation_q5_celltype_nmd_output_2026.1.3.tsv\n")
-cat("Saved: tmp/isoform_interpretation_q5_celltype_nmd_output_total_2026.1.3.tsv\n")
+write_tsv(gene_nmd_output, OUTPUT_Q5_GENE)
+write_tsv(celltype_nmd_output, OUTPUT_Q5_CELLTYPE)
+write_tsv(celltype_nmd_output_total, OUTPUT_Q5_TOTAL)
+cat("Saved:", OUTPUT_Q5_GENE, "\n")
+cat("Saved:", OUTPUT_Q5_CELLTYPE, "\n")
+cat("Saved:", OUTPUT_Q5_TOTAL, "\n")
 ```
 
 # Key Findings
