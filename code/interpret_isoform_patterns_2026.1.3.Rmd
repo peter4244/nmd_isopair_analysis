@@ -602,7 +602,7 @@ cat("\n")
 ggplot(max_proportion_by_gene %>% filter(treatment == "DMSO", n_isoforms <= 15),
        aes(x = n_isoforms, y = mean_max_proportion)) +
   geom_point(alpha = 0.3, size = 0.8, color = "gray70") +
-  geom_smooth(method = "loess", se = TRUE, linewidth = 1, color = "gray40") +
+  geom_smooth(method = "gam", se = TRUE, linewidth = 1, color = "gray40") +
   facet_wrap(~cell_type) +
   scale_x_continuous(breaks = c(2, 5, 10, 15), limits = c(1.5, 15.5)) +
   geom_hline(yintercept = 0.5, linetype = "dashed", color = "red", alpha = 0.5) +
