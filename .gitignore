@@ -23,9 +23,6 @@ __pycache__/
 .vscode/
 .idea/
 
-# Generated HTML reports (can be recreated from .Rmd)
-*.html
-
 # Large data and results directories
 results/
 data/
