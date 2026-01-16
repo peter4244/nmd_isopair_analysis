@@ -40,6 +40,7 @@ OUTPUT_Q4 <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q4_celltype_co
 OUTPUT_Q5_GENE <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q5_gene_nmd_output_", DATE_STAMP, ".tsv"))
 OUTPUT_Q5_CELLTYPE <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q5_celltype_nmd_output_", DATE_STAMP, ".tsv"))
 OUTPUT_Q5_TOTAL <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q5_celltype_nmd_output_total_", DATE_STAMP, ".tsv"))
+OUTPUT_Q6_GSEA <- file.path(OUTPUT_DIR, paste0("isoform_interpretation_q6_gsea_nmd_output_", DATE_STAMP, ".tsv"))
 
 # Analysis parameters
 CPM_THRESHOLD <- 0.25  # Minimum CPM threshold for abundance filter
@@ -274,6 +275,39 @@ all_dge <- all_dge %>% filter(!is.na(cell_type))
 
 cat("Loaded", nrow(all_dge), "DGE results\n")
 cat("Cell types:", paste(unique(all_dge$cell_type), collapse = ", "), "\n\n")
+```
+
+## Load Gene Symbols for GSEA
+
+GSEA requires gene symbols (not Ensembl IDs) to match MSigDB pathways. We load gene symbols from the shortread_dge files and create a mapping.
+
+```{r load-gene-symbols}
+cat("## Loading gene symbols from shortread_dge/...\n\n")
+
+# Construct path to shortread DGE directory (sibling to longread_dge)
+SHORTREAD_DGE_DIR <- file.path("..", "shortread_dge")
+
+# Load gene-level DGE files to extract gene symbols
+gene_dge_files <- list.files(SHORTREAD_DGE_DIR,
+                              pattern = "^nmd_sr_dge_.*_2026\\.1\\.2\\.csv$",
+                              full.names = TRUE)
+
+cat("Found", length(gene_dge_files), "gene-level DGE files for gene symbol mapping\n\n")
+
+gene_dge_for_symbols <- map_df(gene_dge_files, ~{
+  read_csv(.x, show_col_types = FALSE) %>%
+    select(ensembl_gene_id_version, hgnc_symbol)
+})
+
+# Create gene symbol mapping (Ensembl ID without version -> gene symbol)
+gene_symbol_map <- gene_dge_for_symbols %>%
+  mutate(gene_id_no_version = str_replace(ensembl_gene_id_version, "\\.\\d+$", "")) %>%
+  select(gene_id_no_version, hgnc_symbol) %>%
+  distinct() %>%
+  filter(!is.na(hgnc_symbol), hgnc_symbol != "")
+
+cat("Created gene symbol mapping:", nrow(gene_symbol_map), "genes\n")
+cat("Genes with valid symbols:", sum(!is.na(gene_symbol_map$hgnc_symbol)), "\n\n")
 ```
 
 # Q1: Isoforms Per Gene
@@ -1214,7 +1248,11 @@ gene_nmd_output <- smg1i_expression %>%
   filter(has_nmd_isoform, total_output > 0) %>%
   mutate(
     pct_to_nmd = 100 * nmd_output / total_output
-  )
+  ) %>%
+  # Add gene symbols for GSEA (remove version from gene_id before joining)
+  mutate(gene_id_no_version = str_replace(gene_id, "\\.\\d+$", "")) %>%
+  left_join(gene_symbol_map, by = c("gene_id_no_version" = "gene_id_no_version")) %>%
+  select(-gene_id_no_version)  # Remove temporary column
 
 cat("### Gene-Level Analysis\n\n")
 cat("For genes harboring NMD-responsive isoforms:\n\n")
@@ -1406,6 +1444,299 @@ cat("Saved:", OUTPUT_Q5_CELLTYPE, "\n")
 cat("Saved:", OUTPUT_Q5_TOTAL, "\n")
 ```
 
+# Q6: Gene Set Enrichment Analysis
+
+**Question:** Which biological pathways and gene sets are enriched among genes that devote a large proportion of their transcriptional output to NMD-targeted isoforms?
+
+**Approach:** Use Gene Set Enrichment Analysis (GSEA) with genes ranked by `pct_to_nmd` (percentage of transcriptional output going to NMD). This will identify pathways where genes collectively allocate substantial resources to producing NMD-targeted transcripts.
+
+```{r q6-gsea-setup}
+cat("## GSEA: Pathways Enriched for High NMD Transcriptional Output\n\n")
+
+# Set CRAN mirror
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+# Load GSEA libraries
+if (!require("fgsea", quietly = TRUE)) {
+  if (!require("BiocManager", quietly = TRUE)) {
+    install.packages("BiocManager")
+  }
+  BiocManager::install("fgsea")
+  library(fgsea)
+}
+
+if (!require("msigdbr", quietly = TRUE)) {
+  install.packages("msigdbr")
+  library(msigdbr)
+}
+
+library(fgsea)
+library(msigdbr)
+
+# GSEA parameters
+GSEA_MIN_SIZE <- 15
+GSEA_MAX_SIZE <- 500
+GSEA_NPERM <- 10000
+SIGNIFICANCE_THRESHOLD <- 0.05
+
+cat("GSEA Parameters:\n")
+cat("- Pathway size: ", GSEA_MIN_SIZE, "-", GSEA_MAX_SIZE, " genes\n")
+cat("- Permutations: ", GSEA_NPERM, "\n")
+cat("- Significance threshold: FDR < ", SIGNIFICANCE_THRESHOLD, "\n\n")
+```
+
+```{r q6-load-genesets}
+cat("## Loading MSigDB Gene Sets\n\n")
+
+# Load MSigDB gene sets for human
+cat("Loading Hallmark gene sets...\n")
+msigdb_h <- msigdbr(species = "Homo sapiens", category = "H")
+
+cat("Loading GO Biological Process gene sets...\n")
+msigdb_bp <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "GO:BP")
+
+cat("Loading KEGG gene sets...\n")
+msigdb_kegg <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:KEGG_LEGACY")
+
+cat("Loading Reactome gene sets...\n")
+msigdb_reactome <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CP:REACTOME")
+
+# Combine all gene sets
+all_genesets <- bind_rows(
+  msigdb_h %>% mutate(collection = "Hallmark"),
+  msigdb_bp %>% mutate(collection = "GO_BP"),
+  msigdb_kegg %>% mutate(collection = "KEGG"),
+  msigdb_reactome %>% mutate(collection = "Reactome")
+)
+
+cat("\nGene set summary:\n")
+geneset_summary <- all_genesets %>%
+  group_by(collection) %>%
+  summarize(
+    n_genesets = n_distinct(gs_name),
+    n_genes = n_distinct(gene_symbol),
+    .groups = "drop"
+  )
+print(geneset_summary)
+
+# Convert to fgsea format (named list)
+pathways <- all_genesets %>%
+  split(x = .$gene_symbol, f = .$gs_name)
+
+# Filter by size
+pathways_filtered <- pathways[
+  sapply(pathways, length) >= GSEA_MIN_SIZE &
+  sapply(pathways, length) <= GSEA_MAX_SIZE
+]
+
+cat("\nTotal pathways before filtering:", length(pathways), "\n")
+cat("Pathways after size filtering (", GSEA_MIN_SIZE, "-", GSEA_MAX_SIZE, " genes):", length(pathways_filtered), "\n\n")
+```
+
+```{r q6-prepare-ranked-lists}
+cat("## Preparing Gene-Level Ranked Lists\n\n")
+
+cat("**Ranking strategy:**\n")
+cat("- Rank ALL genes by pct_to_nmd (percentage of transcriptional output going to NMD)\n")
+cat("- Genes with no NMD-responsive isoforms have pct_to_nmd = 0\n")
+cat("- This captures the full distribution from genes heavily affected by NMD to those unaffected\n")
+cat("- **IMPORTANT:** Uses HGNC gene symbols (not Ensembl IDs) to match MSigDB pathways\n\n")
+
+# For each cell type, get all genes from smg1i_expression
+# Join with gene_nmd_output to get pct_to_nmd (will be 0 for genes with no NMD isoforms)
+ranked_lists_per_celltype <- list()
+
+for (ct in unique(gene_nmd_output$cell_type)) {
+  cat("Preparing ranked list for", ct, "...\n")
+
+  # Get all genes for this cell type
+  all_genes_ct <- smg1i_expression %>%
+    filter(cell_type == ct) %>%
+    group_by(gene_id) %>%
+    summarize(total_output = sum(mean_cpm), .groups = "drop") %>%
+    # Add gene symbols (remove version from gene_id before joining)
+    mutate(gene_id_no_version = str_replace(gene_id, "\\.\\d+$", "")) %>%
+    left_join(gene_symbol_map, by = c("gene_id_no_version" = "gene_id_no_version"))
+
+  # Join with NMD output info (use hgnc_symbol as key)
+  genes_with_nmd <- gene_nmd_output %>%
+    filter(cell_type == ct) %>%
+    select(hgnc_symbol, pct_to_nmd)
+
+  ranked_data <- all_genes_ct %>%
+    left_join(genes_with_nmd, by = "hgnc_symbol") %>%
+    mutate(pct_to_nmd = replace_na(pct_to_nmd, 0)) %>%
+    # Filter for valid gene symbols (required for GSEA)
+    filter(!is.na(hgnc_symbol), hgnc_symbol != "", !str_detect(hgnc_symbol, "^ENSG")) %>%
+    arrange(desc(pct_to_nmd))
+
+  # Create named vector for GSEA using gene symbols
+  ranked_vector <- setNames(ranked_data$pct_to_nmd, ranked_data$hgnc_symbol)
+
+  ranked_lists_per_celltype[[ct]] <- ranked_vector
+
+  cat("  Genes in ranked list:", length(ranked_vector), "\n")
+  cat("  Genes with pct_to_nmd > 0:", sum(ranked_data$pct_to_nmd > 0), "\n")
+  cat("  Range:", round(min(ranked_data$pct_to_nmd), 2), "-", round(max(ranked_data$pct_to_nmd), 2), "%\n\n")
+}
+```
+
+```{r q6-run-gsea, results='asis'}
+cat("## Running GSEA Per Cell Type\n\n")
+
+# Load DT library for interactive tables
+library(DT)
+library(htmltools)
+
+# Minimum number of genes with NMD signal required to run GSEA
+MIN_NMD_GENES <- 100
+
+gsea_results_all <- list()
+table_num <- 1  # Starting table number
+
+for (ct in names(ranked_lists_per_celltype)) {
+  cat("### ", ct, "\n\n")
+
+  ranked_list <- ranked_lists_per_celltype[[ct]]
+
+  # Check if sufficient NMD signal
+  n_genes_with_signal <- sum(ranked_list > 0)
+  cat("Genes with pct_to_nmd > 0:", n_genes_with_signal, "\n\n")
+
+  if (n_genes_with_signal < MIN_NMD_GENES) {
+    cat("**Skipping GSEA** - insufficient genes with NMD signal (need at least", MIN_NMD_GENES, ")\n\n")
+    next
+  }
+
+  cat("Running fgsea with", GSEA_NPERM, "permutations...\n\n")
+
+  gsea_res <- fgsea(
+    pathways = pathways_filtered,
+    stats = ranked_list,
+    minSize = GSEA_MIN_SIZE,
+    maxSize = GSEA_MAX_SIZE,
+    nperm = GSEA_NPERM
+  )
+
+  gsea_res$cell_type <- ct
+  gsea_results_all[[ct]] <- gsea_res
+
+  # Summary
+  sig_pathways <- sum(gsea_res$padj < SIGNIFICANCE_THRESHOLD, na.rm = TRUE)
+  cat("Pathways with FDR < 0.05:", sig_pathways, "\n\n")
+
+  # Display top 100 results in datatable
+  top_100 <- gsea_res %>%
+    arrange(pval) %>%
+    head(100) %>%
+    select(pathway, pval, padj, ES, NES, size, leadingEdge) %>%
+    mutate(
+      pathway_short = str_trunc(pathway, 60),
+      leadingEdge = sapply(leadingEdge, function(x) paste(head(x, 5), collapse = ", "))
+    ) %>%
+    select(pathway_short, pval, padj, ES, NES, size, leadingEdge)
+
+  cat("**Table", table_num, ". Top 100 GSEA Results for", ct, "**\n\n")
+  cat("Column definitions:\n")
+  cat("- **pathway_short**: Pathway name (truncated)\n")
+  cat("- **pval**: Nominal p-value\n")
+  cat("- **padj**: FDR-adjusted p-value\n")
+  cat("- **ES**: Enrichment score\n")
+  cat("- **NES**: Normalized enrichment score\n")
+  cat("- **size**: Number of genes in pathway\n")
+  cat("- **leadingEdge**: Top 5 leading edge genes\n\n")
+
+  dt <- datatable(
+    top_100,
+    options = list(
+      pageLength = 10,
+      scrollX = TRUE,
+      columnDefs = list(
+        list(width = '200px', targets = 0),
+        list(width = '80px', targets = c(1, 2, 3, 4, 5))
+      )
+    ),
+    caption = paste0("Table ", table_num, ". Top 100 GSEA results for ", ct, " (ranked by p-value)")
+  ) %>%
+    formatRound(columns = c("pval", "padj", "ES", "NES"), digits = 4)
+
+  print(htmltools::tagList(dt))
+  cat("\n\n")
+
+  table_num <- table_num + 1
+}
+
+# Combine all results
+if (length(gsea_results_all) > 0) {
+  gsea_combined <- bind_rows(gsea_results_all)
+
+  cat("\n## Overall GSEA Results\n\n")
+  cat("- Cell types analyzed:", paste(unique(gsea_combined$cell_type), collapse = ", "), "\n")
+  cat("- Cell types skipped (insufficient NMD signal):",
+      paste(setdiff(names(ranked_lists_per_celltype), names(gsea_results_all)), collapse = ", "), "\n")
+  cat("- Total pathways tested:", n_distinct(gsea_combined$pathway), "\n")
+  cat("- Total significant results (FDR < 0.05, across analyzed cell types):", sum(gsea_combined$padj < SIGNIFICANCE_THRESHOLD, na.rm = TRUE), "\n\n")
+} else {
+  cat("\n## Overall GSEA Results\n\n")
+  cat("No cell types had sufficient NMD signal for GSEA (need at least", MIN_NMD_GENES, "genes with pct_to_nmd > 0)\n\n")
+  gsea_combined <- tibble()
+}
+
+# Save combined results
+if (nrow(gsea_combined) > 0) {
+  write_tsv(gsea_combined, OUTPUT_Q6_GSEA)
+  cat("Saved:", OUTPUT_Q6_GSEA, "\n\n")
+} else {
+  cat("No GSEA results to save\n\n")
+}
+```
+
+
+```{r q6-summary}
+cat("\n## Q6 Summary\n\n")
+
+if (nrow(gsea_combined) == 0) {
+  cat("GSEA was not performed due to insufficient NMD signal in cell types.\n")
+  cat("Cell types need at least", MIN_NMD_GENES, "genes with pct_to_nmd > 0 for meaningful GSEA.\n\n")
+} else if (sum(gsea_combined$padj < SIGNIFICANCE_THRESHOLD, na.rm = TRUE) > 0) {
+  # Find pathways significant in multiple cell types
+  pathway_counts <- gsea_combined %>%
+    filter(padj < SIGNIFICANCE_THRESHOLD) %>%
+    count(pathway) %>%
+    arrange(desc(n))
+
+  cat("Pathways significant in multiple cell types:\n")
+  pathways_multi <- pathway_counts %>% filter(n > 1)
+  if (nrow(pathways_multi) > 0) {
+    print(pathways_multi %>% head(10))
+  } else {
+    cat("No pathways significant in >1 cell type\n")
+  }
+
+  cat("\n")
+
+  # Most significant pathways overall
+  cat("Most significant pathways (lowest FDR):\n")
+  top_overall <- gsea_combined %>%
+    filter(padj < SIGNIFICANCE_THRESHOLD) %>%
+    arrange(padj) %>%
+    head(10) %>%
+    select(cell_type, pathway, padj, NES, size)
+  print(top_overall)
+
+} else {
+  cat("No pathways reached significance threshold (FDR < 0.05) in any cell type.\n")
+  cat("This suggests that genes with high NMD transcriptional output are not strongly\n")
+  cat("enriched for specific biological pathways, but rather are distributed broadly\n")
+  cat("across different functional categories.\n")
+}
+
+cat("\n**Interpretation:**\n")
+cat("GSEA identifies pathways where genes collectively devote substantial transcriptional\n")
+cat("resources to NMD-targeted isoforms. Positive NES indicates pathways enriched among\n")
+cat("genes with high pct_to_nmd (genes heavily affected by NMD).\n\n")
+```
+
 # Key Findings
 
 ```{r findings}
@@ -1437,7 +1768,26 @@ cat("- This supports the hypothesis that NMD targets are minor isoforms\n\n")
 cat("**Q4: Cell-Type Specificity**\n")
 cat("- Patterns are largely consistent across cell types\n")
 cat("- Coefficient of variation for isoform gain:",
-    round(sd(q1_summary$mean_delta) / mean(q1_summary$mean_delta), 3), "\n")
+    round(sd(q1_summary$mean_delta) / mean(q1_summary$mean_delta), 3), "\n\n")
+
+cat("**Q5: Transcriptional Output to NMD**\n")
+cat("- Average", round(mean(gene_nmd_output$pct_to_nmd[gene_nmd_output$pct_to_nmd > 0]), 1),
+    "% of transcriptional output goes to NMD in affected genes\n")
+cat("- Cell-type level:", round(mean(celltype_nmd_output_total$pct_to_nmd), 2),
+    "% of total transcriptional output is NMD-targeted\n")
+cat("- This quantifies the 'cost' of NMD at the transcriptional level\n\n")
+
+if (exists("gsea_combined") && sum(gsea_combined$padj < SIGNIFICANCE_THRESHOLD, na.rm = TRUE) > 0) {
+  cat("**Q6: GSEA - Pathway Enrichment**\n")
+  cat("- Total significant pathway enrichments:", sum(gsea_combined$padj < SIGNIFICANCE_THRESHOLD, na.rm = TRUE), "\n")
+  cat("- Pathways with high NMD output identified across cell types\n")
+  cat("- See Q6 section for detailed pathway analysis\n")
+} else if (exists("gsea_combined")) {
+  cat("**Q6: GSEA - Pathway Enrichment**\n")
+  cat("- No pathways reached significance threshold (FDR < 0.05)\n")
+  cat("- Genes with high NMD output are distributed broadly across pathways\n")
+  cat("- Suggests NMD affects diverse biological processes rather than specific pathways\n")
+}
 ```
 
 # Session Info

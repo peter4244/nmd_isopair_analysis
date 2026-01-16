@@ -1,0 +1,371 @@
+---
+title: "Gene-Level vs Isoform-Level NMD Response Comparison"
+author: "Analysis Pipeline"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+<style>
+body {
+  font-size: 14px;
+}
+</style>
+
+# Overview
+
+This report compares NMD-responsive results between:
+- **Gene-level analysis** (short-read RNA-seq, gene-level DGE)
+- **Isoform-level analysis** (long-read RNA-seq, transcript-level DIE)
+
+## Research Questions
+
+1. **Gene → Isoform concordance**: For NMD-responsive genes, how many have at least one NMD-responsive isoform?
+2. **Isoform → Gene concordance**: For NMD-responsive isoforms, how many have their parent gene also NMD-responsive?
+3. **Cell-type patterns**: Are concordance rates consistent across cell types?
+
+## Key Terminology
+
+- **NMD-responsive**: logFC > 0 and adj.P.Val < 0.05 (upregulated with SMG1 inhibition)
+- **Gene-level DGE**: Short-read RNA-seq differential gene expression
+- **Isoform-level DIE**: Long-read RNA-seq differential isoform expression
+- **Concordance**: Agreement between gene and isoform-level responses
+
+```{r load-libraries}
+library(tidyverse)
+library(DT)
+library(scales)
+
+# Styling
+theme_set(theme_minimal())
+```
+
+# Configuration
+
+```{r config}
+# Paths
+SHORTREAD_DIR <- file.path("..", "shortread_dge")
+LONGREAD_DIR <- file.path("..", "longread_dge")
+OUTPUT_DIR <- file.path("..", "tmp")
+
+# Thresholds
+SIGNIFICANCE_THRESHOLD <- 0.05
+LOGFC_THRESHOLD <- 0
+
+# Cell type mapping
+CELLTYPE_MAP <- c(
+  "at2" = "AT",
+  "dd" = "DD",
+  "ddali" = "DD_ALI",
+  "doali" = "DO",
+  "fb" = "FB",
+  "mv" = "MV"
+)
+
+cat("Configuration loaded\n")
+cat("Short-read DGE directory:", SHORTREAD_DIR, "\n")
+cat("Long-read DIE directory:", LONGREAD_DIR, "\n")
+cat("Significance threshold: adj.P.Val <", SIGNIFICANCE_THRESHOLD, "\n")
+cat("LogFC threshold: logFC >", LOGFC_THRESHOLD, "\n\n")
+```
+
+# Load Data
+
+## Load Gene-Level DGE Results
+
+```{r load-gene-dge}
+cat("## Loading gene-level DGE results (short-read)\n\n")
+
+# Load all gene-level DGE files
+gene_files <- list.files(SHORTREAD_DIR,
+                         pattern = "^nmd_sr_dge_.*_2026\\.1\\.2\\.csv$",
+                         full.names = TRUE)
+
+cat("Found", length(gene_files), "gene-level DGE files\n\n")
+
+gene_dge <- map_dfr(gene_files, function(file) {
+  # Extract cell type from filename
+  ct_code <- str_extract(basename(file), "(?<=nmd_sr_dge_)[^_]+")
+  ct_name <- CELLTYPE_MAP[ct_code]
+
+  # Load data
+  read_csv(file, show_col_types = FALSE) %>%
+    mutate(cell_type = ct_name)
+})
+
+cat("Loaded gene-level DGE data:\n")
+cat("- Total genes:", nrow(gene_dge), "\n")
+cat("- Cell types:", paste(unique(gene_dge$cell_type), collapse = ", "), "\n\n")
+
+# Identify NMD-responsive genes
+nmd_genes <- gene_dge %>%
+  filter(logFC > LOGFC_THRESHOLD, adj.P.Val < SIGNIFICANCE_THRESHOLD) %>%
+  select(cell_type, hgnc_symbol, ensembl_gene_id_version, logFC, adj.P.Val) %>%
+  mutate(gene_id_base = str_replace(ensembl_gene_id_version, "\\.\\d+$", ""))
+
+cat("NMD-responsive genes by cell type:\n")
+nmd_genes %>%
+  count(cell_type, name = "n_nmd_genes") %>%
+  print()
+cat("\n")
+```
+
+## Load Isoform-Level DIE Results
+
+```{r load-isoform-die}
+cat("## Loading isoform-level DIE results (long-read)\n\n")
+
+# Load all isoform-level DIE files
+isoform_files <- list.files(LONGREAD_DIR,
+                             pattern = "^nmd_dge_.*_2026\\.1\\.2\\.csv$",
+                             full.names = TRUE)
+
+cat("Found", length(isoform_files), "isoform-level DIE files\n\n")
+
+isoform_die <- map_dfr(isoform_files, function(file) {
+  # Extract cell type from filename
+  ct_code <- str_extract(basename(file), "(?<=nmd_dge_)[^_]+")
+  ct_name <- CELLTYPE_MAP[ct_code]
+
+  # Load data
+  read_csv(file, show_col_types = FALSE) %>%
+    mutate(cell_type = ct_name)
+})
+
+cat("Loaded isoform-level DIE data:\n")
+cat("- Total isoforms:", nrow(isoform_die), "\n")
+cat("- Cell types:", paste(unique(isoform_die$cell_type), collapse = ", "), "\n\n")
+
+# Identify NMD-responsive isoforms
+nmd_isoforms <- isoform_die %>%
+  filter(logFC > LOGFC_THRESHOLD, adj.P.Val < SIGNIFICANCE_THRESHOLD) %>%
+  select(cell_type, txid, hgnc_id, logFC, adj.P.Val) %>%
+  # Create base gene ID without version
+  mutate(gene_id_base = str_replace(hgnc_id, "\\.\\d+$", ""))
+
+cat("NMD-responsive isoforms by cell type:\n")
+nmd_isoforms %>%
+  count(cell_type, name = "n_nmd_isoforms") %>%
+  print()
+cat("\n")
+```
+
+# Concordance Analysis
+
+## Gene → Isoform Concordance
+
+For each NMD-responsive gene, check if it has at least one NMD-responsive isoform.
+
+```{r gene-to-isoform}
+cat("## Gene → Isoform Concordance\n\n")
+cat("For each NMD-responsive gene (short-read), determining if it has ≥1 NMD-responsive isoform (long-read)\n\n")
+
+gene_to_isoform <- map_dfr(unique(nmd_genes$cell_type), function(ct) {
+  # Get NMD genes for this cell type
+  genes_ct <- nmd_genes %>%
+    filter(cell_type == ct) %>%
+    select(gene_id_base, hgnc_symbol) %>%
+    distinct()
+
+  # Get NMD isoforms for this cell type
+  isoforms_ct <- nmd_isoforms %>%
+    filter(cell_type == ct) %>%
+    select(gene_id_base) %>%
+    distinct()
+
+  # Check which genes have NMD-responsive isoforms
+  genes_with_isoforms <- genes_ct %>%
+    mutate(has_nmd_isoform = gene_id_base %in% isoforms_ct$gene_id_base)
+
+  # Summary
+  tibble(
+    cell_type = ct,
+    n_nmd_genes = nrow(genes_ct),
+    n_genes_with_nmd_isoform = sum(genes_with_isoforms$has_nmd_isoform),
+    pct_genes_with_nmd_isoform = 100 * sum(genes_with_isoforms$has_nmd_isoform) / nrow(genes_ct)
+  )
+})
+
+cat("**Table 1. Gene → Isoform Concordance by Cell Type**\n\n")
+cat("Column definitions:\n")
+cat("- **n_nmd_genes**: Number of NMD-responsive genes (short-read)\n")
+cat("- **n_genes_with_nmd_isoform**: Number of these genes with ≥1 NMD-responsive isoform (long-read)\n")
+cat("- **pct_genes_with_nmd_isoform**: Percentage of NMD-responsive genes with concordant isoforms\n\n")
+
+datatable(
+  gene_to_isoform,
+  options = list(pageLength = 10, scrollX = TRUE),
+  caption = "Table 1. Gene to Isoform Concordance"
+) %>%
+  formatRound(columns = "pct_genes_with_nmd_isoform", digits = 1)
+```
+
+## Isoform → Gene Concordance
+
+For each NMD-responsive isoform, check if its parent gene is also NMD-responsive.
+
+```{r isoform-to-gene}
+cat("## Isoform → Gene Concordance\n\n")
+cat("For each NMD-responsive isoform (long-read), determining if its parent gene is NMD-responsive (short-read)\n\n")
+
+isoform_to_gene <- map_dfr(unique(nmd_isoforms$cell_type), function(ct) {
+  # Get NMD isoforms for this cell type
+  isoforms_ct <- nmd_isoforms %>%
+    filter(cell_type == ct) %>%
+    select(txid, gene_id_base) %>%
+    distinct()
+
+  # Get NMD genes for this cell type
+  genes_ct <- nmd_genes %>%
+    filter(cell_type == ct) %>%
+    select(gene_id_base) %>%
+    distinct()
+
+  # Check which isoforms have NMD-responsive parent genes
+  isoforms_with_genes <- isoforms_ct %>%
+    mutate(has_nmd_gene = gene_id_base %in% genes_ct$gene_id_base)
+
+  # Summary
+  tibble(
+    cell_type = ct,
+    n_nmd_isoforms = nrow(isoforms_ct),
+    n_isoforms_with_nmd_gene = sum(isoforms_with_genes$has_nmd_gene),
+    pct_isoforms_with_nmd_gene = 100 * sum(isoforms_with_genes$has_nmd_gene) / nrow(isoforms_ct)
+  )
+})
+
+cat("**Table 2. Isoform → Gene Concordance by Cell Type**\n\n")
+cat("Column definitions:\n")
+cat("- **n_nmd_isoforms**: Number of NMD-responsive isoforms (long-read)\n")
+cat("- **n_isoforms_with_nmd_gene**: Number of these isoforms whose parent gene is NMD-responsive (short-read)\n")
+cat("- **pct_isoforms_with_nmd_gene**: Percentage of NMD-responsive isoforms with concordant parent genes\n\n")
+
+datatable(
+  isoform_to_gene,
+  options = list(pageLength = 10, scrollX = TRUE),
+  caption = "Table 2. Isoform to Gene Concordance"
+) %>%
+  formatRound(columns = "pct_isoforms_with_nmd_gene", digits = 1)
+```
+
+# Visualization
+
+## Concordance Summary
+
+```{r concordance-plot, fig.width=10, fig.height=6}
+cat("## Concordance Rates Across Cell Types\n\n")
+
+# Combine concordance data
+concordance_combined <- bind_rows(
+  gene_to_isoform %>%
+    select(cell_type, pct_genes_with_nmd_isoform) %>%
+    mutate(direction = "Gene → Isoform") %>%
+    rename(concordance_pct = pct_genes_with_nmd_isoform),
+  isoform_to_gene %>%
+    select(cell_type, pct_isoforms_with_nmd_gene) %>%
+    mutate(direction = "Isoform → Gene") %>%
+    rename(concordance_pct = pct_isoforms_with_nmd_gene)
+)
+
+ggplot(concordance_combined, aes(x = cell_type, y = concordance_pct, fill = direction)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_text(aes(label = sprintf("%.1f%%", concordance_pct)),
+            position = position_dodge(width = 0.7),
+            vjust = -0.5, size = 3.5) +
+  scale_fill_manual(values = c("Gene → Isoform" = "steelblue", "Isoform → Gene" = "coral")) +
+  labs(
+    title = "Figure 1: Concordance Between Gene and Isoform-Level NMD Responses",
+    subtitle = "Percentage of NMD-responsive features with concordant responses at the other level",
+    x = "Cell Type",
+    y = "Concordance (%)",
+    fill = "Direction"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 12),
+    plot.title = element_text(size = 14, face = "bold")
+  ) +
+  ylim(0, 100)
+```
+
+## Combined Summary Table
+
+```{r combined-summary}
+cat("## Combined Summary\n\n")
+
+combined_summary <- gene_to_isoform %>%
+  left_join(isoform_to_gene, by = "cell_type", suffix = c("_gene", "_isoform")) %>%
+  select(
+    cell_type,
+    n_nmd_genes,
+    n_genes_with_nmd_isoform,
+    pct_genes_with_nmd_isoform,
+    n_nmd_isoforms,
+    n_isoforms_with_nmd_gene,
+    pct_isoforms_with_nmd_gene
+  )
+
+cat("**Table 3. Combined Gene-Isoform Concordance Summary**\n\n")
+
+datatable(
+  combined_summary,
+  options = list(pageLength = 10, scrollX = TRUE),
+  caption = "Table 3. Combined concordance summary by cell type",
+  rownames = FALSE
+) %>%
+  formatRound(columns = c("pct_genes_with_nmd_isoform", "pct_isoforms_with_nmd_gene"), digits = 1)
+
+# Save output
+output_file <- file.path(OUTPUT_DIR, "gene_isoform_concordance_2026.1.16.tsv")
+write_tsv(combined_summary, output_file)
+cat("\nSaved:", output_file, "\n\n")
+```
+
+# Key Findings
+
+```{r findings}
+cat("## Summary of Concordance Patterns\n\n")
+
+# Calculate overall statistics
+overall_gene_to_iso <- mean(gene_to_isoform$pct_genes_with_nmd_isoform)
+overall_iso_to_gene <- mean(isoform_to_gene$pct_isoforms_with_nmd_gene)
+
+cat("**Overall Concordance Rates:**\n\n")
+cat("- Gene → Isoform: ", sprintf("%.1f%%", overall_gene_to_iso), " of NMD-responsive genes have ≥1 concordant isoform\n", sep = "")
+cat("- Isoform → Gene: ", sprintf("%.1f%%", overall_iso_to_gene), " of NMD-responsive isoforms have concordant parent genes\n\n", sep = "")
+
+# Cell type with highest concordance
+best_gene_ct <- gene_to_isoform %>% slice_max(pct_genes_with_nmd_isoform, n = 1)
+best_iso_ct <- isoform_to_gene %>% slice_max(pct_isoforms_with_nmd_gene, n = 1)
+
+cat("**Highest Concordance:**\n\n")
+cat("- Gene → Isoform: ", best_gene_ct$cell_type, " (", sprintf("%.1f%%", best_gene_ct$pct_genes_with_nmd_isoform), ")\n", sep = "")
+cat("- Isoform → Gene: ", best_iso_ct$cell_type, " (", sprintf("%.1f%%", best_iso_ct$pct_isoforms_with_nmd_gene), ")\n\n", sep = "")
+
+# Cell type with lowest concordance
+worst_gene_ct <- gene_to_isoform %>% slice_min(pct_genes_with_nmd_isoform, n = 1)
+worst_iso_ct <- isoform_to_gene %>% slice_min(pct_isoforms_with_nmd_gene, n = 1)
+
+cat("**Lowest Concordance:**\n\n")
+cat("- Gene → Isoform: ", worst_gene_ct$cell_type, " (", sprintf("%.1f%%", worst_gene_ct$pct_genes_with_nmd_isoform), ")\n", sep = "")
+cat("- Isoform → Gene: ", worst_iso_ct$cell_type, " (", sprintf("%.1f%%", worst_iso_ct$pct_isoforms_with_nmd_gene), ")\n\n", sep = "")
+```
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
