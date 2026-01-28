@@ -13,7 +13,7 @@ cat("Stratified by cell type\n\n")
 
 # Load DGEList
 cat("Loading DGEList...\n")
-dge_isoform <- readRDS("../results/rds/dge_isoform_2026.1.3.rds")
+dge_isoform <- readRDS("../results/rds/dge_isoform_2026.1.18.rds")
 
 # Extract normalized CPM
 cpm_normalized <- cpm(dge_isoform, normalized = TRUE, log = FALSE)
