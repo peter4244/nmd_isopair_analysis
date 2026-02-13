@@ -28,6 +28,9 @@ results/
 data/
 reference_files/
 tmp/
+counts/
+isoseq/
+oarfish_aligned_counts/
 
 # R binary files
 *.rds
@@ -40,3 +43,15 @@ tmp/
 # Large DGE result files (can be regenerated)
 longread_dge/*.csv
 shortread_dge/*.csv
+
+# Archive folders - old versions and backups
+**/archive/
+**/archive_*/
+
+# Large cache files from R Markdown
+**/*_cache/
+*.RData
+
+# Large HTML reports (can be regenerated)
+code/*_dge_*.html
+code/isoform_transition_*.html

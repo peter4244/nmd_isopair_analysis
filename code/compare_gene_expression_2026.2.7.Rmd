@@ -1,0 +1,889 @@
+---
+title: "Gene-Level Expression Comparison: Isoform-Aggregated vs Direct Quantification"
+author: "NMD Study"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: show
+    theme: flatly
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 10,
+  fig.height = 6
+)
+```
+
+# Overview
+
+This analysis compares gene-level expression quantifications derived from two different sources:
+
+1. **Isoform-aggregated counts**: Transcript-level counts (long-read PacBio data) summed to gene level
+2. **Direct gene-level counts**: Gene-level quantifications from independent pipeline
+
+The comparison evaluates technical concordance between quantification methods and identifies genes with discrepant expression estimates.
+
+## Key Considerations
+
+- Only transcripts with Ensembl gene IDs are included in aggregation
+- Datasets are matched by common Ensembl gene IDs and samples
+- TMM normalization is applied separately to each matched dataset
+- Comparisons are performed at multiple levels: overall, per-sample, and per-cell-type
+
+---
+
+# Load Libraries
+
+```{r load-libraries}
+library(edgeR)
+library(tidyverse)
+library(knitr)
+library(SummarizedExperiment)
+```
+
+---
+
+# Comparison Function
+
+Define a modular function to compare gene-level expression between isoform-aggregated and direct gene-level quantifications.
+
+```{r comparison-function}
+compare_gene_expression <- function(dge_isoform,
+                                     gene_data,
+                                     gene_id_col = "ensembl_gene_id",
+                                     output_prefix = "gene_expression_comparison") {
+
+  # Prepare gene-level data ------------------------------------------------------
+  # Handle DGEList, SummarizedExperiment, or counts matrix input
+
+  if (is(gene_data, "DGEList")) {
+    dge_gene <- gene_data
+    cat("Gene-level input: DGEList with", nrow(dge_gene), "genes\n")
+  } else if (is(gene_data, "SummarizedExperiment")) {
+    # Extract counts from SummarizedExperiment
+    cat("Gene-level input: SummarizedExperiment with", nrow(gene_data), "genes\n")
+
+    # Get counts matrix
+    gene_counts <- assay(gene_data, "counts")
+
+    # Parse sample metadata from column names (format: CELLTYPE###_TREATMENT)
+    sample_names <- colnames(gene_data)
+
+    # Extract donor ID, cell type, and treatment
+    parsed_metadata <- data.frame(
+      sample_name = sample_names,
+      stringsAsFactors = FALSE
+    )
+
+    # Parse format like "AT2001V_DMSO" -> ct="AT2", id="001V", treatment="DMSO"
+    # Split by underscore
+    split_names <- strsplit(sample_names, "_")
+    parsed_metadata$treatment <- sapply(split_names, function(x) x[2])
+
+    # Extract cell type and ID from first part (e.g., "AT2001V")
+    # Donor ID is always 3 digits + 1 letter at the end (e.g., "001V")
+    # Cell type is everything before that
+    first_part <- sapply(split_names, function(x) x[1])
+    parsed_metadata$id <- substr(first_part, nchar(first_part) - 3, nchar(first_part))
+    parsed_metadata$ct <- substr(first_part, 1, nchar(first_part) - 4)
+
+    cat("  Parsed sample metadata from", ncol(gene_counts), "samples\n")
+
+    # Create DGEList
+    dge_gene <- DGEList(counts = gene_counts,
+                        samples = parsed_metadata)
+  } else if (is.matrix(gene_data) || is.data.frame(gene_data)) {
+    # Create DGEList from counts matrix using isoform sample info
+    cat("Gene-level input: Counts matrix with", nrow(gene_data), "genes\n")
+    cat("Creating DGEList using sample metadata from isoform data\n")
+    dge_gene <- DGEList(counts = as.matrix(gene_data),
+                        samples = dge_isoform$samples)
+  } else {
+    stop("gene_data must be a DGEList, SummarizedExperiment, or counts matrix")
+  }
+
+  # Report input dimensions
+  cat("\nInput dimensions:\n")
+  cat("  Isoform-level:", nrow(dge_isoform$counts), "transcripts x",
+      ncol(dge_isoform$counts), "samples\n")
+  cat("  Gene-level:", nrow(dge_gene$counts), "genes x",
+      ncol(dge_gene$counts), "samples\n")
+
+  # Filter and aggregate isoforms to gene level ---------------------------------
+  # Only include transcripts with valid Ensembl gene IDs
+
+  if (!gene_id_col %in% colnames(dge_isoform$genes)) {
+    stop(paste("Column", gene_id_col, "not found in dge_isoform$genes"))
+  }
+
+  gene_ids <- dge_isoform$genes[[gene_id_col]]
+
+  # Filter to transcripts with valid Ensembl gene IDs
+  has_gene_id <- !is.na(gene_ids) & gene_ids != "" & gene_ids != "NA"
+
+  # Exclude fusion transcripts (multi-gene IDs like "ENSG00000000003_ENSG00000000419")
+  # These represent fusion transcripts that map to multiple genes
+  is_fusion <- grepl("_ENSG", gene_ids, fixed = TRUE)
+
+  cat("\nFiltering transcripts:\n")
+  cat("  Total transcripts:", length(gene_ids), "\n")
+  cat("  With valid gene IDs:", sum(has_gene_id),
+      "(", round(100 * sum(has_gene_id) / length(gene_ids), 1), "%)\n")
+  cat("  Fusion transcripts (excluded):", sum(is_fusion & has_gene_id),
+      "(", round(100 * sum(is_fusion & has_gene_id) / sum(has_gene_id), 1), "%)\n")
+
+  # Keep only non-fusion transcripts with valid gene IDs
+  keep_transcripts <- has_gene_id & !is_fusion
+  cat("  Kept for aggregation:", sum(keep_transcripts),
+      "(", round(100 * sum(keep_transcripts) / length(gene_ids), 1), "%)\n")
+
+  # Subset and aggregate
+  isoform_counts_filtered <- dge_isoform$counts[keep_transcripts, ]
+  gene_ids_filtered <- gene_ids[keep_transcripts]
+
+  # Strip version numbers from gene IDs (e.g., "ENSG00000000003.16" -> "ENSG00000000003")
+  gene_ids_filtered <- sub("\\.\\d+$", "", gene_ids_filtered)
+
+  # Sum transcript counts by gene
+  gene_counts_from_isoforms <- rowsum(isoform_counts_filtered,
+                                      group = gene_ids_filtered)
+  cat("Aggregated to", nrow(gene_counts_from_isoforms), "genes\n")
+
+  # Match datasets by Ensembl gene ID --------------------------------------------
+  # Find common genes and samples between datasets
+
+  gene_ids_gene <- rownames(dge_gene$counts)
+
+  # Strip version numbers from gene-level IDs (e.g., "ENSG00000000003.16" -> "ENSG00000000003")
+  gene_ids_gene_clean <- sub("\\.\\d+$", "", gene_ids_gene)
+
+  # Update rownames in gene counts
+  rownames(dge_gene$counts) <- gene_ids_gene_clean
+
+  common_genes <- intersect(rownames(gene_counts_from_isoforms), gene_ids_gene_clean)
+
+  # Match samples by metadata (donor ID, cell type, treatment)
+  # Create matching keys for both datasets
+
+  # For isoform data
+  iso_donor_id <- if ("id" %in% colnames(dge_isoform$samples)) {
+    dge_isoform$samples$id
+  } else if ("sample_id" %in% colnames(dge_isoform$samples)) {
+    dge_isoform$samples$sample_id
+  } else {
+    stop("Could not find donor ID column in isoform samples")
+  }
+
+  iso_key <- paste(iso_donor_id,
+                   dge_isoform$samples$ct,
+                   dge_isoform$samples$treatment,
+                   sep = "_")
+  names(iso_key) <- colnames(gene_counts_from_isoforms)
+
+  # For gene data
+  gene_donor_id <- if ("sample_id" %in% colnames(dge_gene$samples)) {
+    dge_gene$samples$sample_id
+  } else if ("id" %in% colnames(dge_gene$samples)) {
+    dge_gene$samples$id
+  } else {
+    stop("Could not find donor ID column in gene samples")
+  }
+
+  gene_key <- paste(gene_donor_id,
+                    dge_gene$samples$ct,
+                    dge_gene$samples$treatment,
+                    sep = "_")
+  names(gene_key) <- colnames(dge_gene$counts)
+
+  # Find common sample keys
+  common_keys <- intersect(iso_key, gene_key)
+
+  cat("\nMatching datasets:\n")
+  cat("  Common genes:", length(common_genes), "\n")
+  cat("  Common samples (by metadata):", length(common_keys), "\n")
+
+  if (length(common_genes) == 0) stop("No common genes found!")
+  if (length(common_keys) == 0) stop("No common samples found!")
+
+  # Get sample names for each dataset
+  iso_samples <- names(iso_key)[iso_key %in% common_keys]
+  gene_samples <- names(gene_key)[gene_key %in% common_keys]
+
+  # Reorder gene samples to match isoform sample order
+  iso_keys_ordered <- iso_key[iso_samples]
+  gene_samples_ordered <- gene_samples[match(iso_keys_ordered, gene_key[gene_samples])]
+
+  # Subset both datasets to common genes and matched samples
+  counts_iso_matched <- gene_counts_from_isoforms[common_genes, iso_samples]
+  counts_gene_matched <- dge_gene$counts[common_genes, gene_samples_ordered]
+
+  # Rename gene columns to match isoform column names for consistency
+  colnames(counts_gene_matched) <- colnames(counts_iso_matched)
+
+  # Create matched DGEList objects -----------------------------------------------
+  # Use sample metadata from isoform DGEList
+
+  samples_matched <- dge_isoform$samples[iso_samples, ]
+
+  dge_iso_matched <- DGEList(counts = counts_iso_matched,
+                             samples = samples_matched)
+  dge_gene_matched <- DGEList(counts = counts_gene_matched,
+                              samples = samples_matched)
+
+  # TMM normalize separately -----------------------------------------------------
+  # Apply TMM normalization independently to each matched dataset
+
+  dge_iso_matched <- calcNormFactors(dge_iso_matched, method = "TMM")
+  dge_gene_matched <- calcNormFactors(dge_gene_matched, method = "TMM")
+
+  cat("\nTMM normalization factors:\n")
+  cat("  Isoform range: [",
+      round(min(dge_iso_matched$samples$norm.factors), 3), ", ",
+      round(max(dge_iso_matched$samples$norm.factors), 3), "]\n", sep = "")
+  cat("  Gene range: [",
+      round(min(dge_gene_matched$samples$norm.factors), 3), ", ",
+      round(max(dge_gene_matched$samples$norm.factors), 3), "]\n", sep = "")
+
+  # Calculate CPM
+  cpm_iso <- cpm(dge_iso_matched, log = FALSE)
+  cpm_gene <- cpm(dge_gene_matched, log = FALSE)
+
+  # Calculate log-transformed CPM for correlations
+  log_cpm_iso <- log2(cpm_iso + 1)
+  log_cpm_gene <- log2(cpm_gene + 1)
+
+  # Overall correlations ---------------------------------------------------------
+  # Correlation across all genes and samples
+
+  # Untransformed CPM
+  overall_cor_spearman <- cor(as.vector(cpm_iso), as.vector(cpm_gene),
+                              method = "spearman")
+  overall_cor_pearson <- cor(as.vector(cpm_iso), as.vector(cpm_gene),
+                             method = "pearson")
+
+  # Log-transformed CPM
+  overall_cor_pearson_log <- cor(as.vector(log_cpm_iso), as.vector(log_cpm_gene),
+                                 method = "pearson")
+
+  # Per-sample correlations ------------------------------------------------------
+  # Correlation within each sample
+
+  sample_cors <- data.frame(
+    sample = iso_samples,
+    spearman = sapply(iso_samples, function(s) {
+      cor(cpm_iso[, s], cpm_gene[, s], method = "spearman")
+    }),
+    pearson = sapply(iso_samples, function(s) {
+      cor(cpm_iso[, s], cpm_gene[, s], method = "pearson")
+    }),
+    pearson_log = sapply(iso_samples, function(s) {
+      cor(log_cpm_iso[, s], log_cpm_gene[, s], method = "pearson")
+    })
+  )
+
+  # Add sample metadata (exclude 'sample' column if it exists to avoid duplicates)
+  metadata_cols <- samples_matched[iso_samples, ]
+  if ("sample" %in% colnames(metadata_cols)) {
+    metadata_cols$sample <- NULL
+  }
+  sample_cors <- cbind(sample_cors, metadata_cols)
+
+  # Per-cell-type correlations ---------------------------------------------------
+  # Correlation within each cell type (if cell type info available)
+
+  ct_cors <- NULL
+  if ("ct" %in% colnames(samples_matched)) {
+    cell_types <- unique(samples_matched$ct)
+    ct_cors <- lapply(cell_types, function(ct) {
+      ct_samples <- iso_samples[samples_matched$ct == ct]
+      ct_cpm_iso <- as.vector(cpm_iso[, ct_samples])
+      ct_cpm_gene <- as.vector(cpm_gene[, ct_samples])
+      ct_log_cpm_iso <- as.vector(log_cpm_iso[, ct_samples])
+      ct_log_cpm_gene <- as.vector(log_cpm_gene[, ct_samples])
+
+      data.frame(
+        cell_type = ct,
+        n_samples = length(ct_samples),
+        spearman = cor(ct_cpm_iso, ct_cpm_gene, method = "spearman"),
+        pearson = cor(ct_cpm_iso, ct_cpm_gene, method = "pearson"),
+        pearson_log = cor(ct_log_cpm_iso, ct_log_cpm_gene, method = "pearson")
+      )
+    })
+    ct_cors <- do.call(rbind, ct_cors)
+  }
+
+  # Gene-level statistics --------------------------------------------------------
+  # Calculate mean expression and fold differences
+
+  mean_cpm_iso <- rowMeans(cpm_iso)
+  mean_cpm_gene <- rowMeans(cpm_gene)
+
+  # Log2 fold difference (isoform vs gene)
+  fold_diff <- log2((mean_cpm_iso + 1) / (mean_cpm_gene + 1))
+
+  # Define expressed genes (mean CPM > 1)
+  expressed_genes <- (mean_cpm_iso > 1) | (mean_cpm_gene > 1)
+
+  # Define discrepant genes (>2-fold difference and expressed)
+  discrepant_genes <- abs(fold_diff) > 1 & expressed_genes
+
+  # Create comparison data frame
+  comparison_df <- data.frame(
+    gene = common_genes,
+    mean_cpm_isoform = mean_cpm_iso,
+    mean_cpm_gene = mean_cpm_gene,
+    log2_fold_diff = fold_diff,
+    abs_log2_fold_diff = abs(fold_diff),
+    expressed = expressed_genes,
+    discrepant = discrepant_genes,
+    stringsAsFactors = FALSE
+  )
+
+  # Return results ---------------------------------------------------------------
+
+  results <- list(
+    comparison_df = comparison_df,
+    sample_correlations = sample_cors,
+    cell_type_correlations = ct_cors,
+    overall_correlations = c(spearman = overall_cor_spearman,
+                            pearson = overall_cor_pearson,
+                            pearson_log = overall_cor_pearson_log),
+    cpm_isoform = cpm_iso,
+    cpm_gene = cpm_gene,
+    log_cpm_isoform = log_cpm_iso,
+    log_cpm_gene = log_cpm_gene,
+    dge_isoform_matched = dge_iso_matched,
+    dge_gene_matched = dge_gene_matched
+  )
+
+  # Save results -----------------------------------------------------------------
+
+  saveRDS(results, file = paste0("../results/rds/", output_prefix, "_2026.2.7.rds"))
+  write.csv(comparison_df,
+            file = paste0("../results/", output_prefix, "_2026.2.7.csv"),
+            row.names = FALSE)
+
+  cat("\nResults saved to:\n")
+  cat("  -", paste0("results/rds/", output_prefix, "_2026.2.7.rds\n"))
+  cat("  -", paste0("results/", output_prefix, "_2026.2.7.csv\n"))
+
+  return(results)
+}
+```
+
+---
+
+# Analysis 1: DGEList vs DGEList
+
+Compare isoform-aggregated counts with direct gene-level quantifications (both in DGEList format).
+
+## Load Data
+
+```{r load-data}
+# Load isoform-level DGEList (nofilter version)
+dge_isoform <- readRDS("../rds/dge_isoform_nofilter_2026.2.7.rds")
+
+# Load gene-level DGEList (nofilter version)
+dge_gene <- readRDS("../rds/dge_gene_nofilter_2026.1.3.rds")
+
+cat("Loaded DGEList objects:\n")
+cat("  Isoform:", nrow(dge_isoform), "transcripts x", ncol(dge_isoform), "samples\n")
+cat("  Gene:", nrow(dge_gene), "genes x", ncol(dge_gene), "samples\n")
+```
+
+## Identify Gene ID Column
+
+```{r identify-gene-id-col}
+# Check available columns in isoform annotation
+cat("Available columns in dge_isoform$genes:\n")
+print(colnames(dge_isoform$genes))
+
+# Determine which column contains Ensembl gene IDs
+gene_id_col <- if ("ensembl_gene_id" %in% colnames(dge_isoform$genes)) {
+  "ensembl_gene_id"
+} else if ("gene_id" %in% colnames(dge_isoform$genes)) {
+  "gene_id"
+} else if ("gene_id_ens115_sqanti" %in% colnames(dge_isoform$genes)) {
+  "gene_id_ens115_sqanti"
+} else if ("hgnc_id" %in% colnames(dge_isoform$genes)) {
+  "hgnc_id"
+} else {
+  stop("Could not find Ensembl gene ID column")
+}
+
+cat("\nUsing gene ID column:", gene_id_col, "\n")
+```
+
+## Run Comparison
+
+```{r run-comparison}
+results1 <- compare_gene_expression(
+  dge_isoform = dge_isoform,
+  gene_data = dge_gene,
+  gene_id_col = gene_id_col,
+  output_prefix = "comparison_nofilter_dgelist"
+)
+```
+
+---
+
+# Results
+
+## Overall Correlation
+
+```{r overall-correlation}
+cat("Overall correlation across all genes and samples:\n")
+cat("  Spearman:", round(results1$overall_correlations["spearman"], 4), "\n")
+cat("  Pearson [log2(CPM+1)]:", round(results1$overall_correlations["pearson_log"], 4), "\n")
+```
+
+**Overall correlations:**
+
+- **Spearman** (rank-based): `r round(results1$overall_correlations["spearman"], 3)`
+- **Pearson on log2(CPM+1)**: `r round(results1$overall_correlations["pearson_log"], 3)`
+
+The Spearman correlation of `r round(results1$overall_correlations["spearman"], 3)` indicates `r if(results1$overall_correlations["spearman"] > 0.7) "good" else "moderate"` rank concordance, while the log-transformed Pearson of `r round(results1$overall_correlations["pearson_log"], 3)` shows `r if(results1$overall_correlations["pearson_log"] > 0.7) "strong" else "moderate"` linear concordance.
+
+## Per-Sample Correlations
+
+```{r per-sample-correlations}
+# Summary statistics
+cat("Per-sample Spearman correlation:\n")
+cat("  Mean:", round(mean(results1$sample_correlations$spearman), 4), "\n")
+cat("  Range: [", round(min(results1$sample_correlations$spearman), 4), ", ",
+    round(max(results1$sample_correlations$spearman), 4), "]\n", sep = "")
+
+# Display table with sample metadata
+results1$sample_correlations %>%
+  select(sample, ct, treatment, spearman, pearson_log) %>%
+  arrange(desc(spearman)) %>%
+  kable(digits = 4,
+        caption = "Table 1: Per-sample correlations between isoform-aggregated and gene-level quantifications (Analysis 1)",
+        col.names = c("Sample", "Cell Type", "Treatment", "Spearman", "Pearson (log)"))
+```
+
+Per-sample correlations range from **`r round(min(results1$sample_correlations$spearman), 3)`** to **`r round(max(results1$sample_correlations$spearman), 3)`**, with a mean of **`r round(mean(results1$sample_correlations$spearman), 3)`**.
+
+## Gene-Level Summary
+
+```{r gene-summary}
+comp_df <- results1$comparison_df
+
+cat("Gene-level statistics:\n")
+cat("  Total common genes:", nrow(comp_df), "\n")
+cat("  Expressed genes (mean CPM > 1):", sum(comp_df$expressed), "\n")
+cat("  Discrepant genes (>2-fold diff, expressed):", sum(comp_df$discrepant), "\n")
+cat("\nSummary statistics for expressed genes:\n")
+cat("  Median absolute CPM difference:",
+    round(median(abs(comp_df$mean_cpm_isoform - comp_df$mean_cpm_gene)[comp_df$expressed]), 2), "\n")
+cat("  Mean absolute CPM difference:",
+    round(mean(abs(comp_df$mean_cpm_isoform - comp_df$mean_cpm_gene)[comp_df$expressed]), 2), "\n")
+cat("  Median |log2 fold difference|:",
+    round(median(comp_df$abs_log2_fold_diff[comp_df$expressed]), 3), "\n")
+```
+
+Of **`r format(nrow(comp_df), big.mark=",")`** common genes, **`r format(sum(comp_df$expressed), big.mark=",")`** are expressed (mean CPM > 1) and **`r sum(comp_df$discrepant)`** show discrepant quantifications (>2-fold difference).
+
+## Top Discrepant Genes
+
+```{r top-discrepant}
+comp_df %>%
+  filter(expressed) %>%
+  arrange(desc(abs_log2_fold_diff)) %>%
+  head(20) %>%
+  select(gene, log2_fold_diff, mean_cpm_isoform, mean_cpm_gene) %>%
+  kable(digits = 3,
+        caption = "Table 2: Top 20 genes with largest expression differences (Analysis 1)",
+        col.names = c("Gene", "log2(Isoform/Gene)", "Mean CPM (Isoform)", "Mean CPM (Gene)"))
+```
+
+These genes show the largest discrepancies between quantification methods. Positive log2 fold differences indicate higher expression in isoform-aggregated data; negative values indicate higher expression in direct gene-level data.
+
+## Gene Length Effects
+
+```{r gene-length-analysis}
+# Identify dominant isoform for each gene
+# Use mean expression across all samples to determine dominant isoform
+
+# Get isoform-level expression data
+iso_cpm <- cpm(dge_isoform, log = FALSE)
+
+# Filter to isoforms with valid gene IDs and not fusion transcripts
+gene_ids <- dge_isoform$genes$gene_id_ens115_sqanti
+has_gene_id <- !is.na(gene_ids) & gene_ids != "" & gene_ids != "NA"
+is_fusion <- grepl("_ENSG", gene_ids, fixed = TRUE)
+keep_tx <- has_gene_id & !is_fusion
+
+# Strip version numbers and get filtered data
+gene_ids_clean <- sub("\\.\\d+$", "", gene_ids[keep_tx])
+iso_cpm_filtered <- iso_cpm[keep_tx, ]
+iso_lengths <- dge_isoform$genes$length[keep_tx]
+
+# Calculate mean expression per isoform across samples
+mean_iso_expr <- rowMeans(iso_cpm_filtered)
+
+# Create data frame with isoform info
+iso_df <- data.frame(
+  txid = rownames(iso_cpm_filtered),
+  gene_id = gene_ids_clean,
+  length = iso_lengths,
+  mean_expr = mean_iso_expr,
+  stringsAsFactors = FALSE
+)
+
+# Remove isoforms without length information
+iso_df <- iso_df[!is.na(iso_df$length), ]
+
+# Identify dominant isoform per gene (highest mean expression)
+dominant_isoforms <- iso_df %>%
+  group_by(gene_id) %>%
+  arrange(desc(mean_expr)) %>%
+  dplyr::slice(1) %>%
+  ungroup() %>%
+  select(gene_id, dominant_length = length, dominant_expr = mean_expr)
+
+cat("Identified dominant isoforms for", nrow(dominant_isoforms), "genes\n")
+cat("Gene length range:", min(dominant_isoforms$dominant_length), "-",
+    max(dominant_isoforms$dominant_length), "bp\n")
+cat("Median gene length:", median(dominant_isoforms$dominant_length), "bp\n")
+
+# Merge with comparison data
+comp_df_length <- comp_df %>%
+  left_join(dominant_isoforms, by = c("gene" = "gene_id")) %>%
+  filter(!is.na(dominant_length), expressed)
+
+cat("\nGenes with length info and expressed:", nrow(comp_df_length), "\n")
+
+# Analyze relationship between length and discrepancy
+cor_length_discrepancy <- cor(comp_df_length$dominant_length,
+                               comp_df_length$abs_log2_fold_diff,
+                               method = "spearman")
+cat("Spearman correlation between gene length and absolute fold difference:",
+    round(cor_length_discrepancy, 4), "\n")
+
+# Bin genes by length quartiles
+comp_df_length <- comp_df_length %>%
+  mutate(length_bin = cut(dominant_length,
+                          breaks = quantile(dominant_length, probs = c(0, 0.25, 0.5, 0.75, 1)),
+                          labels = c("Q1 (shortest)", "Q2", "Q3", "Q4 (longest)"),
+                          include.lowest = TRUE))
+
+# Calculate statistics by length bin
+length_stats <- comp_df_length %>%
+  group_by(length_bin) %>%
+  summarise(
+    n_genes = n(),
+    median_length = median(dominant_length),
+    median_abs_fold_diff = median(abs_log2_fold_diff),
+    pct_discrepant = 100 * sum(discrepant) / n(),
+    .groups = "drop"
+  )
+
+cat("\n")
+print(kable(length_stats, digits = 2,
+            caption = "Table 4: Gene length effects on quantification concordance",
+            col.names = c("Length Quartile", "N Genes", "Median Length (bp)",
+                         "Median |log2FC|", "% Discrepant")))
+```
+
+**Gene length analysis:**
+
+Dominant isoform lengths were identified for **`r nrow(comp_df_length)`** expressed genes. The Spearman correlation between gene length and absolute fold difference is **`r round(cor_length_discrepancy, 3)`**, suggesting `r if(abs(cor_length_discrepancy) > 0.1) "a relationship" else "minimal relationship"` between gene length and quantification discrepancy.
+
+```{r length-effect-scatter, fig.width=8, fig.height=6}
+# Scatter plot: gene length vs discrepancy
+ggplot(comp_df_length, aes(x = dominant_length, y = abs_log2_fold_diff)) +
+  geom_point(alpha = 0.3, size = 1, color = "steelblue") +
+  geom_smooth(method = "loess", color = "coral2", se = TRUE) +
+  scale_x_log10() +
+  labs(x = "Gene Length (bp, log scale)",
+       y = "Absolute log2 Fold Difference",
+       title = "Figure 5A: Gene Length vs Quantification Discrepancy (Analysis 1)") +
+  theme_bw(base_size = 12)
+```
+
+```{r length-effect-boxplot, fig.width=8, fig.height=6}
+# Boxplot: discrepancy by length quartile
+ggplot(comp_df_length, aes(x = length_bin, y = abs_log2_fold_diff)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.6, outlier.alpha = 0.3) +
+  labs(x = "Gene Length Quartile",
+       y = "Absolute log2 Fold Difference",
+       title = "Figure 5B: Quantification Discrepancy by Length Quartile (Analysis 1)") +
+  theme_bw(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+The analysis shows `r if(abs(cor_length_discrepancy) > 0.1) paste0("that ", if(cor_length_discrepancy > 0) "longer" else "shorter", " genes tend to have larger discrepancies") else "minimal systematic effect of gene length on quantification concordance"`.
+
+---
+
+# Scatter Plot: Mean Expression
+
+```{r scatter-plot, fig.width=8, fig.height=8}
+# Prepare data for plotting
+plot_df <- comp_df %>%
+  mutate(category = case_when(
+    discrepant ~ "Discrepant (>2-fold)",
+    TRUE ~ "Concordant"
+  ))
+
+# Create scatter plot
+ggplot(plot_df, aes(x = mean_cpm_gene, y = mean_cpm_isoform, color = category)) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  scale_x_log10(labels = scales::comma) +
+  scale_y_log10(labels = scales::comma) +
+  scale_color_manual(values = c("Concordant" = "steelblue",
+                                 "Discrepant (>2-fold)" = "coral2")) +
+  labs(x = "Mean CPM (Direct Gene-Level)",
+       y = "Mean CPM (Isoform-Aggregated)",
+       title = "Figure 1: Comparison of Gene-Level Expression Quantifications (Analysis 1)",
+       subtitle = paste0("Spearman r = ", round(results1$overall_correlations["spearman"], 3)),
+       color = "Category") +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "top",
+        aspect.ratio = 1)
+```
+
+The scatter plot shows overall concordance between quantification methods on the original CPM scale. Discrepant genes (coral points) deviate from the diagonal unity line.
+
+## Scatter Plot: Log2-Transformed Expression
+
+```{r scatter-plot-log2, fig.width=8, fig.height=8}
+# Prepare data with log2-transformed values
+# These are the same values used for Pearson correlation calculation
+plot_df_log2 <- comp_df %>%
+  mutate(
+    log2_cpm_gene = log2(mean_cpm_gene + 1),
+    log2_cpm_isoform = log2(mean_cpm_isoform + 1),
+    category = case_when(
+      discrepant ~ "Discrepant (>2-fold)",
+      TRUE ~ "Concordant"
+    )
+  )
+
+# Create scatter plot with log2-transformed data
+ggplot(plot_df_log2, aes(x = log2_cpm_gene, y = log2_cpm_isoform, color = category)) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  scale_color_manual(values = c("Concordant" = "steelblue",
+                                 "Discrepant (>2-fold)" = "coral2")) +
+  labs(x = "log2(CPM + 1) - Direct Gene-Level",
+       y = "log2(CPM + 1) - Isoform-Aggregated",
+       title = "Figure 2: Log2-Transformed Expression Comparison (Analysis 1)",
+       subtitle = paste0("Pearson r = ", round(results1$overall_correlations["pearson_log"], 3),
+                        " (same data used for correlation)"),
+       color = "Category") +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "top",
+        aspect.ratio = 1)
+```
+
+This plot shows the same comparison using log2-transformed CPM values, which is the data used for calculating the Pearson correlation (r = `r round(results1$overall_correlations["pearson_log"], 3)`). The linear scale reveals the correlation structure more clearly than the log-log plot.
+
+---
+
+# MA Plot: Difference vs Average
+
+```{r ma-plot, fig.width=10, fig.height=6}
+# Prepare data for MA plot
+ma_df <- comp_df %>%
+  mutate(
+    A = 0.5 * (log2(mean_cpm_isoform + 1) + log2(mean_cpm_gene + 1)),
+    M = log2_fold_diff,
+    category = case_when(
+      discrepant ~ "Discrepant (>2-fold)",
+      TRUE ~ "Concordant"
+    )
+  )
+
+# Create MA plot
+ggplot(ma_df, aes(x = A, y = M, color = category)) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = c(-1, 1), linetype = "dotted", color = "red") +
+  scale_color_manual(values = c("Concordant" = "steelblue",
+                                 "Discrepant (>2-fold)" = "coral2")) +
+  labs(x = "Average log2(CPM + 1)",
+       y = "log2(Isoform / Gene)",
+       title = "Figure 3: MA Plot - Difference vs Average Expression (Analysis 1)",
+       subtitle = "Dotted lines indicate ±2-fold difference",
+       color = "Category") +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "top")
+```
+
+The MA plot visualizes fold differences as a function of average expression level. Most genes cluster around M=0 (no difference), with discrepant genes showing systematic deviations.
+
+---
+
+# Sample Correlation Heatmap
+
+```{r correlation-heatmap, fig.width=10, fig.height=4}
+# Extract sample correlations by cell type and treatment
+cor_plot_df <- results1$sample_correlations %>%
+  select(sample, ct, treatment, spearman) %>%
+  arrange(ct, treatment)
+
+# Create bar plot
+ggplot(cor_plot_df, aes(x = reorder(sample, spearman), y = spearman, fill = ct)) +
+  geom_col() +
+  geom_hline(yintercept = mean(cor_plot_df$spearman),
+             linetype = "dashed", color = "red") +
+  facet_wrap(~treatment, scales = "free_x") +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(x = "Sample",
+       y = "Spearman Correlation",
+       title = "Figure 4: Per-Sample Correlations by Cell Type and Treatment (Analysis 1)",
+       subtitle = paste0("Red line indicates mean correlation (",
+                        round(mean(cor_plot_df$spearman), 3), ")"),
+       fill = "Cell Type") +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "right")
+```
+
+Per-sample correlations show `r if(max(cor_plot_df$spearman) - min(cor_plot_df$spearman) < 0.05) "consistent" else "variable"` concordance across cell types and treatments.
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+# Analysis 2: Length-Corrected Gene Counts (Salmon)
+
+Compare isoform-aggregated counts with length-corrected gene-level quantifications from Salmon. Salmon quantifications account for effective gene length, which may reduce discrepancies caused by isoform length differences.
+
+## Load Salmon Data
+
+```{r load-salmon-data}
+# Load Salmon SummarizedExperiment
+se_salmon <- readRDS("../data/salmon.merged.gene_counts_scaled.rds")
+
+cat("Loaded Salmon SummarizedExperiment:\n")
+cat("  Dimensions:", nrow(se_salmon), "genes x", ncol(se_salmon), "samples\n")
+cat("  Assays:", paste(assayNames(se_salmon), collapse = ", "), "\n")
+```
+
+## Run Comparison with Salmon Data
+
+```{r run-comparison-salmon}
+results2 <- compare_gene_expression(
+  dge_isoform = dge_isoform,
+  gene_data = se_salmon,
+  gene_id_col = gene_id_col,
+  output_prefix = "comparison_nofilter_salmon"
+)
+```
+
+## Salmon Results
+
+### Overall Correlation
+
+```{r overall-correlation-salmon}
+cat("Overall correlation (Salmon length-corrected):\n")
+cat("  Spearman:", round(results2$overall_correlations["spearman"], 4), "\n")
+cat("  Pearson [log2(CPM+1)]:", round(results2$overall_correlations["pearson_log"], 4), "\n")
+```
+
+**Salmon length-corrected correlations:**
+
+- **Spearman**: `r round(results2$overall_correlations["spearman"], 3)`
+- **Pearson on log2(CPM+1)**: `r round(results2$overall_correlations["pearson_log"], 3)`
+
+### Comparison with Analysis 1
+
+```{r comparison-analysis1-vs-2}
+comp_table <- data.frame(
+  Method = c("Standard gene counts", "Salmon length-corrected"),
+  Spearman = c(results1$overall_correlations["spearman"],
+               results2$overall_correlations["spearman"]),
+  Pearson_log = c(results1$overall_correlations["pearson_log"],
+                  results2$overall_correlations["pearson_log"])
+)
+
+kable(comp_table, digits = 4,
+      caption = "Table 3: Comparison of correlation metrics between standard and length-corrected quantifications",
+      col.names = c("Method", "Spearman", "Pearson [log2(CPM+1)]"))
+```
+
+Length correction `r if(results2$overall_correlations["pearson_log"] > results1$overall_correlations["pearson_log"]) "improves" else "does not substantially improve"` the log-transformed Pearson correlation by `r round(abs(results2$overall_correlations["pearson_log"] - results1$overall_correlations["pearson_log"]), 3)`.
+
+### Scatter Plot: Salmon vs Isoform-Aggregated
+
+```{r scatter-plot-salmon, fig.width=8, fig.height=8}
+# Prepare data for plotting
+comp_df2 <- results2$comparison_df
+plot_df2 <- comp_df2 %>%
+  mutate(category = case_when(
+    discrepant ~ "Discrepant (>2-fold)",
+    TRUE ~ "Concordant"
+  ))
+
+# Create scatter plot
+ggplot(plot_df2, aes(x = mean_cpm_gene, y = mean_cpm_isoform, color = category)) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  scale_x_log10(labels = scales::comma) +
+  scale_y_log10(labels = scales::comma) +
+  scale_color_manual(values = c("Concordant" = "steelblue",
+                                 "Discrepant (>2-fold)" = "coral2")) +
+  labs(x = "Mean CPM (Salmon Length-Corrected)",
+       y = "Mean CPM (Isoform-Aggregated)",
+       title = "Figure 6: Comparison with Salmon Length-Corrected Quantifications (Analysis 2)",
+       subtitle = paste0("Spearman r = ", round(results2$overall_correlations["spearman"], 3),
+                        ", Pearson [log2] r = ", round(results2$overall_correlations["pearson_log"], 3)),
+       color = "Category") +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "top",
+        aspect.ratio = 1)
+```
+
+The scatter plot shows the comparison between Salmon length-corrected quantifications and isoform-aggregated counts. Salmon quantifications account for effective gene length but show slightly lower correlation compared to standard gene counts (Analysis 1).
+
+### Scatter Plot: Log2-Transformed Expression (Salmon)
+
+```{r scatter-plot-salmon-log2, fig.width=8, fig.height=8}
+# Prepare data with log2-transformed values
+# These are the same values used for Pearson correlation calculation
+plot_df2_log2 <- comp_df2 %>%
+  mutate(
+    log2_cpm_gene = log2(mean_cpm_gene + 1),
+    log2_cpm_isoform = log2(mean_cpm_isoform + 1),
+    category = case_when(
+      discrepant ~ "Discrepant (>2-fold)",
+      TRUE ~ "Concordant"
+    )
+  )
+
+# Create scatter plot with log2-transformed data
+ggplot(plot_df2_log2, aes(x = log2_cpm_gene, y = log2_cpm_isoform, color = category)) +
+  geom_point(alpha = 0.4, size = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  scale_color_manual(values = c("Concordant" = "steelblue",
+                                 "Discrepant (>2-fold)" = "coral2")) +
+  labs(x = "log2(CPM + 1) - Salmon Length-Corrected",
+       y = "log2(CPM + 1) - Isoform-Aggregated",
+       title = "Figure 7: Log2-Transformed Expression Comparison - Salmon (Analysis 2)",
+       subtitle = paste0("Pearson r = ", round(results2$overall_correlations["pearson_log"], 3),
+                        " (same data used for correlation)"),
+       color = "Category") +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "top",
+        aspect.ratio = 1)
+```
+
+This plot shows the Salmon comparison using log2-transformed CPM values, which is the data used for calculating the Pearson correlation (r = `r round(results2$overall_correlations["pearson_log"], 3)`). The linear scale reveals the correlation structure more clearly than the log-log plot.
