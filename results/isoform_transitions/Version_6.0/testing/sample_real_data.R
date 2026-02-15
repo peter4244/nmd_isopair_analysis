@@ -99,10 +99,11 @@ pairs_df <- bind_rows(pairs)
 
 cat(sprintf("  Created %d isoform pairs\n\n", nrow(pairs_df)))
 
-# Extract GTF records for selected genes
-cat("Step 6: Extracting GTF records for selected genes...\n")
+# Extract GTF records for selected ISOFORMS (not all isoforms in the gene)
+cat("Step 6: Extracting GTF records for selected isoform pairs...\n")
+selected_transcripts <- c(pairs_df$isoform_A, pairs_df$isoform_B)
 selected_gtf <- gtf %>%
-  filter(gene_id %in% sampled_genes$gene_id)
+  filter(transcript_id %in% selected_transcripts)
 
 cat(sprintf("  Extracted %s exon records\n\n", format(nrow(selected_gtf), big.mark = ",")))
 
@@ -110,13 +111,11 @@ cat(sprintf("  Extracted %s exon records\n\n", format(nrow(selected_gtf), big.ma
 cat("Step 7: Writing output files...\n")
 
 # Write GTF by reading original lines and filtering (preserves exact format)
-cat("  Extracting original GTF lines...\n")
+cat("  Extracting original GTF lines for selected pairs only...\n")
 gtf_lines <- readLines(sqanti_gtf)
 
-# Get all transcript IDs we want to keep
-keep_transcripts <- selected_gtf %>%
-  pull(transcript_id) %>%
-  unique()
+# Get transcript IDs for the pairs (should be exactly 2 per gene)
+keep_transcripts <- selected_transcripts
 
 # Filter lines that contain any of our transcript IDs
 selected_lines <- gtf_lines[grepl(paste0("transcript_id \"(",
