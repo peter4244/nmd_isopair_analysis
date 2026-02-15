@@ -547,7 +547,11 @@ compare_introns_for_matched_exons <- function(exons_a, exons_b, matched, strand)
         if (internal_diff < SPLICE_SITE_THRESHOLD) {
           event <- if (internal_type == "donor") "A5SS" else "A3SS"
         } else {
-          event <- "Partial_IR"
+          # Partial_IR with direction: which end is shared?
+          # internal_type indicates which boundary differs
+          # donor differs → acceptor (5') shared, donor (3') extends → Partial_IR_5
+          # acceptor differs → donor (3') shared, acceptor (5') extends → Partial_IR_3
+          event <- if (internal_type == "donor") "Partial_IR_5" else "Partial_IR_3"
         }
       }
       # If internal boundary shared (internal_diff == 0) → no intronic event
@@ -609,12 +613,16 @@ compare_introns_for_matched_exons <- function(exons_a, exons_b, matched, strand)
   dplyr::bind_rows(results)
 }
 
-#' Classify intron difference as A5SS, A3SS, Partial_IR, or none
+#' Classify intron difference as A5SS, A3SS, Partial_IR_5, Partial_IR_3, or none
 #'
 #' @param donor_diff Difference in donor coordinates (bp)
 #' @param acceptor_diff Difference in acceptor coordinates (bp)
 #' @param strand Strand ("+" or "-")
 #' @return Character - event type
+#' @details
+#' Partial_IR direction labels:
+#'   - Partial_IR_5: 5' end shared, 3' end extends (acceptor differs)
+#'   - Partial_IR_3: 3' end shared, 5' end extends (donor differs)
 classify_intron_difference <- function(donor_diff, acceptor_diff, strand) {
   # No difference
   if (donor_diff == 0 && acceptor_diff == 0) {
@@ -623,20 +631,20 @@ classify_intron_difference <- function(donor_diff, acceptor_diff, strand) {
 
   # One boundary differs
   if (donor_diff > 0 && acceptor_diff == 0) {
-    # Donor differs, acceptor shared
+    # Donor differs, acceptor shared → acceptor (5') shared, donor (3') extends → Partial_IR_5
     if (donor_diff < SPLICE_SITE_THRESHOLD) {
       return("A5SS")
     } else {
-      return("Partial_IR")
+      return("Partial_IR_5")
     }
   }
 
   if (acceptor_diff > 0 && donor_diff == 0) {
-    # Acceptor differs, donor shared
+    # Acceptor differs, donor shared → donor (3') shared, acceptor (5') extends → Partial_IR_3
     if (acceptor_diff < SPLICE_SITE_THRESHOLD) {
       return("A3SS")
     } else {
-      return("Partial_IR")
+      return("Partial_IR_3")
     }
   }
 
@@ -644,7 +652,12 @@ classify_intron_difference <- function(donor_diff, acceptor_diff, strand) {
   if (donor_diff > 0 && acceptor_diff > 0) {
     # Check if either is large enough for Partial_IR
     if (donor_diff >= SPLICE_SITE_THRESHOLD || acceptor_diff >= SPLICE_SITE_THRESHOLD) {
-      return("Partial_IR")
+      # Determine primary direction based on which diff is larger
+      if (donor_diff > acceptor_diff) {
+        return("Partial_IR_5")  # Donor change is larger (donor/3' extends more)
+      } else {
+        return("Partial_IR_3")  # Acceptor change is larger (acceptor/5' extends more)
+      }
     } else {
       # Both are small differences - could be both A5SS and A3SS
       # For now, classify as "Dual_splice" to indicate both boundaries changed
@@ -719,6 +732,8 @@ detect_splicing_events_v2 <- function(exons_a, exons_b, strand) {
     n_a5ss = 0,
     n_a3ss = 0,
     n_partial_ir = 0,
+    n_partial_ir_5 = 0,
+    n_partial_ir_3 = 0,
     n_se = 0,
     ir_details = list(),
     intron_details = tibble::tibble(),
@@ -759,7 +774,9 @@ detect_splicing_events_v2 <- function(exons_a, exons_b, strand) {
   if (nrow(intron_comparisons) > 0) {
     events$n_a5ss <- sum(intron_comparisons$event == "A5SS")
     events$n_a3ss <- sum(intron_comparisons$event == "A3SS")
-    events$n_partial_ir <- sum(intron_comparisons$event == "Partial_IR")
+    events$n_partial_ir <- sum(grepl("^Partial_IR", intron_comparisons$event))
+    events$n_partial_ir_5 <- sum(intron_comparisons$event == "Partial_IR_5")
+    events$n_partial_ir_3 <- sum(intron_comparisons$event == "Partial_IR_3")
   }
 
   # STEP 5: Identify skipped exons (SE)
@@ -961,7 +978,8 @@ summarize_events_v2 <- function(events) {
   if (events$n_se > 0) event_list <- c(event_list, "SE")
   if (events$n_a5ss > 0) event_list <- c(event_list, "A5SS")
   if (events$n_a3ss > 0) event_list <- c(event_list, "A3SS")
-  if (events$n_partial_ir > 0) event_list <- c(event_list, "Partial_IR")
+  if (events$n_partial_ir_5 > 0) event_list <- c(event_list, "Partial_IR_5")
+  if (events$n_partial_ir_3 > 0) event_list <- c(event_list, "Partial_IR_3")
   if (events$n_ir > 0) event_list <- c(event_list, "IR")
 
   if (length(event_list) == 0) return("none")
