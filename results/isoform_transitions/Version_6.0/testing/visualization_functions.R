@@ -380,8 +380,17 @@ plot_gene_structure <- function(gene_name,
   }
 
   # Styling
+  # Generate enough colors for all transcripts
+  n_transcripts <- length(unique(plot_data$transcript_id))
+  colors <- if (n_transcripts <= 2) {
+    c("#7fc97f", "#beaed4")
+  } else {
+    # Use a color palette that can handle many colors
+    scales::hue_pal()(n_transcripts)
+  }
+
   p <- p +
-    scale_fill_manual(values = c("#7fc97f", "#beaed4")) +
+    scale_fill_manual(values = colors) +
     scale_y_continuous(breaks = NULL) +
     coord_cartesian(xlim = c(x_min - x_buffer, x_max + x_buffer)) +
     labs(
