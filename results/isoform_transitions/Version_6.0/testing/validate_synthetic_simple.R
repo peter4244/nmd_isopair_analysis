@@ -397,15 +397,27 @@ for (i in seq_len(nrow(expected))) {
     }
   }
 
-  # IR
+  # IR (monoexonic vs multi-exonic spanning)
   for (j in seq_len(nrow(struct_b_data))) {
     if (detect_ir_simple(struct_b_data[j, ], struct_a_data)) {
       n_ir <- n_ir + 1
+      # Comparison isoform (B) has the retained intron = GAIN
+      event_details[[length(event_details) + 1]] <- list(
+        type = "IR",
+        direction = "GAIN",
+        bp_diff = NA
+      )
     }
   }
   for (k in seq_len(nrow(struct_a_data))) {
     if (detect_ir_simple(struct_a_data[k, ], struct_b_data)) {
       n_ir <- n_ir + 1
+      # Dominant isoform (A) has the retained intron = comparison LOSS
+      event_details[[length(event_details) + 1]] <- list(
+        type = "IR",
+        direction = "LOSS",
+        bp_diff = NA
+      )
     }
   }
 

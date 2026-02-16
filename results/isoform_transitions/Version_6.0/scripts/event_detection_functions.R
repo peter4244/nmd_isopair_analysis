@@ -472,10 +472,22 @@ check_boundary_within_exon <- function(comp_boundary, dom_boundary,
       }
 
       if (overlaps_flanking) {
-        # Sub-case B1: Extends past flanking exon → IR
-        event_type <- "IR"
-        bp_diff <- abs(comp_boundary - dom_boundary)
-        direction <- "GAIN"
+        # Sub-case B1: Extends into flanking exon
+        # Check distance first - small differences are splice site variations, not IR
+        distance <- abs(comp_boundary - dom_boundary)
+        bp_diff <- distance
+
+        if (distance < SPLICE_SITE_THRESHOLD) {
+          # <100bp: Treat as splice site variation even if it extends into flanking
+          # This is an A5SS/A3SS with GAIN, not IR
+          # Positional 5' = acceptor (A3SS), Positional 3' = donor (A5SS)
+          event_type <- if (is_5prime) "A3SS" else "A5SS"
+          direction <- "GAIN"
+        } else {
+          # ≥100bp: True intron retention
+          event_type <- "IR"
+          direction <- "GAIN"
+        }
       } else {
         # Sub-case B2: Extends beyond dom but not to flanking
         # Calculate distance between boundaries
