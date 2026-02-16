@@ -195,6 +195,17 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
   if (shares_acceptor && differs_donor) {
     # Acceptor shared, donor differs
     bp_diff <- donor_diff
+
+    # Compute direction: which isoform is longer?
+    # Donor differs means one exon extends further at the donor boundary
+    if (strand == "+") {
+      # Plus: donor = exon end (higher coordinate = extends further)
+      direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+    } else {
+      # Minus: donor = exon start (lower coordinate = extends further)
+      direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+    }
+
     if (bp_diff < SPLICE_SITE_THRESHOLD) {
       event_type <- "A5SS"
     } else {
@@ -222,6 +233,17 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
   } else if (shares_donor && differs_acceptor) {
     # Donor shared, acceptor differs
     bp_diff <- acceptor_diff
+
+    # Compute direction: which isoform is longer?
+    # Acceptor differs means one exon extends further at the acceptor boundary
+    if (strand == "+") {
+      # Plus: acceptor = exon start (lower coordinate = extends further)
+      direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+    } else {
+      # Minus: acceptor = exon end (higher coordinate = extends further)
+      direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+    }
+
     if (bp_diff < SPLICE_SITE_THRESHOLD) {
       event_type <- "A3SS"
     } else {
