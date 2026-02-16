@@ -148,13 +148,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
     # Missing terminal exons (only for LOSS)
     missing_exons <- ""
     if (direction == "LOSS") {
-      # Need to extract exonic regions from dominant that are missing in comparator
-      # This is simplified - full implementation would walk through all 5' exons
-      if (strand == "+") {
-        missing_exons <- sprintf("%d-%d", dom_tss, comp_tss - 1)
-      } else {
-        missing_exons <- sprintf("%d-%d", comp_tss + 1, dom_tss)
-      }
+      # Use core function to properly walk exons and record only exonic regions
+      missing_exons <- compute_missing_terminal_exons_tss(dom_ordered, comp_ordered, strand)
     }
 
     all_events[[length(all_events) + 1]] <- tibble(
@@ -194,11 +189,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
 
     missing_exons <- ""
     if (direction == "LOSS") {
-      if (strand == "+") {
-        missing_exons <- sprintf("%d-%d", comp_tes + 1, dom_tes)
-      } else {
-        missing_exons <- sprintf("%d-%d", dom_tes, comp_tes - 1)
-      }
+      # Use core function to properly walk exons and record only exonic regions
+      missing_exons <- compute_missing_terminal_exons_tes(dom_ordered, comp_ordered, strand)
     }
 
     all_events[[length(all_events) + 1]] <- tibble(
@@ -253,22 +245,80 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       )
 
       if (event_result$event_type != "none") {
-        # Extract coordinates based on event type
-        # This is simplified - full implementation would extract actual boundaries
-        if (strand == "+") {
-          five_prime <- min(dom_exon$exon_start, comp_exon$exon_start)
-          three_prime <- max(dom_exon$exon_end, comp_exon$exon_end)
+        # Compute precise event coordinates: the actual exonic region that differs
+        # five_prime and three_prime represent the gained/lost region
+
+        event_type <- event_result$event_type
+        direction <- if (!is.null(event_result$direction)) event_result$direction else "-"
+
+        # Compute coordinates based on event type and direction
+        if (event_type %in% c("A3SS", "Partial_IR_3")) {
+          # Acceptor differs (3' splice site)
+          if (strand == "+") {
+            # Plus: acceptor = exon start
+            if (direction == "LOSS") {
+              # Comparator lost sequence: region from dom_start to comp_start-1
+              five_prime <- dom_exon$exon_start
+              three_prime <- comp_exon$exon_start - 1
+            } else {
+              # Comparator gained sequence: region from comp_start to dom_start-1
+              five_prime <- comp_exon$exon_start
+              three_prime <- dom_exon$exon_start - 1
+            }
+          } else {
+            # Minus: acceptor = exon end
+            if (direction == "LOSS") {
+              # Comparator lost sequence: region from comp_end+1 to dom_end
+              five_prime <- dom_exon$exon_end
+              three_prime <- comp_exon$exon_end + 1
+            } else {
+              # Comparator gained sequence: region from dom_end+1 to comp_end
+              five_prime <- comp_exon$exon_end
+              three_prime <- dom_exon$exon_end + 1
+            }
+          }
+        } else if (event_type %in% c("A5SS", "Partial_IR_5")) {
+          # Donor differs (5' splice site)
+          if (strand == "+") {
+            # Plus: donor = exon end
+            if (direction == "LOSS") {
+              # Comparator lost sequence: region from comp_end+1 to dom_end
+              five_prime <- comp_exon$exon_end + 1
+              three_prime <- dom_exon$exon_end
+            } else {
+              # Comparator gained sequence: region from dom_end+1 to comp_end
+              five_prime <- dom_exon$exon_end + 1
+              three_prime <- comp_exon$exon_end
+            }
+          } else {
+            # Minus: donor = exon start
+            if (direction == "LOSS") {
+              # Comparator lost sequence: region from dom_start to comp_start-1
+              five_prime <- comp_exon$exon_start
+              three_prime <- dom_exon$exon_start
+            } else {
+              # Comparator gained sequence: region from comp_start to dom_start-1
+              five_prime <- dom_exon$exon_start
+              three_prime <- comp_exon$exon_start
+            }
+          }
         } else {
-          five_prime <- max(dom_exon$exon_end, comp_exon$exon_end)
-          three_prime <- min(dom_exon$exon_start, comp_exon$exon_start)
+          # For other event types (Dual_boundary, etc.), use union as before
+          if (strand == "+") {
+            five_prime <- min(dom_exon$exon_start, comp_exon$exon_start)
+            three_prime <- max(dom_exon$exon_end, comp_exon$exon_end)
+          } else {
+            five_prime <- max(dom_exon$exon_end, comp_exon$exon_end)
+            three_prime <- min(dom_exon$exon_start, comp_exon$exon_start)
+          }
         }
 
         all_events[[length(all_events) + 1]] <- tibble(
           gene_id = gene_id,
           dominant_transcript_id = dominant_tid,
           comparator_transcript_id = comparator_tid,
-          event_type = event_result$event_type,
-          direction = if (!is.null(event_result$direction)) event_result$direction else "-",
+          event_type = event_type,
+          direction = direction,
           chr = dom_exon$chr,
           five_prime = five_prime,
           three_prime = three_prime,

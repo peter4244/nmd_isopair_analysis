@@ -178,7 +178,124 @@ j_4            chr1    1000     2200    2200       1000       +         circular
 ---
 
 ## 2. Event Detection
-*(To be documented)*
+
+### 2.1 Workflow Organization
+
+Event detection is organized by chromosome for computational efficiency:
+
+1. **Process genes chromosome-by-chromosome**
+2. **Preload union exons** for current chromosome into memory
+3. **For each gene:**
+   - Compare dominant isoform to comparator isoform(s)
+   - Detect splicing events
+   - Map events to genomic coordinates
+   - Identify missing terminal exons
+
+### 2.2 Event File Format
+
+**Format:** Tab-separated file with detected splicing events
+
+**Columns:**
+```
+gene_id                    Gene identifier
+isoform_dominant           Dominant isoform ID (reference)
+isoform_comparator         Comparison isoform ID
+event_type                 A5SS, A3SS, Partial_IR_5, Partial_IR_3, IR, SE, Alt_TSS, Alt_TES
+direction                  GAIN or LOSS
+chr                        Chromosome
+5_prime                    1-based position of biological 5' boundary
+3_prime                    1-based position of biological 3' boundary
+strand                     + or -
+bp_diff                    Size difference in bp (for boundary events)
+missing_terminal_exons     Comma-separated exonic coordinate ranges
+```
+
+### 2.3 Event Type Specifications
+
+**5_prime and 3_prime usage by event type:**
+
+| Event Type | 5_prime | 3_prime | Notes |
+|------------|---------|---------|-------|
+| A5SS | Donor position | Shared acceptor | Donor differs, **<100bp** |
+| A3SS | Shared donor | Acceptor position | Acceptor differs, **<100bp** |
+| Partial_IR_5 | Donor position | Shared acceptor | **≥100bp** at donor |
+| Partial_IR_3 | Shared donor | Acceptor position | **≥100bp** at acceptor |
+| IR | 5' boundary | 3' boundary | **Boundaries of IR event (not always exact intron boundaries)** |
+| SE | Skipped exon start | Skipped exon end | Coordinates of missing exon |
+| Alt_TSS | **5' most TSS** | **3' most TSS** | Use GAIN/LOSS + strand to infer which is dominant vs comparator |
+| Alt_TES | **5' most TES** | **3' most TES** | Use GAIN/LOSS + strand to infer which is dominant vs comparator |
+
+### 2.4 Direction Interpretation
+
+**GAIN:** Comparator isoform has more sequence than dominant
+**LOSS:** Comparator isoform has less sequence than dominant (dominant is longer)
+
+**All event types include direction:**
+- Boundary events (A5SS, A3SS, Partial_IR, IR) - which isoform extends further
+- Terminal events (Alt_TSS, Alt_TES) - which isoform has longer terminal region
+- SE events - marked as "-" (no direction)
+
+### 2.5 Alt_TSS and Alt_TES Coordinate Interpretation
+
+For terminal boundary events, the 5_prime and 3_prime positions represent the transcriptionally 5' and 3' boundaries, with one from the dominant and one from the comparator.
+
+**Inference logic:**
+- **Plus strand:** 5_prime = lower genomic coordinate, 3_prime = higher genomic coordinate
+- **Minus strand:** 5_prime = higher genomic coordinate, 3_prime = lower genomic coordinate
+- **LOSS direction:** Dominant extends beyond comparator → missing_terminal_exons populated
+- **GAIN direction:** Comparator extends beyond dominant → missing_terminal_exons empty
+
+**Examples:**
+
+*Plus strand, Alt_TSS with LOSS (dominant has longer 5' end):*
+```
+Event: Alt_TSS  LOSS  chr1  1000  1100  +  100  missing: "1000-1100"
+  → 5_prime (1000) = dominant TSS (extends further 5')
+  → 3_prime (1100) = comparator TSS
+  → Comparator is missing exonic region 1000-1100
+```
+
+*Minus strand, Alt_TES with LOSS (dominant has longer 3' end):*
+```
+Event: Alt_TES  LOSS  chr1  2100  2000  -  100  missing: "2000-2100"
+  → 5_prime (2100) = comparator TES
+  → 3_prime (2000) = dominant TES (extends further 3')
+  → Comparator is missing exonic region 2000-2100
+```
+
+### 2.6 Missing Terminal Exons
+
+The `missing_terminal_exons` field captures exonic regions present in the dominant isoform but absent from the comparator due to Alt_TSS or Alt_TES events.
+
+**Format:** Comma-separated coordinate ranges
+- Example: `"1000-1200,1500-1700,2000-2150"`
+
+**Key properties:**
+- Represents **exonic regions only** (not introns)
+- May include **multiple non-contiguous regions** separated by introns
+- Each coordinate range is a contiguous exonic segment
+- Empty for GAIN direction (comparator is longer)
+- Empty for non-terminal events (A5SS, A3SS, IR, SE, etc.)
+
+**Example - Multiple missing exons:**
+```
+Dominant:   [==exon1==] --intron-- [==exon2==] --intron-- [==exon3==]...
+            1000-1200               1500-1700               2000-2200
+
+Comparator:                                     [====exon1====]...
+                                                2150-2400
+
+Missing terminal exons: "1000-1200,1500-1700,2000-2150"
+  → Entire exon 1 (1000-1200)
+  → Entire exon 2 (1500-1700)
+  → Partial exon 3 (2000-2150)
+  → Introns NOT included (1200-1500, 1700-2000)
+```
+
+**Reconstruction usage:**
+To reconstruct the dominant isoform from the comparator, these exonic regions must be added back at the appropriate terminal position.
+
+---
 
 ## 3. Reconstruction and Validation
 *(To be documented)*

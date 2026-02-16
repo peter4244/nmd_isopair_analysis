@@ -134,6 +134,148 @@ detect_tes_change <- function(exon_dom, exon_non_dom, strand, tolerance = TES_TO
   return(tes_diff > tolerance)
 }
 
+#' Compute missing terminal exons for Alt_TSS events
+#'
+#' When dominant has longer 5' end (LOSS direction), computes the exonic regions
+#' from dominant that are missing in comparator. Returns only exonic regions
+#' (not introns) as comma-separated coordinate ranges.
+#'
+#' @param dom_exons Dominant exons (ordered TSS → TES)
+#' @param comp_exons Comparator exons (ordered TSS → TES)
+#' @param strand Gene strand
+#' @return String: comma-separated ranges like "1000-1200,1500-1700,2000-2150"
+compute_missing_terminal_exons_tss <- function(dom_exons, comp_exons, strand) {
+  # Get TSS positions
+  if (strand == "+") {
+    dom_tss <- dom_exons$exon_start[1]
+    comp_tss <- comp_exons$exon_start[1]
+    # Dominant extends further 5' (lower coordinates)
+    if (dom_tss >= comp_tss) return("")  # No missing region
+    cutoff <- comp_tss  # Everything before this is missing
+  } else {
+    dom_tss <- dom_exons$exon_end[1]
+    comp_tss <- comp_exons$exon_end[1]
+    # Dominant extends further 5' (higher coordinates)
+    if (dom_tss <= comp_tss) return("")  # No missing region
+    cutoff <- comp_tss  # Everything after this is missing
+  }
+
+  # Walk through dominant exons from TSS, collect missing exonic regions
+  missing_ranges <- list()
+
+  for (i in seq_len(nrow(dom_exons))) {
+    exon <- dom_exons[i, ]
+
+    if (strand == "+") {
+      # Plus: walk from low to high coordinates
+      if (exon$exon_end < cutoff) {
+        # Entire exon is missing
+        missing_ranges[[length(missing_ranges) + 1]] <- sprintf("%d-%d", exon$exon_start, exon$exon_end)
+      } else if (exon$exon_start < cutoff && exon$exon_end >= cutoff) {
+        # Partial exon missing (5' portion)
+        missing_ranges[[length(missing_ranges) + 1]] <- sprintf("%d-%d", exon$exon_start, cutoff - 1)
+        break  # Reached comparator TSS
+      } else {
+        # exon_start >= cutoff, no more missing exons
+        break
+      }
+    } else {
+      # Minus: walk from high to low coordinates
+      if (exon$exon_start > cutoff) {
+        # Entire exon is missing
+        missing_ranges[[length(missing_ranges) + 1]] <- sprintf("%d-%d", exon$exon_start, exon$exon_end)
+      } else if (exon$exon_start <= cutoff && exon$exon_end > cutoff) {
+        # Partial exon missing (5' portion)
+        missing_ranges[[length(missing_ranges) + 1]] <- sprintf("%d-%d", cutoff + 1, exon$exon_end)
+        break  # Reached comparator TSS
+      } else {
+        # exon_end <= cutoff, no more missing exons
+        break
+      }
+    }
+  }
+
+  # Return comma-separated ranges
+  if (length(missing_ranges) > 0) {
+    return(paste(missing_ranges, collapse = ","))
+  } else {
+    return("")
+  }
+}
+
+#' Compute missing terminal exons for Alt_TES events
+#'
+#' When dominant has longer 3' end (LOSS direction), computes the exonic regions
+#' from dominant that are missing in comparator. Returns only exonic regions
+#' (not introns) as comma-separated coordinate ranges.
+#'
+#' @param dom_exons Dominant exons (ordered TSS → TES)
+#' @param comp_exons Comparator exons (ordered TSS → TES)
+#' @param strand Gene strand
+#' @return String: comma-separated ranges like "2150-2300,2500-2700,3000-3200"
+compute_missing_terminal_exons_tes <- function(dom_exons, comp_exons, strand) {
+  # Get TES positions
+  last_dom_idx <- nrow(dom_exons)
+  last_comp_idx <- nrow(comp_exons)
+
+  if (strand == "+") {
+    dom_tes <- dom_exons$exon_end[last_dom_idx]
+    comp_tes <- comp_exons$exon_end[last_comp_idx]
+    # Dominant extends further 3' (higher coordinates)
+    if (dom_tes <= comp_tes) return("")  # No missing region
+    cutoff <- comp_tes  # Everything after this is missing
+  } else {
+    dom_tes <- dom_exons$exon_start[last_dom_idx]
+    comp_tes <- comp_exons$exon_start[last_comp_idx]
+    # Dominant extends further 3' (lower coordinates)
+    if (dom_tes >= comp_tes) return("")  # No missing region
+    cutoff <- comp_tes  # Everything before this is missing
+  }
+
+  # Walk through dominant exons from TES (backwards), collect missing exonic regions
+  missing_ranges <- list()
+
+  for (i in last_dom_idx:1) {
+    exon <- dom_exons[i, ]
+
+    if (strand == "+") {
+      # Plus: walk from high to low coordinates (backwards from TES)
+      if (exon$exon_start > cutoff) {
+        # Entire exon is missing
+        missing_ranges[[length(missing_ranges) + 1]] <- sprintf("%d-%d", exon$exon_start, exon$exon_end)
+      } else if (exon$exon_start <= cutoff && exon$exon_end > cutoff) {
+        # Partial exon missing (3' portion)
+        missing_ranges[[length(missing_ranges) + 1]] <- sprintf("%d-%d", cutoff + 1, exon$exon_end)
+        break  # Reached comparator TES
+      } else {
+        # exon_end <= cutoff, no more missing exons
+        break
+      }
+    } else {
+      # Minus: walk from low to high coordinates (backwards from TES)
+      if (exon$exon_end < cutoff) {
+        # Entire exon is missing
+        missing_ranges[[length(missing_ranges) + 1]] <- sprintf("%d-%d", exon$exon_start, exon$exon_end)
+      } else if (exon$exon_end >= cutoff && exon$exon_start < cutoff) {
+        # Partial exon missing (3' portion)
+        missing_ranges[[length(missing_ranges) + 1]] <- sprintf("%d-%d", exon$exon_start, cutoff - 1)
+        break  # Reached comparator TES
+      } else {
+        # exon_start >= cutoff, no more missing exons
+        break
+      }
+    }
+  }
+
+  # Reverse the list (we walked backwards) and return comma-separated ranges
+  if (length(missing_ranges) > 0) {
+    missing_ranges <- rev(missing_ranges)
+    return(paste(missing_ranges, collapse = ","))
+  } else {
+    return("")
+  }
+}
+
 #' Unified detection for shared-boundary and dual-boundary events
 #'
 #' Detects splicing events based on boundary comparisons:

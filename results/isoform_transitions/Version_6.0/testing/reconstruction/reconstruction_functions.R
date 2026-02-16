@@ -82,8 +82,7 @@ parse_coordinate_ranges <- function(range_str) {
 #' Apply A5SS event to reconstruct dominant
 #'
 #' A5SS: Donor (5' splice site) differs
-#' - Plus strand: donor = exon end
-#' - Minus strand: donor = exon start
+#' Event coordinates (five_prime, three_prime) represent the exact region that differs
 #'
 #' @param exons Comparator exons
 #' @param event Event record
@@ -91,47 +90,36 @@ parse_coordinate_ranges <- function(range_str) {
 apply_a5ss <- function(exons, event) {
   strand <- event$strand
   direction <- event$direction
-  bp_diff <- event$bp_diff
 
-  # Find exon with the differing donor
-  # Look for exon that has boundary near the event coordinates
   if (strand == "+") {
     # Plus: donor = exon end
-    # Find exon whose end is close to event coordinates
-    target_coord <- event$three_prime  # 3' coordinate is downstream (donor side)
-    exon_idx <- find_exon_with_boundary(exons, target_coord, "end")
-
-    if (is.na(exon_idx)) {
-      # Try finding exon that contains either coordinate
-      exon_idx <- find_exon_containing(exons, target_coord)
-    }
-
-    if (!is.na(exon_idx)) {
-      if (direction == "LOSS") {
-        # Comparator lost sequence → extend donor downstream
-        exons$exon_end[exon_idx] <- exons$exon_end[exon_idx] + bp_diff
-      } else if (direction == "GAIN") {
-        # Comparator gained sequence → shorten donor upstream
-        exons$exon_end[exon_idx] <- exons$exon_end[exon_idx] - bp_diff
+    if (direction == "LOSS") {
+      # Comparator lost sequence: comparator ends at five_prime-1, extend to three_prime
+      exon_idx <- which(abs(exons$exon_end - (event$five_prime - 1)) <= 1)[1]
+      if (!is.na(exon_idx)) {
+        exons$exon_end[exon_idx] <- event$three_prime
+      }
+    } else if (direction == "GAIN") {
+      # Comparator gained sequence: comparator ends at three_prime, trim to five_prime-1
+      exon_idx <- which(abs(exons$exon_end - event$three_prime) <= 1)[1]
+      if (!is.na(exon_idx)) {
+        exons$exon_end[exon_idx] <- event$five_prime - 1
       }
     }
 
   } else {  # Minus strand
-    # Minus: donor = exon start (higher coordinate in transcription direction)
-    target_coord <- event$five_prime
-    exon_idx <- find_exon_with_boundary(exons, target_coord, "start")
-
-    if (is.na(exon_idx)) {
-      exon_idx <- find_exon_containing(exons, target_coord)
-    }
-
-    if (!is.na(exon_idx)) {
-      if (direction == "LOSS") {
-        # Comparator lost sequence → extend donor upstream (lower genomic coord)
-        exons$exon_start[exon_idx] <- exons$exon_start[exon_idx] - bp_diff
-      } else if (direction == "GAIN") {
-        # Comparator gained sequence → shorten donor downstream
-        exons$exon_start[exon_idx] <- exons$exon_start[exon_idx] + bp_diff
+    # Minus: donor = exon start
+    if (direction == "LOSS") {
+      # Comparator lost sequence: comparator starts at three_prime+1, extend to five_prime
+      exon_idx <- which(abs(exons$exon_start - (event$three_prime + 1)) <= 1)[1]
+      if (!is.na(exon_idx)) {
+        exons$exon_start[exon_idx] <- event$five_prime
+      }
+    } else if (direction == "GAIN") {
+      # Comparator gained sequence: comparator starts at five_prime, trim to three_prime+1
+      exon_idx <- which(abs(exons$exon_start - event$five_prime) <= 1)[1]
+      if (!is.na(exon_idx)) {
+        exons$exon_start[exon_idx] <- event$three_prime + 1
       }
     }
   }
@@ -146,8 +134,7 @@ apply_a5ss <- function(exons, event) {
 #' Apply A3SS event to reconstruct dominant
 #'
 #' A3SS: Acceptor (3' splice site) differs
-#' - Plus strand: acceptor = exon start
-#' - Minus strand: acceptor = exon end
+#' Event coordinates (five_prime, three_prime) represent the exact region that differs
 #'
 #' @param exons Comparator exons
 #' @param event Event record
@@ -155,43 +142,36 @@ apply_a5ss <- function(exons, event) {
 apply_a3ss <- function(exons, event) {
   strand <- event$strand
   direction <- event$direction
-  bp_diff <- event$bp_diff
 
   if (strand == "+") {
     # Plus: acceptor = exon start
-    target_coord <- event$five_prime  # 5' coordinate is upstream (acceptor side)
-    exon_idx <- find_exon_with_boundary(exons, target_coord, "start")
-
-    if (is.na(exon_idx)) {
-      exon_idx <- find_exon_containing(exons, target_coord)
-    }
-
-    if (!is.na(exon_idx)) {
-      if (direction == "LOSS") {
-        # Comparator lost sequence → extend acceptor upstream
-        exons$exon_start[exon_idx] <- exons$exon_start[exon_idx] - bp_diff
-      } else if (direction == "GAIN") {
-        # Comparator gained sequence → shorten acceptor downstream
-        exons$exon_start[exon_idx] <- exons$exon_start[exon_idx] + bp_diff
+    if (direction == "LOSS") {
+      # Comparator lost sequence: comparator starts at three_prime+1, extend to five_prime
+      exon_idx <- which(abs(exons$exon_start - (event$three_prime + 1)) <= 1)[1]
+      if (!is.na(exon_idx)) {
+        exons$exon_start[exon_idx] <- event$five_prime
+      }
+    } else if (direction == "GAIN") {
+      # Comparator gained sequence: comparator starts at five_prime, trim to three_prime+1
+      exon_idx <- which(abs(exons$exon_start - event$five_prime) <= 1)[1]
+      if (!is.na(exon_idx)) {
+        exons$exon_start[exon_idx] <- event$three_prime + 1
       }
     }
 
   } else {  # Minus strand
     # Minus: acceptor = exon end
-    target_coord <- event$three_prime
-    exon_idx <- find_exon_with_boundary(exons, target_coord, "end")
-
-    if (is.na(exon_idx)) {
-      exon_idx <- find_exon_containing(exons, target_coord)
-    }
-
-    if (!is.na(exon_idx)) {
-      if (direction == "LOSS") {
-        # Comparator lost sequence → extend acceptor downstream (higher genomic coord)
-        exons$exon_end[exon_idx] <- exons$exon_end[exon_idx] + bp_diff
-      } else if (direction == "GAIN") {
-        # Comparator gained sequence → shorten acceptor upstream
-        exons$exon_end[exon_idx] <- exons$exon_end[exon_idx] - bp_diff
+    if (direction == "LOSS") {
+      # Comparator lost sequence: comparator ends at three_prime-1, extend to five_prime
+      exon_idx <- which(abs(exons$exon_end - (event$three_prime - 1)) <= 1)[1]
+      if (!is.na(exon_idx)) {
+        exons$exon_end[exon_idx] <- event$five_prime
+      }
+    } else if (direction == "GAIN") {
+      # Comparator gained sequence: comparator ends at five_prime, trim to three_prime-1
+      exon_idx <- which(abs(exons$exon_end - event$five_prime) <= 1)[1]
+      if (!is.na(exon_idx)) {
+        exons$exon_end[exon_idx] <- event$three_prime - 1
       }
     }
   }
@@ -425,8 +405,28 @@ apply_alt_tss <- function(exons, event) {
         )
       })
 
-      # Add to 5' end (beginning for plus, end for minus after sorting)
-      exons <- bind_rows(new_exons, exons)
+      # Check if last missing range is adjacent to first existing exon
+      # If so, merge them instead of keeping as separate exons
+      last_missing <- new_exons[nrow(new_exons), ]
+      first_existing <- exons[1, ]
+
+      # Check adjacency (within 1bp = adjacent)
+      is_adjacent <- (last_missing$exon_end + 1 >= first_existing$exon_start - 1) &&
+                     (last_missing$exon_end <= first_existing$exon_start + 1)
+
+      if (is_adjacent) {
+        # Merge: extend first existing exon to include last missing range
+        exons$exon_start[1] <- min(last_missing$exon_start, first_existing$exon_start)
+        exons$exon_end[1] <- max(last_missing$exon_end, first_existing$exon_end)
+
+        # Add only the other missing ranges (if any)
+        if (nrow(new_exons) > 1) {
+          exons <- bind_rows(new_exons[1:(nrow(new_exons)-1), ], exons)
+        }
+      } else {
+        # Not adjacent - add all missing ranges as separate exons
+        exons <- bind_rows(new_exons, exons)
+      }
     }
 
   } else if (direction == "GAIN") {
@@ -494,8 +494,28 @@ apply_alt_tes <- function(exons, event) {
         )
       })
 
-      # Add to 3' end (end for plus, beginning for minus after sorting)
-      exons <- bind_rows(exons, new_exons)
+      # Check if first missing range is adjacent to last existing exon
+      # If so, merge them instead of keeping as separate exons
+      first_missing <- new_exons[1, ]
+      last_existing <- exons[nrow(exons), ]
+
+      # Check adjacency (within 1bp = adjacent)
+      is_adjacent <- (last_existing$exon_end + 1 >= first_missing$exon_start - 1) &&
+                     (last_existing$exon_end <= first_missing$exon_start + 1)
+
+      if (is_adjacent) {
+        # Merge: extend last existing exon to include first missing range
+        exons$exon_start[nrow(exons)] <- min(last_existing$exon_start, first_missing$exon_start)
+        exons$exon_end[nrow(exons)] <- max(last_existing$exon_end, first_missing$exon_end)
+
+        # Add only the other missing ranges (if any)
+        if (nrow(new_exons) > 1) {
+          exons <- bind_rows(exons, new_exons[2:nrow(new_exons), ])
+        }
+      } else {
+        # Not adjacent - add all missing ranges as separate exons
+        exons <- bind_rows(exons, new_exons)
+      }
     }
 
   } else if (direction == "GAIN") {
