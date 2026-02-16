@@ -304,10 +304,17 @@ plot_gene_structure <- function(gene_name,
 
   strand <- unique(gene_exons$strand)[1]
 
-  # Prepare data for plotting
+  # Get isoform ordering from expected_data (reference A first, comparison B second)
+  isoform_order <- c(expected_info$isoform_A[1], expected_info$isoform_B[1])
+
+  # Prepare data for plotting with explicit ordering
+  # CRITICAL: Order by role (A=reference first, B=comparison second), NOT alphabetically
+  # This ensures consistent colors: A=green (reference), B=purple (comparison)
   plot_data <- gene_exons %>%
     mutate(
-      transcript_num = as.numeric(factor(transcript_id)),
+      # Create factor with explicit levels to control order
+      transcript_id_ordered = factor(transcript_id, levels = isoform_order),
+      transcript_num = as.numeric(transcript_id_ordered),
       y_position = transcript_num
     )
 

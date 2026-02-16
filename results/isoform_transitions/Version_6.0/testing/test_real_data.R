@@ -143,12 +143,12 @@ for (i in seq_len(nrow(results_df))) {
 # Combine into single PDF
 combined <- wrap_plots(plots, ncol = 1) +
   plot_annotation(
-    title = "Real Data Event Detection Test (20 sampled pairs)",
-    subtitle = sprintf("SQANTI corrected isoforms from lung cell lines | %s",
+    title = "Real Data Event Detection Test (25 sampled pairs)",
+    subtitle = sprintf("SQANTI corrected isoforms from lung cell lines | %s\nColor scheme: GREEN = Reference isoform (A) | PURPLE = Comparison isoform (B)",
                        format(Sys.Date(), "%Y-%m-%d")),
     theme = theme(
       plot.title = element_text(size = 16, face = "bold"),
-      plot.subtitle = element_text(size = 12, color = "gray30")
+      plot.subtitle = element_text(size = 11, color = "gray30", lineheight = 1.3)
     )
   )
 
