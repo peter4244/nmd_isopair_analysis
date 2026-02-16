@@ -447,6 +447,11 @@ Function exon_overlaps(exon1, exon2):
 
 **Key Insight**: SE is distinct from other missing exons because the flanking context is preserved, indicating a deliberate cassette exon skipping event rather than alternative promoter usage or structural rearrangement.
 
+**Critical Requirement**: SE requires splicing events on both sides of the skipped exon. Therefore:
+- **Both isoforms must have ≥2 exons** to provide flanking context
+- **Monoexonic isoforms cannot have SE** (no internal exons with flanking splices)
+- If either isoform is monoexonic, missing exons are due to Alt_TSS/Alt_TES or structural differences, not cassette exon skipping
+
 **Algorithm** (Using Isoform Exon Lists):
 
 ```
@@ -454,6 +459,11 @@ Input: struct_a (list of exons in isoform A, ordered 5' → 3')
        struct_b (list of exons in isoform B, ordered 5' → 3')
 
 Output: n_se (count of skipped exon events)
+
+# CRITICAL: SE requires splicing on both sides
+# If either isoform is monoexonic, SE = 0
+If length(struct_a) < 2 OR length(struct_b) < 2:
+  Return 0  # Cannot have SE without flanking exons
 
 # Helper function: check if two exons are "comparable"
 Function exons_comparable(exon1, exon2):

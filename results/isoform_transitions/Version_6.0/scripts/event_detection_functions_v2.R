@@ -947,9 +947,16 @@ detect_splicing_events_v2 <- function(exons_a, exons_b, strand) {
                          c(matched_b, ir_involved_b))
 
   # SE count: unmatched exons (excluding first/last which are terminal)
-  se_a <- unmatched_a[unmatched_a > 1 & unmatched_a < nrow(exons_a)]
-  se_b <- unmatched_b[unmatched_b > 1 & unmatched_b < nrow(exons_b)]
-  events$n_se <- length(se_a) + length(se_b)
+  # CRITICAL: SE requires splicing on both sides, so both isoforms must have ≥2 exons
+  # A monoexonic isoform cannot provide flanking context for SE detection
+  if (nrow(exons_a) >= 2 && nrow(exons_b) >= 2) {
+    se_a <- unmatched_a[unmatched_a > 1 & unmatched_a < nrow(exons_a)]
+    se_b <- unmatched_b[unmatched_b > 1 & unmatched_b < nrow(exons_b)]
+    events$n_se <- length(se_a) + length(se_b)
+  } else {
+    # If either isoform is monoexonic, SE cannot occur (no flanking exons)
+    events$n_se <- 0
+  }
 
   return(events)
 }
