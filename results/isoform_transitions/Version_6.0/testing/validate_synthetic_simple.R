@@ -244,7 +244,7 @@ for (i in seq_len(nrow(expected))) {
     struct_b_data[nrow(struct_b_data), ]
   )
 
-  # Count events
+  # Count events and track directions
   n_a5ss <- 0
   n_a3ss <- 0
   n_partial_ir_5 <- 0
@@ -252,6 +252,9 @@ for (i in seq_len(nrow(expected))) {
   n_ir <- 0
   n_se <- 0
   n_dual_boundary <- 0
+
+  # Track event details with directions
+  event_details <- list()
 
   # UNIFIED EVENT DETECTION (matching Script 07)
   # For each pair of exons, use detect_shared_boundary_event()
@@ -297,6 +300,8 @@ for (i in seq_len(nrow(expected))) {
         dom_exon, non_dom_exon, strand,
         is_first_exon = is_both_first,
         is_last_exon = is_both_last,
+        is_first_exon_comp = is_first_non_dom,
+        is_last_exon_comp = is_last_non_dom,
         terminal_has_overlap = terminal_overlap,
         flanking_exons_dom = flanking_dom,
         flanking_exons_non_dom = flanking_non_dom
@@ -312,10 +317,20 @@ for (i in seq_len(nrow(expected))) {
           # First exons: only count if overlap ≥50%
           if (first_exons_overlap) {
             n_a5ss <- n_a5ss + 1
+            event_details[[length(event_details) + 1]] <- list(
+              type = "A5SS",
+              direction = event_result$direction,
+              bp_diff = event_result$bp_diff
+            )
           }
         } else {
           # Internal exons: always count
           n_a5ss <- n_a5ss + 1
+          event_details[[length(event_details) + 1]] <- list(
+            type = "A5SS",
+            direction = event_result$direction,
+            bp_diff = event_result$bp_diff
+          )
         }
 
       } else if (event_result$event_type == "A3SS") {
@@ -327,23 +342,57 @@ for (i in seq_len(nrow(expected))) {
           # Last exons: only count if overlap ≥50%
           if (last_exons_overlap) {
             n_a3ss <- n_a3ss + 1
+            event_details[[length(event_details) + 1]] <- list(
+              type = "A3SS",
+              direction = event_result$direction,
+              bp_diff = event_result$bp_diff
+            )
           }
         } else {
           # Internal exons: always count
           n_a3ss <- n_a3ss + 1
+          event_details[[length(event_details) + 1]] <- list(
+            type = "A3SS",
+            direction = event_result$direction,
+            bp_diff = event_result$bp_diff
+          )
         }
 
       } else if (event_result$event_type == "Partial_IR_5") {
         # Partial_IR_5: ≥100bp difference at 5' splice site (donor)
         n_partial_ir_5 <- n_partial_ir_5 + 1
+        event_details[[length(event_details) + 1]] <- list(
+          type = "Partial_IR_5",
+          direction = event_result$direction,
+          bp_diff = event_result$bp_diff
+        )
 
       } else if (event_result$event_type == "Partial_IR_3") {
         # Partial_IR_3: ≥100bp difference at 3' splice site (acceptor)
         n_partial_ir_3 <- n_partial_ir_3 + 1
+        event_details[[length(event_details) + 1]] <- list(
+          type = "Partial_IR_3",
+          direction = event_result$direction,
+          bp_diff = event_result$bp_diff
+        )
+
+      } else if (event_result$event_type == "IR") {
+        # IR: detected via overlap-based logic (comparison exon spans into flanking)
+        n_ir <- n_ir + 1
+        event_details[[length(event_details) + 1]] <- list(
+          type = "IR",
+          direction = event_result$direction,
+          bp_diff = event_result$bp_diff
+        )
 
       } else if (event_result$event_type == "Dual_boundary") {
         # Dual_boundary: both boundaries differ
         n_dual_boundary <- n_dual_boundary + 1
+        event_details[[length(event_details) + 1]] <- list(
+          type = "Dual_boundary",
+          direction = event_result$direction,
+          bp_diff = event_result$bp_diff
+        )
       }
     }
   }
@@ -388,13 +437,30 @@ for (i in seq_len(nrow(expected))) {
     match <- setequal(detected_events, expected_events)
   }
 
+  # Format event details with directions
+  event_details_str <- ""
+  if (length(event_details) > 0) {
+    details_parts <- sapply(event_details, function(e) {
+      if (!is.null(e$direction) && e$direction != "") {
+        sprintf("%s:%s", e$type, e$direction)
+      } else {
+        e$type
+      }
+    })
+    event_details_str <- paste(details_parts, collapse = ",")
+  }
+
   cat(sprintf("      Detected: %s\n", detected_str))
+  if (event_details_str != "") {
+    cat(sprintf("      Details: %s\n", event_details_str))
+  }
   cat(sprintf("      Status: %s\n\n", ifelse(match, "✓ PASS", "✗ FAIL")))
 
   results[[i]] <- tibble(
     gene_id = test_case$gene_id,
     expected = test_case$event_type,
     detected = detected_str,
+    event_details = event_details_str,
     match = match
   )
 }

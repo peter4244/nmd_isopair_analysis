@@ -150,15 +150,19 @@ detect_tes_change <- function(exon_dom, exon_non_dom, strand, tolerance = TES_TO
 #' @param exon_dom Exon from dominant isoform
 #' @param exon_non_dom Exon from non-dominant isoform
 #' @param strand Gene strand (+ or -)
-#' @param is_first_exon Logical - is this a first exon comparison?
-#' @param is_last_exon Logical - is this a last exon comparison?
+#' @param is_first_exon Logical - are BOTH exons first exons? (for shared boundary terminal checks)
+#' @param is_last_exon Logical - are BOTH exons last exons? (for shared boundary terminal checks)
+#' @param is_first_exon_comp Logical - is comparison exon a first exon? (for overlap-based TSS check)
+#' @param is_last_exon_comp Logical - is comparison exon a last exon? (for overlap-based TES check)
 #' @param terminal_has_overlap Logical - do terminal exons overlap ≥50%? (only relevant for terminal exons)
 #' @param flanking_exons_dom Other exons in dominant isoform (for IR check)
 #' @param flanking_exons_non_dom Other exons in non-dominant isoform (for IR check)
-#' @return List with event_type and bp_diff
+#' @return List with event_type, bp_diff, and direction (GAIN/LOSS)
 detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
                                          is_first_exon = FALSE,
                                          is_last_exon = FALSE,
+                                         is_first_exon_comp = FALSE,
+                                         is_last_exon_comp = FALSE,
                                          terminal_has_overlap = FALSE,
                                          flanking_exons_dom = NULL,
                                          flanking_exons_non_dom = NULL) {
@@ -186,6 +190,7 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
   # Classify based on which boundary is shared and size of difference
   event_type <- "none"
   bp_diff <- 0
+  direction <- NULL  # GAIN/LOSS for overlap-based detection
 
   if (shares_acceptor && differs_donor) {
     # Acceptor shared, donor differs
@@ -272,7 +277,235 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
     # Terminal exons with <50% overlap: return "none" (not biologically meaningful)
   }
 
-  return(list(event_type = event_type, bp_diff = bp_diff))
+  # ===========================================================================
+  # OVERLAP-BASED DETECTION (fallback when no exact shared boundary)
+  # ===========================================================================
+  # If no event detected via shared boundary, check if exons overlap
+  # This allows detection of splice site variations even when boundaries don't match exactly
+
+  if (event_type == "none") {
+    # Check if exons overlap by at least 1bp
+    exons_overlap <- (exon_dom$exon_start <= exon_non_dom$exon_end) &&
+                     (exon_dom$exon_end >= exon_non_dom$exon_start)
+
+    # Skip overlap-based detection for monoexonic vs multi-exonic comparisons
+    # (Let IR detection handle those cases)
+    has_flanking_dom <- !is.null(flanking_exons_dom) && nrow(flanking_exons_dom) > 0
+    has_flanking_non_dom <- !is.null(flanking_exons_non_dom) && nrow(flanking_exons_non_dom) > 0
+
+    # Only apply overlap-based detection if BOTH isoforms are multi-exonic
+    # OR if we don't have flanking exon information (can't determine)
+    skip_overlap <- (is.null(flanking_exons_dom) || is.null(flanking_exons_non_dom)) ||
+                    (!has_flanking_dom && has_flanking_non_dom) ||
+                    (has_flanking_dom && !has_flanking_non_dom)
+
+    if (exons_overlap && !skip_overlap) {
+      # Get 5' and 3' coordinates (strand-aware)
+      if (strand == "+") {
+        # Plus strand: 5' = start, 3' = end
+        dom_5prime <- exon_dom$exon_start
+        dom_3prime <- exon_dom$exon_end
+        comp_5prime <- exon_non_dom$exon_start
+        comp_3prime <- exon_non_dom$exon_end
+      } else {
+        # Minus strand: 5' = end, 3' = start
+        dom_5prime <- exon_dom$exon_end
+        dom_3prime <- exon_dom$exon_start
+        comp_5prime <- exon_non_dom$exon_end
+        comp_3prime <- exon_non_dom$exon_start
+      }
+
+      # Initialize results for overlap-based detection
+      events_detected <- list()
+      direction <- NULL
+
+      # ===========================================================================
+      # Check 5' end (skip if comparison exon is first - its 5' end is TSS, terminal)
+      # ===========================================================================
+      if (!is_first_exon_comp) {
+        result_5prime <- check_boundary_within_exon(
+          comp_boundary = comp_5prime,
+          dom_boundary = dom_5prime,
+          dom_exon_start = if (strand == "+") dom_5prime else dom_3prime,
+          dom_exon_end = if (strand == "+") dom_3prime else dom_5prime,
+          flanking_exons = if (!is.null(flanking_exons_dom)) {
+            # Get upstream flanking exon (5' direction)
+            if (strand == "+") {
+              # Plus: upstream = lower coordinates
+              flanking_exons_dom %>% filter(exon_end < dom_5prime) %>%
+                arrange(desc(exon_end)) %>% slice(1)
+            } else {
+              # Minus: upstream = higher coordinates
+              flanking_exons_dom %>% filter(exon_start > dom_5prime) %>%
+                arrange(exon_start) %>% slice(1)
+            }
+          } else NULL,
+          strand = strand,
+          is_5prime = TRUE
+        )
+
+        if (result_5prime$event_type != "none") {
+          events_detected[[length(events_detected) + 1]] <- result_5prime
+        }
+      }
+
+      # ===========================================================================
+      # Check 3' end (skip if comparison exon is last - its 3' end is TES, terminal)
+      # ===========================================================================
+      if (!is_last_exon_comp) {
+        result_3prime <- check_boundary_within_exon(
+          comp_boundary = comp_3prime,
+          dom_boundary = dom_3prime,
+          dom_exon_start = if (strand == "+") dom_5prime else dom_3prime,
+          dom_exon_end = if (strand == "+") dom_3prime else dom_5prime,
+          flanking_exons = if (!is.null(flanking_exons_dom)) {
+            # Get downstream flanking exon (3' direction)
+            if (strand == "+") {
+              # Plus: downstream = higher coordinates
+              flanking_exons_dom %>% filter(exon_start > dom_3prime) %>%
+                arrange(exon_start) %>% slice(1)
+            } else {
+              # Minus: downstream = lower coordinates
+              flanking_exons_dom %>% filter(exon_end < dom_3prime) %>%
+                arrange(desc(exon_end)) %>% slice(1)
+            }
+          } else NULL,
+          strand = strand,
+          is_5prime = FALSE
+        )
+
+        if (result_3prime$event_type != "none") {
+          events_detected[[length(events_detected) + 1]] <- result_3prime
+        }
+      }
+
+      # Return first detected event (prioritize 5' over 3' if both)
+      if (length(events_detected) > 0) {
+        event_type <- events_detected[[1]]$event_type
+        bp_diff <- events_detected[[1]]$bp_diff
+        direction <- events_detected[[1]]$direction
+      }
+    }
+  }
+
+  return(list(event_type = event_type, bp_diff = bp_diff, direction = direction))
+}
+
+#' Check if a boundary from comparison exon triggers an event relative to dominant exon
+#'
+#' Implements the overlap-based detection logic for boundaries that don't match exactly
+#'
+#' @param comp_boundary The boundary coordinate from comparison exon to check
+#' @param dom_boundary The corresponding boundary coordinate from dominant exon
+#' @param dom_exon_start Start coordinate of dominant exon (genomic)
+#' @param dom_exon_end End coordinate of dominant exon (genomic)
+#' @param flanking_exons Flanking exon(s) in dominant isoform (upstream for 5', downstream for 3')
+#' @param strand Strand (+ or -)
+#' @param is_5prime Logical - checking 5' end (TRUE) or 3' end (FALSE)
+#' @return List with event_type, bp_diff, and direction
+check_boundary_within_exon <- function(comp_boundary, dom_boundary,
+                                       dom_exon_start, dom_exon_end,
+                                       flanking_exons, strand, is_5prime) {
+  event_type <- "none"
+  bp_diff <- 0
+  direction <- NULL
+
+  # Determine if comp_boundary is within dom exon
+  within_dom <- (comp_boundary >= dom_exon_start) && (comp_boundary <= dom_exon_end)
+
+  if (within_dom) {
+    # =========================================================================
+    # CASE A: Comparison boundary is WITHIN dominant exon
+    # =========================================================================
+    # Comparison exon is shorter on this side → LOSS
+    distance <- abs(comp_boundary - dom_boundary)
+
+    # If distance is 0, boundaries are identical - no event
+    if (distance == 0) {
+      return(list(event_type = "none", bp_diff = 0, direction = NULL))
+    }
+
+    bp_diff <- distance
+
+    if (distance < SPLICE_SITE_THRESHOLD) {
+      # <100bp difference → Alternative splice site
+      # Naming based on FUNCTIONAL splice site (donor=5', acceptor=3')
+      # Plus: 5' positional = acceptor, 3' positional = donor
+      # Minus: 5' positional = acceptor, 3' positional = donor (same mapping!)
+      event_type <- if (is_5prime) "A3SS" else "A5SS"
+    } else {
+      # ≥100bp difference → Partial retention
+      event_type <- if (is_5prime) "Partial_IR_3" else "Partial_IR_5"
+    }
+    direction <- "LOSS"
+
+  } else {
+    # =========================================================================
+    # CASE B: Comparison boundary extends BEYOND dominant exon
+    # =========================================================================
+    # Comparison exon is longer on this side → check flanking exon
+
+    if (!is.null(flanking_exons) && nrow(flanking_exons) > 0) {
+      flanking <- flanking_exons[1, ]
+
+      # Check if comp_boundary overlaps or extends past the flanking exon
+      if (strand == "+") {
+        if (is_5prime) {
+          # 5' on plus: comp extends to lower coordinates (upstream)
+          # Check if it overlaps flanking exon (which has lower coords)
+          overlaps_flanking <- comp_boundary <= flanking$exon_end
+        } else {
+          # 3' on plus: comp extends to higher coordinates (downstream)
+          # Check if it overlaps flanking exon (which has higher coords)
+          overlaps_flanking <- comp_boundary >= flanking$exon_start
+        }
+      } else {
+        if (is_5prime) {
+          # 5' on minus: comp extends to higher coordinates (upstream)
+          # Check if it overlaps flanking exon (which has higher coords)
+          overlaps_flanking <- comp_boundary >= flanking$exon_start
+        } else {
+          # 3' on minus: comp extends to lower coordinates (downstream)
+          # Check if it overlaps flanking exon (which has lower coords)
+          overlaps_flanking <- comp_boundary <= flanking$exon_end
+        }
+      }
+
+      if (overlaps_flanking) {
+        # Sub-case B1: Extends past flanking exon → IR
+        event_type <- "IR"
+        bp_diff <- abs(comp_boundary - dom_boundary)
+        direction <- "GAIN"
+      } else {
+        # Sub-case B2: Extends beyond dom but not to flanking
+        # Calculate distance between boundaries
+        distance <- abs(comp_boundary - dom_boundary)
+        bp_diff <- distance
+
+        if (distance < SPLICE_SITE_THRESHOLD) {
+          # Positional 5' = acceptor (A3SS), Positional 3' = donor (A5SS)
+          event_type <- if (is_5prime) "A3SS" else "A5SS"
+        } else {
+          event_type <- if (is_5prime) "Partial_IR_3" else "Partial_IR_5"
+        }
+        direction <- "GAIN"
+      }
+    } else {
+      # No flanking exon data - just compare boundaries
+      distance <- abs(comp_boundary - dom_boundary)
+      bp_diff <- distance
+
+      if (distance < SPLICE_SITE_THRESHOLD) {
+        # Positional 5' = acceptor (A3SS), Positional 3' = donor (A5SS)
+        event_type <- if (is_5prime) "A3SS" else "A5SS"
+      } else {
+        event_type <- if (is_5prime) "Partial_IR_3" else "Partial_IR_5"
+      }
+      direction <- "GAIN"
+    }
+  }
+
+  return(list(event_type = event_type, bp_diff = bp_diff, direction = direction))
 }
 
 #' Check if Partial_IR extension spans into flanking exons
