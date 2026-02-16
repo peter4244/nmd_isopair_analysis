@@ -348,28 +348,27 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
       direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
     }
 
-    if (bp_diff < SPLICE_SITE_THRESHOLD) {
+    # Check if differing donor is a terminal boundary (not an internal splice site)
+    # Donor = TES on last exons (both strands)
+    # Must check BOTH dominant and comparator - if either has this as TES, it's terminal
+    donor_is_terminal <- is_last_exon || is_last_exon_comp
+
+    if (donor_is_terminal) {
+      # Terminal boundaries should not be labeled as A5SS or Partial_IR
+      # Let Alt_TES handle terminal boundary differences
+      event_type <- "none"
+    } else if (bp_diff < SPLICE_SITE_THRESHOLD) {
       event_type <- "A5SS"
     } else {
-      # Check if differing donor is a terminal boundary (not an internal splice site)
-      # Donor = TES on last exons (both strands)
-      # Must check BOTH dominant and comparator - if either has this as TES, it's terminal
-      donor_is_terminal <- is_last_exon || is_last_exon_comp
-
-      if (donor_is_terminal) {
-        # Terminal boundaries should not trigger Partial_IR
-        event_type <- "none"
+      # Partial_IR at 5' splice site (donor differs)
+      if (!is.null(flanking_exons_dom) && !is.null(flanking_exons_non_dom)) {
+        spans_flanking <- check_spans_flanking_exons(
+          exon_dom, exon_non_dom,
+          flanking_exons_dom, flanking_exons_non_dom
+        )
+        event_type <- if (spans_flanking) "none" else "Partial_IR_5"  # none = will be IR
       } else {
-        # Partial_IR at 5' splice site (donor differs)
-        if (!is.null(flanking_exons_dom) && !is.null(flanking_exons_non_dom)) {
-          spans_flanking <- check_spans_flanking_exons(
-            exon_dom, exon_non_dom,
-            flanking_exons_dom, flanking_exons_non_dom
-          )
-          event_type <- if (spans_flanking) "none" else "Partial_IR_5"  # none = will be IR
-        } else {
-          event_type <- "Partial_IR_5"
-        }
+        event_type <- "Partial_IR_5"
       }
     }
   } else if (shares_donor && differs_acceptor) {
@@ -386,28 +385,27 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
       direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
     }
 
-    if (bp_diff < SPLICE_SITE_THRESHOLD) {
+    # Check if differing acceptor is a terminal boundary (not an internal splice site)
+    # Acceptor = TSS on first exons (both strands)
+    # Must check BOTH dominant and comparator - if either has this as TSS, it's terminal
+    acceptor_is_terminal <- is_first_exon || is_first_exon_comp
+
+    if (acceptor_is_terminal) {
+      # Terminal boundaries should not be labeled as A3SS or Partial_IR
+      # Let Alt_TSS handle terminal boundary differences
+      event_type <- "none"
+    } else if (bp_diff < SPLICE_SITE_THRESHOLD) {
       event_type <- "A3SS"
     } else {
-      # Check if differing acceptor is a terminal boundary (not an internal splice site)
-      # Acceptor = TSS on first exons (both strands)
-      # Must check BOTH dominant and comparator - if either has this as TSS, it's terminal
-      acceptor_is_terminal <- is_first_exon || is_first_exon_comp
-
-      if (acceptor_is_terminal) {
-        # Terminal boundaries should not trigger Partial_IR
-        event_type <- "none"
+      # Partial_IR at 3' splice site (acceptor differs)
+      if (!is.null(flanking_exons_dom) && !is.null(flanking_exons_non_dom)) {
+        spans_flanking <- check_spans_flanking_exons(
+          exon_dom, exon_non_dom,
+          flanking_exons_dom, flanking_exons_non_dom
+        )
+        event_type <- if (spans_flanking) "none" else "Partial_IR_3"  # none = will be IR
       } else {
-        # Partial_IR at 3' splice site (acceptor differs)
-        if (!is.null(flanking_exons_dom) && !is.null(flanking_exons_non_dom)) {
-          spans_flanking <- check_spans_flanking_exons(
-            exon_dom, exon_non_dom,
-            flanking_exons_dom, flanking_exons_non_dom
-          )
-          event_type <- if (spans_flanking) "none" else "Partial_IR_3"  # none = will be IR
-        } else {
-          event_type <- "Partial_IR_3"
-        }
+        event_type <- "Partial_IR_3"
       }
     }
   } else if (differs_acceptor && differs_donor) {

@@ -130,13 +130,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
     if (strand == "+") {
       dom_tss <- first_dom$exon_start
       comp_tss <- first_comp$exon_start
-      five_prime <- min(dom_tss, comp_tss)
-      three_prime <- max(dom_tss, comp_tss)
     } else {
       dom_tss <- first_dom$exon_end
       comp_tss <- first_comp$exon_end
-      five_prime <- max(dom_tss, comp_tss)
-      three_prime <- min(dom_tss, comp_tss)
     }
 
     # Direction: LOSS if dominant extends beyond comparator
@@ -145,11 +141,26 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       (strand == "-" && dom_tss > comp_tss)
     ) "LOSS" else "GAIN"
 
-    # Missing terminal exons (only for LOSS)
+    # Store TSS positions in five_prime/three_prime (biological boundaries)
+    # Exonic regions are stored in missing_terminal_exons field
+    if (strand == "+") {
+      # Plus strand: TSS = exon start
+      five_prime <- dom_tss
+      three_prime <- comp_tss
+    } else {
+      # Minus strand: TSS = exon end
+      five_prime <- dom_tss
+      three_prime <- comp_tss
+    }
+
+    # Compute exonic region that differs (for union exon matching)
+    # For LOSS: use dominant exons; for GAIN: use comparator exons
     missing_exons <- ""
     if (direction == "LOSS") {
-      # Use core function to properly walk exons and record only exonic regions
       missing_exons <- compute_missing_terminal_exons_tss(dom_ordered, comp_ordered, strand)
+    } else {
+      # GAIN: comparator has more at TSS, so compute from comparator perspective
+      missing_exons <- compute_missing_terminal_exons_tss(comp_ordered, dom_ordered, strand)
     }
 
     all_events[[length(all_events) + 1]] <- tibble(
@@ -173,13 +184,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
     if (strand == "+") {
       dom_tes <- last_dom$exon_end
       comp_tes <- last_comp$exon_end
-      five_prime <- min(dom_tes, comp_tes)
-      three_prime <- max(dom_tes, comp_tes)
     } else {
       dom_tes <- last_dom$exon_start
       comp_tes <- last_comp$exon_start
-      five_prime <- max(dom_tes, comp_tes)
-      three_prime <- min(dom_tes, comp_tes)
     }
 
     direction <- if (
@@ -187,10 +194,26 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       (strand == "-" && dom_tes < comp_tes)
     ) "LOSS" else "GAIN"
 
+    # Store TES positions in five_prime/three_prime (biological boundaries)
+    # Exonic regions are stored in missing_terminal_exons field
+    if (strand == "+") {
+      # Plus strand: TES = exon end
+      five_prime <- dom_tes
+      three_prime <- comp_tes
+    } else {
+      # Minus strand: TES = exon start
+      five_prime <- dom_tes
+      three_prime <- comp_tes
+    }
+
+    # Compute exonic region that differs (for union exon matching)
+    # For LOSS: use dominant exons; for GAIN: use comparator exons
     missing_exons <- ""
     if (direction == "LOSS") {
-      # Use core function to properly walk exons and record only exonic regions
       missing_exons <- compute_missing_terminal_exons_tes(dom_ordered, comp_ordered, strand)
+    } else {
+      # GAIN: comparator has more at TES, so compute from comparator perspective
+      missing_exons <- compute_missing_terminal_exons_tes(comp_ordered, dom_ordered, strand)
     }
 
     all_events[[length(all_events) + 1]] <- tibble(
@@ -295,10 +318,10 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
             if (direction == "LOSS") {
               # Comparator lost sequence: region from dom_start to comp_start-1
               five_prime <- comp_exon$exon_start
-              three_prime <- dom_exon$exon_start
+              three_prime <- dom_exon$exon_start - 1
             } else {
               # Comparator gained sequence: region from comp_start to dom_start-1
-              five_prime <- dom_exon$exon_start
+              five_prime <- dom_exon$exon_start - 1
               three_prime <- comp_exon$exon_start
             }
           }
