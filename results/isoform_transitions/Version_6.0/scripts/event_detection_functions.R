@@ -200,7 +200,8 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
     } else {
       # Check if differing donor is a terminal boundary (not an internal splice site)
       # Donor = TES on last exons (both strands)
-      donor_is_terminal <- is_last_exon
+      # Must check BOTH dominant and comparator - if either has this as TES, it's terminal
+      donor_is_terminal <- is_last_exon || is_last_exon_comp
 
       if (donor_is_terminal) {
         # Terminal boundaries should not trigger Partial_IR
@@ -226,7 +227,8 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
     } else {
       # Check if differing acceptor is a terminal boundary (not an internal splice site)
       # Acceptor = TSS on first exons (both strands)
-      acceptor_is_terminal <- is_first_exon
+      # Must check BOTH dominant and comparator - if either has this as TSS, it's terminal
+      acceptor_is_terminal <- is_first_exon || is_first_exon_comp
 
       if (acceptor_is_terminal) {
         # Terminal boundaries should not trigger Partial_IR
@@ -320,9 +322,9 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
       direction <- NULL
 
       # ===========================================================================
-      # Check 5' end (skip if comparison exon is first - its 5' end is TSS, terminal)
+      # Check 5' end (skip if EITHER exon is first - 5' end is TSS, terminal)
       # ===========================================================================
-      if (!is_first_exon_comp) {
+      if (!is_first_exon_comp && !is_first_exon) {
         result_5prime <- check_boundary_within_exon(
           comp_boundary = comp_5prime,
           dom_boundary = dom_5prime,
@@ -350,9 +352,9 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
       }
 
       # ===========================================================================
-      # Check 3' end (skip if comparison exon is last - its 3' end is TES, terminal)
+      # Check 3' end (skip if EITHER exon is last - 3' end is TES, terminal)
       # ===========================================================================
-      if (!is_last_exon_comp) {
+      if (!is_last_exon_comp && !is_last_exon) {
         result_3prime <- check_boundary_within_exon(
           comp_boundary = comp_3prime,
           dom_boundary = dom_3prime,

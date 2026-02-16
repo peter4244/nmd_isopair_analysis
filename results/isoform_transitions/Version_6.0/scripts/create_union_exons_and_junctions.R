@@ -84,6 +84,16 @@ create_union_exons <- function(exons) {
   exons <- exons %>%
     arrange(start, end)
 
+  # Handle single exon case
+  if (nrow(exons) == 1) {
+    return(tibble(
+      chr = exons$chr[1],
+      start = exons$start[1],
+      end = exons$end[1],
+      strand = exons$strand[1]
+    ))
+  }
+
   # Merge overlapping exons
   union_exons <- list()
   current_start <- exons$start[1]
@@ -254,8 +264,15 @@ write_union_exons <- function(union_exons, output_file) {
   write_tsv(union_exons_sorted, output_file, append = TRUE, col_names = FALSE)
 
   # Compress and index
-  system(sprintf("bgzip -f %s", output_file))
-  system(sprintf("tabix -f -s 1 -b 2 -e 3 %s.gz", output_file))
+  bgzip_status <- system(sprintf("bgzip -f %s", output_file))
+  if (bgzip_status != 0) {
+    stop(sprintf("bgzip failed with status %d", bgzip_status))
+  }
+
+  tabix_status <- system(sprintf("tabix -f -s 1 -b 2 -e 3 %s.gz", output_file))
+  if (tabix_status != 0) {
+    stop(sprintf("tabix failed with status %d", tabix_status))
+  }
 
   cat(sprintf("  Wrote %d union exons\n", nrow(union_exons_sorted)))
   cat(sprintf("  Indexed: %s.gz\n", output_file))
@@ -277,8 +294,15 @@ write_junctions <- function(junctions, output_file) {
   write_tsv(junctions_sorted, output_file, append = TRUE, col_names = FALSE)
 
   # Compress and index (using start/end columns for tabix)
-  system(sprintf("bgzip -f %s", output_file))
-  system(sprintf("tabix -f -s 2 -b 3 -e 4 %s.gz", output_file))
+  bgzip_status <- system(sprintf("bgzip -f %s", output_file))
+  if (bgzip_status != 0) {
+    stop(sprintf("bgzip failed with status %d", bgzip_status))
+  }
+
+  tabix_status <- system(sprintf("tabix -f -s 2 -b 3 -e 4 %s.gz", output_file))
+  if (tabix_status != 0) {
+    stop(sprintf("tabix failed with status %d", tabix_status))
+  }
 
   cat(sprintf("  Wrote %d junctions\n", nrow(junctions_sorted)))
   cat(sprintf("  Indexed: %s.gz\n", output_file))
@@ -293,8 +317,18 @@ main <- function(gtf_file, output_prefix) {
   cat("║   Union Exon and Junction Creation Pipeline                  ║\n")
   cat("╚════════════════════════════════════════════════════════════════╝\n\n")
 
+  # Input validation
+  if (!file.exists(gtf_file)) {
+    stop(sprintf("GTF file does not exist: %s", gtf_file))
+  }
+
   # Parse GTF
   gtf_data <- parse_gtf(gtf_file)
+
+  # Check that we got valid data
+  if (nrow(gtf_data) == 0) {
+    stop("No exon records found in GTF file")
+  }
 
   # Create union exons
   union_exons <- create_all_union_exons(gtf_data)
