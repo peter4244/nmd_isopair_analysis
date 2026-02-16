@@ -23,6 +23,12 @@ parse_gtf <- function(file) {
   results <- list()
   for (line in lines) {
     parts <- strsplit(line, '\t')[[1]]
+
+    # Only parse exon features, skip transcript/gene features
+    if (parts[3] != "exon") {
+      next
+    }
+
     attrs_str <- parts[9]
     gene_id <- sub('.*gene_id "([^"]+)".*', '\\1', attrs_str)
     transcript_id <- sub('.*transcript_id "([^"]+)".*', '\\1', attrs_str)
