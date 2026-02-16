@@ -767,18 +767,26 @@ detect_splicing_events_v2 <- function(exons_a, exons_b, strand) {
   events$matched_exons <- matched
 
   # STEP 4: Compare introns between matched exon pairs
-  intron_comparisons <- compare_introns_for_matched_exons(
-    exons_a, exons_b, matched, strand
-  )
-  events$intron_details <- intron_comparisons
+  # CRITICAL: Skip for monoexonic comparisons (no internal splice sites)
+  # A monoexonic isoform has boundaries that are TSS/TES, not splice sites
+  # So Partial_IR/A5SS/A3SS detection requires both isoforms to have ≥2 exons
+  if (nrow(exons_a) >= 2 && nrow(exons_b) >= 2) {
+    intron_comparisons <- compare_introns_for_matched_exons(
+      exons_a, exons_b, matched, strand
+    )
+    events$intron_details <- intron_comparisons
 
-  # Count events from intron comparisons
-  if (nrow(intron_comparisons) > 0) {
-    events$n_a5ss <- sum(intron_comparisons$event == "A5SS")
-    events$n_a3ss <- sum(intron_comparisons$event == "A3SS")
-    events$n_partial_ir <- sum(grepl("^Partial_IR", intron_comparisons$event))
-    events$n_partial_ir_5 <- sum(intron_comparisons$event == "Partial_IR_5")
-    events$n_partial_ir_3 <- sum(intron_comparisons$event == "Partial_IR_3")
+    # Count events from intron comparisons
+    if (nrow(intron_comparisons) > 0) {
+      events$n_a5ss <- sum(intron_comparisons$event == "A5SS")
+      events$n_a3ss <- sum(intron_comparisons$event == "A3SS")
+      events$n_partial_ir <- sum(grepl("^Partial_IR", intron_comparisons$event))
+      events$n_partial_ir_5 <- sum(intron_comparisons$event == "Partial_IR_5")
+      events$n_partial_ir_3 <- sum(intron_comparisons$event == "Partial_IR_3")
+    }
+  } else {
+    # Monoexonic comparison: no internal splice sites, so no Partial_IR/A5SS/A3SS
+    events$intron_details <- tibble::tibble()
   }
 
   # STEP 5: Identify skipped exons (SE)
@@ -817,8 +825,11 @@ detect_splicing_events_v2 <- function(exons_a, exons_b, strand) {
 
   # Additional check: IR exons may also share boundaries with spanned exons
   # This detects Partial_IR or A5SS/A3SS in addition to IR
-  # BUT: skip for monoexonic IR exons (boundaries are TSS/TES, not splice sites)
-  for (ir_idx in ir_results$ir_in_b) {
+  # BUT: skip for monoexonic comparisons (boundaries are TSS/TES, not splice sites)
+  # CRITICAL: Both isoforms must have ≥2 exons for Partial_IR/A5SS/A3SS at IR boundaries
+  # If either is monoexonic, boundary differences are Alt_TSS/Alt_TES only
+  if (nrow(exons_a) >= 2 && nrow(exons_b) >= 2) {
+    for (ir_idx in ir_results$ir_in_b) {
     # B exon spans multiple A exons - check if it shares boundaries
     ir_exon <- exons_b[ir_idx, ]
 
@@ -940,6 +951,7 @@ detect_splicing_events_v2 <- function(exons_a, exons_b, strand) {
       }
     }
   }
+  }  # End of monoexonic check for Partial_IR/A5SS/A3SS at IR boundaries
 
   unmatched_a <- setdiff(seq_len(nrow(exons_a)),
                          c(matched_a, ir_involved_a))

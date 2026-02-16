@@ -123,7 +123,8 @@ expected_mock <- results_df %>%
     description = sprintf("%s events detected", detected_events),
     expected_union_exons = NA_integer_,
     event_coordinates = "",
-    notes = sprintf("Strand: %s | Exons: A=%d, B=%d", strand, n_exons_A, n_exons_B)
+    notes = sprintf("Reference (A/green): %s | Comparison (B/purple): %s | Strand: %s | Exons: A=%d, B=%d",
+                    isoform_A, isoform_B, strand, n_exons_A, n_exons_B)
   ) %>%
   select(gene_id, isoform_A, isoform_B, event_type, description,
          expected_union_exons, event_coordinates, notes)
