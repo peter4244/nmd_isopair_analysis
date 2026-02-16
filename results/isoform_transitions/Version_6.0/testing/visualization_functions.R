@@ -32,7 +32,10 @@ parse_gtf <- function(file) {
     attrs_str <- parts[9]
     gene_id <- sub('.*gene_id "([^"]+)".*', '\\1', attrs_str)
     transcript_id <- sub('.*transcript_id "([^"]+)".*', '\\1', attrs_str)
-    exon_number <- sub('.*exon_number "([^"]+)".*', '\\1', attrs_str)
+
+    # Try to extract exon_number, may be NA if not present in attributes
+    exon_number_str <- sub('.*exon_number "([^"]+)".*', '\\1', attrs_str)
+    exon_number <- if (grepl('exon_number', attrs_str)) as.integer(exon_number_str) else NA_integer_
 
     results[[length(results) + 1]] <- tibble(
       seqnames = parts[1],
@@ -42,10 +45,31 @@ parse_gtf <- function(file) {
       strand = parts[7],
       gene_id = gene_id,
       transcript_id = transcript_id,
-      exon_number = as.integer(exon_number)
+      exon_number = exon_number
     )
   }
-  dplyr::bind_rows(results)
+
+  gtf_data <- dplyr::bind_rows(results)
+
+  # Assign transcriptional exon numbers if missing
+  # For plus strand: exon 1 = lowest coordinates (5' end)
+  # For minus strand: exon 1 = highest coordinates (5' end)
+  gtf_data <- gtf_data %>%
+    group_by(transcript_id, strand) %>%
+    mutate(
+      exon_number = if (all(is.na(exon_number))) {
+        if (first(strand) == "+") {
+          rank(start, ties.method = "first")  # Ascending for plus strand
+        } else {
+          rank(desc(start), ties.method = "first")  # Descending for minus strand
+        }
+      } else {
+        exon_number
+      }
+    ) %>%
+    ungroup()
+
+  return(gtf_data)
 }
 
 

@@ -741,7 +741,9 @@ detect_splicing_events_v2 <- function(exons_a, exons_b, strand) {
   )
 
   # STEP 1: Terminal boundaries (TSS/TES)
-  # Compare first exons (exon_number 1 in both, regardless of strand)
+  # IMPORTANT: Exons must be in transcriptional order (5' to 3')
+  # This means exon 1 (row 1) is TSS exon for BOTH plus and minus strands
+  # And last exon (row n) is TES exon for BOTH plus and minus strands
   if (nrow(exons_a) > 0 && nrow(exons_b) > 0) {
     events$alt_tss <- detect_tss_change(exons_a[1, ], exons_b[1, ], strand)
     events$alt_tes <- detect_tes_change(

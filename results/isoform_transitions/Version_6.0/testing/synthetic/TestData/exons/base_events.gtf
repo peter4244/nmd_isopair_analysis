@@ -204,3 +204,16 @@ chr_test	test	exon	69000	69200	.	-	.	gene_id "TEST_Alt_TES_Minus_LastExon_Extend
 chr_test	test	exon	68650	68700	.	-	.	gene_id "TEST_Alt_TES_Minus_LastExon_Extended"; transcript_id "TEST_Alt_TES_Minus_LastExon_Extended_T1"; exon_number "2";
 chr_test	test	exon	69000	69200	.	-	.	gene_id "TEST_Alt_TES_Minus_LastExon_Extended"; transcript_id "TEST_Alt_TES_Minus_LastExon_Extended_T2"; exon_number "1";
 chr_test	test	exon	68550	68700	.	-	.	gene_id "TEST_Alt_TES_Minus_LastExon_Extended"; transcript_id "TEST_Alt_TES_Minus_LastExon_Extended_T2"; exon_number "2";
+# TEST CASE 34: Real case #19 - Minus strand with Alt_TSS, SE, and A3SS
+# Based on PB.19746: reference has 5 exons, comparison missing first 2 and has A3SS on exon 3
+# Minus strand: transcriptional order is high coords to low coords
+# A (reference): 5 exons at positions 80000-86000 (TSS at high end)
+# B (comparison): 3 exons, missing A's first 2 exons, A3SS on exon 3 vs A3
+chr_test	test	exon	85800	86000	.	-	.	gene_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS"; transcript_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS_T1"; exon_number "1";
+chr_test	test	exon	84500	84700	.	-	.	gene_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS"; transcript_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS_T1"; exon_number "2";
+chr_test	test	exon	83000	83200	.	-	.	gene_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS"; transcript_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS_T1"; exon_number "3";
+chr_test	test	exon	81500	81700	.	-	.	gene_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS"; transcript_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS_T1"; exon_number "4";
+chr_test	test	exon	80000	80500	.	-	.	gene_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS"; transcript_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS_T1"; exon_number "5";
+chr_test	test	exon	83000	83150	.	-	.	gene_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS"; transcript_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS_T2"; exon_number "1";
+chr_test	test	exon	81500	81700	.	-	.	gene_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS"; transcript_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS_T2"; exon_number "2";
+chr_test	test	exon	80000	80500	.	-	.	gene_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS"; transcript_id "TEST_RealCase19_Minus_AltTSS_SE_A3SS_T2"; exon_number "3";
