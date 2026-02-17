@@ -284,9 +284,107 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
   }
 
   # ===========================================================================
-  # Detect internal events (A5SS, A3SS, Partial_IR, etc.)
+  # STEP 2: Detect IR events
   # ===========================================================================
-  # Compare all overlapping exon pairs
+  # Track which exon pairs have IR events (to skip them in boundary detection)
+  ir_exon_pairs <- list()
+
+  # Check if comparator exons span multiple dominant exons (IR GAIN)
+  for (i in seq_len(nrow(comp_ordered))) {
+    if (detect_ir_simple(comp_ordered[i, ], dom_ordered)) {
+      comp_exon <- comp_ordered[i, ]
+
+      # Find dominant exons that OVERLAP with this comparator exon
+      overlapping_regions <- list()
+      overlapping_dom_indices <- integer()
+      for (j in seq_len(nrow(dom_ordered))) {
+        dom_exon <- dom_ordered[j, ]
+        overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
+                    (dom_exon$exon_end >= comp_exon$exon_start)
+        if (overlaps) {
+          overlap_start <- max(dom_exon$exon_start, comp_exon$exon_start)
+          overlap_end <- min(dom_exon$exon_end, comp_exon$exon_end)
+          overlapping_regions[[length(overlapping_regions) + 1]] <-
+            sprintf("%d-%d", overlap_start, overlap_end)
+          overlapping_dom_indices <- c(overlapping_dom_indices, j)
+        }
+      }
+
+      ir_split_exons <- paste(overlapping_regions, collapse = ", ")
+
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id = gene_id,
+        dominant_transcript_id = dominant_tid,
+        comparator_transcript_id = comparator_tid,
+        event_type = "IR",
+        direction = "GAIN",
+        chr = comp_exon$chr,
+        five_prime = if (strand == "+") comp_exon$exon_start else comp_exon$exon_end,
+        three_prime = if (strand == "+") comp_exon$exon_end else comp_exon$exon_start,
+        strand = strand,
+        bp_diff = NA_integer_,
+        missing_terminal_exons = "",
+        missing_internal_exons = missing_internal_exons,
+        ir_split_exons = ir_split_exons
+      )
+
+      # Mark these exon pairs as having IR
+      for (dom_idx in overlapping_dom_indices) {
+        ir_exon_pairs[[length(ir_exon_pairs) + 1]] <- list(comp = i, dom = dom_idx)
+      }
+    }
+  }
+
+  # Check if dominant exons span multiple comparator exons (IR LOSS)
+  for (i in seq_len(nrow(dom_ordered))) {
+    if (detect_ir_simple(dom_ordered[i, ], comp_ordered)) {
+      dom_exon <- dom_ordered[i, ]
+
+      # Find comparator exons that OVERLAP with this dominant exon
+      overlapping_regions <- list()
+      overlapping_comp_indices <- integer()
+      for (j in seq_len(nrow(comp_ordered))) {
+        comp_exon <- comp_ordered[j, ]
+        overlaps <- (comp_exon$exon_start <= dom_exon$exon_end) &&
+                    (comp_exon$exon_end >= dom_exon$exon_start)
+        if (overlaps) {
+          overlap_start <- max(comp_exon$exon_start, dom_exon$exon_start)
+          overlap_end <- min(comp_exon$exon_end, dom_exon$exon_end)
+          overlapping_regions[[length(overlapping_regions) + 1]] <-
+            sprintf("%d-%d", overlap_start, overlap_end)
+          overlapping_comp_indices <- c(overlapping_comp_indices, j)
+        }
+      }
+
+      ir_split_exons <- paste(overlapping_regions, collapse = ", ")
+
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id = gene_id,
+        dominant_transcript_id = dominant_tid,
+        comparator_transcript_id = comparator_tid,
+        event_type = "IR",
+        direction = "LOSS",
+        chr = dom_exon$chr,
+        five_prime = if (strand == "+") dom_exon$exon_start else dom_exon$exon_end,
+        three_prime = if (strand == "+") dom_exon$exon_end else dom_exon$exon_start,
+        strand = strand,
+        bp_diff = NA_integer_,
+        missing_terminal_exons = "",
+        missing_internal_exons = missing_internal_exons,
+        ir_split_exons = ir_split_exons
+      )
+
+      # Mark these exon pairs as having IR
+      for (comp_idx in overlapping_comp_indices) {
+        ir_exon_pairs[[length(ir_exon_pairs) + 1]] <- list(comp = comp_idx, dom = i)
+      }
+    }
+  }
+
+  # ===========================================================================
+  # STEP 3: Detect boundary events (A5SS, A3SS, Partial_IR) for non-IR regions
+  # ===========================================================================
+  # Compare all overlapping exon pairs that DON'T have IR events
   for (i in seq_len(nrow(comp_ordered))) {
     comp_exon <- comp_ordered[i, ]
     is_first_comp <- (i == 1)
@@ -302,6 +400,12 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
                   (dom_exon$exon_end >= comp_exon$exon_start)
 
       if (!overlaps) next
+
+      # Skip if this exon pair already has an IR event
+      has_ir <- any(sapply(ir_exon_pairs, function(pair) {
+        pair$comp == i && pair$dom == j
+      }))
+      if (has_ir) next
 
       # Check for terminal overlap
       terminal_overlap <- has_terminal_overlap(dom_exon, comp_exon)
@@ -485,93 +589,6 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
     }
   }
 
-  # ===========================================================================
-  # Detect IR (monoexonic spanning multi-exonic)
-  # ===========================================================================
-  # Check if comparator exons span multiple dominant exons
-  for (i in seq_len(nrow(comp_ordered))) {
-    if (detect_ir_simple(comp_ordered[i, ], dom_ordered)) {
-      comp_exon <- comp_ordered[i, ]
-
-      # Find dominant exons that OVERLAP with this comparator exon
-      # We need the overlapping portions for reconstruction
-      overlapping_regions <- list()
-      for (j in seq_len(nrow(dom_ordered))) {
-        dom_exon <- dom_ordered[j, ]
-        # Check for overlap
-        overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
-                    (dom_exon$exon_end >= comp_exon$exon_start)
-        if (overlaps) {
-          # Calculate the overlapping region
-          overlap_start <- max(dom_exon$exon_start, comp_exon$exon_start)
-          overlap_end <- min(dom_exon$exon_end, comp_exon$exon_end)
-          overlapping_regions[[length(overlapping_regions) + 1]] <-
-            sprintf("%d-%d", overlap_start, overlap_end)
-        }
-      }
-
-      ir_split_exons <- paste(overlapping_regions, collapse = ", ")
-
-      all_events[[length(all_events) + 1]] <- tibble(
-        gene_id = gene_id,
-        dominant_transcript_id = dominant_tid,
-        comparator_transcript_id = comparator_tid,
-        event_type = "IR",
-        direction = "GAIN",  # Comparator has retention
-        chr = comp_exon$chr,
-        five_prime = if (strand == "+") comp_exon$exon_start else comp_exon$exon_end,
-        three_prime = if (strand == "+") comp_exon$exon_end else comp_exon$exon_start,
-        strand = strand,
-        bp_diff = NA_integer_,
-        missing_terminal_exons = "",
-        missing_internal_exons = missing_internal_exons,
-        ir_split_exons = ir_split_exons
-      )
-    }
-  }
-
-  # Check if dominant exons span multiple comparator exons
-  for (i in seq_len(nrow(dom_ordered))) {
-    if (detect_ir_simple(dom_ordered[i, ], comp_ordered)) {
-      dom_exon <- dom_ordered[i, ]
-
-      # Find comparator exons that OVERLAP with this dominant exon
-      # We need the overlapping portions to remove them during reconstruction
-      overlapping_regions <- list()
-      for (j in seq_len(nrow(comp_ordered))) {
-        comp_exon <- comp_ordered[j, ]
-        # Check for overlap
-        overlaps <- (comp_exon$exon_start <= dom_exon$exon_end) &&
-                    (comp_exon$exon_end >= dom_exon$exon_start)
-        if (overlaps) {
-          # Calculate the overlapping region
-          overlap_start <- max(comp_exon$exon_start, dom_exon$exon_start)
-          overlap_end <- min(comp_exon$exon_end, dom_exon$exon_end)
-          overlapping_regions[[length(overlapping_regions) + 1]] <-
-            sprintf("%d-%d", overlap_start, overlap_end)
-        }
-      }
-
-      ir_split_exons <- paste(overlapping_regions, collapse = ", ")
-
-      all_events[[length(all_events) + 1]] <- tibble(
-        gene_id = gene_id,
-        dominant_transcript_id = dominant_tid,
-        comparator_transcript_id = comparator_tid,
-        event_type = "IR",
-        direction = "LOSS",  # Dominant has retention (comparator has split exons)
-        chr = dom_exon$chr,
-        five_prime = if (strand == "+") dom_exon$exon_start else dom_exon$exon_end,
-        three_prime = if (strand == "+") dom_exon$exon_end else dom_exon$exon_start,
-        strand = strand,
-        bp_diff = NA_integer_,
-        missing_terminal_exons = "",
-        missing_internal_exons = missing_internal_exons,
-        ir_split_exons = ir_split_exons  # Exons to ADD for reconstruction
-      )
-    }
-  }
-
   # Combine all events
   if (length(all_events) > 0) {
     return(bind_rows(all_events))
@@ -637,10 +654,11 @@ main <- function(gtf_file, test_annotations_file, output_file) {
 
   # Combine all events
   if (length(all_events) > 0) {
-    final_events <- bind_rows(all_events)
+    final_events <- bind_rows(all_events) %>%
+      arrange(gene_id, dominant_transcript_id, comparator_transcript_id, event_type)
 
     # Write events file
-    cat(sprintf("\n\nWriting events to: %s\n", output_file))
+    cat(sprintf("\nWriting events to: %s\n", output_file))
     write_tsv(final_events, output_file)
 
     cat(sprintf("  Total events: %d\n", nrow(final_events)))
