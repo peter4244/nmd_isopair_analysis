@@ -1,309 +1,618 @@
 #!/usr/bin/env Rscript
 #
-# Reconstruction Functions
+# Reconstruction Functions v2 - Union Exon Based
 #
-# Functions to reconstruct dominant isoforms from comparator isoforms
-# by applying inverse operations for each event type.
+# Refactored approach: Since event coordinates exactly match atomic union exon
+# boundaries, we reconstruct by finding and applying the specific union exons
+# that represent each event.
 #
-# Each function takes:
-#   - exons: Current exon structure (tibble)
-#   - event: Event record (single row from events file)
-#   - Returns: Modified exon structure
+# Key principle:
+#   Event coordinates → Union exons → Add/remove from comparator structure
 
 library(tidyverse)
 
 # ==============================================================================
-# Helper Functions
+# Core Helper: Find Union Exons for Event
 # ==============================================================================
 
-#' Find exon that contains a specific coordinate
+#' Parse comma-separated exon ranges and find matching union exons
 #'
-#' @param exons Exon tibble
-#' @param coord Coordinate to search for
-#' @param boundary Which boundary ("start" or "end")
-#' @return Row number of matching exon, or NA
-find_exon_with_boundary <- function(exons, coord, boundary = "either") {
-  if (boundary == "start") {
-    matches <- which(exons$exon_start == coord)
-  } else if (boundary == "end") {
-    matches <- which(exons$exon_end == coord)
-  } else {  # either
-    matches <- which(exons$exon_start == coord | exons$exon_end == coord)
+#' @param ranges_str Comma-separated ranges like "72000-72100" or "100-200, 300-400"
+#' @param union_exons All union exons for the gene
+#' @param gene_id Gene identifier
+#' @return Tibble of matching union exons
+parse_and_find_union_exons <- function(ranges_str, union_exons, gene_id) {
+  if (is.na(ranges_str) || ranges_str == "") {
+    return(tibble())
   }
 
-  if (length(matches) > 0) {
-    return(matches[1])
+  # Parse comma-separated ranges
+  ranges_list <- strsplit(ranges_str, ",")[[1]]
+  all_matches <- list()
+
+  for (range_str in ranges_list) {
+    coords <- as.integer(strsplit(trimws(range_str), "-")[[1]])
+    range_start <- coords[1]
+    range_end <- coords[2]
+
+    # Find union exons within this range
+    matches <- union_exons %>%
+      filter(
+        gene_id == !!gene_id,
+        start >= range_start,
+        end <= range_end
+      ) %>%
+      arrange(start)
+
+    if (nrow(matches) > 0) {
+      all_matches[[length(all_matches) + 1]] <- matches
+    }
+  }
+
+  if (length(all_matches) > 0) {
+    return(bind_rows(all_matches) %>% distinct())
   } else {
-    return(NA)
+    return(tibble())
   }
 }
 
-#' Find exon that overlaps a coordinate
+#' Find union exons that match an event's coordinates
 #'
-#' @param exons Exon tibble
-#' @param coord Coordinate
-#' @return Row number of overlapping exon, or NA
-find_exon_containing <- function(exons, coord) {
-  matches <- which(exons$exon_start <= coord & exons$exon_end >= coord)
-
-  if (length(matches) > 0) {
-    return(matches[1])
-  } else {
-    return(NA)
-  }
-}
-
-#' Parse coordinate range string
-#'
-#' @param range_str String like "1000-1200,1500-1700"
-#' @return Tibble with start and end columns
-parse_coordinate_ranges <- function(range_str) {
-  if (is.na(range_str) || range_str == "") {
-    return(tibble(start = integer(), end = integer()))
-  }
-
-  ranges <- str_split(range_str, ",")[[1]]
-
-  results <- map_dfr(ranges, function(r) {
-    parts <- str_split(r, "-")[[1]]
-    tibble(
-      start = as.integer(parts[1]),
-      end = as.integer(parts[2])
-    )
-  })
-
-  return(results)
-}
-
-# ==============================================================================
-# A5SS Reconstruction (Donor Differs)
-# ==============================================================================
-
-#' Apply A5SS event to reconstruct dominant
-#'
-#' A5SS: Donor (5' splice site) differs
-#' Event coordinates (five_prime, three_prime) represent the exact region that differs
-#'
-#' @param exons Comparator exons
 #' @param event Event record
-#' @return Reconstructed exons
-apply_a5ss <- function(exons, event) {
-  strand <- event$strand
-  direction <- event$direction
+#' @param union_exons All union exons for the gene
+#' @return Tibble of matching union exons
+find_event_union_exons <- function(event, union_exons) {
+  # For Alt_TSS/Alt_TES: use missing_terminal_exons
+  if (event$event_type %in% c("Alt_TSS", "Alt_TES")) {
+    if (is.na(event$missing_terminal_exons) || event$missing_terminal_exons == "") {
+      return(tibble())
+    }
 
-  if (strand == "+") {
-    # Plus: donor = exon end
-    if (direction == "LOSS") {
-      # Comparator lost sequence: comparator ends at five_prime-1, extend to three_prime
-      exon_idx <- which(abs(exons$exon_end - (event$five_prime - 1)) <= 1)[1]
-      if (!is.na(exon_idx)) {
-        exons$exon_end[exon_idx] <- event$three_prime
-      }
-    } else if (direction == "GAIN") {
-      # Comparator gained sequence: comparator ends at three_prime, trim to five_prime-1
-      exon_idx <- which(abs(exons$exon_end - event$three_prime) <= 1)[1]
-      if (!is.na(exon_idx)) {
-        exons$exon_end[exon_idx] <- event$five_prime - 1
+    # Parse comma-separated ranges
+    ranges_str <- strsplit(event$missing_terminal_exons, ",")[[1]]
+    all_matches <- list()
+
+    for (range_str in ranges_str) {
+      coords <- as.integer(strsplit(trimws(range_str), "-")[[1]])
+      range_start <- coords[1]
+      range_end <- coords[2]
+
+      # Find union exons that exactly match this range
+      matches <- union_exons %>%
+        filter(
+          gene_id == event$gene_id,
+          start >= range_start,
+          end <= range_end
+        ) %>%
+        arrange(start)
+
+      if (nrow(matches) > 0) {
+        all_matches[[length(all_matches) + 1]] <- matches
       }
     }
 
-  } else {  # Minus strand
-    # Minus: donor = exon start
-    if (direction == "LOSS") {
-      # Comparator lost sequence: comparator starts at three_prime+1, extend to five_prime
-      exon_idx <- which(abs(exons$exon_start - (event$three_prime + 1)) <= 1)[1]
-      if (!is.na(exon_idx)) {
-        exons$exon_start[exon_idx] <- event$five_prime
-      }
-    } else if (direction == "GAIN") {
-      # Comparator gained sequence: comparator starts at five_prime, trim to three_prime+1
-      exon_idx <- which(abs(exons$exon_start - event$five_prime) <= 1)[1]
-      if (!is.na(exon_idx)) {
-        exons$exon_start[exon_idx] <- event$three_prime + 1
-      }
+    if (length(all_matches) > 0) {
+      return(bind_rows(all_matches) %>% distinct())
+    } else {
+      return(tibble())
     }
+  }
+
+  # For other events: use five_prime/three_prime
+  event_start <- min(event$five_prime, event$three_prime)
+  event_end <- max(event$five_prime, event$three_prime)
+
+  # Find union exons within the event range
+  matches <- union_exons %>%
+    filter(
+      gene_id == event$gene_id,
+      start >= event_start,
+      end <= event_end
+    ) %>%
+    arrange(start)
+
+  return(matches)
+}
+
+# ==============================================================================
+# Union Exon Addition/Removal
+# ==============================================================================
+
+#' Add union exons to comparator structure
+#'
+#' @param exons Current exon structure
+#' @param union_exons_to_add Union exons to insert
+#' Merge adjacent or overlapping exons into continuous segments
+#'
+#' @param exons Exon dataframe with exon_start and exon_end
+#' @param strand Strand (not used currently, but kept for consistency)
+#' @return Merged exon dataframe
+merge_adjacent_exons <- function(exons, strand) {
+  if (nrow(exons) == 0) return(exons)
+
+  # Sort by position
+  exons <- exons %>% arrange(exon_start)
+
+  merged <- list()
+  current <- exons[1, ]
+
+  for (i in seq_len(nrow(exons))[-1]) {
+    next_exon <- exons[i, ]
+
+    # Check if adjacent or overlapping (end of current >= start-1 of next)
+    if (current$exon_end >= next_exon$exon_start - 1) {
+      # Merge: extend current to cover next
+      current$exon_end <- max(current$exon_end, next_exon$exon_end)
+    } else {
+      # Gap exists: save current and start new
+      merged[[length(merged) + 1]] <- current
+      current <- next_exon
+    }
+  }
+
+  # Add final exon
+  merged[[length(merged) + 1]] <- current
+
+  bind_rows(merged)
+}
+
+#' @param strand Strand
+#' @return Modified exon structure
+add_union_exons <- function(exons, union_exons_to_add, strand) {
+  if (nrow(union_exons_to_add) == 0) {
+    return(exons)
+  }
+
+  # Convert union exons to exon format
+  new_exons <- union_exons_to_add %>%
+    mutate(
+      exon_start = start,
+      exon_end = end,
+      transcript_id = exons$transcript_id[1]
+    ) %>%
+    select(chr, exon_start, exon_end, strand, gene_id, transcript_id)
+
+  # Combine and sort
+  combined <- bind_rows(exons, new_exons) %>%
+    arrange(exon_start, exon_end) %>%
+    distinct()
+
+  return(combined)
+}
+
+#' Remove union exons from comparator structure
+#'
+#' @param exons Current exon structure
+#' @param union_exons_to_remove Union exons to remove
+#' @return Modified exon structure
+remove_union_exons <- function(exons, union_exons_to_remove) {
+  if (nrow(union_exons_to_remove) == 0) {
+    return(exons)
+  }
+
+  # Remove exons that exactly match the union exon coordinates
+  for (i in seq_len(nrow(union_exons_to_remove))) {
+    ue <- union_exons_to_remove[i, ]
+    exons <- exons %>%
+      filter(!(exon_start == ue$start & exon_end == ue$end))
   }
 
   return(exons)
 }
 
-# ==============================================================================
-# A3SS Reconstruction (Acceptor Differs)
-# ==============================================================================
-
-#' Apply A3SS event to reconstruct dominant
+#' Modify exon boundary using union exon
 #'
-#' A3SS: Acceptor (3' splice site) differs
-#' Event coordinates (five_prime, three_prime) represent the exact region that differs
+#' For splice site events (A3SS, A5SS, Partial_IR), we extend or trim
+#' an existing exon boundary rather than adding/removing whole exons
 #'
-#' @param exons Comparator exons
+#' @param exons Current exon structure
+#' @param event_ues Union exons representing the event
 #' @param event Event record
-#' @return Reconstructed exons
-apply_a3ss <- function(exons, event) {
-  strand <- event$strand
-  direction <- event$direction
-
-  if (strand == "+") {
-    # Plus: acceptor = exon start
-    if (direction == "LOSS") {
-      # Comparator lost sequence: comparator starts at three_prime+1, extend to five_prime
-      exon_idx <- which(abs(exons$exon_start - (event$three_prime + 1)) <= 1)[1]
-      if (!is.na(exon_idx)) {
-        exons$exon_start[exon_idx] <- event$five_prime
-      }
-    } else if (direction == "GAIN") {
-      # Comparator gained sequence: comparator starts at five_prime, trim to three_prime+1
-      exon_idx <- which(abs(exons$exon_start - event$five_prime) <= 1)[1]
-      if (!is.na(exon_idx)) {
-        exons$exon_start[exon_idx] <- event$three_prime + 1
-      }
-    }
-
-  } else {  # Minus strand
-    # Minus: acceptor = exon end
-    if (direction == "LOSS") {
-      # Comparator lost sequence: comparator ends at three_prime-1, extend to five_prime
-      exon_idx <- which(abs(exons$exon_end - (event$three_prime - 1)) <= 1)[1]
-      if (!is.na(exon_idx)) {
-        exons$exon_end[exon_idx] <- event$five_prime
-      }
-    } else if (direction == "GAIN") {
-      # Comparator gained sequence: comparator ends at five_prime, trim to three_prime-1
-      exon_idx <- which(abs(exons$exon_end - event$five_prime) <= 1)[1]
-      if (!is.na(exon_idx)) {
-        exons$exon_end[exon_idx] <- event$three_prime - 1
-      }
-    }
+#' @return Modified exon structure
+modify_exon_boundary <- function(exons, event_ues, event) {
+  if (nrow(event_ues) == 0) {
+    return(exons)
   }
 
-  return(exons)
-}
-
-# ==============================================================================
-# Partial IR Reconstruction (Same as A5SS/A3SS but larger bp_diff)
-# ==============================================================================
-
-#' Apply Partial_IR_5 event (partial retention at 5' splice site / donor)
-#'
-#' @param exons Comparator exons
-#' @param event Event record
-#' @return Reconstructed exons
-apply_partial_ir_5 <- function(exons, event) {
-  # Partial_IR_5 affects the donor (same as A5SS but ≥100bp)
-  return(apply_a5ss(exons, event))
-}
-
-#' Apply Partial_IR_3 event (partial retention at 3' splice site / acceptor)
-#'
-#' @param exons Comparator exons
-#' @param event Event record
-#' @return Reconstructed exons
-apply_partial_ir_3 <- function(exons, event) {
-  # Partial_IR_3 affects the acceptor (same as A3SS but ≥100bp)
-  return(apply_a3ss(exons, event))
-}
-
-# ==============================================================================
-# IR Reconstruction (Intron Retention)
-# ==============================================================================
-
-#' Apply IR event to reconstruct dominant
-#'
-#' IR: One isoform has monoexonic region spanning multiple exons in the other
-#'
-#' Direction = GAIN: Comparator has retention (monoexonic)
-#'   → Split comparator's long exon into multiple exons
-#'
-#' Direction = LOSS: Dominant has retention (monoexonic)
-#'   → Merge comparator's multiple exons into one
-#'
-#' @param exons Comparator exons
-#' @param event Event record
-#' @param union_exons Union exon structure (to identify split points)
-#' @return Reconstructed exons
-apply_ir <- function(exons, event, union_exons = NULL) {
-  direction <- event$direction
   strand <- event$strand
+  event_type <- event$event_type
+  direction <- event$direction
 
-  # Get IR boundaries
-  if (strand == "+") {
-    ir_start <- event$five_prime
-    ir_end <- event$three_prime
-  } else {
-    ir_start <- event$three_prime
-    ir_end <- event$five_prime
-  }
-
-  if (direction == "GAIN") {
-    # Comparator has intron retention → split into multiple exons
-    # Find the long exon that spans this region
-    exon_idx <- which(
-      exons$exon_start <= ir_start &
-      exons$exon_end >= ir_end
-    )
-
-    if (length(exon_idx) > 0) {
-      exon_idx <- exon_idx[1]
-      long_exon <- exons[exon_idx, ]
-
-      # Use union exons to determine split points
-      if (!is.null(union_exons)) {
-        # Find union exons within this region
-        ues_in_region <- union_exons %>%
-          filter(
-            chr == long_exon$chr,
-            strand == long_exon$strand,
-            start >= long_exon$exon_start,
-            end <= long_exon$exon_end
-          ) %>%
-          arrange(start)
-
-        if (nrow(ues_in_region) > 1) {
-          # Split the long exon according to union exon boundaries
-          new_exons <- list()
-
-          for (i in seq_len(nrow(ues_in_region))) {
-            new_exons[[i]] <- tibble(
-              chr = long_exon$chr,
-              exon_start = ues_in_region$start[i],
-              exon_end = ues_in_region$end[i],
-              strand = long_exon$strand,
-              gene_id = long_exon$gene_id,
-              transcript_id = long_exon$transcript_id
-            )
-          }
-
-          # Replace long exon with split exons
-          before_exons <- if (exon_idx > 1) exons[1:(exon_idx-1), ] else tibble()
-          after_exons <- if (exon_idx < nrow(exons)) exons[(exon_idx+1):nrow(exons), ] else tibble()
-
-          exons <- bind_rows(before_exons, bind_rows(new_exons), after_exons)
+  # Determine which boundary to modify based on event type
+  if (event_type %in% c("A5SS", "Partial_IR_5")) {
+    # Donor differs (5' splice site)
+    if (strand == "+") {
+      # Plus: donor = exon end
+      if (direction == "LOSS") {
+        # Extend exon end
+        boundary_coord <- min(event$five_prime, event$three_prime) - 1
+        exon_idx <- which(abs(exons$exon_end - boundary_coord) <= 1)[1]
+        if (!is.na(exon_idx)) {
+          exons$exon_end[exon_idx] <- max(event_ues$end)
+        }
+      } else {
+        # Trim exon end
+        boundary_coord <- max(event$five_prime, event$three_prime)
+        exon_idx <- which(abs(exons$exon_end - boundary_coord) <= 1)[1]
+        if (!is.na(exon_idx)) {
+          exons$exon_end[exon_idx] <- min(event_ues$start) - 1
+        }
+      }
+    } else {
+      # Minus: donor = exon start
+      if (direction == "LOSS") {
+        # Extend exon start
+        boundary_coord <- max(event$five_prime, event$three_prime) + 1
+        exon_idx <- which(abs(exons$exon_start - boundary_coord) <= 1)[1]
+        if (!is.na(exon_idx)) {
+          exons$exon_start[exon_idx] <- min(event_ues$start)
+        }
+      } else {
+        # Trim exon start
+        boundary_coord <- min(event$five_prime, event$three_prime)
+        exon_idx <- which(abs(exons$exon_start - boundary_coord) <= 1)[1]
+        if (!is.na(exon_idx)) {
+          exons$exon_start[exon_idx] <- max(event_ues$end) + 1
         }
       }
     }
+  } else if (event_type %in% c("A3SS", "Partial_IR_3")) {
+    # Acceptor differs (3' splice site)
+    if (strand == "+") {
+      # Plus: acceptor = exon start
+      if (direction == "LOSS") {
+        # Extend exon start
+        boundary_coord <- max(event$five_prime, event$three_prime) + 1
+        exon_idx <- which(abs(exons$exon_start - boundary_coord) <= 1)[1]
+        if (!is.na(exon_idx)) {
+          exons$exon_start[exon_idx] <- min(event_ues$start)
+        }
+      } else {
+        # Trim exon start
+        boundary_coord <- min(event$five_prime, event$three_prime)
+        exon_idx <- which(abs(exons$exon_start - boundary_coord) <= 1)[1]
+        if (!is.na(exon_idx)) {
+          exons$exon_start[exon_idx] <- max(event_ues$end) + 1
+        }
+      }
+    } else {
+      # Minus: acceptor = exon end
+      if (direction == "LOSS") {
+        # Extend exon end
+        boundary_coord <- min(event$five_prime, event$three_prime) - 1
+        exon_idx <- which(abs(exons$exon_end - boundary_coord) <= 1)[1]
+        if (!is.na(exon_idx)) {
+          exons$exon_end[exon_idx] <- max(event_ues$end)
+        }
+      } else {
+        # Trim exon end
+        boundary_coord <- max(event$five_prime, event$three_prime)
+        exon_idx <- which(abs(exons$exon_end - boundary_coord) <= 1)[1]
+        if (!is.na(exon_idx)) {
+          exons$exon_end[exon_idx] <- min(event_ues$start) - 1
+        }
+      }
+    }
+  }
 
-  } else if (direction == "LOSS") {
-    # Dominant has intron retention → merge comparator's multiple exons
-    # Find all exons within the IR region
-    exons_in_region <- which(
-      exons$exon_start >= ir_start &
-      exons$exon_end <= ir_end
+  return(exons)
+}
+
+#' Modify terminal exon using union exon coordinates
+#'
+#' For Alt_TSS/Alt_TES with multiple regions: process each separately
+#' - Adjacent regions: merge with existing exon
+#' - Gapped regions: add as separate exons
+#'
+#' @param exons Current exon structure
+#' @param event_ues Union exons representing the terminal difference
+#' @param event Event record
+#' @param union_exons All union exons (for re-parsing regions)
+#' @return Modified exon structure
+modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
+  if (nrow(exons) == 0) {
+    return(exons)
+  }
+
+  # For LOSS events with multiple terminal regions, handle each separately
+  if (!is.null(union_exons) && event$direction == "LOSS" &&
+      !is.na(event$missing_terminal_exons) && event$missing_terminal_exons != "") {
+
+    # Parse individual regions
+    ranges_str <- strsplit(event$missing_terminal_exons, ",")[[1]]
+
+    if (length(ranges_str) > 1) {
+      # Parse and sort regions based on strand and event type
+      regions <- lapply(ranges_str, function(rs) {
+        coords <- as.integer(strsplit(trimws(rs), "-")[[1]])
+        list(start = coords[1], end = coords[2], str = trimws(rs))
+      })
+
+      # Sort regions to process adjacent regions first (closest to comparator terminal exon)
+      # For LOSS: we're adding regions that extend beyond comparator's terminal exon
+      if (event$event_type == "Alt_TSS") {
+        if (event$strand == "+") {
+          # Plus TSS (low coord): dominant extends to LOWER coords than comparator
+          # Process from high to low (closest to comparator first)
+          regions <- regions[order(sapply(regions, function(r) r$start), decreasing = TRUE)]
+        } else {
+          # Minus TSS (high coord): dominant extends to HIGHER coords than comparator
+          # Process from low to high (closest to comparator first)
+          regions <- regions[order(sapply(regions, function(r) r$start))]
+        }
+      } else {  # Alt_TES
+        if (event$strand == "+") {
+          # Plus TES (high coord): dominant extends to HIGHER coords than comparator
+          # Process from low to high (closest to comparator first)
+          regions <- regions[order(sapply(regions, function(r) r$start))]
+        } else {
+          # Minus TES (low coord): dominant extends to LOWER coords than comparator
+          # Process from high to low (closest to comparator first)
+          regions <- regions[order(sapply(regions, function(r) r$start), decreasing = TRUE)]
+        }
+      }
+
+      # Multiple regions - process each individually in sorted order
+      for (region in regions) {
+        region_start <- region$start
+        region_end <- region$end
+
+        # Find union exons for this specific region
+        region_ues <- union_exons %>%
+          filter(
+            gene_id == event$gene_id,
+            start >= region_start,
+            end <= region_end
+          )
+
+        if (nrow(region_ues) == 0) next
+
+        # Check if this region is adjacent to the terminal exon
+        if (event$event_type == "Alt_TSS") {
+          if (event$strand == "+") {
+            # Plus: TSS = first exon
+            terminal_exon <- exons[1, ]
+            is_adjacent <- (region_end + 1 >= terminal_exon$exon_start - 1) &&
+                          (region_start <= terminal_exon$exon_start + 1)
+
+            if (is_adjacent) {
+              # Merge: extend terminal exon
+              exons$exon_start[1] <- min(region_start, terminal_exon$exon_start)
+              exons$exon_end[1] <- max(region_end, terminal_exon$exon_end)
+            } else {
+              # Gap: add as separate exon
+              new_exon <- tibble(
+                chr = exons$chr[1],
+                exon_start = region_start,
+                exon_end = region_end,
+                strand = exons$strand[1],
+                gene_id = exons$gene_id[1],
+                transcript_id = exons$transcript_id[1]
+              )
+              exons <- bind_rows(new_exon, exons)
+            }
+          } else {
+            # Minus: TSS = last exon
+            terminal_exon <- exons[nrow(exons), ]
+            is_adjacent <- (region_start <= terminal_exon$exon_end + 1) &&
+                          (region_end + 1 >= terminal_exon$exon_end - 1)
+
+            if (is_adjacent) {
+              # Merge: extend terminal exon
+              exons$exon_start[nrow(exons)] <- min(region_start, terminal_exon$exon_start)
+              exons$exon_end[nrow(exons)] <- max(region_end, terminal_exon$exon_end)
+            } else {
+              # Gap: add as separate exon
+              new_exon <- tibble(
+                chr = exons$chr[1],
+                exon_start = region_start,
+                exon_end = region_end,
+                strand = exons$strand[1],
+                gene_id = exons$gene_id[1],
+                transcript_id = exons$transcript_id[1]
+              )
+              exons <- bind_rows(exons, new_exon)
+            }
+          }
+        } else if (event$event_type == "Alt_TES") {
+          if (event$strand == "+") {
+            # Plus: TES = last exon
+            terminal_exon <- exons[nrow(exons), ]
+            is_adjacent <- (region_start <= terminal_exon$exon_end + 1) &&
+                          (region_end + 1 >= terminal_exon$exon_end - 1)
+
+            if (is_adjacent) {
+              # Merge: extend terminal exon
+              exons$exon_start[nrow(exons)] <- min(region_start, terminal_exon$exon_start)
+              exons$exon_end[nrow(exons)] <- max(region_end, terminal_exon$exon_end)
+            } else {
+              # Gap: add as separate exon
+              new_exon <- tibble(
+                chr = exons$chr[1],
+                exon_start = region_start,
+                exon_end = region_end,
+                strand = exons$strand[1],
+                gene_id = exons$gene_id[1],
+                transcript_id = exons$transcript_id[1]
+              )
+              exons <- bind_rows(exons, new_exon)
+            }
+          } else {
+            # Minus: TES = first exon
+            terminal_exon <- exons[1, ]
+            is_adjacent <- (region_end + 1 >= terminal_exon$exon_start - 1) &&
+                          (region_start <= terminal_exon$exon_start + 1)
+
+            if (is_adjacent) {
+              # Merge: extend terminal exon
+              exons$exon_start[1] <- min(region_start, terminal_exon$exon_start)
+              exons$exon_end[1] <- max(region_end, terminal_exon$exon_end)
+            } else {
+              # Gap: add as separate exon
+              new_exon <- tibble(
+                chr = exons$chr[1],
+                exon_start = region_start,
+                exon_end = region_end,
+                strand = exons$strand[1],
+                gene_id = exons$gene_id[1],
+                transcript_id = exons$transcript_id[1]
+              )
+              exons <- bind_rows(new_exon, exons)
+            }
+          }
+        }
+      }
+
+      # Sort exons after processing all regions
+      exons <- exons %>% arrange(exon_start) %>% distinct(exon_start, exon_end, .keep_all = TRUE)
+      return(exons)
+    }
+  }
+
+  # Fall through to original logic for single-region or GAIN events
+  if (nrow(event_ues) == 0) {
+    return(exons)
+  }
+
+  strand <- event$strand
+  event_type <- event$event_type
+  direction <- event$direction
+
+  # Helper: check if union exons overlap or are adjacent to terminal exon
+  # Allow 1bp gap for adjacent exons (they should be extended, not replaced)
+  check_overlap_or_adjacent <- function(terminal_exon, union_exons) {
+    any(
+      (union_exons$start <= terminal_exon$exon_end + 1) &
+      (union_exons$end + 1 >= terminal_exon$exon_start)
     )
+  }
 
-    if (length(exons_in_region) > 1) {
-      # Merge these exons into one
-      first_idx <- min(exons_in_region)
-      last_idx <- max(exons_in_region)
+  if (event_type == "Alt_TES") {
+    # TES (Transcription End Site)
+    # Plus strand: TES = last exon end
+    # Minus strand: TES = first exon start
 
-      merged_exon <- exons[first_idx, ]
-      merged_exon$exon_start <- min(exons$exon_start[exons_in_region])
-      merged_exon$exon_end <- max(exons$exon_end[exons_in_region])
+    if (strand == "+") {
+      # Terminal exon is last exon
+      terminal_exon <- exons[nrow(exons), ]
 
-      # Replace multiple exons with merged exon
-      before_exons <- if (first_idx > 1) exons[1:(first_idx-1), ] else tibble()
-      after_exons <- if (last_idx < nrow(exons)) exons[(last_idx+1):nrow(exons), ] else tibble()
+      # Check if union exon exactly matches the terminal exon
+      exact_match <- (nrow(event_ues) == 1 &&
+                     event_ues$start[1] == terminal_exon$exon_start &&
+                     event_ues$end[1] == terminal_exon$exon_end)
 
-      exons <- bind_rows(before_exons, merged_exon, after_exons)
+      if (exact_match && direction == "GAIN") {
+        # Union exon IS the terminal exon → remove it entirely
+        exons <- exons[-nrow(exons), ]
+      } else if (check_overlap_or_adjacent(terminal_exon, event_ues)) {
+        # Overlapping: extend or trim
+        if (direction == "LOSS") {
+          exons$exon_end[nrow(exons)] <- max(event_ues$end)
+        } else {
+          exons$exon_end[nrow(exons)] <- min(event_ues$start) - 1
+        }
+      } else {
+        # Non-overlapping: remove and replace
+        exons <- exons[-nrow(exons), ]  # Remove last exon
+        if (direction == "LOSS") {
+          # Add dominant's terminal exon(s)
+          exons <- add_union_exons(exons, event_ues, strand)
+        }
+        # For GAIN, just removing is sufficient (dominant doesn't have this region)
+      }
+
+    } else {
+      # Minus strand: terminal exon is first exon
+      terminal_exon <- exons[1, ]
+
+      # Check if union exon exactly matches the terminal exon
+      exact_match <- (nrow(event_ues) == 1 &&
+                     event_ues$start[1] == terminal_exon$exon_start &&
+                     event_ues$end[1] == terminal_exon$exon_end)
+
+      if (exact_match && direction == "GAIN") {
+        # Union exon IS the terminal exon → remove it entirely
+        exons <- exons[-1, ]
+      } else if (check_overlap_or_adjacent(terminal_exon, event_ues)) {
+        # Overlapping: extend or trim
+        if (direction == "LOSS") {
+          exons$exon_start[1] <- min(event_ues$start)
+        } else {
+          exons$exon_start[1] <- max(event_ues$end) + 1
+        }
+      } else {
+        # Non-overlapping: remove and replace
+        exons <- exons[-1, ]  # Remove first exon
+        if (direction == "LOSS") {
+          # Add dominant's terminal exon(s)
+          exons <- add_union_exons(exons, event_ues, strand)
+        }
+        # For GAIN, just removing is sufficient (dominant doesn't have this region)
+      }
+    }
+
+  } else if (event_type == "Alt_TSS") {
+    # TSS (Transcription Start Site)
+    # Plus strand: TSS = first exon start
+    # Minus strand: TSS = last exon end
+
+    if (strand == "+") {
+      # Terminal exon is first exon
+      terminal_exon <- exons[1, ]
+
+      # Check if union exon exactly matches the terminal exon
+      exact_match <- (nrow(event_ues) == 1 &&
+                     event_ues$start[1] == terminal_exon$exon_start &&
+                     event_ues$end[1] == terminal_exon$exon_end)
+
+      if (exact_match && direction == "GAIN") {
+        # Union exon IS the terminal exon → remove it entirely
+        exons <- exons[-1, ]
+      } else if (check_overlap_or_adjacent(terminal_exon, event_ues)) {
+        # Overlapping: extend or trim
+        if (direction == "LOSS") {
+          exons$exon_start[1] <- min(event_ues$start)
+        } else {
+          exons$exon_start[1] <- max(event_ues$end) + 1
+        }
+      } else {
+        # Non-overlapping: remove and replace
+        exons <- exons[-1, ]  # Remove first exon
+        if (direction == "LOSS") {
+          # Add dominant's terminal exon(s)
+          exons <- add_union_exons(exons, event_ues, strand)
+        }
+        # For GAIN, just removing is sufficient (dominant doesn't have this region)
+      }
+
+    } else {
+      # Minus strand: terminal exon is last exon
+      terminal_exon <- exons[nrow(exons), ]
+
+      # Check if union exon exactly matches the terminal exon (for GAIN, should remove entirely)
+      exact_match <- (nrow(event_ues) == 1 &&
+                     event_ues$start[1] == terminal_exon$exon_start &&
+                     event_ues$end[1] == terminal_exon$exon_end)
+
+      if (exact_match && direction == "GAIN") {
+        # Union exon IS the terminal exon → remove it entirely
+        exons <- exons[-nrow(exons), ]
+      } else if (check_overlap_or_adjacent(terminal_exon, event_ues)) {
+        # Overlapping: extend or trim
+        if (direction == "LOSS") {
+          exons$exon_end[nrow(exons)] <- max(event_ues$end)
+        } else {
+          exons$exon_end[nrow(exons)] <- min(event_ues$start) - 1
+        }
+      } else {
+        # Non-overlapping: remove and replace
+        exons <- exons[-nrow(exons), ]  # Remove last exon
+        if (direction == "LOSS") {
+          # Add dominant's terminal exon(s)
+          exons <- add_union_exons(exons, event_ues, strand)
+        }
+        # For GAIN, just removing is sufficient (dominant doesn't have this region)
+      }
     }
   }
 
@@ -311,185 +620,120 @@ apply_ir <- function(exons, event, union_exons = NULL) {
 }
 
 # ==============================================================================
-# SE Reconstruction (Skipped Exon)
+# Event Application Functions
 # ==============================================================================
 
-#' Apply SE event to reconstruct dominant
+#' Apply any event using union exons
 #'
-#' SE: Exon present in one isoform but absent in the other
-#'
-#' Typically, dominant has the exon and comparator lacks it.
-#' Reconstruction: Insert the skipped exon between flanking exons.
-#'
-#' @param exons Comparator exons
+#' @param exons Current exon structure
 #' @param event Event record
-#' @return Reconstructed exons
-apply_se <- function(exons, event) {
-  strand <- event$strand
+#' @param union_exons All union exons for the gene
+#' @return Modified exon structure
+apply_event_union_based <- function(exons, event, union_exons) {
+  # Find union exons for this event
+  event_ues <- find_event_union_exons(event, union_exons)
 
-  # SE coordinates store the missing exon boundaries
-  if (strand == "+") {
-    se_start <- event$five_prime
-    se_end <- event$three_prime
-  } else {
-    se_start <- event$three_prime
-    se_end <- event$five_prime
+  if (nrow(event_ues) == 0) {
+    warning(sprintf("No union exons found for %s event", event$event_type))
+    return(exons)
   }
 
-  # Find insertion point (between flanking exons)
-  # Insert after the exon that ends before se_start
-  insert_after <- max(which(exons$exon_end < se_start), 0)
-
-  # Create new exon
-  new_exon <- tibble(
-    chr = exons$chr[1],
-    exon_start = se_start,
-    exon_end = se_end,
-    strand = exons$strand[1],
-    gene_id = exons$gene_id[1],
-    transcript_id = exons$transcript_id[1]
-  )
-
-  # Insert the exon
-  if (insert_after == 0) {
-    # Insert at beginning
-    exons <- bind_rows(new_exon, exons)
-  } else if (insert_after >= nrow(exons)) {
-    # Insert at end
-    exons <- bind_rows(exons, new_exon)
-  } else {
-    # Insert in middle
-    before_exons <- exons[1:insert_after, ]
-    after_exons <- exons[(insert_after+1):nrow(exons), ]
-    exons <- bind_rows(before_exons, new_exon, after_exons)
-  }
-
-  return(exons)
-}
-
-# ==============================================================================
-# Alt_TSS Reconstruction (Alternative Transcription Start Site)
-# ==============================================================================
-
-#' Apply Alt_TSS event to reconstruct dominant
-#'
-#' Alt_TSS: Transcription start site differs
-#' Event coordinates (five_prime, three_prime) represent the exact region that differs
-#'
-#' @param exons Comparator exons (ordered TSS → TES)
-#' @param event Event record
-#' @return Reconstructed exons
-apply_alt_tss <- function(exons, event) {
+  event_type <- event$event_type
   direction <- event$direction
-  strand <- event$strand
 
-  if (strand == "+") {
-    # Plus strand: TSS = exon start (lower coordinate)
-    if (direction == "LOSS") {
-      # Comparator lost sequence: extend first exon to include lost region
-      # Comparator starts at three_prime+1, extend to five_prime
-      if (nrow(exons) > 0 && abs(exons$exon_start[1] - (event$three_prime + 1)) <= 1) {
-        exons$exon_start[1] <- event$five_prime
-      }
-    } else if (direction == "GAIN") {
-      # Comparator gained sequence: trim first exon to exclude gained region
-      # Comparator starts at five_prime, trim to three_prime+1
-      if (nrow(exons) > 0 && abs(exons$exon_start[1] - event$five_prime) <= 1) {
-        exons$exon_start[1] <- event$three_prime + 1
+  # Apply based on event type and direction
+  if (event_type %in% c("Alt_TSS", "Alt_TES")) {
+    # Terminal events: extend or trim the terminal exon
+    exons <- modify_terminal_exon(exons, event_ues, event, union_exons)
+
+    # Add missing internal exons if present
+    if (!is.na(event$missing_internal_exons) && event$missing_internal_exons != "") {
+      missing_internal_ues <- parse_and_find_union_exons(event$missing_internal_exons, union_exons, event$gene_id)
+      if (nrow(missing_internal_ues) > 0) {
+        exons <- add_union_exons(exons, missing_internal_ues, event$strand)
       }
     }
 
-  } else {
-    # Minus strand: TSS = exon end (higher coordinate)
+  } else if (event_type == "SE") {
+    # Skipped exon: add or remove entire exon(s)
     if (direction == "LOSS") {
-      # Comparator lost sequence: extend first exon to include lost region
-      # Comparator ends at three_prime-1, extend to five_prime
-      if (nrow(exons) > 0 && abs(exons$exon_end[1] - (event$three_prime - 1)) <= 1) {
-        exons$exon_end[1] <- event$five_prime
+      # Dominant has exon, comparator doesn't → add it
+      exons <- add_union_exons(exons, event_ues, event$strand)
+    } else {
+      # Comparator has exon, dominant doesn't → remove it
+      exons <- remove_union_exons(exons, event_ues)
+    }
+
+  } else if (event_type == "IR") {
+    # Intron retention
+    ir_start <- min(event$five_prime, event$three_prime)
+    ir_end <- max(event$five_prime, event$three_prime)
+
+    if (direction == "GAIN") {
+      # Comparator retains intron → split into multiple exons (dominant)
+      # Find and remove comparator's merged exon that spans the IR region
+      for (i in seq_len(nrow(exons))) {
+        if (exons$exon_start[i] <= ir_start && exons$exon_end[i] >= ir_end) {
+          # This exon spans the entire IR region - remove it
+          exons <- exons[-i, ]
+          break
+        }
       }
-    } else if (direction == "GAIN") {
-      # Comparator gained sequence: trim first exon to exclude gained region
-      # Comparator ends at five_prime, trim to three_prime-1
-      if (nrow(exons) > 0 && abs(exons$exon_end[1] - event$five_prime) <= 1) {
-        exons$exon_end[1] <- event$three_prime - 1
+
+      # Use ir_split_exons field to find the correct exonic union exons
+      if (!is.na(event$ir_split_exons) && event$ir_split_exons != "") {
+        split_exons_ues <- parse_and_find_union_exons(event$ir_split_exons, union_exons, event$gene_id)
+        if (nrow(split_exons_ues) > 0) {
+          exons <- add_union_exons(exons, split_exons_ues, event$strand)
+        } else {
+          warning("ir_split_exons specified but no matching union exons found")
+        }
+      } else {
+        warning("IR GAIN event missing ir_split_exons field - cannot reconstruct properly")
+      }
+
+    } else {
+      # IR LOSS: Dominant has retention, comparator has split exons
+      # Strategy: Only FILL IN the INTRONIC gaps between comparator's split exons
+      # Don't touch exonic boundaries - let Alt_TSS/Alt_TES handle those
+
+      # Get all union exons in the IR region
+      all_ues_in_region <- event_ues
+
+      # Get the comparator's exonic regions (from ir_split_exons)
+      if (!is.na(event$ir_split_exons) && event$ir_split_exons != "") {
+        exonic_ues <- parse_and_find_union_exons(event$ir_split_exons, union_exons, event$gene_id)
+
+        # Find intronic union exons: those in the IR region but NOT in exonic regions
+        if (nrow(exonic_ues) > 0 && nrow(all_ues_in_region) > 0) {
+          # Identify intronic UEs by removing exonic UEs from all UEs in region
+          intronic_ues <- all_ues_in_region %>%
+            anti_join(exonic_ues, by = c("start", "end", "chr", "strand"))
+
+          # Add only the intronic union exons to fill the gaps
+          if (nrow(intronic_ues) > 0) {
+            exons <- add_union_exons(exons, intronic_ues, event$strand)
+          }
+        }
+      } else {
+        # No split exons info - fill entire region (fallback to old behavior)
+        merged_ue <- all_ues_in_region %>%
+          summarize(
+            chr = first(chr),
+            start = min(start),
+            end = max(end),
+            strand = first(strand),
+            gene_id = first(gene_id)
+          )
+        exons <- add_union_exons(exons, merged_ue, event$strand)
       }
     }
+
+  } else if (event_type %in% c("A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3")) {
+    # Splice site variations: modify exon boundaries
+    exons <- modify_exon_boundary(exons, event_ues, event)
   }
 
-  return(exons)
-}
-
-# ==============================================================================
-# Alt_TES Reconstruction (Alternative Transcription End Site)
-# ==============================================================================
-
-#' Apply Alt_TES event to reconstruct dominant
-#'
-#' Alt_TES: Transcription end site differs
-#' Event coordinates (five_prime, three_prime) represent the exact region that differs
-#'
-#' @param exons Comparator exons (ordered TSS → TES)
-#' @param event Event record
-#' @return Reconstructed exons
-apply_alt_tes <- function(exons, event) {
-  direction <- event$direction
-  strand <- event$strand
-
-  if (strand == "+") {
-    # Plus strand: TES = exon end (higher coordinate)
-    if (direction == "LOSS") {
-      # Comparator lost sequence: extend last exon to include lost region
-      # Comparator ends at five_prime-1, extend to three_prime
-      last_idx <- nrow(exons)
-      if (last_idx > 0 && abs(exons$exon_end[last_idx] - (event$five_prime - 1)) <= 1) {
-        exons$exon_end[last_idx] <- event$three_prime
-      }
-    } else if (direction == "GAIN") {
-      # Comparator gained sequence: trim last exon to exclude gained region
-      # Comparator ends at three_prime, trim to five_prime-1
-      last_idx <- nrow(exons)
-      if (last_idx > 0 && abs(exons$exon_end[last_idx] - event$three_prime) <= 1) {
-        exons$exon_end[last_idx] <- event$five_prime - 1
-      }
-    }
-
-  } else {
-    # Minus strand: TES = exon start (lower coordinate)
-    if (direction == "LOSS") {
-      # Comparator lost sequence: extend last exon to include lost region
-      # Comparator starts at three_prime+1, extend to five_prime
-      last_idx <- nrow(exons)
-      if (last_idx > 0 && abs(exons$exon_start[last_idx] - (event$three_prime + 1)) <= 1) {
-        exons$exon_start[last_idx] <- event$five_prime
-      }
-    } else if (direction == "GAIN") {
-      # Comparator gained sequence: trim last exon to exclude gained region
-      # Comparator starts at five_prime, trim to three_prime+1
-      last_idx <- nrow(exons)
-      if (last_idx > 0 && abs(exons$exon_start[last_idx] - event$five_prime) <= 1) {
-        exons$exon_start[last_idx] <- event$three_prime + 1
-      }
-    }
-  }
-
-  return(exons)
-}
-
-# ==============================================================================
-# Dual Boundary Event (SKIP for reconstruction)
-# ==============================================================================
-
-#' Handle Dual_boundary events (both boundaries differ)
-#'
-#' These are complex and typically handled by component events
-#' (e.g., combination of A5SS and A3SS)
-#'
-#' @param exons Comparator exons
-#' @param event Event record
-#' @return Exons unchanged (skip)
-apply_dual_boundary <- function(exons, event) {
-  # Dual boundary events are typically decomposed into other events
-  # Skip for now
   return(exons)
 }
 
@@ -497,75 +741,108 @@ apply_dual_boundary <- function(exons, event) {
 # Main Reconstruction Function
 # ==============================================================================
 
-#' Reconstruct dominant isoform from comparator + events
+#' Reconstruct dominant isoform from comparator + events (union exon based)
 #'
 #' @param comparator_exons Exons from comparator isoform
-#' @param events Events for this isoform pair (filtered to one transcript pair)
-#' @param union_exons Union exon structure (optional, for IR reconstruction)
+#' @param events Events for this isoform pair
+#' @param union_exons Union exon structure for the gene
 #' @return Reconstructed dominant exons
-reconstruct_dominant <- function(comparator_exons, events, union_exons = NULL) {
-
+reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
   # Start with comparator structure
   reconstructed <- comparator_exons
 
-  # Sort events by priority:
-  # 1. Terminal events first (Alt_TSS, Alt_TES) - these define boundaries
-  # 2. Internal events (A5SS, A3SS, Partial_IR, IR, SE)
-  # 3. Skip Dual_boundary (handled by component events)
-  events <- events %>%
-    filter(event_type != "Dual_boundary") %>%
+  # Two-phase reconstruction:
+  # Phase 1: Internal events (IR, SE, splice sites) - merge after to consolidate structure
+  # Phase 2: Terminal events (Alt_TSS, Alt_TES) - NO merge to keep new exons separate
+
+  # Separate events into internal vs terminal
+  internal_events_raw <- events %>%
+    filter(event_type != "Dual_boundary",
+           event_type %in% c("IR", "SE", "A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3"))
+
+  # Filter out Partial_IR events that overlap with IR events
+  # (IR events handle the full retention, Partial_IR becomes redundant)
+  ir_events <- internal_events_raw %>% filter(event_type == "IR")
+  partial_ir_events <- internal_events_raw %>% filter(event_type %in% c("Partial_IR_5", "Partial_IR_3"))
+  other_events <- internal_events_raw %>% filter(!event_type %in% c("IR", "Partial_IR_5", "Partial_IR_3"))
+
+  # Check each Partial_IR against IR events for overlap
+  if (nrow(ir_events) > 0 && nrow(partial_ir_events) > 0) {
+    keep_partial <- logical(nrow(partial_ir_events))
+    for (i in seq_len(nrow(partial_ir_events))) {
+      pe <- partial_ir_events[i, ]
+      pe_start <- min(pe$five_prime, pe$three_prime)
+      pe_end <- max(pe$five_prime, pe$three_prime)
+
+      # Check if any IR event overlaps this Partial_IR
+      overlaps <- FALSE
+      for (j in seq_len(nrow(ir_events))) {
+        ie <- ir_events[j, ]
+        ie_start <- min(ie$five_prime, ie$three_prime)
+        ie_end <- max(ie$five_prime, ie$three_prime)
+
+        if (ie_start <= pe_end && ie_end >= pe_start) {
+          overlaps <- TRUE
+          cat(sprintf("  [DEBUG] Filtering %s [%d-%d] (overlaps with IR [%d-%d])\n",
+                     pe$event_type, pe_start, pe_end, ie_start, ie_end))
+          break
+        }
+      }
+      keep_partial[i] <- !overlaps
+    }
+    partial_ir_events <- partial_ir_events[keep_partial, ]
+  }
+
+  # Combine filtered events
+  internal_events <- bind_rows(ir_events, partial_ir_events, other_events) %>%
     arrange(
       case_when(
-        event_type == "Alt_TSS" ~ 1,
-        event_type == "Alt_TES" ~ 2,
-        event_type == "IR" ~ 3,
-        event_type == "SE" ~ 4,
-        TRUE ~ 5
+        event_type == "IR" ~ 1,
+        event_type == "SE" ~ 2,
+        TRUE ~ 3
       )
     )
 
-  # Apply each event
-  for (i in seq_len(nrow(events))) {
-    event <- events[i, ]
+  terminal_events <- events %>%
+    filter(event_type %in% c("Alt_TSS", "Alt_TES")) %>%
+    arrange(event_type)  # Alt_TSS before Alt_TES
 
+  # PHASE 1: Apply internal events
+  for (i in seq_len(nrow(internal_events))) {
+    event <- internal_events[i, ]
     reconstructed <- tryCatch({
-      if (event$event_type == "A5SS") {
-        apply_a5ss(reconstructed, event)
-
-      } else if (event$event_type == "A3SS") {
-        apply_a3ss(reconstructed, event)
-
-      } else if (event$event_type == "Partial_IR_5") {
-        apply_partial_ir_5(reconstructed, event)
-
-      } else if (event$event_type == "Partial_IR_3") {
-        apply_partial_ir_3(reconstructed, event)
-
-      } else if (event$event_type == "IR") {
-        apply_ir(reconstructed, event, union_exons)
-
-      } else if (event$event_type == "SE") {
-        apply_se(reconstructed, event)
-
-      } else if (event$event_type == "Alt_TSS") {
-        apply_alt_tss(reconstructed, event)
-
-      } else if (event$event_type == "Alt_TES") {
-        apply_alt_tes(reconstructed, event)
-
-      } else {
-        # Unknown or Dual_boundary - skip
-        reconstructed
-      }
+      apply_event_union_based(reconstructed, event, union_exons)
     }, error = function(e) {
       warning(sprintf("Error applying %s event: %s", event$event_type, e$message))
-      reconstructed  # Return unchanged on error
+      reconstructed
     })
   }
 
-  # Sort exons by genomic position
+  # Merge after internal events to consolidate structure
   reconstructed <- reconstructed %>%
-    arrange(exon_start, exon_end)
+    arrange(exon_start, exon_end) %>%
+    distinct(exon_start, exon_end, .keep_all = TRUE)
+
+  if (nrow(reconstructed) > 0) {
+    strand <- reconstructed$strand[1]
+    reconstructed <- merge_adjacent_exons(reconstructed, strand)
+  }
+
+  # PHASE 2: Apply terminal events WITHOUT merging
+  for (i in seq_len(nrow(terminal_events))) {
+    event <- terminal_events[i, ]
+    reconstructed <- tryCatch({
+      apply_event_union_based(reconstructed, event, union_exons)
+    }, error = function(e) {
+      warning(sprintf("Error applying %s event: %s", event$event_type, e$message))
+      reconstructed
+    })
+  }
+
+  # Final cleanup: sort and deduplicate, but DON'T merge
+  reconstructed <- reconstructed %>%
+    arrange(exon_start, exon_end) %>%
+    distinct(exon_start, exon_end, .keep_all = TRUE)
 
   return(reconstructed)
 }
