@@ -374,12 +374,7 @@ apply_se <- function(exons, event) {
 #' Apply Alt_TSS event to reconstruct dominant
 #'
 #' Alt_TSS: Transcription start site differs
-#'
-#' Direction = LOSS: Dominant has longer 5' end
-#'   → Add missing_terminal_exons to 5' end
-#'
-#' Direction = GAIN: Comparator has longer 5' end
-#'   → Trim 5' end to dominant TSS
+#' Event coordinates (five_prime, three_prime) represent the exact region that differs
 #'
 #' @param exons Comparator exons (ordered TSS → TES)
 #' @param event Event record
@@ -388,67 +383,35 @@ apply_alt_tss <- function(exons, event) {
   direction <- event$direction
   strand <- event$strand
 
-  if (direction == "LOSS") {
-    # Dominant has longer 5' end → add back missing exonic regions
-    missing_ranges <- parse_coordinate_ranges(event$missing_terminal_exons)
-
-    if (nrow(missing_ranges) > 0) {
-      # Create new exons from missing ranges
-      new_exons <- map_dfr(seq_len(nrow(missing_ranges)), function(i) {
-        tibble(
-          chr = exons$chr[1],
-          exon_start = missing_ranges$start[i],
-          exon_end = missing_ranges$end[i],
-          strand = exons$strand[1],
-          gene_id = exons$gene_id[1],
-          transcript_id = exons$transcript_id[1]
-        )
-      })
-
-      # Check if last missing range is adjacent to first existing exon
-      # If so, merge them instead of keeping as separate exons
-      last_missing <- new_exons[nrow(new_exons), ]
-      first_existing <- exons[1, ]
-
-      # Check adjacency (within 1bp = adjacent)
-      is_adjacent <- (last_missing$exon_end + 1 >= first_existing$exon_start - 1) &&
-                     (last_missing$exon_end <= first_existing$exon_start + 1)
-
-      if (is_adjacent) {
-        # Merge: extend first existing exon to include last missing range
-        exons$exon_start[1] <- min(last_missing$exon_start, first_existing$exon_start)
-        exons$exon_end[1] <- max(last_missing$exon_end, first_existing$exon_end)
-
-        # Add only the other missing ranges (if any)
-        if (nrow(new_exons) > 1) {
-          exons <- bind_rows(new_exons[1:(nrow(new_exons)-1), ], exons)
-        }
-      } else {
-        # Not adjacent - add all missing ranges as separate exons
-        exons <- bind_rows(new_exons, exons)
+  if (strand == "+") {
+    # Plus strand: TSS = exon start (lower coordinate)
+    if (direction == "LOSS") {
+      # Comparator lost sequence: extend first exon to include lost region
+      # Comparator starts at three_prime+1, extend to five_prime
+      if (nrow(exons) > 0 && abs(exons$exon_start[1] - (event$three_prime + 1)) <= 1) {
+        exons$exon_start[1] <- event$five_prime
+      }
+    } else if (direction == "GAIN") {
+      # Comparator gained sequence: trim first exon to exclude gained region
+      # Comparator starts at five_prime, trim to three_prime+1
+      if (nrow(exons) > 0 && abs(exons$exon_start[1] - event$five_prime) <= 1) {
+        exons$exon_start[1] <- event$three_prime + 1
       }
     }
 
-  } else if (direction == "GAIN") {
-    # Comparator has longer 5' end → trim to dominant TSS
-    # Dominant TSS is stored in event coordinates
-    if (strand == "+") {
-      dominant_tss <- min(event$five_prime, event$three_prime)
-      # Trim or remove first exons until we reach dominant TSS
-      exons <- exons %>%
-        filter(exon_end >= dominant_tss)
-      # Adjust first exon start
-      if (nrow(exons) > 0 && exons$exon_start[1] < dominant_tss) {
-        exons$exon_start[1] <- dominant_tss
+  } else {
+    # Minus strand: TSS = exon end (higher coordinate)
+    if (direction == "LOSS") {
+      # Comparator lost sequence: extend first exon to include lost region
+      # Comparator ends at three_prime-1, extend to five_prime
+      if (nrow(exons) > 0 && abs(exons$exon_end[1] - (event$three_prime - 1)) <= 1) {
+        exons$exon_end[1] <- event$five_prime
       }
-    } else {  # Minus strand
-      dominant_tss <- max(event$five_prime, event$three_prime)
-      # Trim or remove first exons
-      exons <- exons %>%
-        filter(exon_start <= dominant_tss)
-      # Adjust first exon end
-      if (nrow(exons) > 0 && exons$exon_end[1] > dominant_tss) {
-        exons$exon_end[1] <- dominant_tss
+    } else if (direction == "GAIN") {
+      # Comparator gained sequence: trim first exon to exclude gained region
+      # Comparator ends at five_prime, trim to three_prime-1
+      if (nrow(exons) > 0 && abs(exons$exon_end[1] - event$five_prime) <= 1) {
+        exons$exon_end[1] <- event$three_prime - 1
       }
     }
   }
@@ -463,12 +426,7 @@ apply_alt_tss <- function(exons, event) {
 #' Apply Alt_TES event to reconstruct dominant
 #'
 #' Alt_TES: Transcription end site differs
-#'
-#' Direction = LOSS: Dominant has longer 3' end
-#'   → Add missing_terminal_exons to 3' end
-#'
-#' Direction = GAIN: Comparator has longer 3' end
-#'   → Trim 3' end to dominant TES
+#' Event coordinates (five_prime, three_prime) represent the exact region that differs
 #'
 #' @param exons Comparator exons (ordered TSS → TES)
 #' @param event Event record
@@ -477,72 +435,39 @@ apply_alt_tes <- function(exons, event) {
   direction <- event$direction
   strand <- event$strand
 
-  if (direction == "LOSS") {
-    # Dominant has longer 3' end → add back missing exonic regions
-    missing_ranges <- parse_coordinate_ranges(event$missing_terminal_exons)
-
-    if (nrow(missing_ranges) > 0) {
-      # Create new exons from missing ranges
-      new_exons <- map_dfr(seq_len(nrow(missing_ranges)), function(i) {
-        tibble(
-          chr = exons$chr[1],
-          exon_start = missing_ranges$start[i],
-          exon_end = missing_ranges$end[i],
-          strand = exons$strand[1],
-          gene_id = exons$gene_id[1],
-          transcript_id = exons$transcript_id[1]
-        )
-      })
-
-      # Check if first missing range is adjacent to last existing exon
-      # If so, merge them instead of keeping as separate exons
-      first_missing <- new_exons[1, ]
-      last_existing <- exons[nrow(exons), ]
-
-      # Check adjacency (within 1bp = adjacent)
-      is_adjacent <- (last_existing$exon_end + 1 >= first_missing$exon_start - 1) &&
-                     (last_existing$exon_end <= first_missing$exon_start + 1)
-
-      if (is_adjacent) {
-        # Merge: extend last existing exon to include first missing range
-        exons$exon_start[nrow(exons)] <- min(last_existing$exon_start, first_missing$exon_start)
-        exons$exon_end[nrow(exons)] <- max(last_existing$exon_end, first_missing$exon_end)
-
-        # Add only the other missing ranges (if any)
-        if (nrow(new_exons) > 1) {
-          exons <- bind_rows(exons, new_exons[2:nrow(new_exons), ])
-        }
-      } else {
-        # Not adjacent - add all missing ranges as separate exons
-        exons <- bind_rows(exons, new_exons)
+  if (strand == "+") {
+    # Plus strand: TES = exon end (higher coordinate)
+    if (direction == "LOSS") {
+      # Comparator lost sequence: extend last exon to include lost region
+      # Comparator ends at five_prime-1, extend to three_prime
+      last_idx <- nrow(exons)
+      if (last_idx > 0 && abs(exons$exon_end[last_idx] - (event$five_prime - 1)) <= 1) {
+        exons$exon_end[last_idx] <- event$three_prime
+      }
+    } else if (direction == "GAIN") {
+      # Comparator gained sequence: trim last exon to exclude gained region
+      # Comparator ends at three_prime, trim to five_prime-1
+      last_idx <- nrow(exons)
+      if (last_idx > 0 && abs(exons$exon_end[last_idx] - event$three_prime) <= 1) {
+        exons$exon_end[last_idx] <- event$five_prime - 1
       }
     }
 
-  } else if (direction == "GAIN") {
-    # Comparator has longer 3' end → trim to dominant TES
-    if (strand == "+") {
-      dominant_tes <- max(event$five_prime, event$three_prime)
-      # Trim or remove last exons
-      exons <- exons %>%
-        filter(exon_start <= dominant_tes)
-      # Adjust last exon end
-      if (nrow(exons) > 0) {
-        last_idx <- nrow(exons)
-        if (exons$exon_end[last_idx] > dominant_tes) {
-          exons$exon_end[last_idx] <- dominant_tes
-        }
+  } else {
+    # Minus strand: TES = exon start (lower coordinate)
+    if (direction == "LOSS") {
+      # Comparator lost sequence: extend last exon to include lost region
+      # Comparator starts at three_prime+1, extend to five_prime
+      last_idx <- nrow(exons)
+      if (last_idx > 0 && abs(exons$exon_start[last_idx] - (event$three_prime + 1)) <= 1) {
+        exons$exon_start[last_idx] <- event$five_prime
       }
-    } else {  # Minus strand
-      dominant_tes <- min(event$five_prime, event$three_prime)
-      # Trim or remove last exons
-      exons <- exons %>%
-        filter(exon_end >= dominant_tes)
-      # Adjust last exon start
-      if (nrow(exons) > 0) {
-        last_idx <- nrow(exons)
-        if (exons$exon_start[last_idx] < dominant_tes) {
-          exons$exon_start[last_idx] <- dominant_tes
-        }
+    } else if (direction == "GAIN") {
+      # Comparator gained sequence: trim last exon to exclude gained region
+      # Comparator starts at five_prime, trim to three_prime+1
+      last_idx <- nrow(exons)
+      if (last_idx > 0 && abs(exons$exon_start[last_idx] - event$five_prime) <= 1) {
+        exons$exon_start[last_idx] <- event$three_prime + 1
       }
     }
   }

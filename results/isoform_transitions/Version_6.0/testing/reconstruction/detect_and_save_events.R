@@ -15,8 +15,8 @@
 library(tidyverse)
 
 # Source event detection functions
-# Path relative to testing/ directory when run from there
-source("../scripts/event_detection_functions.R")
+# Path relative to reconstruction/ directory
+source("../../scripts/event_detection_functions.R")
 
 # ==============================================================================
 # Parse GTF
@@ -115,6 +115,54 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
   dom_ordered <- order_exons_biological(dominant_exons, strand)
   comp_ordered <- order_exons_biological(comparator_exons, strand)
 
+  # ===========================================================================
+  # Detect missing internal exons FIRST
+  # ===========================================================================
+  # Find dominant exons that:
+  # 1. Don't overlap with ANY comparator exon
+  # 2. Lie within the comparator's TSS-TES genomic boundaries
+
+  # Determine comparator's genomic span (TSS to TES)
+  comp_genomic_start <- min(comp_ordered$exon_start)
+  comp_genomic_end <- max(comp_ordered$exon_end)
+
+  missing_internal <- list()
+
+  for (i in seq_len(nrow(dom_ordered))) {
+    dom_exon <- dom_ordered[i, ]
+
+    # Check if this exon lies within comparator's genomic boundaries
+    within_boundaries <- (dom_exon$exon_start >= comp_genomic_start &&
+                          dom_exon$exon_end <= comp_genomic_end)
+
+    if (!within_boundaries) next
+
+    # Check if this exon overlaps with ANY comparator exon
+    has_overlap <- FALSE
+    for (j in seq_len(nrow(comp_ordered))) {
+      comp_exon <- comp_ordered[j, ]
+      overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
+                  (dom_exon$exon_end >= comp_exon$exon_start)
+      if (overlaps) {
+        has_overlap <- TRUE
+        break
+      }
+    }
+
+    # If no overlap with any comparator exon, it's missing internal
+    if (!has_overlap) {
+      missing_internal[[length(missing_internal) + 1]] <-
+        sprintf("%d-%d", dom_exon$exon_start, dom_exon$exon_end)
+    }
+  }
+
+  # Store missing internal exons as comma-separated string
+  missing_internal_exons <- if (length(missing_internal) > 0) {
+    paste(missing_internal, collapse = ", ")
+  } else {
+    ""
+  }
+
   # Initialize events list
   all_events <- list()
 
@@ -174,7 +222,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       three_prime = three_prime,
       strand = strand,
       bp_diff = abs(dom_tss - comp_tss),
-      missing_terminal_exons = missing_exons
+      missing_terminal_exons = missing_exons,
+      missing_internal_exons = missing_internal_exons,
+      ir_split_exons = ""
     )
   }
 
@@ -227,11 +277,15 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       three_prime = three_prime,
       strand = strand,
       bp_diff = abs(dom_tes - comp_tes),
-      missing_terminal_exons = missing_exons
+      missing_terminal_exons = missing_exons,
+      missing_internal_exons = missing_internal_exons,
+      ir_split_exons = ""
     )
   }
 
+  # ===========================================================================
   # Detect internal events (A5SS, A3SS, Partial_IR, etc.)
+  # ===========================================================================
   # Compare all overlapping exon pairs
   for (i in seq_len(nrow(comp_ordered))) {
     comp_exon <- comp_ordered[i, ]
@@ -347,17 +401,117 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
           three_prime = three_prime,
           strand = strand,
           bp_diff = event_result$bp_diff,
-          missing_terminal_exons = ""
+          missing_terminal_exons = "",
+          missing_internal_exons = missing_internal_exons,
+          ir_split_exons = ""
         )
       }
     }
   }
 
+  # ===========================================================================
+  # Detect SE (Skipped Exon)
+  # ===========================================================================
+  # Find dominant exons that are completely skipped by comparator
+  # (no overlap with any comparator exon, but flanked by shared exons)
+
+  for (i in seq_len(nrow(dom_ordered))) {
+    dom_exon <- dom_ordered[i, ]
+
+    # Check if this exon overlaps with ANY comparator exon
+    has_overlap <- FALSE
+    for (j in seq_len(nrow(comp_ordered))) {
+      comp_exon <- comp_ordered[j, ]
+      overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
+                  (dom_exon$exon_end >= comp_exon$exon_start)
+      if (overlaps) {
+        has_overlap <- TRUE
+        break
+      }
+    }
+
+    # If no overlap, it might be a skipped exon (if it's internal)
+    if (!has_overlap && i > 1 && i < nrow(dom_ordered)) {
+      # This is an internal exon with no overlap - likely SE
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id = gene_id,
+        dominant_transcript_id = dominant_tid,
+        comparator_transcript_id = comparator_tid,
+        event_type = "SE",
+        direction = "LOSS",  # Dominant has it, comparator doesn't
+        chr = dom_exon$chr,
+        five_prime = if (strand == "+") dom_exon$exon_start else dom_exon$exon_end,
+        three_prime = if (strand == "+") dom_exon$exon_end else dom_exon$exon_start,
+        strand = strand,
+        bp_diff = dom_exon$exon_end - dom_exon$exon_start + 1,
+        missing_terminal_exons = "",
+        missing_internal_exons = "",
+        ir_split_exons = ""
+      )
+    }
+  }
+
+  # Also check for comparator exons skipped by dominant
+  for (i in seq_len(nrow(comp_ordered))) {
+    comp_exon <- comp_ordered[i, ]
+
+    has_overlap <- FALSE
+    for (j in seq_len(nrow(dom_ordered))) {
+      dom_exon <- dom_ordered[j, ]
+      overlaps <- (comp_exon$exon_start <= dom_exon$exon_end) &&
+                  (comp_exon$exon_end >= dom_exon$exon_start)
+      if (overlaps) {
+        has_overlap <- TRUE
+        break
+      }
+    }
+
+    if (!has_overlap && i > 1 && i < nrow(comp_ordered)) {
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id = gene_id,
+        dominant_transcript_id = dominant_tid,
+        comparator_transcript_id = comparator_tid,
+        event_type = "SE",
+        direction = "GAIN",  # Comparator has it, dominant doesn't
+        chr = comp_exon$chr,
+        five_prime = if (strand == "+") comp_exon$exon_start else comp_exon$exon_end,
+        three_prime = if (strand == "+") comp_exon$exon_end else comp_exon$exon_start,
+        strand = strand,
+        bp_diff = comp_exon$exon_end - comp_exon$exon_start + 1,
+        missing_terminal_exons = "",
+        missing_internal_exons = "",
+        ir_split_exons = ""
+      )
+    }
+  }
+
+  # ===========================================================================
   # Detect IR (monoexonic spanning multi-exonic)
+  # ===========================================================================
   # Check if comparator exons span multiple dominant exons
   for (i in seq_len(nrow(comp_ordered))) {
     if (detect_ir_simple(comp_ordered[i, ], dom_ordered)) {
       comp_exon <- comp_ordered[i, ]
+
+      # Find dominant exons that OVERLAP with this comparator exon
+      # We need the overlapping portions for reconstruction
+      overlapping_regions <- list()
+      for (j in seq_len(nrow(dom_ordered))) {
+        dom_exon <- dom_ordered[j, ]
+        # Check for overlap
+        overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
+                    (dom_exon$exon_end >= comp_exon$exon_start)
+        if (overlaps) {
+          # Calculate the overlapping region
+          overlap_start <- max(dom_exon$exon_start, comp_exon$exon_start)
+          overlap_end <- min(dom_exon$exon_end, comp_exon$exon_end)
+          overlapping_regions[[length(overlapping_regions) + 1]] <-
+            sprintf("%d-%d", overlap_start, overlap_end)
+        }
+      }
+
+      ir_split_exons <- paste(overlapping_regions, collapse = ", ")
+
       all_events[[length(all_events) + 1]] <- tibble(
         gene_id = gene_id,
         dominant_transcript_id = dominant_tid,
@@ -369,7 +523,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         three_prime = if (strand == "+") comp_exon$exon_end else comp_exon$exon_start,
         strand = strand,
         bp_diff = NA_integer_,
-        missing_terminal_exons = ""
+        missing_terminal_exons = "",
+        missing_internal_exons = missing_internal_exons,
+        ir_split_exons = ir_split_exons
       )
     }
   }
@@ -378,18 +534,40 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
   for (i in seq_len(nrow(dom_ordered))) {
     if (detect_ir_simple(dom_ordered[i, ], comp_ordered)) {
       dom_exon <- dom_ordered[i, ]
+
+      # Find comparator exons that OVERLAP with this dominant exon
+      # We need the overlapping portions to remove them during reconstruction
+      overlapping_regions <- list()
+      for (j in seq_len(nrow(comp_ordered))) {
+        comp_exon <- comp_ordered[j, ]
+        # Check for overlap
+        overlaps <- (comp_exon$exon_start <= dom_exon$exon_end) &&
+                    (comp_exon$exon_end >= dom_exon$exon_start)
+        if (overlaps) {
+          # Calculate the overlapping region
+          overlap_start <- max(comp_exon$exon_start, dom_exon$exon_start)
+          overlap_end <- min(comp_exon$exon_end, dom_exon$exon_end)
+          overlapping_regions[[length(overlapping_regions) + 1]] <-
+            sprintf("%d-%d", overlap_start, overlap_end)
+        }
+      }
+
+      ir_split_exons <- paste(overlapping_regions, collapse = ", ")
+
       all_events[[length(all_events) + 1]] <- tibble(
         gene_id = gene_id,
         dominant_transcript_id = dominant_tid,
         comparator_transcript_id = comparator_tid,
         event_type = "IR",
-        direction = "LOSS",  # Dominant has retention
+        direction = "LOSS",  # Dominant has retention (comparator has split exons)
         chr = dom_exon$chr,
         five_prime = if (strand == "+") dom_exon$exon_start else dom_exon$exon_end,
         three_prime = if (strand == "+") dom_exon$exon_end else dom_exon$exon_start,
         strand = strand,
         bp_diff = NA_integer_,
-        missing_terminal_exons = ""
+        missing_terminal_exons = "",
+        missing_internal_exons = missing_internal_exons,
+        ir_split_exons = ir_split_exons  # Exons to ADD for reconstruction
       )
     }
   }
