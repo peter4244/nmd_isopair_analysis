@@ -514,13 +514,24 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
   }
 
   # ===========================================================================
-  # Detect SE (Skipped Exon)
+  # STEP 1: Detect SE (Skipped Exon) events
   # ===========================================================================
   # Find dominant exons that are completely skipped by comparator
-  # (no overlap with any comparator exon, but flanked by shared exons)
+  # Must be within comparator boundaries AND have no overlap
+
+  # Determine comparator's genomic boundaries
+  comp_genomic_start <- min(comp_ordered$exon_start)
+  comp_genomic_end <- max(comp_ordered$exon_end)
 
   for (i in seq_len(nrow(dom_ordered))) {
     dom_exon <- dom_ordered[i, ]
+
+    # Check if exon is within comparator's genomic boundaries
+    within_boundaries <- (dom_exon$exon_start >= comp_genomic_start &&
+                          dom_exon$exon_end <= comp_genomic_end)
+
+    # Skip if outside boundaries (will be handled by Alt_TSS/Alt_TES)
+    if (!within_boundaries) next
 
     # Check if this exon overlaps with ANY comparator exon
     has_overlap <- FALSE
@@ -534,9 +545,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       }
     }
 
-    # If no overlap, it might be a skipped exon (if it's internal)
+    # If no overlap and within boundaries, it's a skipped exon
     if (!has_overlap && i > 1 && i < nrow(dom_ordered)) {
-      # This is an internal exon with no overlap - likely SE
       all_events[[length(all_events) + 1]] <- tibble(
         gene_id = gene_id,
         dominant_transcript_id = dominant_tid,
@@ -556,8 +566,18 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
   }
 
   # Also check for comparator exons skipped by dominant
+  dom_genomic_start <- min(dom_ordered$exon_start)
+  dom_genomic_end <- max(dom_ordered$exon_end)
+
   for (i in seq_len(nrow(comp_ordered))) {
     comp_exon <- comp_ordered[i, ]
+
+    # Check if exon is within dominant's genomic boundaries
+    within_boundaries <- (comp_exon$exon_start >= dom_genomic_start &&
+                          comp_exon$exon_end <= dom_genomic_end)
+
+    # Skip if outside boundaries
+    if (!within_boundaries) next
 
     has_overlap <- FALSE
     for (j in seq_len(nrow(dom_ordered))) {
