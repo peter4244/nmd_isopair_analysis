@@ -574,7 +574,7 @@ all_isoforms <- rbind(gencode_results, sqanti_results)
 
 if (INCLUDE_EXPRESSION) {
   message("====================================================================")
-  message("STEP 4: Calculating DMSO-specific expression per cell type")
+  message("STEP 4: Calculating expression and read counts per cell type")
   message("====================================================================")
   message(paste("  Total isoforms:", nrow(all_isoforms)))
 
@@ -582,13 +582,15 @@ if (INCLUDE_EXPRESSION) {
 message("  Loading DGEList...")
 dge_isoform <- readRDS(DGELIST_RDS)
 
-# Get normalized CPM
+# Get normalized CPM and raw counts
 message("  Calculating normalized CPM...")
 cpm_normalized <- cpm(dge_isoform, normalized = TRUE, log = FALSE)
+raw_counts <- dge_isoform$counts
 
 # Get transcript IDs from genes component
 transcript_ids <- dge_isoform$genes$txid
 rownames(cpm_normalized) <- transcript_ids
+rownames(raw_counts) <- transcript_ids
 
 # Get sample metadata
 sample_info <- dge_isoform$samples
@@ -609,41 +611,48 @@ if (!"ct" %in% colnames(sample_info)) {
 ct_map <- c(
   "DD_ALI" = "DD_ALI",
   "DD" = "DD",
-  "DO_ALI" = "DO_ALI",
+  "DO_ALI" = "DO",
   "AT2" = "AT",
   "FB" = "FB",
   "MV" = "MV"
 )
 
-# Calculate mean DMSO expression per cell type
-message("  Calculating DMSO means per cell type...")
+# Calculate mean CPM and total raw read counts per cell type and condition.
+# For each cell type, columns are added in order:
+#   expr_DMSO_<ct>, total_reads_DMSO_<ct>, expr_Smg1i_<ct>, total_reads_Smg1i_<ct>
+message("  Calculating expression and read counts per cell type...")
 for (ct_name in names(ct_map)) {
   ct_code <- ct_map[ct_name]
+  ct_suffix <- tolower(gsub("_", "", ct_name))
 
-  # Filter for DMSO samples of this cell type
-  dmso_samples <- sample_info %>%
-    filter(treatment == "DMSO", ct == ct_code) %>%
-    pull(bamid)
+  for (trt in c("DMSO", "Smg1i")) {
+    trt_samples <- sample_info %>%
+      filter(treatment == trt, ct == ct_code) %>%
+      pull(bamid)
 
-  expr_col_name <- paste0("expr_DMSO_", tolower(gsub("_", "", ct_name)))
+    expr_col  <- paste0("expr_", trt, "_", ct_suffix)
+    reads_col <- paste0("total_reads_", trt, "_", ct_suffix)
 
-  if (length(dmso_samples) > 0) {
-    # Calculate mean across DMSO samples
-    dmso_means <- rowMeans(cpm_normalized[, dmso_samples, drop = FALSE])
+    if (length(trt_samples) > 0) {
+      # Mean TMM-normalized CPM across replicates
+      cpm_means <- rowMeans(cpm_normalized[, trt_samples, drop = FALSE])
+      all_isoforms[[expr_col]] <- cpm_means[all_isoforms$isoform_id]
 
-    # Match to isoforms by transcript ID
-    matched <- all_isoforms$isoform_id %in% names(dmso_means)
-    n_missing <- sum(!matched)
-    all_isoforms[[expr_col_name]] <- dmso_means[all_isoforms$isoform_id]
+      # Sum of raw counts across replicates
+      read_sums <- rowSums(raw_counts[, trt_samples, drop = FALSE])
+      all_isoforms[[reads_col]] <- read_sums[all_isoforms$isoform_id]
 
-    n_expressed <- sum(!is.na(all_isoforms[[expr_col_name]]) & all_isoforms[[expr_col_name]] > 0)
-    message(paste("    ", ct_name, ":", n_expressed, "isoforms with DMSO expression > 0"))
-    if (n_missing > 0) {
-      message(paste("      Note:", n_missing, "isoforms not found in DGEList"))
+      n_expressed <- sum(!is.na(all_isoforms[[expr_col]]) & all_isoforms[[expr_col]] > 0)
+      n_missing   <- sum(is.na(all_isoforms[[expr_col]]))
+      message(paste("    ", ct_name, trt, ":", n_expressed, "isoforms with expression > 0"))
+      if (n_missing > 0) {
+        message(paste("      Note:", n_missing, "isoforms not found in DGEList"))
+      }
+    } else {
+      all_isoforms[[expr_col]]  <- NA
+      all_isoforms[[reads_col]] <- NA
+      message(paste("    ", ct_name, trt, ": No samples found"))
     }
-  } else {
-    all_isoforms[[expr_col_name]] <- NA
-    message(paste("    ", ct_name, ": No DMSO samples found"))
   }
 }
 
@@ -664,12 +673,20 @@ message("====================================================================")
 message("STEP 5: Writing output files")
 message("====================================================================")
 
-# Round expression values to 2 significant digits (if included)
+# Round CPM expression values to 2 significant digits (if included)
 if (INCLUDE_EXPRESSION) {
-  expr_cols <- grep("^expr_DMSO_", colnames(all_isoforms), value = TRUE)
+  expr_cols <- grep("^expr_", colnames(all_isoforms), value = TRUE)
   for (col in expr_cols) {
     all_isoforms[[col]] <- signif(all_isoforms[[col]], 2)
   }
+}
+
+# Add total reads across all samples and conditions
+if (INCLUDE_EXPRESSION) {
+  reads_cols <- grep("^total_reads_", colnames(all_isoforms), value = TRUE)
+  all_isoforms$total_reads_all_samples <- rowSums(
+    all_isoforms[, reads_cols, drop = FALSE], na.rm = TRUE
+  )
 }
 
 # Write TSV
@@ -687,6 +704,10 @@ if (OUTPUT_GTF) {
   if (!is.null(sqanti_features) && length(sqanti_features) > 0) {
     output_gtf <- c(output_gtf, sqanti_features)
   }
+
+  # Add chr prefix to seqnames for UCSC browser compatibility
+  seqlvls <- seqlevels(output_gtf)
+  seqlevels(output_gtf) <- ifelse(startsWith(seqlvls, "chr"), seqlvls, paste0("chr", seqlvls))
 
   export(output_gtf, OUTPUT_GTF_FILE, format = "gtf")
   message(paste("    Wrote", length(output_gtf), "GTF features"))
