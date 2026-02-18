@@ -140,9 +140,10 @@ write_gtf <- function(gtf_data, output_file) {
 #' @param transcript_id Original transcript ID (will be modified)
 #' @param exon_number Exon number
 #' @return Attributes string
-reconstruct_attributes <- function(gene_id, transcript_id, exon_number) {
-  # Mark as reconstructed by appending "_reconstructed"
-  recon_tid <- paste0(transcript_id, "_reconstructed")
+reconstruct_attributes <- function(gene_id, dominant_tid, comparator_tid, exon_number) {
+  # Use compound ID so each (dominant, comparator) reconstruction is uniquely identifiable
+  # Format: dominant_id::comparator_id
+  recon_tid <- paste0(dominant_tid, "::", comparator_tid)
 
   sprintf('gene_id "%s"; transcript_id "%s"; exon_number "%d";',
           gene_id, recon_tid, exon_number)
@@ -247,7 +248,7 @@ reconstruct_all <- function(comparator_gtf, events, union_exons) {
         score = ".",
         frame = ".",
         exon_number = row_number(),
-        attributes = reconstruct_attributes(gene_id, pair$dominant_transcript_id, exon_number)
+        attributes = reconstruct_attributes(gene_id, pair$dominant_transcript_id, pair$comparator_transcript_id, exon_number)
       ) %>%
       select(chr, source, feature, exon_start, exon_end, score, strand, frame, attributes,
              gene_id, transcript_id, exon_number)

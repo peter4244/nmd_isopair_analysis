@@ -594,7 +594,13 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
         if (direction == "LOSS") {
           exons$exon_end[nrow(exons)] <- max(event_ues$end)
         } else {
-          exons$exon_end[nrow(exons)] <- min(event_ues$start) - 1
+          new_end <- min(event_ues$start) - 1
+          if (new_end < terminal_exon$exon_start) {
+            # event_ues covers entire terminal exon → remove it
+            exons <- exons[-nrow(exons), ]
+          } else {
+            exons$exon_end[nrow(exons)] <- new_end
+          }
         }
       } else {
         # Non-overlapping, LOSS: dominant's TES exon is separate (no gap to bridge).
@@ -627,7 +633,13 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
         if (direction == "LOSS") {
           exons$exon_start[1] <- min(event_ues$start)
         } else {
-          exons$exon_start[1] <- max(event_ues$end) + 1
+          new_start <- max(event_ues$end) + 1
+          if (new_start > terminal_exon$exon_end) {
+            # event_ues covers entire terminal exon → remove it
+            exons <- exons[-1, ]
+          } else {
+            exons$exon_start[1] <- new_start
+          }
         }
       } else {
         # Non-overlapping, LOSS: just ADD dominant's external TES exon(s).
@@ -662,7 +674,13 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
         if (direction == "LOSS") {
           exons$exon_start[1] <- min(event_ues$start)
         } else {
-          exons$exon_start[1] <- max(event_ues$end) + 1
+          new_start <- max(event_ues$end) + 1
+          if (new_start > terminal_exon$exon_end) {
+            # event_ues covers entire terminal exon → remove it
+            exons <- exons[-1, ]
+          } else {
+            exons$exon_start[1] <- new_start
+          }
         }
       } else {
         # Non-overlapping, LOSS: just ADD dominant's external TSS exon(s).
@@ -691,7 +709,13 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
         if (direction == "LOSS") {
           exons$exon_end[nrow(exons)] <- max(event_ues$end)
         } else {
-          exons$exon_end[nrow(exons)] <- min(event_ues$start) - 1
+          new_end <- min(event_ues$start) - 1
+          if (new_end < terminal_exon$exon_start) {
+            # event_ues covers entire terminal exon → remove it
+            exons <- exons[-nrow(exons), ]
+          } else {
+            exons$exon_end[nrow(exons)] <- new_end
+          }
         }
       } else {
         # Non-overlapping, LOSS: just ADD dominant's external TSS exon(s).
@@ -911,8 +935,8 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
     )
 
   terminal_events <- events %>%
-    filter(event_type %in% c("Alt_TSS", "Alt_TES", "beyond_boundary")) %>%
-    arrange(event_type)  # Alt_TSS before Alt_TES; beyond_boundary last
+    filter(event_type %in% c("Alt_TSS", "Alt_TES")) %>%
+    arrange(event_type)  # Alt_TSS before Alt_TES
 
   # PHASE 1: Apply internal events
   for (i in seq_len(nrow(internal_events))) {

@@ -834,3 +834,567 @@ check_isoform_overlap <- function(comp_ordered, dom_ordered) {
 
   list(has_overlap = has_overlap, dom_exon_coords = dom_exon_coords)
 }
+
+# ==============================================================================
+# Beyond-Boundary Event Detection
+# ==============================================================================
+
+#' Detect dominant exons outside comparator span and vice versa
+#'
+#' Identifies exons that lie entirely outside the opposing isoform's genomic
+#' boundaries. Emits "beyond_boundary" events:
+#'   - LOSS: dominant exon(s) outside comparator span (add to reconstruction)
+#'   - GAIN: comparator exon(s) outside dominant span (remove from reconstruction)
+#'
+#' NOTE: This function is retained for reference but is NOT used in the main
+#' pipeline. Alt_TSS/Alt_TES detection already captures all non-overlapping
+#' terminal exons via compute_missing_terminal_exons_tss/tes.
+#'
+#' @param dom_ordered Dominant exons (ordered biologically TSS -> TES)
+#' @param comp_ordered Comparator exons (ordered biologically TSS -> TES)
+#' @param gene_id Gene identifier
+#' @param dominant_tid Dominant transcript ID
+#' @param comparator_tid Comparator transcript ID
+#' @param strand Gene strand
+#' @return List of event tibbles (may be empty)
+detect_beyond_boundary_exons <- function(dom_ordered, comp_ordered,
+                                          gene_id, dominant_tid, comparator_tid,
+                                          strand) {
+  events <- list()
+
+  comp_genomic_start <- min(comp_ordered$exon_start)
+  comp_genomic_end   <- max(comp_ordered$exon_end)
+  dom_genomic_start  <- min(dom_ordered$exon_start)
+  dom_genomic_end    <- max(dom_ordered$exon_end)
+
+  # --- LOSS: dominant exons entirely outside comparator span ---
+  dom_external <- list()
+  for (i in seq_len(nrow(dom_ordered))) {
+    exon <- dom_ordered[i, ]
+    if (exon$exon_end < comp_genomic_start || exon$exon_start > comp_genomic_end) {
+      dom_external[[length(dom_external) + 1]] <-
+        sprintf("%d-%d", exon$exon_start, exon$exon_end)
+    }
+  }
+
+  if (length(dom_external) > 0) {
+    events[[length(events) + 1]] <- tibble(
+      gene_id                  = gene_id,
+      dominant_transcript_id   = dominant_tid,
+      comparator_transcript_id = comparator_tid,
+      event_type               = "beyond_boundary",
+      direction                = "LOSS",
+      chr                      = dom_ordered$chr[1],
+      five_prime               = NA_integer_,
+      three_prime              = NA_integer_,
+      strand                   = strand,
+      bp_diff                  = NA_integer_,
+      missing_terminal_exons   = "",
+      missing_internal_exons   = "",
+      ir_split_exons           = "",
+      missing_external_exons   = paste(dom_external, collapse = ", ")
+    )
+  }
+
+  # --- GAIN: comparator exons entirely outside dominant span ---
+  comp_external <- list()
+  for (i in seq_len(nrow(comp_ordered))) {
+    exon <- comp_ordered[i, ]
+    if (exon$exon_end < dom_genomic_start || exon$exon_start > dom_genomic_end) {
+      comp_external[[length(comp_external) + 1]] <-
+        sprintf("%d-%d", exon$exon_start, exon$exon_end)
+    }
+  }
+
+  if (length(comp_external) > 0) {
+    events[[length(events) + 1]] <- tibble(
+      gene_id                  = gene_id,
+      dominant_transcript_id   = dominant_tid,
+      comparator_transcript_id = comparator_tid,
+      event_type               = "beyond_boundary",
+      direction                = "GAIN",
+      chr                      = comp_ordered$chr[1],
+      five_prime               = NA_integer_,
+      three_prime              = NA_integer_,
+      strand                   = strand,
+      bp_diff                  = NA_integer_,
+      missing_terminal_exons   = "",
+      missing_internal_exons   = "",
+      ir_split_exons           = "",
+      missing_external_exons   = paste(comp_external, collapse = ", ")
+    )
+  }
+
+  return(events)
+}
+
+# ==============================================================================
+# Event Detection for Transcript Pair
+# ==============================================================================
+
+#' Detect all events between two transcripts
+#'
+#' Runs the full event detection pipeline for a single dominant/comparator pair.
+#' Detection proceeds in this order:
+#'   1. Alt_TSS / Alt_TES  (terminal boundary changes)
+#'   2. IR GAIN / IR LOSS  (intron retention)
+#'   3. A5SS / A3SS / Partial_IR  (splice-site changes on overlapping exons)
+#'   4. SE LOSS  (dominant exons skipped by comparator, within comparator span)
+#'   5. SE GAIN  (comparator exons skipped by dominant, within dominant span)
+#'
+#' @param dominant_exons Exons from dominant transcript
+#' @param comparator_exons Exons from comparator transcript
+#' @param gene_id Gene identifier
+#' @param dominant_tid Dominant transcript ID
+#' @param comparator_tid Comparator transcript ID
+#' @param strand Gene strand
+#' @return Tibble with detected events (0 rows if none)
+detect_events_for_pair <- function(dominant_exons, comparator_exons,
+                                   gene_id, dominant_tid, comparator_tid, strand) {
+
+  # Order exons biologically (TSS → TES)
+  dom_ordered <- order_exons_biological(dominant_exons, strand)
+  comp_ordered <- order_exons_biological(comparator_exons, strand)
+
+  # ===========================================================================
+  # Pre-compute missing internal exons
+  # ===========================================================================
+  # Dominant exons that don't overlap any comparator exon AND lie within
+  # the comparator's TSS-TES genomic boundaries.
+
+  comp_genomic_start <- min(comp_ordered$exon_start)
+  comp_genomic_end <- max(comp_ordered$exon_end)
+
+  missing_internal <- list()
+
+  for (i in seq_len(nrow(dom_ordered))) {
+    dom_exon <- dom_ordered[i, ]
+
+    within_boundaries <- (dom_exon$exon_start >= comp_genomic_start &&
+                          dom_exon$exon_end <= comp_genomic_end)
+
+    if (!within_boundaries) next
+
+    has_overlap <- FALSE
+    for (j in seq_len(nrow(comp_ordered))) {
+      comp_exon <- comp_ordered[j, ]
+      overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
+                  (dom_exon$exon_end >= comp_exon$exon_start)
+      if (overlaps) {
+        has_overlap <- TRUE
+        break
+      }
+    }
+
+    if (!has_overlap) {
+      missing_internal[[length(missing_internal) + 1]] <-
+        sprintf("%d-%d", dom_exon$exon_start, dom_exon$exon_end)
+    }
+  }
+
+  missing_internal_exons <- if (length(missing_internal) > 0) {
+    paste(missing_internal, collapse = ", ")
+  } else {
+    ""
+  }
+
+  # Initialize events list
+  all_events <- list()
+
+  # Check terminal boundaries (TSS and TES)
+  first_dom <- dom_ordered[1, ]
+  first_comp <- comp_ordered[1, ]
+  last_dom <- dom_ordered[nrow(dom_ordered), ]
+  last_comp <- comp_ordered[nrow(comp_ordered), ]
+
+  # ---------------------------------------------------------------------------
+  # STEP 1a: Detect Alt_TSS
+  # ---------------------------------------------------------------------------
+  if (detect_tss_change(first_dom, first_comp, strand)) {
+    if (strand == "+") {
+      dom_tss <- first_dom$exon_start
+      comp_tss <- first_comp$exon_start
+    } else {
+      dom_tss <- first_dom$exon_end
+      comp_tss <- first_comp$exon_end
+    }
+
+    # LOSS: dominant starts earlier (comparator lost 5' sequence)
+    # GAIN: comparator starts earlier (comparator gained 5' sequence)
+    direction <- if (
+      (strand == "+" && dom_tss < comp_tss) ||
+      (strand == "-" && dom_tss > comp_tss)
+    ) "LOSS" else "GAIN"
+
+    five_prime  <- dom_tss
+    three_prime <- comp_tss
+
+    # missing_terminal_exons: exonic regions of the longer isoform's 5' extension
+    missing_exons <- if (direction == "LOSS") {
+      compute_missing_terminal_exons_tss(dom_ordered, comp_ordered, strand)
+    } else {
+      compute_missing_terminal_exons_tss(comp_ordered, dom_ordered, strand)
+    }
+
+    all_events[[length(all_events) + 1]] <- tibble(
+      gene_id = gene_id,
+      dominant_transcript_id = dominant_tid,
+      comparator_transcript_id = comparator_tid,
+      event_type = "Alt_TSS",
+      direction = direction,
+      chr = first_dom$chr,
+      five_prime = five_prime,
+      three_prime = three_prime,
+      strand = strand,
+      bp_diff = abs(dom_tss - comp_tss),
+      missing_terminal_exons = missing_exons,
+      missing_internal_exons = missing_internal_exons,
+      ir_split_exons = "",
+      missing_external_exons = ""
+    )
+  }
+
+  # ---------------------------------------------------------------------------
+  # STEP 1b: Detect Alt_TES
+  # ---------------------------------------------------------------------------
+  if (detect_tes_change(last_dom, last_comp, strand)) {
+    if (strand == "+") {
+      dom_tes <- last_dom$exon_end
+      comp_tes <- last_comp$exon_end
+    } else {
+      dom_tes <- last_dom$exon_start
+      comp_tes <- last_comp$exon_start
+    }
+
+    # LOSS: dominant ends later (comparator lost 3' sequence)
+    # GAIN: comparator ends later (comparator gained 3' sequence)
+    direction <- if (
+      (strand == "+" && dom_tes > comp_tes) ||
+      (strand == "-" && dom_tes < comp_tes)
+    ) "LOSS" else "GAIN"
+
+    five_prime  <- dom_tes
+    three_prime <- comp_tes
+
+    missing_exons <- if (direction == "LOSS") {
+      compute_missing_terminal_exons_tes(dom_ordered, comp_ordered, strand)
+    } else {
+      compute_missing_terminal_exons_tes(comp_ordered, dom_ordered, strand)
+    }
+
+    all_events[[length(all_events) + 1]] <- tibble(
+      gene_id = gene_id,
+      dominant_transcript_id = dominant_tid,
+      comparator_transcript_id = comparator_tid,
+      event_type = "Alt_TES",
+      direction = direction,
+      chr = last_dom$chr,
+      five_prime = five_prime,
+      three_prime = three_prime,
+      strand = strand,
+      bp_diff = abs(dom_tes - comp_tes),
+      missing_terminal_exons = missing_exons,
+      missing_internal_exons = missing_internal_exons,
+      ir_split_exons = "",
+      missing_external_exons = ""
+    )
+  }
+
+  # If isoforms share no exon-level overlap, Steps 2-4 are not meaningful.
+  overlap_check <- check_isoform_overlap(comp_ordered, dom_ordered)
+  if (!overlap_check$has_overlap) {
+    if (length(all_events) > 0) return(bind_rows(all_events))
+    return(tibble())
+  }
+
+  # ---------------------------------------------------------------------------
+  # STEP 2: Detect IR events
+  # ---------------------------------------------------------------------------
+  ir_exon_pairs <- list()
+
+  # IR GAIN: comparator exon spans multiple dominant exons
+  for (i in seq_len(nrow(comp_ordered))) {
+    if (detect_ir_simple(comp_ordered[i, ], dom_ordered)) {
+      comp_exon <- comp_ordered[i, ]
+
+      overlapping_regions <- list()
+      overlapping_dom_indices <- integer()
+      for (j in seq_len(nrow(dom_ordered))) {
+        dom_exon <- dom_ordered[j, ]
+        overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
+                    (dom_exon$exon_end >= comp_exon$exon_start)
+        if (overlaps) {
+          overlap_start <- max(dom_exon$exon_start, comp_exon$exon_start)
+          overlap_end <- min(dom_exon$exon_end, comp_exon$exon_end)
+          overlapping_regions[[length(overlapping_regions) + 1]] <-
+            sprintf("%d-%d", overlap_start, overlap_end)
+          overlapping_dom_indices <- c(overlapping_dom_indices, j)
+        }
+      }
+
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id = gene_id,
+        dominant_transcript_id = dominant_tid,
+        comparator_transcript_id = comparator_tid,
+        event_type = "IR",
+        direction = "GAIN",
+        chr = comp_exon$chr,
+        five_prime = if (strand == "+") comp_exon$exon_start else comp_exon$exon_end,
+        three_prime = if (strand == "+") comp_exon$exon_end else comp_exon$exon_start,
+        strand = strand,
+        bp_diff = NA_integer_,
+        missing_terminal_exons = "",
+        missing_internal_exons = missing_internal_exons,
+        ir_split_exons = paste(overlapping_regions, collapse = ", "),
+        missing_external_exons = ""
+      )
+
+      for (dom_idx in overlapping_dom_indices) {
+        ir_exon_pairs[[length(ir_exon_pairs) + 1]] <- list(comp = i, dom = dom_idx)
+      }
+    }
+  }
+
+  # IR LOSS: dominant exon spans multiple comparator exons
+  for (i in seq_len(nrow(dom_ordered))) {
+    if (detect_ir_simple(dom_ordered[i, ], comp_ordered)) {
+      dom_exon <- dom_ordered[i, ]
+
+      overlapping_regions <- list()
+      overlapping_comp_indices <- integer()
+      for (j in seq_len(nrow(comp_ordered))) {
+        comp_exon <- comp_ordered[j, ]
+        overlaps <- (comp_exon$exon_start <= dom_exon$exon_end) &&
+                    (comp_exon$exon_end >= dom_exon$exon_start)
+        if (overlaps) {
+          overlap_start <- max(comp_exon$exon_start, dom_exon$exon_start)
+          overlap_end <- min(comp_exon$exon_end, dom_exon$exon_end)
+          overlapping_regions[[length(overlapping_regions) + 1]] <-
+            sprintf("%d-%d", overlap_start, overlap_end)
+          overlapping_comp_indices <- c(overlapping_comp_indices, j)
+        }
+      }
+
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id = gene_id,
+        dominant_transcript_id = dominant_tid,
+        comparator_transcript_id = comparator_tid,
+        event_type = "IR",
+        direction = "LOSS",
+        chr = dom_exon$chr,
+        five_prime = if (strand == "+") dom_exon$exon_start else dom_exon$exon_end,
+        three_prime = if (strand == "+") dom_exon$exon_end else dom_exon$exon_start,
+        strand = strand,
+        bp_diff = NA_integer_,
+        missing_terminal_exons = "",
+        missing_internal_exons = missing_internal_exons,
+        ir_split_exons = paste(overlapping_regions, collapse = ", "),
+        missing_external_exons = ""
+      )
+
+      for (comp_idx in overlapping_comp_indices) {
+        ir_exon_pairs[[length(ir_exon_pairs) + 1]] <- list(comp = comp_idx, dom = i)
+      }
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # STEP 3: Detect boundary events (A5SS, A3SS, Partial_IR) for non-IR regions
+  # ---------------------------------------------------------------------------
+  for (i in seq_len(nrow(comp_ordered))) {
+    comp_exon <- comp_ordered[i, ]
+    is_first_comp <- (i == 1)
+    is_last_comp <- (i == nrow(comp_ordered))
+
+    for (j in seq_len(nrow(dom_ordered))) {
+      dom_exon <- dom_ordered[j, ]
+      is_first_dom <- (j == 1)
+      is_last_dom <- (j == nrow(dom_ordered))
+
+      overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
+                  (dom_exon$exon_end >= comp_exon$exon_start)
+      if (!overlaps) next
+
+      has_ir <- any(sapply(ir_exon_pairs, function(pair) {
+        pair$comp == i && pair$dom == j
+      }))
+      if (has_ir) next
+
+      is_both_first <- is_first_dom && is_first_comp
+      is_both_last <- is_last_dom && is_last_comp
+
+      event_result <- detect_shared_boundary_event(
+        dom_exon, comp_exon, strand,
+        is_first_exon = is_both_first,
+        is_last_exon = is_both_last,
+        is_first_exon_dom = is_first_dom,
+        is_last_exon_dom = is_last_dom,
+        is_first_exon_comp = is_first_comp,
+        is_last_exon_comp = is_last_comp,
+        flanking_exons_dom = NULL,
+        flanking_exons_non_dom = NULL
+      )
+
+      if (event_result$event_type != "none") {
+        event_type <- event_result$event_type
+        direction <- if (!is.null(event_result$direction)) event_result$direction else "-"
+
+        if (event_type %in% c("A3SS", "Partial_IR_3")) {
+          if (strand == "+") {
+            if (direction == "LOSS") {
+              five_prime <- dom_exon$exon_start
+              three_prime <- comp_exon$exon_start - 1
+            } else {
+              five_prime <- comp_exon$exon_start
+              three_prime <- dom_exon$exon_start - 1
+            }
+          } else {
+            if (direction == "LOSS") {
+              five_prime <- dom_exon$exon_end
+              three_prime <- comp_exon$exon_end + 1
+            } else {
+              five_prime <- comp_exon$exon_end
+              three_prime <- dom_exon$exon_end + 1
+            }
+          }
+        } else if (event_type %in% c("A5SS", "Partial_IR_5")) {
+          if (strand == "+") {
+            if (direction == "LOSS") {
+              five_prime <- comp_exon$exon_end + 1
+              three_prime <- dom_exon$exon_end
+            } else {
+              five_prime <- dom_exon$exon_end + 1
+              three_prime <- comp_exon$exon_end
+            }
+          } else {
+            if (direction == "LOSS") {
+              five_prime <- comp_exon$exon_start
+              three_prime <- dom_exon$exon_start - 1
+            } else {
+              five_prime <- dom_exon$exon_start - 1
+              three_prime <- comp_exon$exon_start
+            }
+          }
+        } else {
+          if (strand == "+") {
+            five_prime <- min(dom_exon$exon_start, comp_exon$exon_start)
+            three_prime <- max(dom_exon$exon_end, comp_exon$exon_end)
+          } else {
+            five_prime <- max(dom_exon$exon_end, comp_exon$exon_end)
+            three_prime <- min(dom_exon$exon_start, comp_exon$exon_start)
+          }
+        }
+
+        all_events[[length(all_events) + 1]] <- tibble(
+          gene_id = gene_id,
+          dominant_transcript_id = dominant_tid,
+          comparator_transcript_id = comparator_tid,
+          event_type = event_type,
+          direction = direction,
+          chr = dom_exon$chr,
+          five_prime = five_prime,
+          three_prime = three_prime,
+          strand = strand,
+          bp_diff = event_result$bp_diff,
+          missing_terminal_exons = "",
+          missing_internal_exons = missing_internal_exons,
+          ir_split_exons = "",
+          missing_external_exons = ""
+        )
+      }
+    }
+  }
+
+  # ---------------------------------------------------------------------------
+  # STEP 4: Detect SE events
+  # ---------------------------------------------------------------------------
+  # SE LOSS: dominant exons skipped by comparator (within comparator span)
+  comp_genomic_start <- min(comp_ordered$exon_start)
+  comp_genomic_end <- max(comp_ordered$exon_end)
+
+  for (i in seq_len(nrow(dom_ordered))) {
+    dom_exon <- dom_ordered[i, ]
+
+    within_boundaries <- (dom_exon$exon_start >= comp_genomic_start &&
+                          dom_exon$exon_end <= comp_genomic_end)
+    if (!within_boundaries) next
+
+    has_overlap <- FALSE
+    for (j in seq_len(nrow(comp_ordered))) {
+      comp_exon <- comp_ordered[j, ]
+      overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
+                  (dom_exon$exon_end >= comp_exon$exon_start)
+      if (overlaps) {
+        has_overlap <- TRUE
+        break
+      }
+    }
+
+    if (!has_overlap && i > 1 && i < nrow(dom_ordered)) {
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id = gene_id,
+        dominant_transcript_id = dominant_tid,
+        comparator_transcript_id = comparator_tid,
+        event_type = "SE",
+        direction = "LOSS",
+        chr = dom_exon$chr,
+        five_prime = if (strand == "+") dom_exon$exon_start else dom_exon$exon_end,
+        three_prime = if (strand == "+") dom_exon$exon_end else dom_exon$exon_start,
+        strand = strand,
+        bp_diff = dom_exon$exon_end - dom_exon$exon_start + 1,
+        missing_terminal_exons = "",
+        missing_internal_exons = "",
+        ir_split_exons = "",
+        missing_external_exons = ""
+      )
+    }
+  }
+
+  # SE GAIN: comparator exons skipped by dominant (within dominant span)
+  dom_genomic_start <- min(dom_ordered$exon_start)
+  dom_genomic_end <- max(dom_ordered$exon_end)
+
+  for (i in seq_len(nrow(comp_ordered))) {
+    comp_exon <- comp_ordered[i, ]
+
+    within_boundaries <- (comp_exon$exon_start >= dom_genomic_start &&
+                          comp_exon$exon_end <= dom_genomic_end)
+    if (!within_boundaries) next
+
+    has_overlap <- FALSE
+    for (j in seq_len(nrow(dom_ordered))) {
+      dom_exon <- dom_ordered[j, ]
+      overlaps <- (comp_exon$exon_start <= dom_exon$exon_end) &&
+                  (comp_exon$exon_end >= dom_exon$exon_start)
+      if (overlaps) {
+        has_overlap <- TRUE
+        break
+      }
+    }
+
+    if (!has_overlap) {
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id = gene_id,
+        dominant_transcript_id = dominant_tid,
+        comparator_transcript_id = comparator_tid,
+        event_type = "SE",
+        direction = "GAIN",
+        chr = comp_exon$chr,
+        five_prime = if (strand == "+") comp_exon$exon_start else comp_exon$exon_end,
+        three_prime = if (strand == "+") comp_exon$exon_end else comp_exon$exon_start,
+        strand = strand,
+        bp_diff = comp_exon$exon_end - comp_exon$exon_start + 1,
+        missing_terminal_exons = "",
+        missing_internal_exons = "",
+        ir_split_exons = "",
+        missing_external_exons = ""
+      )
+    }
+  }
+
+  if (length(all_events) > 0) {
+    return(bind_rows(all_events))
+  } else {
+    return(tibble())
+  }
+}

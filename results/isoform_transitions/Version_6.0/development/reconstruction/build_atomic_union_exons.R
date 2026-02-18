@@ -87,7 +87,7 @@ build_atomic_union_exons_from_gtf <- function(gtf_file, output_file) {
 
     current_start <- all_boundaries[1]
 
-    for (i in 2:(n-1)) {
+    for (i in seq_len(n - 2) + 1) {
       b <- all_boundaries[i]
       if (boundary_types[i] == "START") {
         # Split before this START boundary
@@ -115,7 +115,8 @@ build_atomic_union_exons_from_gtf <- function(gtf_file, output_file) {
     segments <- tibble(
       seg_start = seg_starts,
       seg_end = seg_ends
-    )
+    ) %>%
+      filter(seg_start <= seg_end)  # Drop phantom segments from adjacent boundaries
 
     # Filter to segments that are actually covered by at least one exon
     covered_segments <- segments %>%

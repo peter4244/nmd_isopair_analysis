@@ -203,8 +203,8 @@ verify_all <- function(original_gtf, reconstructed_gtf, events) {
       arrange(exon_start)
 
     # Extract reconstructed exons
-    # Reconstructed transcript IDs have "_reconstructed" suffix
-    reconstructed_tid <- paste0(pair$dominant_transcript_id, "_reconstructed")
+    # Reconstructed transcript IDs use compound format: dominant_id::comparator_id
+    reconstructed_tid <- paste0(pair$dominant_transcript_id, "::", pair$comparator_transcript_id)
 
     reconstructed_exons <- reconstructed_gtf %>%
       filter(

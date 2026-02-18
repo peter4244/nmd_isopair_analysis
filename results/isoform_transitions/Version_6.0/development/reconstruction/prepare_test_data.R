@@ -91,6 +91,25 @@ if (!all(exons_df$strand %in% valid_strands)) {
   stop("ERROR: Some exons have invalid strand (must be + or -)")
 }
 
+# Check that all exons per gene are on the same chromosome and strand
+gene_consistency <- exons_df %>%
+  group_by(gene_id) %>%
+  summarize(
+    n_chr    = n_distinct(chr),
+    n_strand = n_distinct(strand),
+    .groups  = "drop"
+  )
+bad_chr <- gene_consistency %>% filter(n_chr > 1)
+bad_strand <- gene_consistency %>% filter(n_strand > 1)
+if (nrow(bad_chr) > 0) {
+  stop(sprintf("ERROR: %d gene(s) have exons on multiple chromosomes: %s",
+               nrow(bad_chr), paste(bad_chr$gene_id, collapse = ", ")))
+}
+if (nrow(bad_strand) > 0) {
+  stop(sprintf("ERROR: %d gene(s) have exons on multiple strands: %s",
+               nrow(bad_strand), paste(bad_strand$gene_id, collapse = ", ")))
+}
+
 cat("  ✓ GTF validation passed\n\n")
 
 # ==============================================================================
