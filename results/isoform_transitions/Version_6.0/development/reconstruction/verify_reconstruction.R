@@ -16,6 +16,10 @@
 
 library(tidyverse)
 
+# Tolerance for terminal exon boundaries — must match event_detection_functions.R
+TSS_TOLERANCE <- 20
+TES_TOLERANCE <- 20
+
 # ==============================================================================
 # Parse GTF
 # ==============================================================================
@@ -72,15 +76,20 @@ parse_gtf <- function(gtf_file) {
 # Verification Functions
 # ==============================================================================
 
-#' Verify that two exon structures match exactly
+#' Verify that two exon structures match within tolerance
+#'
+#' Internal exon boundaries are checked for exact match. Terminal exon boundaries
+#' (TSS and TES) allow up to TSS_TOLERANCE / TES_TOLERANCE bp difference, matching
+#' the tolerance used in event detection.
 #'
 #' @param original_exons Original dominant exons
 #' @param reconstructed_exons Reconstructed dominant exons
+#' @param strand Gene strand ("+" or "-")
 #' @param gene_id Gene ID (for reporting)
 #' @param original_tid Original transcript ID
 #' @param reconstructed_tid Reconstructed transcript ID
 #' @return List with pass status and details
-verify_transcript <- function(original_exons, reconstructed_exons,
+verify_transcript <- function(original_exons, reconstructed_exons, strand,
                               gene_id, original_tid, reconstructed_tid) {
 
   # Check exon count
@@ -100,12 +109,31 @@ verify_transcript <- function(original_exons, reconstructed_exons,
   original_sorted <- original_exons %>% arrange(exon_start, exon_end)
   reconstructed_sorted <- reconstructed_exons %>% arrange(exon_start, exon_end)
 
-  # Compare each exon coordinate
-  for (i in seq_len(nrow(original_sorted))) {
-    orig <- original_sorted[i, ]
+  n_exons <- nrow(original_sorted)
+
+  # Compare each exon coordinate with strand-aware terminal tolerance
+  for (i in seq_len(n_exons)) {
+    orig  <- original_sorted[i, ]
     recon <- reconstructed_sorted[i, ]
 
-    if (orig$exon_start != recon$exon_start || orig$exon_end != recon$exon_end) {
+    is_first_genomic <- (i == 1)
+    is_last_genomic  <- (i == n_exons)
+
+    # Assign tolerance per boundary based on strand
+    # + strand: TSS = exon_start of first exon, TES = exon_end of last exon
+    # - strand: TES = exon_start of first exon, TSS = exon_end of last exon
+    if (strand == "+") {
+      start_tol <- if (is_first_genomic) TSS_TOLERANCE else 0L
+      end_tol   <- if (is_last_genomic)  TES_TOLERANCE else 0L
+    } else {
+      start_tol <- if (is_first_genomic) TES_TOLERANCE else 0L
+      end_tol   <- if (is_last_genomic)  TSS_TOLERANCE else 0L
+    }
+
+    start_diff <- abs(orig$exon_start - recon$exon_start)
+    end_diff   <- abs(orig$exon_end   - recon$exon_end)
+
+    if (start_diff > start_tol || end_diff > end_tol) {
       return(list(
         pass = FALSE,
         reason = sprintf("Exon %d coordinate mismatch", i),
@@ -121,10 +149,15 @@ verify_transcript <- function(original_exons, reconstructed_exons,
     }
   }
 
-  # All checks passed - perfect match!
+  # All checks passed
+  tol_note <- if (n_exons > 0 &&
+    any(abs(original_sorted$exon_start - reconstructed_sorted$exon_start) > 0 |
+        abs(original_sorted$exon_end   - reconstructed_sorted$exon_end)   > 0))
+    " (within terminal tolerance)" else ""
+
   return(list(
     pass = TRUE,
-    reason = "Perfect match",
+    reason = paste0("Perfect match", tol_note),
     n_exons_original = nrow(original_exons),
     n_exons_reconstructed = nrow(reconstructed_exons),
     first_mismatch_pos = NA,
@@ -215,6 +248,7 @@ verify_all <- function(original_gtf, reconstructed_gtf, events) {
     # Verify
     result <- verify_transcript(
       original_exons, reconstructed_exons,
+      strand = original_exons$strand[1],
       pair$gene_id, pair$dominant_transcript_id, reconstructed_tid
     )
 

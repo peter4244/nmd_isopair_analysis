@@ -147,32 +147,35 @@ build_atomic_union_exons_from_gtf <- function(gtf_file, output_file) {
 
   cat(sprintf("  Created %d atomic union exons\n", nrow(union_exons)))
 
+  # Strip .gz suffix if provided — bgzip adds it automatically
+  base_file <- sub("\\.gz$", "", output_file)
+
   # Write output
-  cat("\nWriting output:", output_file, "\n")
+  cat("\nWriting output:", base_file, "\n")
 
   # Sort by chr, start for tabix
   union_exons <- union_exons %>%
     arrange(chr, start)
 
   # Write with header comment (# prefix so tabix skips it)
-  write_lines("#chr\tstart\tend\tunion_exon_id\tstrand\tgene_id", output_file)
-  write_tsv(union_exons, output_file, append = TRUE, col_names = FALSE)
+  write_lines("#chr\tstart\tend\tunion_exon_id\tstrand\tgene_id", base_file)
+  write_tsv(union_exons, base_file, append = TRUE, col_names = FALSE)
 
   # Compress with bgzip
   cat("Compressing with bgzip...\n")
-  bgzip_status <- system(sprintf("bgzip -f %s", output_file))
+  bgzip_status <- system(sprintf("bgzip -f %s", base_file))
   if (bgzip_status != 0) {
     stop(sprintf("bgzip failed with status %d", bgzip_status))
   }
 
   # Index with tabix
   cat("Indexing with tabix...\n")
-  tabix_status <- system(sprintf("tabix -f -s 1 -b 2 -e 3 %s.gz", output_file))
+  tabix_status <- system(sprintf("tabix -f -s 1 -b 2 -e 3 %s.gz", base_file))
   if (tabix_status != 0) {
     stop(sprintf("tabix failed with status %d", tabix_status))
   }
 
-  cat(sprintf("\n✓ Complete: %s.gz (indexed)\n\n", output_file))
+  cat(sprintf("\n✓ Complete: %s.gz (indexed)\n\n", base_file))
   return(union_exons)
 }
 

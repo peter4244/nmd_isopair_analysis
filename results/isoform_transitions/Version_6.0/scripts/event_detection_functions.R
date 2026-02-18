@@ -48,11 +48,6 @@ TES_TOLERANCE <- 20  # bp tolerance for TES change detection
 #   - IR (intron retention) if spanning multiple exons
 SPLICE_SITE_THRESHOLD <- 100  # bp threshold: <100 = splice site, ≥100 = retention
 
-# Exon overlap detection
-# Two exons are considered "overlapping" (same exonic region) if they overlap
-# by at least OVERLAP_THRESHOLD of the shorter exon
-OVERLAP_THRESHOLD <- 0.5  # proportion (0.5 = 50% overlap required)
-
 # ==============================================================================
 # Biological Exon Ordering (Canonical Function)
 # ==============================================================================
@@ -94,27 +89,6 @@ order_exons_biological <- function(exons, strand) {
 # ==============================================================================
 # Event Detection Functions
 # ==============================================================================
-
-#' Calculate overlap between two exons
-#'
-#' @param exon1 First exon (tibble row with exon_start, exon_end)
-#' @param exon2 Second exon (tibble row with exon_start, exon_end)
-#' @return Logical - TRUE if overlap ≥ 50% of shorter exon
-calculate_overlap <- function(exon1, exon2) {
-  # Calculate overlap region
-  overlap_start <- max(exon1$exon_start, exon2$exon_start)
-  overlap_end <- min(exon1$exon_end, exon2$exon_end)
-  overlap_length <- max(0, overlap_end - overlap_start + 1)
-
-  # Calculate exon lengths
-  len1 <- exon1$exon_end - exon1$exon_start + 1
-  len2 <- exon2$exon_end - exon2$exon_start + 1
-
-  # Overlap percentage relative to shorter exon
-  overlap_pct <- overlap_length / min(len1, len2)
-
-  return(overlap_pct >= OVERLAP_THRESHOLD)
-}
 
 #' Detect TSS changes between first exons
 #'
@@ -318,18 +292,20 @@ compute_missing_terminal_exons_tes <- function(dom_exons, comp_exons, strand) {
 #' @param strand Gene strand (+ or -)
 #' @param is_first_exon Logical - are BOTH exons first exons? (for shared boundary terminal checks)
 #' @param is_last_exon Logical - are BOTH exons last exons? (for shared boundary terminal checks)
+#' @param is_first_exon_dom Logical - is the dominant exon a first exon? (TSS already handled by Alt_TSS)
+#' @param is_last_exon_dom Logical - is the dominant exon a last exon? (TES already handled by Alt_TES)
 #' @param is_first_exon_comp Logical - is comparison exon a first exon? (for overlap-based TSS check)
 #' @param is_last_exon_comp Logical - is comparison exon a last exon? (for overlap-based TES check)
-#' @param terminal_has_overlap Logical - do terminal exons overlap ≥50%? (only relevant for terminal exons)
 #' @param flanking_exons_dom Other exons in dominant isoform (for IR check)
 #' @param flanking_exons_non_dom Other exons in non-dominant isoform (for IR check)
 #' @return List with event_type, bp_diff, and direction (GAIN/LOSS)
 detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
                                          is_first_exon = FALSE,
                                          is_last_exon = FALSE,
+                                         is_first_exon_dom = FALSE,
+                                         is_last_exon_dom = FALSE,
                                          is_first_exon_comp = FALSE,
                                          is_last_exon_comp = FALSE,
-                                         terminal_has_overlap = FALSE,
                                          flanking_exons_dom = NULL,
                                          flanking_exons_non_dom = NULL) {
   # Determine which boundaries are shared and which differ
@@ -373,13 +349,15 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
     }
 
     # Check if differing donor is a terminal boundary (not an internal splice site)
-    # Donor = TES on last exons (both strands)
-    # Must check BOTH dominant and comparator - if either has this as TES, it's terminal
-    donor_is_terminal <- is_last_exon || is_last_exon_comp
+    # Donor = TES on last exons (both strands).
+    # Suppress ONLY when BOTH exons are last exons (both TES): in that case Alt_TES
+    # already captures the boundary difference.
+    # If only one exon is last (e.g., comparator's only exon vs dominant's non-last exon),
+    # the non-terminal isoform's donor is a real splice site and must be detected.
+    donor_is_terminal <- is_last_exon  # TRUE only when both dominant AND comparator are last
 
     if (donor_is_terminal) {
-      # Terminal boundaries should not be labeled as A5SS or Partial_IR
-      # Let Alt_TES handle terminal boundary differences
+      # Both TES exons — Alt_TES handles this boundary, don't double-count
       event_type <- "none"
     } else if (bp_diff < SPLICE_SITE_THRESHOLD) {
       event_type <- "A5SS"
@@ -410,13 +388,15 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
     }
 
     # Check if differing acceptor is a terminal boundary (not an internal splice site)
-    # Acceptor = TSS on first exons (both strands)
-    # Must check BOTH dominant and comparator - if either has this as TSS, it's terminal
-    acceptor_is_terminal <- is_first_exon || is_first_exon_comp
+    # Acceptor = TSS on first exons (both strands).
+    # Suppress ONLY when BOTH exons are first exons (both TSS): in that case Alt_TSS
+    # already captures the boundary difference.
+    # If only one exon is first (e.g., comparator's only exon vs dominant's non-first exon),
+    # the non-terminal isoform's acceptor is a real splice site and must be detected.
+    acceptor_is_terminal <- is_first_exon  # TRUE only when both dominant AND comparator are first
 
     if (acceptor_is_terminal) {
-      # Terminal boundaries should not be labeled as A3SS or Partial_IR
-      # Let Alt_TSS handle terminal boundary differences
+      # Both TSS exons — Alt_TSS handles this boundary, don't double-count
       event_type <- "none"
     } else if (bp_diff < SPLICE_SITE_THRESHOLD) {
       event_type <- "A3SS"
@@ -434,51 +414,59 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
     }
   } else if (differs_acceptor && differs_donor) {
     # BOTH boundaries differ - dual-shift case
-    # Treatment depends on whether this is a terminal exon with overlap
+    # Treatment depends on whether any involved exon is terminal
 
-    if ((is_first_exon || is_last_exon) && terminal_has_overlap) {
-      # Terminal exon with ≥50% overlap: check internal boundary
-      # Biological rationale: spliceosome had access to both sites
+    # A terminal exon from either isoform means one boundary is TSS/TES (already
+    # captured by Alt_TSS/Alt_TES); only the internal-facing boundary is detected here.
+    is_first_any <- is_first_exon || is_first_exon_dom || is_first_exon_comp
+    is_last_any  <- is_last_exon  || is_last_exon_dom  || is_last_exon_comp
 
-      if (is_first_exon) {
-        # First exon: internal boundary is the DONOR
-        # (TSS is terminal, already handled by Alt_TSS)
-        if (donor_diff >= SPLICE_SITE_THRESHOLD) {
+    if (is_first_any || is_last_any) {
+      # A terminal exon is involved: check internal boundary only.
+      # The outer (TSS/TES) boundary is captured by Alt_TSS/Alt_TES.
+      # Any overlap (>=1bp) is sufficient to detect the internal boundary event.
+
+      if (is_first_any) {
+        # A first exon is involved: TSS boundary already handled by Alt_TSS.
+        # Internal boundary is the DONOR.
+        bp_diff <- donor_diff
+        if (donor_diff < SPLICE_SITE_THRESHOLD) {
+          event_type <- "A5SS"
+        } else {
           event_type <- "Partial_IR_5"
-          bp_diff <- donor_diff
-          # Compute direction based on donor (which exon extends further)
-          if (strand == "+") {
-            # Plus: donor = exon end (higher coordinate = extends further)
-            direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
-          } else {
-            # Minus: donor = exon start (lower coordinate = extends further)
-            direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
-          }
         }
-      } else if (is_last_exon) {
-        # Last exon: internal boundary is the ACCEPTOR
-        # (TES is terminal, already handled by Alt_TES)
-        if (acceptor_diff >= SPLICE_SITE_THRESHOLD) {
+        # Compute direction based on donor (which exon extends further)
+        if (strand == "+") {
+          # Plus: donor = exon end (higher coordinate = extends further)
+          direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+        } else {
+          # Minus: donor = exon start (lower coordinate = extends further)
+          direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+        }
+      } else if (is_last_any) {
+        # A last exon is involved: TES boundary already handled by Alt_TES.
+        # Internal boundary is the ACCEPTOR.
+        bp_diff <- acceptor_diff
+        if (acceptor_diff < SPLICE_SITE_THRESHOLD) {
+          event_type <- "A3SS"
+        } else {
           event_type <- "Partial_IR_3"
-          bp_diff <- acceptor_diff
-          # Compute direction based on acceptor (which exon extends further)
-          if (strand == "+") {
-            # Plus: acceptor = exon start (lower coordinate = extends further)
-            direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
-          } else {
-            # Minus: acceptor = exon end (higher coordinate = extends further)
-            direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
-          }
+        }
+        # Compute direction based on acceptor (which exon extends further)
+        if (strand == "+") {
+          # Plus: acceptor = exon start (lower coordinate = extends further)
+          direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+        } else {
+          # Minus: acceptor = exon end (higher coordinate = extends further)
+          direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
         }
       }
-      # If internal boundary <100bp, return "none" (not reported)
 
-    } else if (!is_first_exon && !is_last_exon) {
-      # Internal exon: dual-shift is "Dual_boundary" (wastebin category)
+    } else {
+      # Purely internal exon pair: dual-shift is "Dual_boundary" (wastebin category)
       event_type <- "Dual_boundary"
       bp_diff <- max(donor_diff, acceptor_diff)  # Report largest shift
     }
-    # Terminal exons with <50% overlap: return "none" (not biologically meaningful)
   }
 
   # ===========================================================================
@@ -809,4 +797,40 @@ detect_se <- function(comparison) {
   }
 
   return(n_se)
+}
+
+# ==============================================================================
+# Isoform Overlap Check
+# ==============================================================================
+
+#' Check if two isoforms have any exon-level overlap
+#'
+#' Used as a guard between Step 1 (terminal boundary detection) and Step 2
+#' (intron retention detection). If no overlap exists, further event detection
+#' is not meaningful and evaluation should end for the pair.
+#'
+#' @param comp_ordered Comparator exons ordered biologically (TSS → TES)
+#' @param dom_ordered Dominant exons ordered biologically (TSS → TES)
+#' @return List with:
+#'   - has_overlap: logical, TRUE if any exon pair overlaps
+#'   - dom_exon_coords: character, dominant exon coords as "start-end, ..." string
+check_isoform_overlap <- function(comp_ordered, dom_ordered) {
+  has_overlap <- FALSE
+  for (i in seq_len(nrow(comp_ordered))) {
+    for (j in seq_len(nrow(dom_ordered))) {
+      if (comp_ordered$exon_start[i] <= dom_ordered$exon_end[j] &&
+          comp_ordered$exon_end[i] >= dom_ordered$exon_start[j]) {
+        has_overlap <- TRUE
+        break
+      }
+    }
+    if (has_overlap) break
+  }
+
+  dom_exon_coords <- paste(
+    sprintf("%d-%d", dom_ordered$exon_start, dom_ordered$exon_end),
+    collapse = ", "
+  )
+
+  list(has_overlap = has_overlap, dom_exon_coords = dom_exon_coords)
 }

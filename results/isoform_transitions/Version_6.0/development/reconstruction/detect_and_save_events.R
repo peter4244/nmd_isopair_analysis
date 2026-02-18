@@ -74,25 +74,93 @@ parse_gtf <- function(gtf_file) {
 # Helper Functions
 # ==============================================================================
 
-#' Check if two exons have terminal overlap (≥50%)
+# ==============================================================================
+# Beyond-Boundary Event Detection
+# ==============================================================================
+
+#' Detect dominant exons outside comparator span and vice versa
 #'
-#' @param exon1 First exon
-#' @param exon2 Second exon
-#' @return Logical
-has_terminal_overlap <- function(exon1, exon2) {
-  # Calculate overlap
-  overlap_start <- max(exon1$exon_start, exon2$exon_start)
-  overlap_end <- min(exon1$exon_end, exon2$exon_end)
+#' Identifies exons that lie entirely outside the opposing isoform's genomic
+#' boundaries. Emits "beyond_boundary" events:
+#'   - LOSS: dominant exon(s) outside comparator span (add to reconstruction)
+#'   - GAIN: comparator exon(s) outside dominant span (remove from reconstruction)
+#'
+#' @param dom_ordered Dominant exons (ordered biologically TSS -> TES)
+#' @param comp_ordered Comparator exons (ordered biologically TSS -> TES)
+#' @param gene_id Gene identifier
+#' @param dominant_tid Dominant transcript ID
+#' @param comparator_tid Comparator transcript ID
+#' @param strand Gene strand
+#' @return List of event tibbles (may be empty)
+detect_beyond_boundary_exons <- function(dom_ordered, comp_ordered,
+                                          gene_id, dominant_tid, comparator_tid,
+                                          strand) {
+  events <- list()
 
-  if (overlap_start > overlap_end) return(FALSE)
+  comp_genomic_start <- min(comp_ordered$exon_start)
+  comp_genomic_end   <- max(comp_ordered$exon_end)
+  dom_genomic_start  <- min(dom_ordered$exon_start)
+  dom_genomic_end    <- max(dom_ordered$exon_end)
 
-  overlap_length <- overlap_end - overlap_start + 1
-  len1 <- exon1$exon_end - exon1$exon_start + 1
-  len2 <- exon2$exon_end - exon2$exon_start + 1
+  # --- LOSS: dominant exons entirely outside comparator span ---
+  dom_external <- list()
+  for (i in seq_len(nrow(dom_ordered))) {
+    exon <- dom_ordered[i, ]
+    if (exon$exon_end < comp_genomic_start || exon$exon_start > comp_genomic_end) {
+      dom_external[[length(dom_external) + 1]] <-
+        sprintf("%d-%d", exon$exon_start, exon$exon_end)
+    }
+  }
 
-  overlap_pct <- overlap_length / min(len1, len2)
+  if (length(dom_external) > 0) {
+    events[[length(events) + 1]] <- tibble(
+      gene_id                  = gene_id,
+      dominant_transcript_id   = dominant_tid,
+      comparator_transcript_id = comparator_tid,
+      event_type               = "beyond_boundary",
+      direction                = "LOSS",
+      chr                      = dom_ordered$chr[1],
+      five_prime               = NA_integer_,
+      three_prime              = NA_integer_,
+      strand                   = strand,
+      bp_diff                  = NA_integer_,
+      missing_terminal_exons   = "",
+      missing_internal_exons   = "",
+      ir_split_exons           = "",
+      missing_external_exons   = paste(dom_external, collapse = ", ")
+    )
+  }
 
-  return(overlap_pct >= 0.5)
+  # --- GAIN: comparator exons entirely outside dominant span ---
+  comp_external <- list()
+  for (i in seq_len(nrow(comp_ordered))) {
+    exon <- comp_ordered[i, ]
+    if (exon$exon_end < dom_genomic_start || exon$exon_start > dom_genomic_end) {
+      comp_external[[length(comp_external) + 1]] <-
+        sprintf("%d-%d", exon$exon_start, exon$exon_end)
+    }
+  }
+
+  if (length(comp_external) > 0) {
+    events[[length(events) + 1]] <- tibble(
+      gene_id                  = gene_id,
+      dominant_transcript_id   = dominant_tid,
+      comparator_transcript_id = comparator_tid,
+      event_type               = "beyond_boundary",
+      direction                = "GAIN",
+      chr                      = comp_ordered$chr[1],
+      five_prime               = NA_integer_,
+      three_prime              = NA_integer_,
+      strand                   = strand,
+      bp_diff                  = NA_integer_,
+      missing_terminal_exons   = "",
+      missing_internal_exons   = "",
+      ir_split_exons           = "",
+      missing_external_exons   = paste(comp_external, collapse = ", ")
+    )
+  }
+
+  return(events)
 }
 
 # ==============================================================================
@@ -229,7 +297,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       bp_diff = abs(dom_tss - comp_tss),
       missing_terminal_exons = missing_exons,
       missing_internal_exons = missing_internal_exons,
-      ir_split_exons = ""
+      ir_split_exons = "",
+      missing_external_exons = ""
     )
   }
 
@@ -290,8 +359,33 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       bp_diff = abs(dom_tes - comp_tes),
       missing_terminal_exons = missing_exons,
       missing_internal_exons = missing_internal_exons,
-      ir_split_exons = ""
+      ir_split_exons = "",
+      missing_external_exons = ""
     )
+  }
+
+  # ===========================================================================
+  # STEP 1.5: Beyond-boundary detection
+  # ===========================================================================
+  # Detect dominant exons lying entirely outside the comparator's genomic span
+  # (LOSS events) and comparator exons lying entirely outside the dominant's
+  # genomic span (GAIN events). Runs always — the zero-overlap case is the
+  # special case where all exons from both isoforms are beyond the other's span.
+  beyond_events <- detect_beyond_boundary_exons(
+    dom_ordered, comp_ordered, gene_id, dominant_tid, comparator_tid, strand
+  )
+  if (length(beyond_events) > 0) {
+    all_events <- c(all_events, beyond_events)
+  }
+
+  # If isoforms share no exon-level overlap, Steps 2-3 are not meaningful.
+  overlap_check <- check_isoform_overlap(comp_ordered, dom_ordered)
+  if (!overlap_check$has_overlap) {
+    if (length(all_events) > 0) {
+      return(bind_rows(all_events))
+    } else {
+      return(tibble())
+    }
   }
 
   # ===========================================================================
@@ -336,7 +430,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         bp_diff = NA_integer_,
         missing_terminal_exons = "",
         missing_internal_exons = missing_internal_exons,
-        ir_split_exons = ir_split_exons
+        ir_split_exons = ir_split_exons,
+        missing_external_exons = ""
       )
 
       # Mark these exon pairs as having IR
@@ -382,7 +477,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         bp_diff = NA_integer_,
         missing_terminal_exons = "",
         missing_internal_exons = missing_internal_exons,
-        ir_split_exons = ir_split_exons
+        ir_split_exons = ir_split_exons,
+        missing_external_exons = ""
       )
 
       # Mark these exon pairs as having IR
@@ -418,9 +514,6 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       }))
       if (has_ir) next
 
-      # Check for terminal overlap
-      terminal_overlap <- has_terminal_overlap(dom_exon, comp_exon)
-
       # Use unified event detection
       is_both_first <- is_first_dom && is_first_comp
       is_both_last <- is_last_dom && is_last_comp
@@ -429,9 +522,10 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         dom_exon, comp_exon, strand,
         is_first_exon = is_both_first,
         is_last_exon = is_both_last,
+        is_first_exon_dom = is_first_dom,
+        is_last_exon_dom = is_last_dom,
         is_first_exon_comp = is_first_comp,
         is_last_exon_comp = is_last_comp,
-        terminal_has_overlap = terminal_overlap,
         flanking_exons_dom = NULL,  # Simplified for now
         flanking_exons_non_dom = NULL
       )
@@ -518,7 +612,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
           bp_diff = event_result$bp_diff,
           missing_terminal_exons = "",
           missing_internal_exons = missing_internal_exons,
-          ir_split_exons = ""
+          ir_split_exons = "",
+          missing_external_exons = ""
         )
       }
     }
@@ -571,7 +666,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         bp_diff = dom_exon$exon_end - dom_exon$exon_start + 1,
         missing_terminal_exons = "",
         missing_internal_exons = "",
-        ir_split_exons = ""
+        ir_split_exons = "",
+        missing_external_exons = ""
       )
     }
   }
@@ -601,7 +697,12 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       }
     }
 
-    if (!has_overlap && i > 1 && i < nrow(comp_ordered)) {
+    # No i == 1 or i == nrow restrictions: terminal comparator exons can lie within
+    # the dominant's genomic span (e.g., when Alt_TSS/Alt_TES LOSS is present and
+    # the dominant extends further). The within_boundaries and has_overlap guards
+    # above prevent false positives. SE GAIN removes these orphaned exons in Phase 1
+    # before Alt_TSS/Alt_TES LOSS adds the dominant's terminal exon(s) in Phase 2.
+    if (!has_overlap) {
       all_events[[length(all_events) + 1]] <- tibble(
         gene_id = gene_id,
         dominant_transcript_id = dominant_tid,
@@ -615,7 +716,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         bp_diff = comp_exon$exon_end - comp_exon$exon_start + 1,
         missing_terminal_exons = "",
         missing_internal_exons = "",
-        ir_split_exons = ""
+        ir_split_exons = "",
+        missing_external_exons = ""
       )
     }
   }
