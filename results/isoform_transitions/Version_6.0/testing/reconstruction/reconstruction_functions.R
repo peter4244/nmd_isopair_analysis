@@ -469,6 +469,86 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
     }
   }
 
+  # For GAIN events with multiple terminal regions, remove/trim all affected exons
+  if (!is.null(union_exons) && event$direction == "GAIN" &&
+      !is.na(event$missing_terminal_exons) && event$missing_terminal_exons != "") {
+
+    # Parse individual regions
+    ranges_str <- strsplit(event$missing_terminal_exons, ",")[[1]]
+
+    if (length(ranges_str) > 1) {
+      # Parse all regions that need to be removed
+      regions <- lapply(ranges_str, function(rs) {
+        coords <- as.integer(strsplit(trimws(rs), "-")[[1]])
+        list(start = coords[1], end = coords[2])
+      })
+
+      # Process each exon and determine if it should be removed or trimmed
+      exons_to_keep <- list()
+
+      for (i in seq_len(nrow(exons))) {
+        exon <- exons[i, ]
+        keep_exon <- TRUE
+        modified_exon <- exon
+
+        # Check against all regions
+        for (region in regions) {
+          # Check if exon is completely within region
+          if (exon$exon_start >= region$start && exon$exon_end <= region$end) {
+            # Completely covered: remove this exon
+            keep_exon <- FALSE
+            break
+          }
+
+          # Check if exon partially overlaps region
+          if (exon$exon_start < region$end && exon$exon_end > region$start) {
+            # Partial overlap: trim the exon
+            if (event$event_type == "Alt_TSS") {
+              if (event$strand == "+") {
+                # Plus TSS: trim start if it overlaps
+                if (exon$exon_start < region$end && exon$exon_start >= region$start) {
+                  modified_exon$exon_start <- region$end + 1
+                }
+              } else {
+                # Minus TSS: trim end if it overlaps
+                if (exon$exon_end > region$start && exon$exon_end <= region$end) {
+                  modified_exon$exon_end <- region$start - 1
+                }
+              }
+            } else {  # Alt_TES
+              if (event$strand == "+") {
+                # Plus TES: trim end if it overlaps
+                if (exon$exon_end > region$start && exon$exon_end <= region$end) {
+                  modified_exon$exon_end <- region$start - 1
+                }
+              } else {
+                # Minus TES: trim start if it overlaps
+                if (exon$exon_start < region$end && exon$exon_start >= region$start) {
+                  modified_exon$exon_start <- region$end + 1
+                }
+              }
+            }
+          }
+        }
+
+        # Validate and keep exon if it's still valid
+        if (keep_exon && modified_exon$exon_start <= modified_exon$exon_end) {
+          exons_to_keep[[length(exons_to_keep) + 1]] <- modified_exon
+        }
+      }
+
+      if (length(exons_to_keep) > 0) {
+        exons <- bind_rows(exons_to_keep) %>%
+          arrange(exon_start) %>%
+          distinct(exon_start, exon_end, .keep_all = TRUE)
+      } else {
+        exons <- exons[0, ]  # Empty tibble with same structure
+      }
+
+      return(exons)
+    }
+  }
+
   # Fall through to original logic for single-region or GAIN events
   if (nrow(event_ues) == 0) {
     return(exons)
