@@ -8,6 +8,30 @@
 #
 
 # ==============================================================================
+# CRITICAL: Event Direction Semantics (GAIN vs LOSS)
+# ==============================================================================
+#
+# IMPORTANT: GAIN and LOSS are defined from the COMPARATOR'S PERSPECTIVE
+#
+# When comparing: Dominant isoform vs Comparator isoform
+#
+# LOSS = Comparator LOST sequence (dominant has MORE)
+#   - Reconstruction: ADD regions to comparator to build dominant
+#   - Example: Dominant has extra 5' exon → comparator LOST that exon
+#
+# GAIN = Comparator GAINED sequence (dominant has LESS)
+#   - Reconstruction: REMOVE regions from comparator to build dominant
+#   - Example: Comparator has extra 3' exon → comparator GAINED that exon
+#
+# Alt_TSS/Alt_TES Examples:
+#   Plus strand:
+#     - dom_tss < comp_tss → dominant starts earlier → comparator LOST 5' → LOSS
+#     - dom_tes > comp_tes → dominant ends later → comparator LOST 3' → LOSS
+#   Minus strand:
+#     - dom_tss > comp_tss → dominant starts earlier → comparator LOST 5' → LOSS
+#     - dom_tes < comp_tes → dominant ends later → comparator LOST 3' → LOSS
+#
+# ==============================================================================
 # Detection Thresholds (Constants)
 # ==============================================================================
 
@@ -422,6 +446,14 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
         if (donor_diff >= SPLICE_SITE_THRESHOLD) {
           event_type <- "Partial_IR_5"
           bp_diff <- donor_diff
+          # Compute direction based on donor (which exon extends further)
+          if (strand == "+") {
+            # Plus: donor = exon end (higher coordinate = extends further)
+            direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+          } else {
+            # Minus: donor = exon start (lower coordinate = extends further)
+            direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+          }
         }
       } else if (is_last_exon) {
         # Last exon: internal boundary is the ACCEPTOR
@@ -429,6 +461,14 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
         if (acceptor_diff >= SPLICE_SITE_THRESHOLD) {
           event_type <- "Partial_IR_3"
           bp_diff <- acceptor_diff
+          # Compute direction based on acceptor (which exon extends further)
+          if (strand == "+") {
+            # Plus: acceptor = exon start (lower coordinate = extends further)
+            direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+          } else {
+            # Minus: acceptor = exon end (higher coordinate = extends further)
+            direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+          }
         }
       }
       # If internal boundary <100bp, return "none" (not reported)

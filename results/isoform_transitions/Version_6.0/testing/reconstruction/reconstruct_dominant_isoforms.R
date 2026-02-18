@@ -217,7 +217,7 @@ reconstruct_all <- function(comparator_gtf, events, union_exons) {
 
     # Reconstruct dominant
     reconstructed_exons <- tryCatch({
-      reconstruct_dominant(comp_exons, pair_events, union_exons)
+      reconstruct_dominant_v2(comp_exons, pair_events, union_exons)
     }, error = function(e) {
       cat(sprintf("  ERROR: %s\n", e$message))
       reconstruction_log[[i]] <- tibble(

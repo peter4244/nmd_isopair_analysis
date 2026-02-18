@@ -183,7 +183,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       comp_tss <- first_comp$exon_end
     }
 
-    # Direction: LOSS if dominant extends beyond comparator
+    # Direction: LOSS if comparator lost sequence (dominant extends beyond comparator)
+    # Plus strand: dom_tss < comp_tss means dominant starts earlier → comparator LOST 5' sequence
+    # Minus strand: dom_tss > comp_tss means dominant starts earlier → comparator LOST 5' sequence
     direction <- if (
       (strand == "+" && dom_tss < comp_tss) ||
       (strand == "-" && dom_tss > comp_tss)
@@ -202,12 +204,15 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
     }
 
     # Compute exonic region that differs (for union exon matching)
-    # For LOSS: use dominant exons; for GAIN: use comparator exons
+    # LOSS: comparator lost sequence (dominant extends further) → compute from dominant
+    # GAIN: comparator gained sequence (comparator extends further) → compute from comparator
+    # Function expects (longer_isoform, shorter_isoform) as arguments
     missing_exons <- ""
     if (direction == "LOSS") {
+      # Dominant extends further, so pass (dominant, comparator)
       missing_exons <- compute_missing_terminal_exons_tss(dom_ordered, comp_ordered, strand)
     } else {
-      # GAIN: comparator has more at TSS, so compute from comparator perspective
+      # Comparator extends further, so pass (comparator, dominant)
       missing_exons <- compute_missing_terminal_exons_tss(comp_ordered, dom_ordered, strand)
     }
 
@@ -239,6 +244,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       comp_tes <- last_comp$exon_start
     }
 
+    # Direction: LOSS if comparator lost sequence (dominant extends beyond comparator)
+    # Plus strand: dom_tes > comp_tes means dominant ends later → comparator LOST 3' sequence
+    # Minus strand: dom_tes < comp_tes means dominant ends later → comparator LOST 3' sequence
     direction <- if (
       (strand == "+" && dom_tes > comp_tes) ||
       (strand == "-" && dom_tes < comp_tes)
@@ -257,12 +265,15 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
     }
 
     # Compute exonic region that differs (for union exon matching)
-    # For LOSS: use dominant exons; for GAIN: use comparator exons
+    # LOSS: comparator lost sequence (dominant extends further) → compute from dominant
+    # GAIN: comparator gained sequence (comparator extends further) → compute from comparator
+    # Function expects (longer_isoform, shorter_isoform) as arguments
     missing_exons <- ""
     if (direction == "LOSS") {
+      # Dominant extends further, so pass (dominant, comparator)
       missing_exons <- compute_missing_terminal_exons_tes(dom_ordered, comp_ordered, strand)
     } else {
-      # GAIN: comparator has more at TES, so compute from comparator perspective
+      # Comparator extends further, so pass (comparator, dominant)
       missing_exons <- compute_missing_terminal_exons_tes(comp_ordered, dom_ordered, strand)
     }
 

@@ -259,8 +259,8 @@ write_union_exons <- function(union_exons, output_file) {
   union_exons_sorted <- union_exons %>%
     arrange(chr, start)
 
-  # Write with header
-  write_lines("#chr\tstart\tend\tunion_exon_id\tstrand", output_file)
+  # Write with header (including gene_id)
+  write_lines("#chr\tstart\tend\tunion_exon_id\tstrand\tgene_id", output_file)
   write_tsv(union_exons_sorted, output_file, append = TRUE, col_names = FALSE)
 
   # Compress and index
