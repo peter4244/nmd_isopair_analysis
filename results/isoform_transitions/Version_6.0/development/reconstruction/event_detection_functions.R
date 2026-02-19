@@ -392,6 +392,7 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
   event_type <- "none"
   bp_diff <- 0
   direction <- NULL  # GAIN/LOSS for overlap-based detection
+  second_event <- NULL  # Optional second event for asymmetric dual-boundary pairs
 
   if (shares_acceptor && differs_donor) {
     # Acceptor shared, donor differs
@@ -481,9 +482,10 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
     is_last_any  <- is_last_exon  || is_last_exon_dom  || is_last_exon_comp
 
     if (is_first_any || is_last_any) {
-      # A terminal exon is involved: check internal boundary only.
+      # A terminal exon is involved: primary = internal-facing boundary.
       # The outer (TSS/TES) boundary is captured by Alt_TSS/Alt_TES.
-      # Any overlap (>=1bp) is sufficient to detect the internal boundary event.
+      # When asymmetric terminal (only ONE exon is terminal), the splice-site-facing
+      # boundary is a real splice site — emit it as second_event.
 
       if (is_first_any) {
         # A first exon is involved: TSS boundary already handled by Alt_TSS.
@@ -502,6 +504,19 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
           # Minus: donor = exon start (lower coordinate = extends further)
           direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
         }
+        # Emit acceptor boundary as second event when asymmetric OR when both
+        # first AND last exons are involved simultaneously.
+        is_asymmetric_first <- xor(is_first_exon_dom, is_first_exon_comp)
+        if (is_asymmetric_first || is_last_any) {
+          acc_type <- if (acceptor_diff < SPLICE_SITE_THRESHOLD) "A3SS" else "Partial_IR_3"
+          if (strand == "+") {
+            acc_dir <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+          } else {
+            acc_dir <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+          }
+          second_event <- list(event_type = acc_type, bp_diff = acceptor_diff, direction = acc_dir)
+        }
+
       } else if (is_last_any) {
         # A last exon is involved: TES boundary already handled by Alt_TES.
         # Internal boundary is the ACCEPTOR.
@@ -518,6 +533,17 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
         } else {
           # Minus: acceptor = exon end (higher coordinate = extends further)
           direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+        }
+        # Emit donor boundary as second event when asymmetric (only one exon is last).
+        is_asymmetric_last <- xor(is_last_exon_dom, is_last_exon_comp)
+        if (is_asymmetric_last) {
+          don_type <- if (donor_diff < SPLICE_SITE_THRESHOLD) "A5SS" else "Partial_IR_5"
+          if (strand == "+") {
+            don_dir <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+          } else {
+            don_dir <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+          }
+          second_event <- list(event_type = don_type, bp_diff = donor_diff, direction = don_dir)
         }
       }
 
@@ -639,7 +665,8 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
     }
   }
 
-  return(list(event_type = event_type, bp_diff = bp_diff, direction = direction))
+  return(list(event_type = event_type, bp_diff = bp_diff, direction = direction,
+              second_event = second_event))
 }
 
 #' Check if a boundary from comparison exon triggers an event relative to dominant exon
@@ -1388,6 +1415,61 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
             dom_junctions               = format_junctions(dom_jxns_evt),
             comp_junctions              = format_junctions(comp_jxns_evt)
           )
+
+          # Emit second event for asymmetric dual-boundary pairs (one exon is terminal,
+          # other is not), where the splice-site-facing boundary is a real splice site.
+          if (!is.null(event_result$second_event)) {
+            event_type2 <- event_result$second_event$event_type
+            direction2  <- event_result$second_event$direction
+
+            if (event_type2 %in% c("A3SS", "Partial_IR_3")) {
+              if (strand == "+") {
+                if (direction2 == "LOSS") { five_prime2 <- dom_exon$exon_start;  three_prime2 <- comp_exon$exon_start - 1 }
+                else                     { five_prime2 <- comp_exon$exon_start;  three_prime2 <- dom_exon$exon_start - 1 }
+              } else {
+                if (direction2 == "LOSS") { five_prime2 <- dom_exon$exon_end;    three_prime2 <- comp_exon$exon_end + 1 }
+                else                     { five_prime2 <- comp_exon$exon_end;    three_prime2 <- dom_exon$exon_end + 1 }
+              }
+            } else if (event_type2 %in% c("A5SS", "Partial_IR_5")) {
+              if (strand == "+") {
+                if (direction2 == "LOSS") { five_prime2 <- comp_exon$exon_end + 1; three_prime2 <- dom_exon$exon_end }
+                else                     { five_prime2 <- dom_exon$exon_end + 1;   three_prime2 <- comp_exon$exon_end }
+              } else {
+                if (direction2 == "LOSS") { five_prime2 <- comp_exon$exon_start;   three_prime2 <- dom_exon$exon_start - 1 }
+                else                     { five_prime2 <- dom_exon$exon_start - 1; three_prime2 <- comp_exon$exon_start }
+              }
+            } else {
+              five_prime2  <- min(dom_exon$exon_start, comp_exon$exon_start)
+              three_prime2 <- max(dom_exon$exon_end,   comp_exon$exon_end)
+            }
+
+            evt_start2     <- min(five_prime2, three_prime2)
+            evt_end2       <- max(five_prime2, three_prime2)
+            dom_jxns_evt2  <- junctions_touching_range(dom_junctions_all,  evt_start2, evt_end2)
+            comp_jxns_evt2 <- junctions_touching_range(comp_junctions_all, evt_start2, evt_end2)
+
+            all_events[[length(all_events) + 1]] <- tibble(
+              gene_id                     = gene_id,
+              dominant_transcript_id      = dominant_tid,
+              comparator_transcript_id    = comparator_tid,
+              event_type                  = event_type2,
+              direction                   = direction2,
+              chr                         = dom_exon$chr,
+              five_prime                  = five_prime2,
+              three_prime                 = three_prime2,
+              strand                      = strand,
+              bp_diff                     = event_result$second_event$bp_diff,
+              missing_terminal_exons      = "",
+              n_terminal_regions          = NA_integer_,
+              orphan_terminal_exons       = "",
+              missing_internal_exons      = missing_internal_exons,
+              missing_internal_exons_gain = missing_internal_exons_gain,
+              ir_split_exons              = "",
+              missing_external_exons      = "",
+              dom_junctions               = format_junctions(dom_jxns_evt2),
+              comp_junctions              = format_junctions(comp_jxns_evt2)
+            )
+          }
         }
       }
     }
