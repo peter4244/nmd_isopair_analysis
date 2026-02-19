@@ -743,7 +743,20 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
 #' @param union_exons All union exons for the gene
 #' @return Modified exon structure
 apply_event_union_based <- function(exons, event, union_exons) {
-  # Find union exons for this event
+  event_type <- event$event_type
+  direction  <- event$direction
+
+  # SE / Missing_Internal GAIN: coordinate-based removal, no union exon lookup needed.
+  # exact-coordinate matching against atomic union exons fails when the comp exon spans
+  # multiple atomic UEs, so we filter by the event's coordinate range instead.
+  if (event_type %in% c("SE", "Missing_Internal") && direction == "GAIN") {
+    event_start <- min(event$five_prime, event$three_prime)
+    event_end   <- max(event$five_prime, event$three_prime)
+    exons <- exons %>% filter(!(exon_start >= event_start & exon_end <= event_end))
+    return(exons)
+  }
+
+  # For all other events: find union exons
   event_ues <- find_event_union_exons(event, union_exons)
 
   if (nrow(event_ues) == 0) {
@@ -751,31 +764,27 @@ apply_event_union_based <- function(exons, event, union_exons) {
     return(exons)
   }
 
-  event_type <- event$event_type
-  direction <- event$direction
-
   # Apply based on event type and direction
   if (event_type %in% c("Alt_TSS", "Alt_TES")) {
     # Terminal events: extend or trim the terminal exon
     exons <- modify_terminal_exon(exons, event_ues, event, union_exons)
 
-    # Add missing internal exons if present
-    if (!is.na(event$missing_internal_exons) && event$missing_internal_exons != "") {
-      missing_internal_ues <- parse_and_find_union_exons(event$missing_internal_exons, union_exons, event$gene_id)
-      if (nrow(missing_internal_ues) > 0) {
-        exons <- add_union_exons(exons, missing_internal_ues, event$strand)
+    # Remove comp orphan terminal exons for both GAIN and LOSS.
+    # LOSS: comp terminal exons that don't overlap dom (NoOverlap case).
+    # GAIN: comp extra terminal exons beyond dom's terminal boundary.
+    # Range-based removal handles exons that span multiple atomic union exons.
+    if (!is.na(event$orphan_terminal_exons) && event$orphan_terminal_exons != "") {
+      ranges_list <- strsplit(event$orphan_terminal_exons, ",")[[1]]
+      for (range_str in ranges_list) {
+        coords <- as.integer(strsplit(trimws(range_str), "-")[[1]])
+        exons <- exons %>% filter(!(exon_start >= coords[1] & exon_end <= coords[2]))
       }
     }
 
-  } else if (event_type == "SE") {
-    # Skipped exon: add or remove entire exon(s)
-    if (direction == "LOSS") {
-      # Dominant has exon, comparator doesn't → add it
-      exons <- add_union_exons(exons, event_ues, event$strand)
-    } else {
-      # Comparator has exon, dominant doesn't → remove it
-      exons <- remove_union_exons(exons, event_ues)
-    }
+  } else if (event_type %in% c("SE", "Missing_Internal")) {
+    # LOSS only (GAIN was handled above with coordinate-based removal)
+    # Dominant has exon, comparator doesn't → add it
+    exons <- add_union_exons(exons, event_ues, event$strand)
 
   } else if (event_type == "IR") {
     # Intron retention
@@ -889,7 +898,7 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
   # Separate events into internal vs terminal
   internal_events_raw <- events %>%
     filter(event_type != "Dual_boundary",
-           event_type %in% c("IR", "SE", "A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3"))
+           event_type %in% c("IR", "SE", "Missing_Internal", "A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3"))
 
   # Filter out Partial_IR events that overlap with IR events
   # (IR events handle the full retention, Partial_IR becomes redundant)
@@ -970,10 +979,17 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
     })
   }
 
-  # Final cleanup: sort and deduplicate, but DON'T merge
+  # Final cleanup: sort, deduplicate, and merge adjacent exons.
+  # Terminal event reconstruction adds atomic union exons (which are split at every
+  # boundary). Adjacent atomic UEs representing the same logical exon must be merged.
   reconstructed <- reconstructed %>%
     arrange(exon_start, exon_end) %>%
     distinct(exon_start, exon_end, .keep_all = TRUE)
+
+  if (nrow(reconstructed) > 0) {
+    strand <- reconstructed$strand[1]
+    reconstructed <- merge_adjacent_exons(reconstructed, strand)
+  }
 
   return(reconstructed)
 }
