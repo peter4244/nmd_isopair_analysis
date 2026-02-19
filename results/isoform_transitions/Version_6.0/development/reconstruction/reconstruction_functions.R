@@ -786,7 +786,7 @@ apply_event_union_based <- function(exons, event, union_exons) {
     # Dominant has exon, comparator doesn't → add it
     exons <- add_union_exons(exons, event_ues, event$strand)
 
-  } else if (event_type == "IR") {
+  } else if (event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3")) {
     # Intron retention
     ir_start <- min(event$five_prime, event$three_prime)
     ir_end <- max(event$five_prime, event$three_prime)
@@ -898,11 +898,12 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
   # Separate events into internal vs terminal
   internal_events_raw <- events %>%
     filter(event_type != "Dual_boundary",
-           event_type %in% c("IR", "SE", "Missing_Internal", "A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3"))
+           event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3",
+                              "SE", "Missing_Internal", "A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3"))
 
   # Filter out Partial_IR events that overlap with IR events
   # (IR events handle the full retention, Partial_IR becomes redundant)
-  ir_events <- internal_events_raw %>% filter(event_type == "IR")
+  ir_events <- internal_events_raw %>% filter(event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3"))
   partial_ir_events <- internal_events_raw %>% filter(event_type %in% c("Partial_IR_5", "Partial_IR_3"))
   other_events <- internal_events_raw %>% filter(!event_type %in% c("IR", "Partial_IR_5", "Partial_IR_3"))
 
@@ -937,7 +938,7 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
   internal_events <- bind_rows(ir_events, partial_ir_events, other_events) %>%
     arrange(
       case_when(
-        event_type == "IR" ~ 1,
+        event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3") ~ 1,
         event_type == "SE" ~ 2,
         TRUE ~ 3
       )

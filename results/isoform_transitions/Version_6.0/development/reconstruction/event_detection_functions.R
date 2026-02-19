@@ -828,6 +828,84 @@ detect_ir_simple <- function(exon, other_exons) {
   return(nrow(overlapping) >= 2)
 }
 
+# ==============================================================================
+# Junction Helper Functions
+# ==============================================================================
+
+#' Compute splice junctions from ordered exons
+#'
+#' @param exons_ordered Exons in biological order (TSS → TES)
+#' @return Character vector of "left:right" junction strings (genomic, left < right)
+compute_junctions <- function(exons_ordered) {
+  if (nrow(exons_ordered) < 2) return(character(0))
+  vapply(seq_len(nrow(exons_ordered) - 1), function(i) {
+    e1 <- exons_ordered[i, ]
+    e2 <- exons_ordered[i + 1, ]
+    # For any two consecutive non-overlapping exons:
+    #   min(end1, end2) = end of the genomically-left exon
+    #   max(start1, start2) = start of the genomically-right exon
+    # This correctly gives left:right (left < right) for both strands.
+    sprintf("%d:%d", min(e1$exon_end, e2$exon_end), max(e1$exon_start, e2$exon_start))
+  }, character(1))
+}
+
+#' Filter junctions where EITHER endpoint falls within [range_start, range_end]
+#'
+#' Captures junctions that "touch" the event range — e.g. junctions flanking a skipped exon.
+#'
+#' @param jxn_vec Character vector of "left:right" junction strings
+#' @param range_start Genomic range start
+#' @param range_end Genomic range end
+#' @return Filtered junction vector
+junctions_touching_range <- function(jxn_vec, range_start, range_end) {
+  if (length(jxn_vec) == 0) return(character(0))
+  jxn_vec[vapply(jxn_vec, function(jxn) {
+    cc <- as.integer(strsplit(jxn, ":")[[1]])
+    (cc[1] >= range_start && cc[1] <= range_end) ||
+    (cc[2] >= range_start && cc[2] <= range_end)
+  }, logical(1))]
+}
+
+#' Filter junctions where BOTH endpoints fall within [range_start, range_end]
+#'
+#' Captures junctions fully contained in the event range — e.g. dom junctions within an IR region.
+#'
+#' @param jxn_vec Character vector of "left:right" junction strings
+#' @param range_start Genomic range start
+#' @param range_end Genomic range end
+#' @return Filtered junction vector
+junctions_within_range <- function(jxn_vec, range_start, range_end) {
+  if (length(jxn_vec) == 0) return(character(0))
+  jxn_vec[vapply(jxn_vec, function(jxn) {
+    cc <- as.integer(strsplit(jxn, ":")[[1]])
+    cc[1] >= range_start && cc[2] <= range_end
+  }, logical(1))]
+}
+
+#' Filter junctions where the junction span CONTAINS [range_start, range_end]
+#'
+#' Captures junctions that "skip over" the event range — e.g. a junction skipping a cassette exon.
+#'
+#' @param jxn_vec Character vector of "left:right" junction strings
+#' @param range_start Genomic range start
+#' @param range_end Genomic range end
+#' @return Filtered junction vector
+junctions_spanning_range <- function(jxn_vec, range_start, range_end) {
+  if (length(jxn_vec) == 0) return(character(0))
+  jxn_vec[vapply(jxn_vec, function(jxn) {
+    cc <- as.integer(strsplit(jxn, ":")[[1]])
+    cc[1] <= range_start && cc[2] >= range_end
+  }, logical(1))]
+}
+
+#' Format junction vector as comma-separated string
+#' @param jxn_vec Character vector of junction strings
+#' @return Comma-separated string, or "" if empty
+format_junctions <- function(jxn_vec) {
+  if (length(jxn_vec) == 0) return("")
+  paste(jxn_vec, collapse = ",")
+}
+
 #' Detect SE (skipped exon) events
 #' SE = exon present in only one isoform, flanked by shared/comparable exons
 #'
@@ -954,7 +1032,9 @@ detect_beyond_boundary_exons <- function(dom_ordered, comp_ordered,
       missing_internal_exons   = "",
       missing_internal_exons_gain = "",
       ir_split_exons           = "",
-      missing_external_exons   = paste(dom_external, collapse = ", ")
+      missing_external_exons   = paste(dom_external, collapse = ", "),
+      dom_junctions            = "",
+      comp_junctions           = ""
     )
   }
 
@@ -986,7 +1066,9 @@ detect_beyond_boundary_exons <- function(dom_ordered, comp_ordered,
       missing_internal_exons   = "",
       missing_internal_exons_gain = "",
       ir_split_exons           = "",
-      missing_external_exons   = paste(comp_external, collapse = ", ")
+      missing_external_exons   = paste(comp_external, collapse = ", "),
+      dom_junctions            = "",
+      comp_junctions           = ""
     )
   }
 
@@ -1022,6 +1104,10 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
   # Order exons biologically (TSS → TES)
   dom_ordered  <- order_exons_biological(dominant_exons, strand)
   comp_ordered <- order_exons_biological(comparator_exons, strand)
+
+  # Pre-compute splice junctions for dom and comp (used for junction fields on all events)
+  dom_junctions_all  <- compute_junctions(dom_ordered)
+  comp_junctions_all <- compute_junctions(comp_ordered)
 
   # ===========================================================================
   # STEP 1: Boundary Determination
@@ -1070,26 +1156,55 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       if (detect_ir_simple(comp_ordered[i, ], dom_ordered)) {
         comp_exon <- comp_ordered[i, ]
 
-        overlapping_regions    <- list()
+        overlapping_regions     <- list()
         overlapping_dom_indices <- integer()
+        first_dom_overlap       <- NULL
+        last_dom_overlap        <- NULL
+
         for (j in seq_len(nrow(dom_ordered))) {
           dom_exon <- dom_ordered[j, ]
           overlaps <- (dom_exon$exon_start <= comp_exon$exon_end) &&
                       (dom_exon$exon_end   >= comp_exon$exon_start)
           if (overlaps) {
+            # Use FULL dom exon extents (not intersection) so reconstruction gets
+            # the correct dom exon boundaries even when comp IR exon starts/ends inside dom
             overlapping_regions[[length(overlapping_regions) + 1]] <-
-              sprintf("%d-%d",
-                      max(dom_exon$exon_start, comp_exon$exon_start),
-                      min(dom_exon$exon_end,   comp_exon$exon_end))
+              sprintf("%d-%d", dom_exon$exon_start, dom_exon$exon_end)
             overlapping_dom_indices <- c(overlapping_dom_indices, j)
+            if (is.null(first_dom_overlap)) first_dom_overlap <- dom_exon
+            last_dom_overlap <- dom_exon
           }
         }
+
+        # Classify IR_diff type: compare comp's retained exon boundaries against
+        # dom's outermost overlapping exon boundaries.
+        # diff_5: comp started after dom's first exon (comp missed dom's 5' extension)
+        # diff_3: comp ended before dom's last exon (comp missed dom's 3' extension)
+        ir_event_type <- "IR"
+        if (!is.null(first_dom_overlap)) {
+          if (strand == "+") {
+            diff_5 <- comp_exon$exon_start > first_dom_overlap$exon_start
+            diff_3 <- comp_exon$exon_end   < last_dom_overlap$exon_end
+          } else {
+            # Minus: 5' = high coords, 3' = low coords
+            diff_5 <- comp_exon$exon_end   < first_dom_overlap$exon_end
+            diff_3 <- comp_exon$exon_start > last_dom_overlap$exon_start
+          }
+          ir_event_type <- if (diff_5 && diff_3) "IR_diff_5_3" else
+                           if (diff_5) "IR_diff_5" else
+                           if (diff_3) "IR_diff_3" else "IR"
+        }
+
+        # Junction fields: dom has split exons (junctions present); comp retains intron (no junctions)
+        ir_range_start <- min(sapply(overlapping_dom_indices, function(k) dom_ordered$exon_start[k]))
+        ir_range_end   <- max(sapply(overlapping_dom_indices, function(k) dom_ordered$exon_end[k]))
+        dom_jxns_ir    <- junctions_within_range(dom_junctions_all, ir_range_start, ir_range_end)
 
         all_events[[length(all_events) + 1]] <- tibble(
           gene_id                     = gene_id,
           dominant_transcript_id      = dominant_tid,
           comparator_transcript_id    = comparator_tid,
-          event_type                  = "IR",
+          event_type                  = ir_event_type,
           direction                   = "GAIN",
           chr                         = comp_exon$chr,
           five_prime                  = if (strand == "+") comp_exon$exon_start else comp_exon$exon_end,
@@ -1102,7 +1217,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
           missing_internal_exons      = missing_internal_exons,
           missing_internal_exons_gain = missing_internal_exons_gain,
           ir_split_exons              = paste(overlapping_regions, collapse = ", "),
-          missing_external_exons      = ""
+          missing_external_exons      = "",
+          dom_junctions               = format_junctions(dom_jxns_ir),
+          comp_junctions              = ""
         )
 
         for (dom_idx in overlapping_dom_indices)
@@ -1115,26 +1232,56 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       if (detect_ir_simple(dom_ordered[i, ], comp_ordered)) {
         dom_exon <- dom_ordered[i, ]
 
-        overlapping_regions     <- list()
+        overlapping_regions      <- list()
         overlapping_comp_indices <- integer()
+        first_comp_overlap       <- NULL
+        last_comp_overlap        <- NULL
+
         for (j in seq_len(nrow(comp_ordered))) {
           comp_exon <- comp_ordered[j, ]
           overlaps <- (comp_exon$exon_start <= dom_exon$exon_end) &&
                       (comp_exon$exon_end   >= dom_exon$exon_start)
           if (overlaps) {
+            # ir_split_exons for LOSS keeps intersection (used by reconstruction to identify
+            # exonic union exons within the dom big exon; the intronic fill step handles the rest)
             overlapping_regions[[length(overlapping_regions) + 1]] <-
               sprintf("%d-%d",
                       max(comp_exon$exon_start, dom_exon$exon_start),
                       min(comp_exon$exon_end,   dom_exon$exon_end))
             overlapping_comp_indices <- c(overlapping_comp_indices, j)
+            if (is.null(first_comp_overlap)) first_comp_overlap <- comp_exon
+            last_comp_overlap <- comp_exon
           }
         }
+
+        # Classify IR_diff type: compare dom's big exon boundaries against
+        # comp's outermost overlapping exon boundaries.
+        # diff_5: dom starts before comp's first exon (dom has extra 5' extension)
+        # diff_3: dom ends after comp's last exon (dom has extra 3' extension)
+        ir_event_type <- "IR"
+        if (!is.null(first_comp_overlap)) {
+          if (strand == "+") {
+            diff_5 <- dom_exon$exon_start < first_comp_overlap$exon_start
+            diff_3 <- dom_exon$exon_end   > last_comp_overlap$exon_end
+          } else {
+            # Minus: 5' = high coords, 3' = low coords
+            diff_5 <- dom_exon$exon_end   > first_comp_overlap$exon_end
+            diff_3 <- dom_exon$exon_start < last_comp_overlap$exon_start
+          }
+          ir_event_type <- if (diff_5 && diff_3) "IR_diff_5_3" else
+                           if (diff_5) "IR_diff_5" else
+                           if (diff_3) "IR_diff_3" else "IR"
+        }
+
+        # Junction fields: dom has retention (no junctions); comp has split exons (junctions present)
+        comp_jxns_ir <- junctions_within_range(comp_junctions_all,
+                                               dom_exon$exon_start, dom_exon$exon_end)
 
         all_events[[length(all_events) + 1]] <- tibble(
           gene_id                     = gene_id,
           dominant_transcript_id      = dominant_tid,
           comparator_transcript_id    = comparator_tid,
-          event_type                  = "IR",
+          event_type                  = ir_event_type,
           direction                   = "LOSS",
           chr                         = dom_exon$chr,
           five_prime                  = if (strand == "+") dom_exon$exon_start else dom_exon$exon_end,
@@ -1147,7 +1294,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
           missing_internal_exons      = missing_internal_exons,
           missing_internal_exons_gain = missing_internal_exons_gain,
           ir_split_exons              = paste(overlapping_regions, collapse = ", "),
-          missing_external_exons      = ""
+          missing_external_exons      = "",
+          dom_junctions               = "",
+          comp_junctions              = format_junctions(comp_jxns_ir)
         )
 
         for (comp_idx in overlapping_comp_indices)
@@ -1212,6 +1361,12 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
             else               { five_prime <- max(dom_exon$exon_end,   comp_exon$exon_end);   three_prime <- min(dom_exon$exon_start, comp_exon$exon_start) }
           }
 
+          # Junction fields: both isoforms' junctions at the affected splice site
+          evt_start     <- min(five_prime, three_prime)
+          evt_end       <- max(five_prime, three_prime)
+          dom_jxns_evt  <- junctions_touching_range(dom_junctions_all,  evt_start, evt_end)
+          comp_jxns_evt <- junctions_touching_range(comp_junctions_all, evt_start, evt_end)
+
           all_events[[length(all_events) + 1]] <- tibble(
             gene_id                     = gene_id,
             dominant_transcript_id      = dominant_tid,
@@ -1229,7 +1384,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
             missing_internal_exons      = missing_internal_exons,
             missing_internal_exons_gain = missing_internal_exons_gain,
             ir_split_exons              = "",
-            missing_external_exons      = ""
+            missing_external_exons      = "",
+            dom_junctions               = format_junctions(dom_jxns_evt),
+            comp_junctions              = format_junctions(comp_jxns_evt)
           )
         }
       }
@@ -1270,6 +1427,14 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
                      exon_overlaps_any(dom_ordered[i + 1, ], comp_ordered)
       etype <- if (flanking_ok) "SE" else "Missing_Internal"
 
+      # Junction fields:
+      #   dom: junctions flanking the SE (both endpoints touch the exon range)
+      #   comp: the skipping junction (spans the exon range)
+      dom_jxns_se  <- junctions_touching_range(dom_junctions_all,
+                                               dom_exon$exon_start, dom_exon$exon_end)
+      comp_jxns_se <- junctions_spanning_range(comp_junctions_all,
+                                               dom_exon$exon_start, dom_exon$exon_end)
+
       all_events[[length(all_events) + 1]] <- tibble(
         gene_id                     = gene_id,
         dominant_transcript_id      = dominant_tid,
@@ -1287,7 +1452,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         missing_internal_exons      = "",
         missing_internal_exons_gain = "",
         ir_split_exons              = "",
-        missing_external_exons      = ""
+        missing_external_exons      = "",
+        dom_junctions               = format_junctions(dom_jxns_se),
+        comp_junctions              = format_junctions(comp_jxns_se)
       )
     }
 
@@ -1309,6 +1476,14 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
                      exon_overlaps_any(comp_ordered[i + 1, ], dom_ordered)
       etype <- if (flanking_ok) "SE" else "Missing_Internal"
 
+      # Junction fields:
+      #   dom: the skipping junction (spans the exon range)
+      #   comp: junctions flanking the SE (both endpoints touch the exon range)
+      dom_jxns_se  <- junctions_spanning_range(dom_junctions_all,
+                                               comp_exon$exon_start, comp_exon$exon_end)
+      comp_jxns_se <- junctions_touching_range(comp_junctions_all,
+                                               comp_exon$exon_start, comp_exon$exon_end)
+
       all_events[[length(all_events) + 1]] <- tibble(
         gene_id                     = gene_id,
         dominant_transcript_id      = dominant_tid,
@@ -1326,7 +1501,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         missing_internal_exons      = "",
         missing_internal_exons_gain = "",
         ir_split_exons              = "",
-        missing_external_exons      = ""
+        missing_external_exons      = "",
+        dom_junctions               = format_junctions(dom_jxns_se),
+        comp_junctions              = format_junctions(comp_jxns_se)
       )
     }
 
@@ -1368,6 +1545,10 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
     # Dom's missing internal exons are now emitted as standalone Missing_Internal events.
     orphan_exons <- compute_orphan_terminal_exons_tss(comp_ordered, dom_ordered)
 
+    # Junction fields: first junction of each isoform (captures the TSS-proximal splice choice)
+    dom_jxns_tss  <- if (length(dom_junctions_all)  > 0) dom_junctions_all[1]  else character(0)
+    comp_jxns_tss <- if (length(comp_junctions_all) > 0) comp_junctions_all[1] else character(0)
+
     all_events[[length(all_events) + 1]] <- tibble(
       gene_id                     = gene_id,
       dominant_transcript_id      = dominant_tid,
@@ -1385,7 +1566,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       missing_internal_exons      = missing_internal_exons,
       missing_internal_exons_gain = missing_internal_exons_gain,
       ir_split_exons              = "",
-      missing_external_exons      = ""
+      missing_external_exons      = "",
+      dom_junctions               = format_junctions(dom_jxns_tss),
+      comp_junctions              = format_junctions(comp_jxns_tss)
     )
   }
 
@@ -1416,6 +1599,10 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
     # Dom's missing internal exons are now emitted as standalone Missing_Internal events.
     orphan_exons <- compute_orphan_terminal_exons_tes(comp_ordered, dom_ordered)
 
+    # Junction fields: last junction of each isoform (captures the TES-proximal splice choice)
+    dom_jxns_tes  <- if (length(dom_junctions_all)  > 0) dom_junctions_all[length(dom_junctions_all)]   else character(0)
+    comp_jxns_tes <- if (length(comp_junctions_all) > 0) comp_junctions_all[length(comp_junctions_all)] else character(0)
+
     all_events[[length(all_events) + 1]] <- tibble(
       gene_id                     = gene_id,
       dominant_transcript_id      = dominant_tid,
@@ -1433,7 +1620,9 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       missing_internal_exons      = missing_internal_exons,
       missing_internal_exons_gain = missing_internal_exons_gain,
       ir_split_exons              = "",
-      missing_external_exons      = ""
+      missing_external_exons      = "",
+      dom_junctions               = format_junctions(dom_jxns_tes),
+      comp_junctions              = format_junctions(comp_jxns_tes)
     )
   }
 
