@@ -82,12 +82,18 @@ find_event_union_exons <- function(event, union_exons) {
       range_start <- coords[1]
       range_end <- coords[2]
 
-      # Find union exons that exactly match this range
+      # Find union exons that overlap this range, then clip to range boundaries.
+      # Strict containment (start >= range_start) misses union exons that straddle
+      # the event boundary — clipping ensures we capture the correct portion.
       matches <- union_exons %>%
         filter(
           gene_id == event$gene_id,
-          start >= range_start,
-          end <= range_end
+          start <= range_end,
+          end >= range_start
+        ) %>%
+        mutate(
+          start = pmax(start, range_start),
+          end = pmin(end, range_end)
         ) %>%
         arrange(start)
 
@@ -107,7 +113,7 @@ find_event_union_exons <- function(event, union_exons) {
   event_start <- min(event$five_prime, event$three_prime)
   event_end <- max(event$five_prime, event$three_prime)
 
-  # Find union exons within the event range
+  # Try strict containment first (preserves existing behavior)
   matches <- union_exons %>%
     filter(
       gene_id == event$gene_id,
@@ -115,6 +121,22 @@ find_event_union_exons <- function(event, union_exons) {
       end <= event_end
     ) %>%
     arrange(start)
+
+  # Fallback: if strict containment finds nothing, try overlap + clip.
+  # This handles union exons that straddle the event boundary.
+  if (nrow(matches) == 0) {
+    matches <- union_exons %>%
+      filter(
+        gene_id == event$gene_id,
+        start <= event_end,
+        end >= event_start
+      ) %>%
+      mutate(
+        start = pmax(start, event_start),
+        end = pmin(end, event_end)
+      ) %>%
+      arrange(start)
+  }
 
   return(matches)
 }

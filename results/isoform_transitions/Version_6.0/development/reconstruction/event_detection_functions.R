@@ -1610,7 +1610,47 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       )
     }
 
-  }  # end if (overlap_check$has_overlap)
+  } else {
+    # Non-overlapping isoforms: the TSS/TES terminal walks (step 3) may miss
+    # dominant exons that fall between the two walk cutoffs ("gap zone").
+    # Detect them here as Missing_Internal LOSS events.
+    for (i in seq_len(nrow(dom_ordered))) {
+      dom_exon <- dom_ordered[i, ]
+
+      # Must be fully within comp span
+      if (dom_exon$exon_start < comp_genomic_start || dom_exon$exon_end > comp_genomic_end) next
+
+      # Must have no overlap with any comp exon
+      if (exon_overlaps_any(dom_exon, comp_ordered)) next
+
+      dom_jxns_gap  <- junctions_touching_range(dom_junctions_all,
+                                                dom_exon$exon_start, dom_exon$exon_end)
+      comp_jxns_gap <- junctions_spanning_range(comp_junctions_all,
+                                                dom_exon$exon_start, dom_exon$exon_end)
+
+      all_events[[length(all_events) + 1]] <- tibble(
+        gene_id                     = gene_id,
+        dominant_transcript_id      = dominant_tid,
+        comparator_transcript_id    = comparator_tid,
+        event_type                  = "Missing_Internal",
+        direction                   = "LOSS",
+        chr                         = dom_exon$chr,
+        five_prime                  = if (strand == "+") dom_exon$exon_start else dom_exon$exon_end,
+        three_prime                 = if (strand == "+") dom_exon$exon_end   else dom_exon$exon_start,
+        strand                      = strand,
+        bp_diff                     = dom_exon$exon_end - dom_exon$exon_start + 1,
+        missing_terminal_exons      = "",
+        n_terminal_regions          = NA_integer_,
+        orphan_terminal_exons       = "",
+        missing_internal_exons      = "",
+        missing_internal_exons_gain = "",
+        ir_split_exons              = "",
+        missing_external_exons      = "",
+        dom_junctions               = format_junctions(dom_jxns_gap),
+        comp_junctions              = format_junctions(comp_jxns_gap)
+      )
+    }
+  }  # end if (overlap_check$has_overlap) / else
 
   # ===========================================================================
   # STEP 3: Terminal Events (always runs, including non-overlapping isoforms)
