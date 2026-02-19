@@ -897,8 +897,7 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
 
   # Separate events into internal vs terminal
   internal_events_raw <- events %>%
-    filter(event_type != "Dual_boundary",
-           event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3",
+    filter(event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3",
                               "SE", "Missing_Internal", "A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3"))
 
   # Filter out Partial_IR events that overlap with IR events

@@ -62,6 +62,11 @@ parse_and_find_union_exons <- function(ranges_str, union_exons, gene_id) {
 #' @param union_exons All union exons for the gene
 #' @return Tibble of matching union exons
 find_event_union_exons <- function(event, union_exons) {
+  # For beyond_boundary: use missing_external_exons
+  if (event$event_type == "beyond_boundary") {
+    return(parse_and_find_union_exons(event$missing_external_exons, union_exons, event$gene_id))
+  }
+
   # For Alt_TSS/Alt_TES: use missing_terminal_exons
   if (event$event_type %in% c("Alt_TSS", "Alt_TES")) {
     if (is.na(event$missing_terminal_exons) || event$missing_terminal_exons == "") {
@@ -589,16 +594,26 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
         if (direction == "LOSS") {
           exons$exon_end[nrow(exons)] <- max(event_ues$end)
         } else {
-          exons$exon_end[nrow(exons)] <- min(event_ues$start) - 1
+          new_end <- min(event_ues$start) - 1
+          if (new_end < terminal_exon$exon_start) {
+            # event_ues covers entire terminal exon → remove it
+            exons <- exons[-nrow(exons), ]
+          } else {
+            exons$exon_end[nrow(exons)] <- new_end
+          }
         }
       } else {
-        # Non-overlapping: remove and replace
-        exons <- exons[-nrow(exons), ]  # Remove last exon
+        # Non-overlapping, LOSS: dominant's TES exon is separate (no gap to bridge).
+        # Just ADD the dominant's external exon(s) without removing the current terminal
+        # exon — it may represent a valid dominant exon (e.g. the TSS exon after a
+        # Partial_IR trim). Any comparator exon absent from the dominant is cleaned up
+        # by SE GAIN events (which now detect terminal exons) in Phase 1.
         if (direction == "LOSS") {
-          # Add dominant's terminal exon(s)
           exons <- add_union_exons(exons, event_ues, strand)
+        } else {
+          # GAIN: comparator's extra TES exon has no overlap with dominant → remove it
+          exons <- exons[-nrow(exons), ]
         }
-        # For GAIN, just removing is sufficient (dominant doesn't have this region)
       }
 
     } else {
@@ -618,16 +633,22 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
         if (direction == "LOSS") {
           exons$exon_start[1] <- min(event_ues$start)
         } else {
-          exons$exon_start[1] <- max(event_ues$end) + 1
+          new_start <- max(event_ues$end) + 1
+          if (new_start > terminal_exon$exon_end) {
+            # event_ues covers entire terminal exon → remove it
+            exons <- exons[-1, ]
+          } else {
+            exons$exon_start[1] <- new_start
+          }
         }
       } else {
-        # Non-overlapping: remove and replace
-        exons <- exons[-1, ]  # Remove first exon
+        # Non-overlapping, LOSS: just ADD dominant's external TES exon(s).
         if (direction == "LOSS") {
-          # Add dominant's terminal exon(s)
           exons <- add_union_exons(exons, event_ues, strand)
+        } else {
+          # GAIN: comparator's extra TES exon has no overlap with dominant → remove it
+          exons <- exons[-1, ]
         }
-        # For GAIN, just removing is sufficient (dominant doesn't have this region)
       }
     }
 
@@ -653,16 +674,22 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
         if (direction == "LOSS") {
           exons$exon_start[1] <- min(event_ues$start)
         } else {
-          exons$exon_start[1] <- max(event_ues$end) + 1
+          new_start <- max(event_ues$end) + 1
+          if (new_start > terminal_exon$exon_end) {
+            # event_ues covers entire terminal exon → remove it
+            exons <- exons[-1, ]
+          } else {
+            exons$exon_start[1] <- new_start
+          }
         }
       } else {
-        # Non-overlapping: remove and replace
-        exons <- exons[-1, ]  # Remove first exon
+        # Non-overlapping, LOSS: just ADD dominant's external TSS exon(s).
         if (direction == "LOSS") {
-          # Add dominant's terminal exon(s)
           exons <- add_union_exons(exons, event_ues, strand)
+        } else {
+          # GAIN: comparator's extra TSS exon has no overlap with dominant → remove it
+          exons <- exons[-1, ]
         }
-        # For GAIN, just removing is sufficient (dominant doesn't have this region)
       }
 
     } else {
@@ -682,16 +709,22 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
         if (direction == "LOSS") {
           exons$exon_end[nrow(exons)] <- max(event_ues$end)
         } else {
-          exons$exon_end[nrow(exons)] <- min(event_ues$start) - 1
+          new_end <- min(event_ues$start) - 1
+          if (new_end < terminal_exon$exon_start) {
+            # event_ues covers entire terminal exon → remove it
+            exons <- exons[-nrow(exons), ]
+          } else {
+            exons$exon_end[nrow(exons)] <- new_end
+          }
         }
       } else {
-        # Non-overlapping: remove and replace
-        exons <- exons[-nrow(exons), ]  # Remove last exon
+        # Non-overlapping, LOSS: just ADD dominant's external TSS exon(s).
         if (direction == "LOSS") {
-          # Add dominant's terminal exon(s)
           exons <- add_union_exons(exons, event_ues, strand)
+        } else {
+          # GAIN: comparator's extra TSS exon has no overlap with dominant → remove it
+          exons <- exons[-nrow(exons), ]
         }
-        # For GAIN, just removing is sufficient (dominant doesn't have this region)
       }
     }
   }
@@ -710,7 +743,20 @@ modify_terminal_exon <- function(exons, event_ues, event, union_exons = NULL) {
 #' @param union_exons All union exons for the gene
 #' @return Modified exon structure
 apply_event_union_based <- function(exons, event, union_exons) {
-  # Find union exons for this event
+  event_type <- event$event_type
+  direction  <- event$direction
+
+  # SE / Missing_Internal GAIN: coordinate-based removal, no union exon lookup needed.
+  # exact-coordinate matching against atomic union exons fails when the comp exon spans
+  # multiple atomic UEs, so we filter by the event's coordinate range instead.
+  if (event_type %in% c("SE", "Missing_Internal") && direction == "GAIN") {
+    event_start <- min(event$five_prime, event$three_prime)
+    event_end   <- max(event$five_prime, event$three_prime)
+    exons <- exons %>% filter(!(exon_start >= event_start & exon_end <= event_end))
+    return(exons)
+  }
+
+  # For all other events: find union exons
   event_ues <- find_event_union_exons(event, union_exons)
 
   if (nrow(event_ues) == 0) {
@@ -718,33 +764,29 @@ apply_event_union_based <- function(exons, event, union_exons) {
     return(exons)
   }
 
-  event_type <- event$event_type
-  direction <- event$direction
-
   # Apply based on event type and direction
   if (event_type %in% c("Alt_TSS", "Alt_TES")) {
     # Terminal events: extend or trim the terminal exon
     exons <- modify_terminal_exon(exons, event_ues, event, union_exons)
 
-    # Add missing internal exons if present
-    if (!is.na(event$missing_internal_exons) && event$missing_internal_exons != "") {
-      missing_internal_ues <- parse_and_find_union_exons(event$missing_internal_exons, union_exons, event$gene_id)
-      if (nrow(missing_internal_ues) > 0) {
-        exons <- add_union_exons(exons, missing_internal_ues, event$strand)
+    # Remove comp orphan terminal exons for both GAIN and LOSS.
+    # LOSS: comp terminal exons that don't overlap dom (NoOverlap case).
+    # GAIN: comp extra terminal exons beyond dom's terminal boundary.
+    # Range-based removal handles exons that span multiple atomic union exons.
+    if (!is.na(event$orphan_terminal_exons) && event$orphan_terminal_exons != "") {
+      ranges_list <- strsplit(event$orphan_terminal_exons, ",")[[1]]
+      for (range_str in ranges_list) {
+        coords <- as.integer(strsplit(trimws(range_str), "-")[[1]])
+        exons <- exons %>% filter(!(exon_start >= coords[1] & exon_end <= coords[2]))
       }
     }
 
-  } else if (event_type == "SE") {
-    # Skipped exon: add or remove entire exon(s)
-    if (direction == "LOSS") {
-      # Dominant has exon, comparator doesn't → add it
-      exons <- add_union_exons(exons, event_ues, event$strand)
-    } else {
-      # Comparator has exon, dominant doesn't → remove it
-      exons <- remove_union_exons(exons, event_ues)
-    }
+  } else if (event_type %in% c("SE", "Missing_Internal")) {
+    # LOSS only (GAIN was handled above with coordinate-based removal)
+    # Dominant has exon, comparator doesn't → add it
+    exons <- add_union_exons(exons, event_ues, event$strand)
 
-  } else if (event_type == "IR") {
+  } else if (event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3")) {
     # Intron retention
     ir_start <- min(event$five_prime, event$three_prime)
     ir_end <- max(event$five_prime, event$three_prime)
@@ -774,23 +816,32 @@ apply_event_union_based <- function(exons, event, union_exons) {
 
     } else {
       # IR LOSS: Dominant has retention, comparator has split exons
-      # Strategy: Only FILL IN the INTRONIC gaps between comparator's split exons
-      # Don't touch exonic boundaries - let Alt_TSS/Alt_TES handle those
+      # Strategy:
+      #   1. Remove comparator exons that overlap the IR region (they may have
+      #      incorrect boundaries - e.g. extending beyond the dominant's exon end)
+      #   2. Add the correctly-bounded exonic union exons from ir_split_exons
+      #      (these capture the dominant's exact exon boundaries)
+      #   3. Fill intronic gaps between the exonic regions
 
       # Get all union exons in the IR region
       all_ues_in_region <- event_ues
 
-      # Get the comparator's exonic regions (from ir_split_exons)
       if (!is.na(event$ir_split_exons) && event$ir_split_exons != "") {
         exonic_ues <- parse_and_find_union_exons(event$ir_split_exons, union_exons, event$gene_id)
 
-        # Find intronic union exons: those in the IR region but NOT in exonic regions
         if (nrow(exonic_ues) > 0 && nrow(all_ues_in_region) > 0) {
-          # Identify intronic UEs by removing exonic UEs from all UEs in region
+          # Step 1: Remove comparator exons that overlap the IR region
+          ir_region_start <- min(all_ues_in_region$start)
+          ir_region_end   <- max(all_ues_in_region$end)
+          exons <- exons %>%
+            filter(!(exon_start <= ir_region_end & exon_end >= ir_region_start))
+
+          # Step 2: Add correctly-bounded exonic union exons
+          exons <- add_union_exons(exons, exonic_ues, event$strand)
+
+          # Step 3: Add intronic union exons to fill the gaps
           intronic_ues <- all_ues_in_region %>%
             anti_join(exonic_ues, by = c("start", "end", "chr", "strand"))
-
-          # Add only the intronic union exons to fill the gaps
           if (nrow(intronic_ues) > 0) {
             exons <- add_union_exons(exons, intronic_ues, event$strand)
           }
@@ -812,6 +863,15 @@ apply_event_union_based <- function(exons, event, union_exons) {
   } else if (event_type %in% c("A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3")) {
     # Splice site variations: modify exon boundaries
     exons <- modify_exon_boundary(exons, event_ues, event)
+
+  } else if (event_type == "beyond_boundary") {
+    if (direction == "LOSS") {
+      # Dominant has exons outside comparator span → add them
+      exons <- add_union_exons(exons, event_ues, event$strand)
+    } else {
+      # Comparator has exons outside dominant span → remove them
+      exons <- remove_union_exons(exons, event_ues)
+    }
   }
 
   return(exons)
@@ -837,12 +897,12 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
 
   # Separate events into internal vs terminal
   internal_events_raw <- events %>%
-    filter(event_type != "Dual_boundary",
-           event_type %in% c("IR", "SE", "A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3"))
+    filter(event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3",
+                              "SE", "Missing_Internal", "A5SS", "A3SS", "Partial_IR_5", "Partial_IR_3"))
 
   # Filter out Partial_IR events that overlap with IR events
   # (IR events handle the full retention, Partial_IR becomes redundant)
-  ir_events <- internal_events_raw %>% filter(event_type == "IR")
+  ir_events <- internal_events_raw %>% filter(event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3"))
   partial_ir_events <- internal_events_raw %>% filter(event_type %in% c("Partial_IR_5", "Partial_IR_3"))
   other_events <- internal_events_raw %>% filter(!event_type %in% c("IR", "Partial_IR_5", "Partial_IR_3"))
 
@@ -877,7 +937,7 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
   internal_events <- bind_rows(ir_events, partial_ir_events, other_events) %>%
     arrange(
       case_when(
-        event_type == "IR" ~ 1,
+        event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3") ~ 1,
         event_type == "SE" ~ 2,
         TRUE ~ 3
       )
@@ -919,10 +979,17 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
     })
   }
 
-  # Final cleanup: sort and deduplicate, but DON'T merge
+  # Final cleanup: sort, deduplicate, and merge adjacent exons.
+  # Terminal event reconstruction adds atomic union exons (which are split at every
+  # boundary). Adjacent atomic UEs representing the same logical exon must be merged.
   reconstructed <- reconstructed %>%
     arrange(exon_start, exon_end) %>%
     distinct(exon_start, exon_end, .keep_all = TRUE)
+
+  if (nrow(reconstructed) > 0) {
+    strand <- reconstructed$strand[1]
+    reconstructed <- merge_adjacent_exons(reconstructed, strand)
+  }
 
   return(reconstructed)
 }

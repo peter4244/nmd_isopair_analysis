@@ -339,7 +339,7 @@ compute_orphan_terminal_exons_tes <- function(walk_ordered, ref_ordered) {
 #' - ONE boundary shared: A5SS, A3SS, or Partial_IR (by size)
 #' - BOTH boundaries differ:
 #'   - Terminal exons with ≥50% overlap: Partial_IR if internal boundary ≥100bp
-#'   - Internal exons: Dual_boundary (wastebin category)
+#'   - Internal exons: decomposed into two events (one per boundary)
 #'
 #' Biological rationale for terminal exons:
 #' - If terminal exons overlap ≥50%, spliceosome had access to both sites
@@ -548,9 +548,30 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
       }
 
     } else {
-      # Purely internal exon pair: dual-shift is "Dual_boundary" (wastebin category)
-      event_type <- "Dual_boundary"
-      bp_diff <- max(donor_diff, acceptor_diff)  # Report largest shift
+      # Purely internal exon pair: both boundaries differ.
+      # Decompose into two independent splice-site events — one for each boundary.
+      # Primary event: donor boundary (A5SS or Partial_IR_5)
+      bp_diff <- donor_diff
+      if (donor_diff < SPLICE_SITE_THRESHOLD) {
+        event_type <- "A5SS"
+      } else {
+        event_type <- "Partial_IR_5"
+      }
+      # Direction for donor boundary
+      if (strand == "+") {
+        direction <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+      } else {
+        direction <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+      }
+
+      # Second event: acceptor boundary (A3SS or Partial_IR_3)
+      acc_type <- if (acceptor_diff < SPLICE_SITE_THRESHOLD) "A3SS" else "Partial_IR_3"
+      if (strand == "+") {
+        acc_dir <- if (exon_dom$exon_start < exon_non_dom$exon_start) "LOSS" else "GAIN"
+      } else {
+        acc_dir <- if (exon_dom$exon_end > exon_non_dom$exon_end) "LOSS" else "GAIN"
+      }
+      second_event <- list(event_type = acc_type, bp_diff = acceptor_diff, direction = acc_dir)
     }
   }
 
