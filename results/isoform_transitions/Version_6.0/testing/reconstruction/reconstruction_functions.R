@@ -596,15 +596,6 @@ modify_terminal_exon <- function(exons, event) {
     bind_rows(exons, new_exon) %>% arrange(exon_start)
   }
 
-  # Helper: for GAIN non-overlapping, verify the terminal exon is actually a
-  # comparator exon (overlaps the event's region) before removing. If the terminal
-  # exon was added by Phase 1 (e.g. Missing_Internal LOSS), it should NOT be removed.
-  terminal_overlaps_event <- function(terminal_exon) {
-    evt_start <- min(event$five_prime, event$three_prime)
-    evt_end   <- max(event$five_prime, event$three_prime)
-    terminal_exon$exon_start <= evt_end && terminal_exon$exon_end >= evt_start
-  }
-
   if (event_type == "Alt_TES") {
     if (strand == "+") {
       terminal_exon <- exons[nrow(exons), ]
@@ -627,8 +618,8 @@ modify_terminal_exon <- function(exons, event) {
       } else {
         if (direction == "LOSS") {
           exons <- add_exon_at(exons, range_start, range_end)
-        } else if (terminal_overlaps_event(terminal_exon)) {
-          exons <- exons[-nrow(exons), ]
+        } else {
+          exons <- exons %>% filter(!(exon_start >= range_start & exon_end <= range_end))
         }
       }
 
@@ -653,8 +644,8 @@ modify_terminal_exon <- function(exons, event) {
       } else {
         if (direction == "LOSS") {
           exons <- add_exon_at(exons, range_start, range_end)
-        } else if (terminal_overlaps_event(terminal_exon)) {
-          exons <- exons[-1, ]
+        } else {
+          exons <- exons %>% filter(!(exon_start >= range_start & exon_end <= range_end))
         }
       }
     }
@@ -681,8 +672,8 @@ modify_terminal_exon <- function(exons, event) {
       } else {
         if (direction == "LOSS") {
           exons <- add_exon_at(exons, range_start, range_end)
-        } else if (terminal_overlaps_event(terminal_exon)) {
-          exons <- exons[-1, ]
+        } else {
+          exons <- exons %>% filter(!(exon_start >= range_start & exon_end <= range_end))
         }
       }
 
@@ -707,8 +698,8 @@ modify_terminal_exon <- function(exons, event) {
       } else {
         if (direction == "LOSS") {
           exons <- add_exon_at(exons, range_start, range_end)
-        } else if (terminal_overlaps_event(terminal_exon)) {
-          exons <- exons[-nrow(exons), ]
+        } else {
+          exons <- exons %>% filter(!(exon_start >= range_start & exon_end <= range_end))
         }
       }
     }
