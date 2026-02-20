@@ -71,6 +71,11 @@ isoform_gene_map <- dge$genes %>%
 
 cat(sprintf("  Calculated CPM for %d isoforms\n", nrow(cpm_matrix)))
 
+# Free DGEList — we have cpm_matrix and isoform_gene_map now
+rm(dge)
+gc()
+cat("  (Freed DGEList from memory)\n")
+
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 4: Filter to Major Isoforms (MEMORY-EFFICIENT APPROACH)
 # ═══════════════════════════════════════════════════════════════════
@@ -146,6 +151,17 @@ cat("\nCreating filtered expression dataset...\n")
 cpm_filtered <- cpm_matrix[major_isoform_indices, ]
 isoform_gene_map_filtered <- isoform_gene_map[major_isoform_indices, ]
 
+# Capture counts before freeing (needed for stats/summary later)
+n_total_isoforms <- nrow(cpm_matrix)
+isoforms_per_gene_before <- isoform_gene_map %>%
+  group_by(gene_id) %>%
+  summarise(n_isoforms_total = n(), .groups = "drop")
+
+# Free full CPM matrix — we only need the filtered subset now
+rm(cpm_matrix, isoform_gene_map)
+gc()
+cat("  (Freed full CPM matrix from memory)\n")
+
 # Add proper row names
 rownames(cpm_filtered) <- isoform_gene_map_filtered$isoform_id
 
@@ -163,6 +179,11 @@ cat(sprintf("  Filtered expression data:\n"))
 cat(sprintf("    Isoforms: %d\n", length(unique(expression_data$isoform_id))))
 cat(sprintf("    Genes: %d\n", length(unique(expression_data$gene_id))))
 cat(sprintf("    Samples: %d\n", length(unique(expression_data$sample_id))))
+
+# Free filtered CPM matrix — tidy expression_data has everything now
+rm(cpm_filtered, isoform_gene_map_filtered)
+gc()
+cat("  (Freed filtered CPM matrix from memory)\n")
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 6: Identify Dominant Isoforms
@@ -215,11 +236,7 @@ cat(sprintf("  Mean proportion of gene expression from dominant isoform: %.1f%%\
 
 cat("\nCalculating filtering statistics...\n")
 
-# Isoforms per gene (before and after filtering)
-isoforms_per_gene_before <- isoform_gene_map %>%
-  group_by(gene_id) %>%
-  summarise(n_isoforms_total = n(), .groups = "drop")
-
+# isoforms_per_gene_before was computed in Section 5 before freeing isoform_gene_map
 isoforms_per_gene_after <- expression_data %>%
   group_by(gene_id) %>%
   summarise(n_isoforms_major = n_distinct(isoform_id), .groups = "drop")
@@ -263,10 +280,10 @@ cat("\n✓ Step 1.1 complete (v2 - memory-optimized)\n\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
 cat("SUMMARY\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
-cat(sprintf("Total isoforms in DGEList: %d\n", nrow(cpm_matrix)))
+cat(sprintf("Total isoforms in DGEList: %d\n", n_total_isoforms))
 cat(sprintf("Major isoforms (≥5%% in ≥1 sample): %d (%.1f%%)\n",
             length(unique(expression_data$isoform_id)),
-            100 * length(unique(expression_data$isoform_id)) / nrow(cpm_matrix)))
+            100 * length(unique(expression_data$isoform_id)) / n_total_isoforms))
 cat(sprintf("Genes with major isoforms: %d\n", length(unique(expression_data$gene_id))))
 cat(sprintf("Samples: %d (%d cell types, %d treatments)\n",
             nrow(sample_metadata),

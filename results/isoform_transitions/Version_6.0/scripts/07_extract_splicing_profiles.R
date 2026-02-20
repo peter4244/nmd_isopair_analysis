@@ -410,15 +410,21 @@ for (batch_idx in 1:n_batches) {
             rename(chr = seqnames, transcript_id = isoform_id) %>%
             select(chr, exon_start, exon_end, strand, gene_id, transcript_id)
 
-          gene_ue <- union_exons_for_recon %>% filter(gene_id == gene)
-
-          reconstructed <- reconstruct_dominant_v2(comp_exons_for_recon, events, gene_ue)
-
-          if (nrow(reconstructed) == 0) {
-            list(status = "ERROR", reason = "Reconstruction produced 0 exons")
-          } else {
-            vr <- verify_transcript(dom_structure, reconstructed, gene_strand)
+          if (nrow(events) == 0) {
+            # No events: comparator IS the reconstruction — verify directly
+            vr <- verify_transcript(dom_structure, comp_exons_for_recon, gene_strand)
             list(status = if (vr$pass) "PASS" else "FAIL", reason = vr$reason)
+          } else {
+            gene_ue <- union_exons_for_recon %>% filter(gene_id == gene)
+
+            reconstructed <- reconstruct_dominant_v2(comp_exons_for_recon, events, gene_ue)
+
+            if (nrow(reconstructed) == 0) {
+              list(status = "ERROR", reason = "Reconstruction produced 0 exons")
+            } else {
+              vr <- verify_transcript(dom_structure, reconstructed, gene_strand)
+              list(status = if (vr$pass) "PASS" else "FAIL", reason = vr$reason)
+            }
           }
         }, error = function(e) {
           list(status = "ERROR", reason = paste0("Exception: ", e$message))
