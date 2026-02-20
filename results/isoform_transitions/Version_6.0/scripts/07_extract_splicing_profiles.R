@@ -19,9 +19,25 @@
 #   - data/splicing_choice_profiles.rds
 #   - data/splicing_choice_profiles_intermediate.rds (early output for development)
 #
+# Usage:
+#   Rscript scripts/07_extract_splicing_profiles.R           # full run
+#   Rscript scripts/07_extract_splicing_profiles.R --test    # test mode banner
+#   Rscript scripts/07_extract_splicing_profiles.R --test 50 # limit to first 50 genes
+#
 ################################################################################
 
 library(tidyverse)
+
+# Parse command-line arguments
+args <- commandArgs(trailingOnly = TRUE)
+test_mode <- "--test" %in% args
+n_genes_limit <- NULL
+if (test_mode) {
+  test_idx <- which(args == "--test")
+  if (test_idx < length(args)) {
+    n_genes_limit <- as.integer(args[test_idx + 1])
+  }
+}
 
 # ==============================================================================
 # Input Validation Helpers
@@ -60,6 +76,14 @@ cat("╔════════════════════════
 cat("║   STEP 7: Extract Splicing Choice Profiles                   ║\n")
 cat("╚════════════════════════════════════════════════════════════════╝\n")
 cat("\n")
+
+if (test_mode) {
+  if (!is.null(n_genes_limit)) {
+    cat(sprintf("*** TEST MODE: Limiting to first %d genes ***\n\n", n_genes_limit))
+  } else {
+    cat("*** TEST MODE ***\n\n")
+  }
+}
 
 # ==============================================================================
 # 0. Validate Inputs
@@ -190,6 +214,12 @@ genes_with_dominant <- intersect(
 )
 
 cat(sprintf("  Genes with both dominant and structure data: %d\n", length(genes_with_dominant)))
+
+# Apply gene limit in test mode
+if (test_mode && !is.null(n_genes_limit) && n_genes_limit < length(genes_with_dominant)) {
+  genes_with_dominant <- genes_with_dominant[1:n_genes_limit]
+  cat(sprintf("  TEST MODE: Limited to first %d genes\n", n_genes_limit))
+}
 
 # Process in batches with progress reporting
 batch_size <- 1000

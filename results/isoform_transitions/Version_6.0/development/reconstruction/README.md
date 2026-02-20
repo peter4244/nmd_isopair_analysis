@@ -4,8 +4,8 @@
 
 This workflow detects splicing events between isoform pairs and validates detection accuracy through reconstruction. Starting from a comparator isoform plus detected events, the system reconstructs the dominant isoform. If the reconstruction exactly matches the original dominant, the event detection was correct.
 
-**Current Status (2026-02-19):**
-- Synthetic data: **44/44 tests passing (100%)**
+**Current Status (2026-02-20):**
+- Curated test suite (synthetic + real failures): **126/126 tests passing (100%)**
 - Real data (GENCODE): **4,258/4,274 = 99.6%** — 0 FAILs, 16 ERRORs (all "No comparator exons")
 
 ## Architecture
@@ -14,7 +14,7 @@ This is a self-contained development environment. All scripts source dependencie
 
 ### Key Design Principle
 
-**Reconstruction uses ONLY event type + associated coordinates.** Union exon lookups are used ONLY for IR events (which need intronic/exonic split structure). All other event types (A5SS, A3SS, Partial_IR, SE, Missing_Internal, Alt_TSS, Alt_TES) reconstruct directly from event coordinate fields (`five_prime`, `three_prime`, `missing_terminal_exons`).
+**Reconstruction uses ONLY event type + associated coordinates.** All event types — including IR — reconstruct directly from event coordinate fields (`five_prime`, `three_prime`, `missing_terminal_exons`, `ir_split_exons`). No union exon lookups are performed during reconstruction. This eliminates dependencies on UE coverage and avoids gene_id mismatch issues between PacBio (PB.xxxx) and GENCODE (ENSG) identifiers.
 
 ## Workflow Overview
 
@@ -125,37 +125,40 @@ STEP 3: Terminal Event Detection
 
 ### Two-Phase Approach
 
-**Phase 1: LOSS Events (Add to comparator)**
-Events are applied in this order:
+**Phase 1: Internal Events (IR, SE, A5SS/A3SS, Partial_IR, Missing_Internal)**
+Events are sorted LOSS-before-GAIN, then applied:
+1. IR LOSS → Merge comparator's split exons into one retained-intron exon using event coordinates
+2. IR GAIN → Remove comparator's retained-intron exon, add split exons from `ir_split_exons` field
+3. SE/Missing_Internal LOSS → Add exons by coordinate range
+4. SE/Missing_Internal GAIN → Remove exons by coordinate range
+5. A5SS/A3SS/Partial_IR LOSS → Extend exon boundaries algebraically
+6. A5SS/A3SS/Partial_IR GAIN → Shrink exon boundaries algebraically
+
+**Pre-merge orphan removal:** Before merging, terminal event orphans (comparator exons at 5'/3' ends that don't overlap the dominant) are removed. This prevents `merge_adjacent_exons` from erroneously consolidating orphan exons with internally-modified adjacent exons.
+
+**Post-Phase 1:**
+- `merge_adjacent_exons()` combines touching/overlapping exon segments
+
+**Phase 2: Terminal Events (Alt_TSS, Alt_TES)**
+Applied after merge to avoid interference with internal event boundaries:
 1. Alt_TSS LOSS → Add missing terminal exons at 5' end
 2. Alt_TES LOSS → Add missing terminal exons at 3' end
-3. SE/Missing_Internal LOSS → Add exons by coordinate range
-4. IR LOSS → Split retained intron using union exon structure
-5. A5SS/A3SS/Partial_IR LOSS → Extend exon boundaries algebraically
+3. Alt_TSS GAIN → Remove terminal exons/trim boundary
+4. Alt_TES GAIN → Remove terminal exons/trim boundary
+5. Remove any remaining orphan terminal exons
 
-**Phase 2: GAIN Events (Remove from comparator)**
-Events are applied in this order:
-1. SE/Missing_Internal GAIN → Remove exons by coordinate range
-2. Alt_TSS GAIN → Remove terminal exons/trim boundary
-3. Alt_TES GAIN → Remove terminal exons/trim boundary
-4. A5SS/A3SS/Partial_IR GAIN → Shrink exon boundaries algebraically
-5. IR GAIN → Split retained intron using union exon structure
-
-**Post-processing:**
-- `merge_adjacent_exons()` combines touching/overlapping exon segments
-- Final exons are sorted in biological order
+**Final:** Exons are sorted in biological order
 
 ### Core Functions (reconstruction_functions.R)
 
 | Function | Purpose |
 |----------|---------|
-| `reconstruct_dominant_v2()` | Main reconstruction pipeline |
-| `apply_event_union_based()` | Routes events to appropriate handler |
+| `reconstruct_dominant_v2()` | Main reconstruction pipeline (two-phase + pre-merge orphan removal) |
+| `apply_event_union_based()` | Routes events to appropriate handler (all use direct coordinates) |
 | `modify_exon_boundary()` | Algebraic boundary adjustment for A5SS/A3SS/Partial_IR |
 | `modify_terminal_exon()` | Handles Alt_TSS/Alt_TES using coordinate ranges |
-| `add_union_exons()` | Adds exons for LOSS events |
-| `remove_union_exons()` | Removes exons for GAIN events |
-| `find_event_union_exons()` | Finds union exons matching event coordinates (IR only) |
+| `add_union_exons()` | Adds exons for SE/Missing_Internal LOSS events |
+| `remove_union_exons()` | Removes exons for SE/Missing_Internal GAIN events |
 | `merge_adjacent_exons()` | Combines adjacent/overlapping exon segments |
 
 ### Boundary Modification Logic
@@ -198,7 +201,7 @@ Transcript IDs use `DOM::COMP` format: `"ENST00000497506.5::ENST00000412894.5"`
 
 ### Current Results
 
-**Synthetic Data**: 44/44 (100%) — covers all event types on both strands
+**Curated Test Suite**: 126/126 (100%) — 44 synthetic + 82 real-world cases including all IR subtypes, both GTF-built and production union exons
 
 **Real Data (GENCODE)**: 4,258/4,274 (99.6%)
 - 0 FAILs (exact coordinate mismatches)

@@ -108,7 +108,15 @@ detect_tss_change <- function(exon_dom, exon_non_dom, strand, tolerance = TSS_TO
   }
 
   tss_diff <- abs(tss_dom - tss_non_dom)
-  return(tss_diff > tolerance)
+  if (tss_diff > tolerance) return(TRUE)
+
+  # Even if within coordinate tolerance, detect structural change when first
+  # exons don't overlap — indicates an extra terminal exon, not just a shift
+  first_overlap <- exon_dom$exon_start <= exon_non_dom$exon_end &&
+                   exon_dom$exon_end >= exon_non_dom$exon_start
+  if (!first_overlap) return(TRUE)
+
+  return(FALSE)
 }
 
 #' Detect TES changes between last exons
@@ -129,7 +137,15 @@ detect_tes_change <- function(exon_dom, exon_non_dom, strand, tolerance = TES_TO
   }
 
   tes_diff <- abs(tes_dom - tes_non_dom)
-  return(tes_diff > tolerance)
+  if (tes_diff > tolerance) return(TRUE)
+
+  # Even if within coordinate tolerance, detect structural change when last
+  # exons don't overlap — indicates an extra terminal exon, not just a shift
+  last_overlap <- exon_dom$exon_start <= exon_non_dom$exon_end &&
+                  exon_dom$exon_end >= exon_non_dom$exon_start
+  if (!last_overlap) return(TRUE)
+
+  return(FALSE)
 }
 
 #' Compute missing terminal exons for Alt_TSS events

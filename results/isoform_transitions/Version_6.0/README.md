@@ -11,7 +11,7 @@ This pipeline:
 4. **Analyzes splicing patterns** across cell types and NMD conditions (Scripts 08-12)
 
 **Validation Status:**
-- Synthetic data: 44/44 tests (100%)
+- Curated test suite (synthetic + real failures): 126/126 tests (100%)
 - Real data (GENCODE): 4,258/4,274 pairs (99.6%) — 0 FAILs, 16 ERRORs (missing comparator data)
 
 ## Directory Structure
@@ -104,8 +104,10 @@ STEP 2: Within-Boundary Event Detection
 
 STEP 3: Terminal Event Detection
 ├─ Alt_TSS: Compare biological first exons
+│  ├─ Triggered when TSS differs > 20bp OR first exons don't overlap
 │  └─ missing_terminal_exons: coordinate ranges of longer isoform's 5' extension
 └─ Alt_TES: Compare biological last exons
+   ├─ Triggered when TES differs > 20bp OR last exons don't overlap
    └─ missing_terminal_exons: coordinate ranges of longer isoform's 3' extension
 ```
 
@@ -121,8 +123,8 @@ STEP 3: Terminal Event Detection
 | **Partial_IR_3** | Partial intron retention at 3' boundary (≥ 100bp) |
 | **IR** | Intron retention — one exon spans ≥2 exons in the other isoform |
 | **IR_diff_5/3/5_3** | IR with boundary mismatches at 5', 3', or both ends |
-| **Alt_TSS** | Alternative transcription start site (> 20bp difference) |
-| **Alt_TES** | Alternative transcription end site (> 20bp difference) |
+| **Alt_TSS** | Alternative transcription start site (> 20bp difference OR non-overlapping first exons) |
+| **Alt_TES** | Alternative transcription end site (> 20bp difference OR non-overlapping last exons) |
 
 ### GAIN/LOSS Semantics
 
@@ -140,16 +142,19 @@ The reconstruction system validates event detection accuracy by rebuilding the d
 
 ### Two-Phase Reconstruction
 
-**Phase 1 — Internal Events (within shared boundaries):**
-- IR: Split retained intron using union exon structure
+**Phase 1 — Internal Events (LOSS before GAIN, within shared boundaries):**
+- IR: Direct coordinate reconstruction — LOSS merges split exons, GAIN splits using `ir_split_exons`
 - SE/Missing_Internal: Add or remove exons by coordinate range
 - A5SS/A3SS/Partial_IR: Algebraic boundary adjustment from five_prime/three_prime
+- Pre-merge orphan removal: terminal orphans removed before merge step
+- `merge_adjacent_exons()` combines touching/overlapping segments
 
 **Phase 2 — Terminal Events (LOSS before GAIN):**
 - LOSS: Add missing exon ranges from `missing_terminal_exons`
 - GAIN: Use `five_prime` (dominant's terminal boundary) to truncate/remove exons beyond the dominant's extent
+- Remove any remaining orphan terminal exons
 
-**Key Principle:** Reconstruction uses ONLY event type + associated coordinates. Union exon lookups are used ONLY for IR events (which need intronic/exonic split structure).
+**Key Principle:** Reconstruction uses ONLY event type + associated coordinates. No union exon lookups are performed — all event types (including IR) reconstruct directly from event coordinate fields.
 
 ## Events File Format
 
@@ -167,7 +172,7 @@ Tab-separated, 15 columns:
 | `bp_diff` | Base pair difference |
 | `missing_terminal_exons` | Coordinate ranges for Alt_TSS/Alt_TES |
 | `orphan_terminal_exons` | Comparator exons to remove |
-| `ir_split_exons` | Union exon ranges for IR reconstruction |
+| `ir_split_exons` | Exon coordinate ranges for IR reconstruction |
 | `dom_junctions`, `comp_junctions` | Splice junctions (informational) |
 
 ## Dependencies

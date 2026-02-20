@@ -82,8 +82,8 @@ flowchart TD
     subgraph S3 ["Step 3 — Terminal Events (always runs)"]
         TERM[" "]
 
-        TSS{"<b>detect_tss_change()</b><br/>5′ boundary differs > 20 bp?"}
-        TES{"<b>detect_tes_change()</b><br/>3′ boundary differs > 20 bp?"}
+        TSS{"<b>detect_tss_change()</b><br/>5′ boundary differs > 20 bp<br/>OR first exons don't overlap?"}
+        TES{"<b>detect_tes_change()</b><br/>3′ boundary differs > 20 bp<br/>OR last exons don't overlap?"}
 
         TERM --> TSS
         TERM --> TES

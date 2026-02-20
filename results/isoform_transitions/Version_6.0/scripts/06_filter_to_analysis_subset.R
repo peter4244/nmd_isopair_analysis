@@ -16,9 +16,27 @@
 #   - data/*_filtered.rds (7 filtered datasets, no profiles yet)
 #   - results/filtering_report_script06.txt
 #
+# Usage:
+#   Rscript scripts/06_filter_to_analysis_subset.R           # full run
+#   Rscript scripts/06_filter_to_analysis_subset.R --test    # test mode (skip filterByExpr)
+#
+# Quick test (Scripts 03-08 on 100 genes):
+#   Rscript scripts/03_build_union_exons.R --test 100 && \
+#   Rscript scripts/05_annotate_region_types.R && \
+#   Rscript scripts/06_filter_to_analysis_subset.R --test && \
+#   Rscript scripts/07_extract_splicing_profiles.R --test && \
+#   Rscript scripts/08_validate_reconstruction.R --test
+#
 
 library(tidyverse)
-library(edgeR)
+
+# Parse command-line arguments
+args <- commandArgs(trailingOnly = TRUE)
+test_mode <- "--test" %in% args
+
+if (!test_mode) {
+  library(edgeR)
+}
 
 # ==============================================================================
 # Input Validation Helpers
@@ -52,6 +70,10 @@ cat("\n╔═══════════════════════�
 cat("║   STEP 6: Filter to Analysis-Ready Subset                    ║\n")
 cat("╚════════════════════════════════════════════════════════════════╝\n\n")
 
+if (test_mode) {
+  cat("*** TEST MODE: Skipping filterByExpr, using union_exons gene set ***\n\n")
+}
+
 # Paths
 base_dir <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0"
 dge_file <- "/Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_2026.2.7.rds"
@@ -61,7 +83,9 @@ dge_file <- "/Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_20
 # ==============================================================================
 
 cat("Validating inputs...\n")
-validate_file(dge_file)
+if (!test_mode) {
+  validate_file(dge_file)
+}
 validate_file(file.path(base_dir, "data/expression_data.rds"))
 validate_file(file.path(base_dir, "data/dominant_isoforms.rds"))
 validate_file(file.path(base_dir, "data/isoform_structures.rds"))
@@ -71,67 +95,90 @@ validate_file(file.path(base_dir, "data/isoform_cds_metadata.rds"))
 validate_file(file.path(base_dir, "data/isoform_union_exons_annotated.rds"))
 cat("  All required input files found.\n\n")
 
-# ═══════════════════════════════════════════════════════════════════
-# SECTION 1: Load Original DGEList and Apply filterByExpr
-# ═══════════════════════════════════════════════════════════════════
+if (test_mode) {
+  # ═══════════════════════════════════════════════════════════════════
+  # TEST MODE: Filter to genes present in union_exons.rds
+  # (Script 03 --test N already limited union_exons to N genes)
+  # ═══════════════════════════════════════════════════════════════════
 
-cat("Loading original DGEList...\n")
-dge <- readRDS(dge_file)
+  cat("TEST MODE: Deriving gene/isoform filter from union_exons.rds...\n")
+  union_exons <- readRDS(file.path(base_dir, "data/union_exons.rds"))
+  gene_ids_to_keep <- unique(union_exons$gene_id)
+  cat(sprintf("  Genes in union_exons: %d\n", length(gene_ids_to_keep)))
 
-cat(sprintf("  Original: %s isoforms, %s genes\n",
-            format(nrow(dge), big.mark=","),
-            format(length(unique(dge$genes$gene_id_ens115_sqanti)), big.mark=",")))
+  # Get all isoforms for these genes from isoform_structures
+  isoform_structures <- readRDS(file.path(base_dir, "data/isoform_structures.rds"))
+  isoform_ids_to_keep <- isoform_structures %>%
+    filter(gene_id %in% gene_ids_to_keep) %>%
+    pull(isoform_id) %>%
+    unique()
+  rm(isoform_structures)
 
-cat("\nBuilding design matrix...\n")
-design_all <- model.matrix(formula("~treatment+ct+ct*treatment"), data = dge$samples)
-cat(sprintf("  Design: %d samples × %d coefficients\n", nrow(design_all), ncol(design_all)))
+  cat(sprintf("  Isoforms for these genes: %d\n", length(isoform_ids_to_keep)))
 
-cat("\nApplying filterByExpr (matching DGE analysis)...\n")
-cat("  Parameters: min.count=5, min.total.count=10, min.prop=0\n")
-keep_expr <- filterByExpr(dge, design=design_all, min.count=5, min.total.count=10, min.prop=0)
+} else {
+  # ═══════════════════════════════════════════════════════════════════
+  # SECTION 1: Load Original DGEList and Apply filterByExpr
+  # ═══════════════════════════════════════════════════════════════════
 
-cat(sprintf("  Isoforms passing filter: %s (%.1f%%)\n",
-            format(sum(keep_expr), big.mark=","),
-            100 * mean(keep_expr)))
+  cat("Loading original DGEList...\n")
+  dge <- readRDS(dge_file)
 
-# ═══════════════════════════════════════════════════════════════════
-# SECTION 2: Exclude Fusion/Chimeric Genes
-# ═══════════════════════════════════════════════════════════════════
+  cat(sprintf("  Original: %s isoforms, %s genes\n",
+              format(nrow(dge), big.mark=","),
+              format(length(unique(dge$genes$gene_id_ens115_sqanti)), big.mark=",")))
 
-cat("\nExcluding fusion/chimeric genes...\n")
-cat("  KEEP: GENCODE (ENSG[0-9]+) + PacBio Novel (novelGene_*)\n")
-cat("  EXCLUDE: Fusion/Chimeric (e.g., ENSG_ENSG)\n")
+  cat("\nBuilding design matrix...\n")
+  design_all <- model.matrix(formula("~treatment+ct+ct*treatment"), data = dge$samples)
+  cat(sprintf("  Design: %d samples × %d coefficients\n", nrow(design_all), ncol(design_all)))
 
-# Subset to isoforms passing expression filter
-dge_expr <- dge[keep_expr, , keep.lib.sizes=FALSE]
-gene_ids_expr <- dge_expr$genes$gene_id_ens115_sqanti
+  cat("\nApplying filterByExpr (matching DGE analysis)...\n")
+  cat("  Parameters: min.count=5, min.total.count=10, min.prop=0\n")
+  keep_expr <- filterByExpr(dge, design=design_all, min.count=5, min.total.count=10, min.prop=0)
 
-# Categorize genes
-is_gencode <- grepl("^ENSG[0-9]+$", gene_ids_expr)
-is_novel <- grepl("^novelGene_", gene_ids_expr)
-is_fusion <- !is_gencode & !is_novel
+  cat(sprintf("  Isoforms passing filter: %s (%.1f%%)\n",
+              format(sum(keep_expr), big.mark=","),
+              100 * mean(keep_expr)))
 
-cat(sprintf("\n  Gene categories after filterByExpr:\n"))
-cat(sprintf("    GENCODE: %s genes\n", format(length(unique(gene_ids_expr[is_gencode])), big.mark=",")))
-cat(sprintf("    PacBio Novel: %s genes\n", format(length(unique(gene_ids_expr[is_novel])), big.mark=",")))
-cat(sprintf("    Fusion/Chimeric: %s genes (will be excluded)\n",
-            format(length(unique(gene_ids_expr[is_fusion])), big.mark=",")))
+  # ═══════════════════════════════════════════════════════════════════
+  # SECTION 2: Exclude Fusion/Chimeric Genes
+  # ═══════════════════════════════════════════════════════════════════
 
-# Keep only GENCODE + Novel
-keep_genes <- is_gencode | is_novel
-dge_filtered <- dge_expr[keep_genes, , keep.lib.sizes=FALSE]
+  cat("\nExcluding fusion/chimeric genes...\n")
+  cat("  KEEP: GENCODE (ENSG[0-9]+) + PacBio Novel (novelGene_*)\n")
+  cat("  EXCLUDE: Fusion/Chimeric (e.g., ENSG_ENSG)\n")
 
-cat(sprintf("\n  Final filtered dataset:\n"))
-cat(sprintf("    Isoforms: %s\n", format(nrow(dge_filtered), big.mark=",")))
-cat(sprintf("    Genes: %s\n", format(length(unique(dge_filtered$genes$gene_id_ens115_sqanti)), big.mark=",")))
+  # Subset to isoforms passing expression filter
+  dge_expr <- dge[keep_expr, , keep.lib.sizes=FALSE]
+  gene_ids_expr <- dge_expr$genes$gene_id_ens115_sqanti
 
-# Create isoform and gene ID lists for filtering downstream data
-isoform_ids_to_keep <- dge_filtered$genes$txid
-gene_ids_to_keep <- unique(dge_filtered$genes$gene_id_ens115_sqanti)
+  # Categorize genes
+  is_gencode <- grepl("^ENSG[0-9]+$", gene_ids_expr)
+  is_novel <- grepl("^novelGene_", gene_ids_expr)
+  is_fusion <- !is_gencode & !is_novel
 
-cat(sprintf("\n  Created filter lists:\n"))
-cat(sprintf("    %s isoform IDs\n", format(length(isoform_ids_to_keep), big.mark=",")))
-cat(sprintf("    %s gene IDs\n", format(length(gene_ids_to_keep), big.mark=",")))
+  cat(sprintf("\n  Gene categories after filterByExpr:\n"))
+  cat(sprintf("    GENCODE: %s genes\n", format(length(unique(gene_ids_expr[is_gencode])), big.mark=",")))
+  cat(sprintf("    PacBio Novel: %s genes\n", format(length(unique(gene_ids_expr[is_novel])), big.mark=",")))
+  cat(sprintf("    Fusion/Chimeric: %s genes (will be excluded)\n",
+              format(length(unique(gene_ids_expr[is_fusion])), big.mark=",")))
+
+  # Keep only GENCODE + Novel
+  keep_genes <- is_gencode | is_novel
+  dge_filtered <- dge_expr[keep_genes, , keep.lib.sizes=FALSE]
+
+  cat(sprintf("\n  Final filtered dataset:\n"))
+  cat(sprintf("    Isoforms: %s\n", format(nrow(dge_filtered), big.mark=",")))
+  cat(sprintf("    Genes: %s\n", format(length(unique(dge_filtered$genes$gene_id_ens115_sqanti)), big.mark=",")))
+
+  # Create isoform and gene ID lists for filtering downstream data
+  isoform_ids_to_keep <- dge_filtered$genes$txid
+  gene_ids_to_keep <- unique(dge_filtered$genes$gene_id_ens115_sqanti)
+
+  cat(sprintf("\n  Created filter lists:\n"))
+  cat(sprintf("    %s isoform IDs\n", format(length(isoform_ids_to_keep), big.mark=",")))
+  cat(sprintf("    %s gene IDs\n", format(length(gene_ids_to_keep), big.mark=",")))
+}
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 3: Filter Downstream Data Structures
@@ -139,12 +186,14 @@ cat(sprintf("    %s gene IDs\n", format(length(gene_ids_to_keep), big.mark=","))
 
 cat("\n\nFiltering downstream data structures...\n")
 
-# Cross-check: verify DGE isoform IDs overlap with pipeline expression data
-cat("\n  Cross-file consistency checks:\n")
-expr_check <- readRDS(file.path(base_dir, "data/expression_data.rds"))
-validate_overlap(isoform_ids_to_keep, unique(expr_check$isoform_id),
-                 "DGE filter isoform_ids", "expression_data")
-rm(expr_check)
+if (!test_mode) {
+  # Cross-check: verify DGE isoform IDs overlap with pipeline expression data
+  cat("\n  Cross-file consistency checks:\n")
+  expr_check <- readRDS(file.path(base_dir, "data/expression_data.rds"))
+  validate_overlap(isoform_ids_to_keep, unique(expr_check$isoform_id),
+                   "DGE filter isoform_ids", "expression_data")
+  rm(expr_check)
+}
 
 # ---- 3.1: expression_data ----
 cat("\n  [1/7] Filtering expression_data.rds...\n")
@@ -241,84 +290,86 @@ cat("    ✓ Saved: data/isoform_union_exons_annotated_filtered.rds\n")
 # SECTION 4: Generate Filtering Report
 # ═══════════════════════════════════════════════════════════════════
 
-cat("\n\nGenerating filtering report...\n")
+if (!test_mode) {
+  cat("\n\nGenerating filtering report...\n")
 
-# Calculate statistics
-original_stats <- list(
-  isoforms = nrow(dge),
-  genes = length(unique(dge$genes$gene_id_ens115_sqanti))
-)
+  # Calculate statistics
+  original_stats <- list(
+    isoforms = nrow(dge),
+    genes = length(unique(dge$genes$gene_id_ens115_sqanti))
+  )
 
-filtered_stats <- list(
-  isoforms = nrow(dge_filtered),
-  genes = length(gene_ids_to_keep)
-)
+  filtered_stats <- list(
+    isoforms = nrow(dge_filtered),
+    genes = length(gene_ids_to_keep)
+  )
 
-# Gene category breakdown
-gene_categories_filtered <- tibble(gene_id = gene_ids_to_keep) %>%
-  mutate(
-    category = case_when(
-      grepl("^ENSG[0-9]+$", gene_id) ~ "GENCODE",
-      grepl("^novelGene_", gene_id) ~ "PacBio Novel",
-      TRUE ~ "Other"
-    )
-  ) %>%
-  count(category)
+  # Gene category breakdown
+  gene_categories_filtered <- tibble(gene_id = gene_ids_to_keep) %>%
+    mutate(
+      category = case_when(
+        grepl("^ENSG[0-9]+$", gene_id) ~ "GENCODE",
+        grepl("^novelGene_", gene_id) ~ "PacBio Novel",
+        TRUE ~ "Other"
+      )
+    ) %>%
+    count(category)
 
-# Write report
-report_file <- file.path(base_dir, "results/filtering_report_script06.txt")
-sink(report_file)
+  # Write report
+  report_file <- file.path(base_dir, "results/filtering_report_script06.txt")
+  sink(report_file)
 
-cat("═══════════════════════════════════════════════════════════════════\n")
-cat("  FILTERING REPORT - Script 06\n")
-cat("  Date:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
-cat("═══════════════════════════════════════════════════════════════════\n\n")
+  cat("═══════════════════════════════════════════════════════════════════\n")
+  cat("  FILTERING REPORT - Script 06\n")
+  cat("  Date:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
+  cat("═══════════════════════════════════════════════════════════════════\n\n")
 
-cat("FILTERING STRATEGY:\n")
-cat("  1. Apply filterByExpr (min.count=5, min.total.count=10, min.prop=0)\n")
-cat("  2. Exclude fusion/chimeric genes (keep GENCODE + PacBio Novel)\n\n")
+  cat("FILTERING STRATEGY:\n")
+  cat("  1. Apply filterByExpr (min.count=5, min.total.count=10, min.prop=0)\n")
+  cat("  2. Exclude fusion/chimeric genes (keep GENCODE + PacBio Novel)\n\n")
 
-cat("SUMMARY STATISTICS:\n")
-cat("─────────────────────────────────────────────────────────────────\n")
-cat(sprintf("%-30s %15s %15s %10s\n", "Metric", "Original", "Filtered", "% Kept"))
-cat("─────────────────────────────────────────────────────────────────\n")
-cat(sprintf("%-30s %15s %15s %9.1f%%\n",
-            "Isoforms",
-            format(original_stats$isoforms, big.mark=","),
-            format(filtered_stats$isoforms, big.mark=","),
-            100 * filtered_stats$isoforms / original_stats$isoforms))
-cat(sprintf("%-30s %15s %15s %9.1f%%\n",
-            "Genes",
-            format(original_stats$genes, big.mark=","),
-            format(filtered_stats$genes, big.mark=","),
-            100 * filtered_stats$genes / original_stats$genes))
-cat("─────────────────────────────────────────────────────────────────\n\n")
+  cat("SUMMARY STATISTICS:\n")
+  cat("─────────────────────────────────────────────────────────────────\n")
+  cat(sprintf("%-30s %15s %15s %10s\n", "Metric", "Original", "Filtered", "% Kept"))
+  cat("─────────────────────────────────────────────────────────────────\n")
+  cat(sprintf("%-30s %15s %15s %9.1f%%\n",
+              "Isoforms",
+              format(original_stats$isoforms, big.mark=","),
+              format(filtered_stats$isoforms, big.mark=","),
+              100 * filtered_stats$isoforms / original_stats$isoforms))
+  cat(sprintf("%-30s %15s %15s %9.1f%%\n",
+              "Genes",
+              format(original_stats$genes, big.mark=","),
+              format(filtered_stats$genes, big.mark=","),
+              100 * filtered_stats$genes / original_stats$genes))
+  cat("─────────────────────────────────────────────────────────────────\n\n")
 
-cat("GENE CATEGORY BREAKDOWN (FILTERED):\n")
-cat("─────────────────────────────────────────────────────────────────\n")
-for (i in 1:nrow(gene_categories_filtered)) {
-  cat(sprintf("  %-20s %15s genes\n",
-              gene_categories_filtered$category[i],
-              format(gene_categories_filtered$n[i], big.mark=",")))
+  cat("GENE CATEGORY BREAKDOWN (FILTERED):\n")
+  cat("─────────────────────────────────────────────────────────────────\n")
+  for (i in 1:nrow(gene_categories_filtered)) {
+    cat(sprintf("  %-20s %15s genes\n",
+                gene_categories_filtered$category[i],
+                format(gene_categories_filtered$n[i], big.mark=",")))
+  }
+  cat("─────────────────────────────────────────────────────────────────\n\n")
+
+  cat("OUTPUT FILES CREATED:\n")
+  cat("  ✓ data/expression_data_filtered.rds\n")
+  cat("  ✓ data/dominant_isoforms_filtered.rds\n")
+  cat("  ✓ data/isoform_structures_filtered.rds\n")
+  cat("  ✓ data/union_exons_filtered.rds\n")
+  cat("  ✓ data/isoform_union_mapping_filtered.rds\n")
+  cat("  ✓ data/isoform_cds_metadata_filtered.rds\n")
+  cat("  ✓ data/isoform_union_exons_annotated_filtered.rds\n\n")
+
+  cat("NOTE: Splicing profiles will be created in Script 07\n\n")
+
+  cat("═══════════════════════════════════════════════════════════════════\n")
+
+  sink()
+
+  cat(sprintf("  ✓ Report saved: results/filtering_report_script06.txt\n"))
 }
-cat("─────────────────────────────────────────────────────────────────\n\n")
-
-cat("OUTPUT FILES CREATED:\n")
-cat("  ✓ data/expression_data_filtered.rds\n")
-cat("  ✓ data/dominant_isoforms_filtered.rds\n")
-cat("  ✓ data/isoform_structures_filtered.rds\n")
-cat("  ✓ data/union_exons_filtered.rds\n")
-cat("  ✓ data/isoform_union_mapping_filtered.rds\n")
-cat("  ✓ data/isoform_cds_metadata_filtered.rds\n")
-cat("  ✓ data/isoform_union_exons_annotated_filtered.rds\n\n")
-
-cat("NOTE: Splicing profiles will be created in Script 07\n\n")
-
-cat("═══════════════════════════════════════════════════════════════════\n")
-
-sink()
-
-cat(sprintf("  ✓ Report saved: results/filtering_report_script06.txt\n"))
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 5: Summary
@@ -328,11 +379,17 @@ cat("\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
 cat("SUMMARY\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
-cat(sprintf("Filtered dataset: %s isoforms from %s genes\n",
-            format(filtered_stats$isoforms, big.mark=","),
-            format(filtered_stats$genes, big.mark=",")))
-cat(sprintf("Excluded: %s fusion/chimeric genes\n",
-            format(sum(is_fusion), big.mark=",")))
+if (test_mode) {
+  cat(sprintf("TEST MODE: Filtered to %s isoforms from %s genes (union_exons set)\n",
+              format(length(isoform_ids_to_keep), big.mark=","),
+              format(length(gene_ids_to_keep), big.mark=",")))
+} else {
+  cat(sprintf("Filtered dataset: %s isoforms from %s genes\n",
+              format(nrow(dge_filtered), big.mark=","),
+              format(length(gene_ids_to_keep), big.mark=",")))
+  cat(sprintf("Excluded: %s fusion/chimeric genes\n",
+              format(sum(is_fusion), big.mark=",")))
+}
 cat("\nAll filtered data files saved with '_filtered.rds' suffix\n")
 cat("Next: Script 07 will create splicing choice profiles from filtered data\n")
 cat("═══════════════════════════════════════════════════════════════════\n\n")

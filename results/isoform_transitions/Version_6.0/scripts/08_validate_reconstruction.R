@@ -19,9 +19,17 @@
 #   - data/reconstruction_verification.rds  (per-pair PASS/FAIL/ERROR results)
 #   - logs/reconstruction_verification.log  (summary statistics)
 #
+# Usage:
+#   Rscript scripts/08_validate_reconstruction.R           # full run
+#   Rscript scripts/08_validate_reconstruction.R --test    # test mode banner
+#
 ################################################################################
 
 library(tidyverse)
+
+# Parse command-line arguments
+args <- commandArgs(trailingOnly = TRUE)
+test_mode <- "--test" %in% args
 
 # ==============================================================================
 # Input Validation Helpers
@@ -56,6 +64,10 @@ cat("╔════════════════════════
 cat("║   STEP 8: Validate Reconstruction                            ║\n")
 cat("╚════════════════════════════════════════════════════════════════╝\n")
 cat("\n")
+
+if (test_mode) {
+  cat("*** TEST MODE ***\n\n")
+}
 
 # Paths
 base_dir <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0"

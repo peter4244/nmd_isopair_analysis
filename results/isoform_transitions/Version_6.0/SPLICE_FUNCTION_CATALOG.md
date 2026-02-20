@@ -46,11 +46,15 @@ polyadenylation (TES).
 **`detect_tss_change(exon_dom, exon_non_dom, strand)`** — Compares the 5' boundary
 of each isoform's first exon. A difference beyond 20bp indicates the two isoforms
 originate from different promoters (alternative first exon). The tolerance accounts
-for imprecise 5' mapping in long-read data. *Gate for* -> **Alt_TSS**.
+for imprecise 5' mapping in long-read data. Additionally, even if the TSS coordinate
+difference is within tolerance, returns TRUE when the first exons don't overlap at
+all — this catches cases where a short extra terminal exon creates a small coordinate
+difference but represents a genuine structural change. *Gate for* -> **Alt_TSS**.
 
 **`detect_tes_change(exon_dom, exon_non_dom, strand)`** — Same logic at the 3' end.
 A difference beyond 20bp indicates alternative polyadenylation or an alternative last
-exon. *Gate for* -> **Alt_TES**.
+exon. Also returns TRUE when last exons don't overlap, regardless of coordinate
+distance. *Gate for* -> **Alt_TES**.
 
 **`compute_missing_terminal_exons_tss(dom_exons, comp_exons, strand)`** — When one
 isoform's promoter is further upstream, this walks from that promoter inward,

@@ -226,10 +226,23 @@ Else if strand == "-":
 
 tss_diff = |tss_dom - tss_non_dom|
 
-Return (tss_diff > tolerance)
+# Primary check: coordinate distance
+If tss_diff > tolerance:
+  Return TRUE
+
+# Secondary check: even if within tolerance, detect structural change
+# when first exons don't overlap — indicates an extra terminal exon,
+# not just a minor TSS coordinate shift
+first_overlap = (first_exon_dom.exon_start <= first_exon_non_dom.exon_end) AND
+                (first_exon_dom.exon_end >= first_exon_non_dom.exon_start)
+
+If NOT first_overlap:
+  Return TRUE
+
+Return FALSE
 ```
 
-**Rationale**: Small differences (≤20bp) may represent annotation noise or minor isoform variation; we focus on biologically meaningful changes >20bp.
+**Rationale**: Small coordinate differences (≤20bp) may represent annotation noise or minor isoform variation; we focus on biologically meaningful changes >20bp. However, when the first exons don't overlap at all, this indicates a true structural change (e.g., an extra terminal exon in one isoform) regardless of the TSS coordinate distance. This overlap check catches cases where a short extra exon (e.g., 9-19bp) creates a TSS difference within tolerance but represents a genuine alternative first exon.
 
 **Biological Interpretation**:
 - Alternative promoter usage
@@ -261,7 +274,19 @@ Else if strand == "-":
 
 tes_diff = |tes_dom - tes_non_dom|
 
-Return (tes_diff > tolerance)
+# Primary check: coordinate distance
+If tes_diff > tolerance:
+  Return TRUE
+
+# Secondary check: non-overlapping last exons indicate structural change
+# regardless of coordinate distance
+last_overlap = (last_exon_dom.exon_start <= last_exon_non_dom.exon_end) AND
+               (last_exon_dom.exon_end >= last_exon_non_dom.exon_start)
+
+If NOT last_overlap:
+  Return TRUE
+
+Return FALSE
 ```
 
 **Biological Interpretation**:
@@ -830,6 +855,7 @@ We validate all event detection algorithms using synthetic test genes with known
 
 **Reconstruction Validation**:
 - Reconstruct dominant isoform from comparator + detected events, verify all exon coordinates match
+- Curated test suite (synthetic + real failures): **126/126 = 100%** (all event types, both GTF and production UEs)
 - GENCODE test: **4258/4274 = 99.6%** (0 FAILs, 16 ERRORs from "No comparator exons")
 
 **Key Validation Case**:
@@ -1128,6 +1154,6 @@ Format: One row per (dominant, non-dominant) comparison
 
 ---
 
-**Document Version**: 2.0
+**Document Version**: 2.1
 **Last Updated**: 2026-02-20
 **Status**: Complete and validated

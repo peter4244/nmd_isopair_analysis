@@ -441,20 +441,27 @@ apply_event_union_based <- function(exons, event, union_exons) {
   }
 
   # -------------------------------------------------------------------
-  # IR events: union exon lookup REQUIRED (needs intronic/exonic structure)
+  # IR events: direct coordinate reconstruction (no union exon lookup)
+  #
+  # Event coordinates contain everything needed:
+  #   five_prime/three_prime = IR region extent (= retaining exon boundaries)
+  #   ir_split_exons = the other isoform's exon coordinates in this region
+  #     GAIN: ir_split = dominant's split exon coordinates
+  #     LOSS: ir_split = comparator's split exon coordinates
   # -------------------------------------------------------------------
   if (event_type %in% c("IR", "IR_diff_5", "IR_diff_3", "IR_diff_5_3")) {
-    event_ues <- find_event_union_exons(event, union_exons)
-    if (nrow(event_ues) == 0) {
-      warning(sprintf("No union exons found for %s event", event$event_type))
-      return(exons)
-    }
-
     ir_start <- min(event$five_prime, event$three_prime)
     ir_end <- max(event$five_prime, event$three_prime)
 
+    # Get metadata for new exon creation
+    meta_chr <- if (nrow(exons) > 0) exons$chr[1] else event$chr
+    meta_strand <- if (nrow(exons) > 0) exons$strand[1] else event$strand
+    meta_gene <- if (nrow(exons) > 0) exons$gene_id[1] else event$gene_id
+    meta_tx <- if (nrow(exons) > 0) exons$transcript_id[1] else NA_character_
+
     if (direction == "GAIN") {
-      # Comparator retains intron → split into multiple exons (dominant)
+      # Comparator retained intron → split into dominant's exons
+      # 1. Remove the comp exon spanning the IR region
       for (i in seq_len(nrow(exons))) {
         if (exons$exon_start[i] <= ir_start && exons$exon_end[i] >= ir_end) {
           exons <- exons[-i, ]
@@ -462,46 +469,33 @@ apply_event_union_based <- function(exons, event, union_exons) {
         }
       }
 
+      # 2. Add dominant's split exons directly from ir_split_exons coordinates
       if (!is.na(event$ir_split_exons) && event$ir_split_exons != "") {
-        split_exons_ues <- parse_and_find_union_exons(event$ir_split_exons, union_exons, event$gene_id)
-        if (nrow(split_exons_ues) > 0) {
-          exons <- add_union_exons(exons, split_exons_ues, event$strand)
-        } else {
-          warning("ir_split_exons specified but no matching union exons found")
+        split_ranges <- strsplit(event$ir_split_exons, ",")[[1]]
+        for (range_str in split_ranges) {
+          coords <- as.integer(strsplit(trimws(range_str), "-")[[1]])
+          new_exon <- tibble(
+            chr = meta_chr, exon_start = coords[1], exon_end = coords[2],
+            strand = meta_strand, gene_id = meta_gene, transcript_id = meta_tx
+          )
+          exons <- bind_rows(exons, new_exon)
         }
+        exons <- exons %>% arrange(exon_start)
       } else {
-        warning("IR GAIN event missing ir_split_exons field - cannot reconstruct properly")
+        warning("IR GAIN event missing ir_split_exons field - cannot split properly")
       }
 
     } else {
-      # IR LOSS: replace comp's split exons with dominant's retained region
-      all_ues_in_region <- event_ues
+      # IR LOSS: dominant retained intron → merge comp's split exons
+      # 1. Remove comp exons overlapping the IR region
+      exons <- exons %>% filter(!(exon_start <= ir_end & exon_end >= ir_start))
 
-      if (!is.na(event$ir_split_exons) && event$ir_split_exons != "") {
-        exonic_ues <- parse_and_find_union_exons(event$ir_split_exons, union_exons, event$gene_id)
-
-        if (nrow(exonic_ues) > 0 && nrow(all_ues_in_region) > 0) {
-          ir_region_start <- min(all_ues_in_region$start)
-          ir_region_end   <- max(all_ues_in_region$end)
-          exons <- exons %>%
-            filter(!(exon_start <= ir_region_end & exon_end >= ir_region_start))
-
-          exons <- add_union_exons(exons, exonic_ues, event$strand)
-
-          intronic_ues <- all_ues_in_region %>%
-            anti_join(exonic_ues, by = c("start", "end", "chr", "strand"))
-          if (nrow(intronic_ues) > 0) {
-            exons <- add_union_exons(exons, intronic_ues, event$strand)
-          }
-        }
-      } else {
-        merged_ue <- all_ues_in_region %>%
-          summarize(
-            chr = first(chr), start = min(start), end = max(end),
-            strand = first(strand), gene_id = first(gene_id)
-          )
-        exons <- add_union_exons(exons, merged_ue, event$strand)
-      }
+      # 2. Add one merged exon = the dominant's retained region
+      merged_exon <- tibble(
+        chr = meta_chr, exon_start = ir_start, exon_end = ir_end,
+        strand = meta_strand, gene_id = meta_gene, transcript_id = meta_tx
+      )
+      exons <- bind_rows(exons, merged_exon) %>% arrange(exon_start)
     }
     return(exons)
   }
@@ -592,6 +586,23 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
       warning(sprintf("Error applying %s event: %s", event$event_type, e$message))
       reconstructed
     })
+  }
+
+  # Pre-merge orphan removal: terminal events may mark comp exons as orphans
+  # that need to be removed. If these orphans are adjacent to internally-modified
+  # exons, the merge step would erroneously consolidate them. Remove first.
+  if (nrow(terminal_events) > 0) {
+    for (i in seq_len(nrow(terminal_events))) {
+      te <- terminal_events[i, ]
+      if (!is.na(te$orphan_terminal_exons) && te$orphan_terminal_exons != "") {
+        ranges_list <- strsplit(te$orphan_terminal_exons, ",")[[1]]
+        for (range_str in ranges_list) {
+          coords <- as.integer(strsplit(trimws(range_str), "-")[[1]])
+          reconstructed <- reconstructed %>%
+            filter(!(exon_start >= coords[1] & exon_end <= coords[2]))
+        }
+      }
+    }
   }
 
   # Merge after internal events to consolidate structure
