@@ -40,10 +40,12 @@ if (length(args) == 0) {
   cat("\nOptions:\n")
   cat("  --gtf              Output GTF file with all isoforms\n")
   cat("  --fasta            Output FASTA file with isoform sequences\n")
+  cat("  --protein          Output protein FASTA (translated CDS + Uniprot canonical)\n")
+  cat("  --uniprot_file <f> Local Uniprot FASTA (default: fetch from API)\n")
   cat("  --no-expr          Skip expression calculation\n")
   cat("\nExamples:\n")
   cat("  Rscript gene_isoform_annotation.R MTCL1\n")
-  cat("  Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta\n")
+  cat("  Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta --protein\n")
   cat("  Rscript gene_isoform_annotation.R ENSG00000168502 --no-expr\n")
   stop("No gene name or ID provided")
 }
@@ -53,7 +55,19 @@ GENE_INPUT <- args[1]
 # Parse optional flags
 OUTPUT_GTF <- "--gtf" %in% args
 OUTPUT_FASTA <- "--fasta" %in% args
+OUTPUT_PROTEIN <- "--protein" %in% args
 INCLUDE_EXPRESSION <- !"--no-expr" %in% args
+
+# Parse --uniprot_file option (takes a value argument)
+UNIPROT_FILE <- NULL
+if ("--uniprot_file" %in% args) {
+  uf_idx <- which(args == "--uniprot_file")
+  if (uf_idx < length(args)) {
+    UNIPROT_FILE <- args[uf_idx + 1]
+  } else {
+    stop("ERROR: --uniprot_file requires a file path argument")
+  }
+}
 
 # Determine if input is Ensembl ID or gene name
 if (grepl("^ENSG[0-9]+", GENE_INPUT)) {
@@ -81,11 +95,13 @@ SQANTI_CLASSIFICATION <- "/Users/petecastaldi/claude_projects/nmd/results/sqanti
 SQANTI_GTF_INDEXED <- "/Users/petecastaldi/claude_projects/nmd/results/sqanti_runs/isoseq_sqanti3_filtered/sqanti3_corrected.sorted.gtf.gz"
 DGELIST_RDS <- "/Users/petecastaldi/claude_projects/nmd/results/rds/dge_isoform_2026.1.20.rds"
 SQANTI_FASTA <- "/Users/petecastaldi/claude_projects/nmd/reference_files/gencode49_merged_collapsed_2025.12.21.fa.gz"
+SQANTI_PROTEIN_FASTA <- "/Users/petecastaldi/claude_projects/nmd/results/sqanti_runs/isoseq_sqanti3_filtered/sqanti3_corrected.faa"
 
 # Output files (will be set after gene name is resolved)
 OUTPUT_TSV <- NULL
 OUTPUT_GTF_FILE <- NULL
 OUTPUT_FASTA_FILE <- NULL
+OUTPUT_PROTEIN_FILE <- NULL
 
 # Cell types for expression data
 CELL_TYPES <- c("DD_ALI", "DD", "DO_ALI", "AT2", "FB", "MV")
@@ -175,8 +191,8 @@ get_cds_info <- function(gtf, transcript_id) {
   if (length(cds) == 0) {
     return(list(
       has_cds = FALSE,
-      cds_length = NA,
-      protein_length = NA,
+      cds_length_nt = NA,
+      cds_length_aa = NA,
       cds_start = NA,
       cds_end = NA
     ))
@@ -189,8 +205,8 @@ get_cds_info <- function(gtf, transcript_id) {
 
   return(list(
     has_cds = TRUE,
-    cds_length = cds_length,
-    protein_length = floor(cds_length / 3),
+    cds_length_nt = cds_length,
+    cds_length_aa = floor(cds_length / 3),
     cds_start = cds_start,
     cds_end = cds_end
   ))
@@ -235,13 +251,184 @@ get_tss_tes <- function(gtf, transcript_id) {
 }
 
 # =============================================================================
+# HELPER FUNCTIONS FOR PROTEIN TRANSLATION
+# =============================================================================
+
+get_cds_transcript_coords <- function(exons, cds_features, strand) {
+  # Map genomic CDS boundaries to 1-based transcript-relative positions
+  # exons: GRanges of exons for this transcript (ordered by genomic position)
+  # cds_features: GRanges of CDS features for this transcript
+  # strand: "+" or "-"
+  # Returns list(tx_start, tx_end) — 1-based positions within the mRNA sequence
+
+  if (length(cds_features) == 0) return(NULL)
+
+  exons <- exons[order(start(exons))]
+
+  # For minus strand, transcript order is reverse of genomic order
+  if (strand == "-") {
+    exon_order <- rev(seq_along(exons))
+  } else {
+    exon_order <- seq_along(exons)
+  }
+
+  # Build cumulative exon lengths in transcript order
+  exon_widths <- width(exons)[exon_order]
+  cumulative <- c(0, cumsum(exon_widths))
+
+  # CDS genomic boundaries
+  cds_start_genomic <- min(start(cds_features))
+  cds_end_genomic <- max(end(cds_features))
+
+  # Find transcript-relative CDS start
+  tx_cds_start <- NA
+  tx_cds_end <- NA
+
+  for (idx in seq_along(exon_order)) {
+    ei <- exon_order[idx]
+    e_start <- start(exons)[ei]
+    e_end <- end(exons)[ei]
+
+    if (strand == "+") {
+      # CDS start: first base of CDS
+      if (is.na(tx_cds_start) && cds_start_genomic >= e_start && cds_start_genomic <= e_end) {
+        offset_in_exon <- cds_start_genomic - e_start
+        tx_cds_start <- cumulative[idx] + offset_in_exon + 1
+      }
+      # CDS end: last base of CDS
+      if (is.na(tx_cds_end) && cds_end_genomic >= e_start && cds_end_genomic <= e_end) {
+        offset_in_exon <- cds_end_genomic - e_start
+        tx_cds_end <- cumulative[idx] + offset_in_exon + 1
+      }
+    } else {
+      # Minus strand: CDS end (highest genomic coord) maps to transcript start
+      if (is.na(tx_cds_start) && cds_end_genomic >= e_start && cds_end_genomic <= e_end) {
+        offset_in_exon <- e_end - cds_end_genomic
+        tx_cds_start <- cumulative[idx] + offset_in_exon + 1
+      }
+      # CDS start (lowest genomic coord) maps to transcript end
+      if (is.na(tx_cds_end) && cds_start_genomic >= e_start && cds_start_genomic <= e_end) {
+        offset_in_exon <- e_end - cds_start_genomic
+        tx_cds_end <- cumulative[idx] + offset_in_exon + 1
+      }
+    }
+  }
+
+  if (is.na(tx_cds_start) || is.na(tx_cds_end)) return(NULL)
+
+  # Sanity check: mapped CDS length should equal sum of CDS feature widths
+  expected_cds_len <- sum(width(cds_features))
+  actual_cds_len <- tx_cds_end - tx_cds_start + 1
+  if (actual_cds_len != expected_cds_len) {
+    warning(paste("CDS length mismatch - expected:", expected_cds_len,
+                  "actual:", actual_cds_len))
+    return(NULL)
+  }
+
+  return(list(tx_start = tx_cds_start, tx_end = tx_cds_end))
+}
+
+translate_cds <- function(transcript_seq, tx_cds_start, tx_cds_end) {
+  # Extract CDS subsequence from transcript DNAString and translate to protein
+  # transcript_seq: DNAString of the full transcript
+  # tx_cds_start, tx_cds_end: 1-based transcript-relative CDS positions
+  # Returns: AAString of protein sequence, or NA on failure
+
+  tryCatch({
+    cds_seq <- Biostrings::subseq(transcript_seq, start = tx_cds_start, end = tx_cds_end)
+    protein <- Biostrings::translate(cds_seq)
+    return(protein)
+  }, error = function(e) {
+    return(NA)
+  })
+}
+
+fetch_uniprot_canonical <- function(gene_name) {
+  # Fetch canonical Uniprot protein sequence for a human gene via REST API
+  # Returns list(header, sequence) or NULL on failure
+
+  encoded_gene <- utils::URLencode(gene_name, reserved = TRUE)
+  url <- paste0(
+    "https://rest.uniprot.org/uniprotkb/search?query=gene_exact:",
+    encoded_gene,
+    "+AND+organism_id:9606+AND+reviewed:true&format=fasta"
+  )
+
+  tryCatch({
+    old_timeout <- getOption("timeout")
+    options(timeout = 30)
+    on.exit(options(timeout = old_timeout), add = TRUE)
+    response <- readLines(url, warn = FALSE)
+
+    if (length(response) == 0) {
+      message(paste("    WARNING: No Uniprot entry found for", gene_name))
+      return(NULL)
+    }
+
+    # Parse FASTA: find header lines
+    header_idx <- grep("^>", response)
+    if (length(header_idx) == 0) return(NULL)
+
+    # Take first (canonical) entry
+    header <- response[header_idx[1]]
+    if (length(header_idx) > 1) {
+      seq_lines <- response[(header_idx[1] + 1):(header_idx[2] - 1)]
+    } else {
+      seq_lines <- response[(header_idx[1] + 1):length(response)]
+    }
+    sequence <- paste(seq_lines, collapse = "")
+
+    return(list(header = header, sequence = sequence))
+  }, error = function(e) {
+    message(paste("    WARNING: Failed to fetch Uniprot sequence:", e$message))
+    return(NULL)
+  })
+}
+
+read_uniprot_from_file <- function(file_path, gene_name) {
+  # Read a local Uniprot FASTA and find the entry matching gene_name
+  # Returns list(header, sequence) or NULL if not found
+
+  tryCatch({
+    lines <- readLines(file_path, warn = FALSE)
+    header_idx <- grep("^>", lines)
+
+    if (length(header_idx) == 0) return(NULL)
+
+    # Search headers for gene name (Uniprot format: >sp|ACCESSION|GENE_HUMAN ...)
+    # Also check GN=GENE_NAME in the header
+    for (i in seq_along(header_idx)) {
+      hdr <- lines[header_idx[i]]
+      # Match gene name in sp|...|GENE_HUMAN or GN=GENE patterns
+      gene_pattern <- paste0("\\b", gene_name, "[_ ]|GN=", gene_name, "\\b")
+      if (grepl(gene_pattern, hdr, ignore.case = TRUE, perl = TRUE)) {
+        # Extract sequence lines
+        if (i < length(header_idx)) {
+          seq_lines <- lines[(header_idx[i] + 1):(header_idx[i + 1] - 1)]
+        } else {
+          seq_lines <- lines[(header_idx[i] + 1):length(lines)]
+        }
+        sequence <- paste(seq_lines, collapse = "")
+        return(list(header = hdr, sequence = sequence))
+      }
+    }
+
+    message(paste("    WARNING: Gene", gene_name, "not found in Uniprot file"))
+    return(NULL)
+  }, error = function(e) {
+    message(paste("    WARNING: Failed to read Uniprot file:", e$message))
+    return(NULL)
+  })
+}
+
+# =============================================================================
 # VALIDATION CHECKS
 # =============================================================================
 
 message("====================================================================")
 message("Gene Isoform Annotation Pipeline")
 message("====================================================================")
-message(paste("Gene:", GENE_NAME))
+message(paste("Gene:", GENE_INPUT))
 message(paste("Date:", Sys.Date()))
 message("")
 
@@ -260,9 +447,13 @@ if (INCLUDE_EXPRESSION) {
   files_to_check["DGEList RDS"] <- DGELIST_RDS
 }
 
-if (OUTPUT_FASTA) {
+if (OUTPUT_FASTA || OUTPUT_PROTEIN) {
   files_to_check["GENCODE FASTA"] <- GENCODE_FASTA
   files_to_check["SQANTI FASTA"] <- SQANTI_FASTA
+}
+
+if (OUTPUT_PROTEIN && file.exists(SQANTI_PROTEIN_FASTA)) {
+  files_to_check["SQANTI Protein FASTA"] <- SQANTI_PROTEIN_FASTA
 }
 
 missing_files <- c()
@@ -285,11 +476,16 @@ if (Sys.which("tabix") == "") {
   stop("ERROR: tabix command not found. Install with: conda install -c bioconda htslib")
 }
 
-# Check for Biostrings if FASTA output requested
-if (OUTPUT_FASTA) {
+# Check for Biostrings if FASTA or protein output requested
+if (OUTPUT_FASTA || OUTPUT_PROTEIN) {
   if (!requireNamespace("Biostrings", quietly = TRUE)) {
-    stop("ERROR: Biostrings package required for FASTA output.\nInstall with: BiocManager::install('Biostrings')")
+    stop("ERROR: Biostrings package required for FASTA/protein output.\nInstall with: BiocManager::install('Biostrings')")
   }
+}
+
+# Validate --uniprot_file if provided
+if (!is.null(UNIPROT_FILE) && !file.exists(UNIPROT_FILE)) {
+  stop(paste("ERROR: Uniprot file not found:", UNIPROT_FILE))
 }
 
 message("")
@@ -307,7 +503,8 @@ message("====================================================================")
 if (SEARCH_BY == "name") {
   message(paste("  Searching by gene name:", GENE_NAME))
   gene_lines <- system(
-    paste0("grep 'gene_name \"", GENE_NAME, "\"' ", GENCODE_GTF_UNINDEXED, " | grep -w gene"),
+    paste0("grep 'gene_name \"", GENE_NAME, "\"' ", GENCODE_GTF_UNINDEXED,
+           " | awk -F'\\t' '$3 == \"gene\"'"),
     intern = TRUE
   )
 
@@ -317,6 +514,7 @@ if (SEARCH_BY == "name") {
 
   gene_id <- sub('.*gene_id "([^"]+)".*', '\\1', gene_lines[1])
   gene_name_found <- sub('.*gene_name "([^"]+)".*', '\\1', gene_lines[1])
+  GENE_NAME <- gene_name_found  # Use canonical GENCODE name for output files
 
   message(paste("  Found gene ID:", gene_id))
   message(paste("  Gene name:", gene_name_found))
@@ -353,6 +551,7 @@ message(paste("  Gene coordinates:", paste0(gene_chr, ":", gene_start, "-", gene
 OUTPUT_TSV <- paste0("isoform_annotation_", GENE_NAME, ".tsv")
 OUTPUT_GTF_FILE <- paste0("isoform_annotation_", GENE_NAME, ".gtf")
 OUTPUT_FASTA_FILE <- paste0("isoform_annotation_", GENE_NAME, ".fasta")
+OUTPUT_PROTEIN_FILE <- paste0("protein_sequences_", GENE_NAME, ".fasta")
 
 message("")
 
@@ -387,7 +586,7 @@ unlink(temp_gtf)
 gencode_transcripts <- gencode[gencode$type == "transcript" & gencode$gene_id == gene_id]
 message(paste("  Found", length(gencode_transcripts), "GENCODE transcripts"))
 
-gencode_results <- data.frame()
+gencode_result_list <- vector("list", length(gencode_transcripts))
 
 message("  Extracting detailed annotations...")
 for (i in seq_along(gencode_transcripts)) {
@@ -417,7 +616,7 @@ for (i in seq_along(gencode_transcripts)) {
     coding_source <- "GENCODE_CDS"
   }
 
-  gencode_results <- rbind(gencode_results, data.frame(
+  gencode_result_list[[i]] <- data.frame(
     isoform_id = tx_id,
     isoform_name = ifelse(!is.na(tx$transcript_name), tx$transcript_name, tx_id),
     source = "GENCODE",
@@ -431,15 +630,17 @@ for (i in seq_along(gencode_transcripts)) {
     junctions = exon_info$junctions,
     cds_start = cds_info$cds_start,
     cds_end = cds_info$cds_end,
-    cds_length = cds_info$cds_length,
-    protein_length = cds_info$protein_length,
+    cds_length_nt = cds_info$cds_length_nt,
+    cds_length_aa = cds_info$cds_length_aa,
+    in_frame = if (cds_info$has_cds) as.integer(cds_info$cds_length_nt %% 3 == 0) else NA_integer_,
     utr5_length = utr_info$utr5_length,
     utr3_length = utr_info$utr3_length,
     is_protein_coding = is_protein_coding,
     coding_source = coding_source,
     stringsAsFactors = FALSE
-  ))
+  )
 }
+gencode_results <- bind_rows(gencode_result_list)
 
 message(paste("  Extracted", nrow(gencode_results), "GENCODE isoforms with full annotations"))
 message("")
@@ -467,6 +668,7 @@ sqanti_target <- sqanti_class %>%
 message(paste("  Found", nrow(sqanti_target), "SQANTI isoforms"))
 
 sqanti_results <- data.frame()
+sqanti_features <- NULL
 
 if (nrow(sqanti_target) > 0) {
   # Part B: Get exon structures from tabix-indexed SQANTI GTF
@@ -476,7 +678,6 @@ if (nrow(sqanti_target) > 0) {
   tabix_cmd <- sprintf("tabix %s %s:%d-%d", SQANTI_GTF_INDEXED, gene_chr, gene_start, gene_end)
   sqanti_lines <- system(tabix_cmd, intern = TRUE)
 
-  sqanti_features <- NULL
   if (length(sqanti_lines) > 0) {
     message(paste("    Retrieved", length(sqanti_lines), "GTF lines"))
 
@@ -493,14 +694,15 @@ if (nrow(sqanti_target) > 0) {
 
   # Process each SQANTI isoform
   message("  Extracting SQANTI isoform annotations...")
-  for (i in 1:nrow(sqanti_target)) {
+  sqanti_result_list <- vector("list", nrow(sqanti_target))
+  for (i in seq_len(nrow(sqanti_target))) {
     row <- sqanti_target[i, ]
     pb_id <- row$isoform
 
     # Get exon structure and CDS info from GTF if available
     exon_info <- list(exons = NA, junctions = NA, n_exons = row$exons)
     tss_tes <- list(tss = NA, tes = NA)
-    cds_info <- list(has_cds = FALSE, cds_start = NA, cds_end = NA, cds_length = NA, protein_length = NA)
+    cds_info <- list(has_cds = FALSE, cds_start = NA, cds_end = NA, cds_length_nt = NA, cds_length_aa = NA)
 
     if (!is.null(sqanti_features)) {
       # Check if this isoform is in the GTF
@@ -515,8 +717,8 @@ if (nrow(sqanti_target) > 0) {
 
     # Use SQANTI classification for CDS/protein if GTF doesn't have it
     if (!cds_info$has_cds) {
-      cds_info$cds_length <- ifelse(!is.na(row$CDS_length), row$CDS_length, NA)
-      cds_info$protein_length <- ifelse(!is.na(row$ORF_length), row$ORF_length, NA)
+      cds_info$cds_length_nt <- ifelse(!is.na(row$CDS_length), row$CDS_length, NA)
+      cds_info$cds_length_aa <- ifelse(!is.na(row$ORF_length), row$ORF_length, NA)
     }
 
     # Calculate UTR lengths from TSS/TES/CDS if available
@@ -536,7 +738,7 @@ if (nrow(sqanti_target) > 0) {
       coding_source <- "SQANTI"
     }
 
-    sqanti_results <- rbind(sqanti_results, data.frame(
+    sqanti_result_list[[i]] <- data.frame(
       isoform_id = pb_id,
       isoform_name = pb_id,
       source = "SQANTI",
@@ -550,15 +752,17 @@ if (nrow(sqanti_target) > 0) {
       junctions = exon_info$junctions,
       cds_start = cds_info$cds_start,
       cds_end = cds_info$cds_end,
-      cds_length = cds_info$cds_length,
-      protein_length = cds_info$protein_length,
+      cds_length_nt = cds_info$cds_length_nt,
+      cds_length_aa = cds_info$cds_length_aa,
+      in_frame = if (!is.na(cds_info$cds_length_nt)) as.integer(cds_info$cds_length_nt %% 3 == 0) else NA_integer_,
       utr5_length = utr_info$utr5_length,
       utr3_length = utr_info$utr3_length,
       is_protein_coding = is_protein_coding,
       coding_source = coding_source,
       stringsAsFactors = FALSE
-    ))
+    )
   }
+  sqanti_results <- bind_rows(sqanti_result_list)
 
   message(paste("  Extracted", nrow(sqanti_results), "SQANTI isoforms"))
 }
@@ -578,83 +782,83 @@ if (INCLUDE_EXPRESSION) {
   message("====================================================================")
   message(paste("  Total isoforms:", nrow(all_isoforms)))
 
-# Load DGEList
-message("  Loading DGEList...")
-dge_isoform <- readRDS(DGELIST_RDS)
+  # Load DGEList
+  message("  Loading DGEList...")
+  dge_isoform <- readRDS(DGELIST_RDS)
 
-# Get normalized CPM and raw counts
-message("  Calculating normalized CPM...")
-cpm_normalized <- cpm(dge_isoform, normalized = TRUE, log = FALSE)
-raw_counts <- dge_isoform$counts
+  # Get normalized CPM and raw counts
+  message("  Calculating normalized CPM...")
+  cpm_normalized <- cpm(dge_isoform, normalized = TRUE, log = FALSE)
+  raw_counts <- dge_isoform$counts
 
-# Get transcript IDs from genes component
-transcript_ids <- dge_isoform$genes$txid
-rownames(cpm_normalized) <- transcript_ids
-rownames(raw_counts) <- transcript_ids
+  # Get transcript IDs from genes component
+  transcript_ids <- dge_isoform$genes$txid
+  rownames(cpm_normalized) <- transcript_ids
+  rownames(raw_counts) <- transcript_ids
 
-# Get sample metadata
-sample_info <- dge_isoform$samples
+  # Get sample metadata
+  sample_info <- dge_isoform$samples
 
-# Validate required columns
-if (!"bamid" %in% colnames(sample_info)) {
-  stop("ERROR: 'bamid' column not found in DGEList$samples. Available columns: ",
-       paste(colnames(sample_info), collapse = ", "))
-}
-if (!"treatment" %in% colnames(sample_info)) {
-  stop("ERROR: 'treatment' column not found in DGEList$samples")
-}
-if (!"ct" %in% colnames(sample_info)) {
-  stop("ERROR: 'ct' column not found in DGEList$samples")
-}
+  # Validate required columns
+  if (!"bamid" %in% colnames(sample_info)) {
+    stop("ERROR: 'bamid' column not found in DGEList$samples. Available columns: ",
+         paste(colnames(sample_info), collapse = ", "))
+  }
+  if (!"treatment" %in% colnames(sample_info)) {
+    stop("ERROR: 'treatment' column not found in DGEList$samples")
+  }
+  if (!"ct" %in% colnames(sample_info)) {
+    stop("ERROR: 'ct' column not found in DGEList$samples")
+  }
 
-# Map cell type names to DGEList codes
-ct_map <- c(
-  "DD_ALI" = "DD_ALI",
-  "DD" = "DD",
-  "DO_ALI" = "DO",
-  "AT2" = "AT",
-  "FB" = "FB",
-  "MV" = "MV"
-)
+  # Map cell type names to DGEList codes
+  ct_map <- c(
+    "DD_ALI" = "DD_ALI",
+    "DD" = "DD",
+    "DO_ALI" = "DO",
+    "AT2" = "AT",
+    "FB" = "FB",
+    "MV" = "MV"
+  )
 
-# Calculate mean CPM and total raw read counts per cell type and condition.
-# For each cell type, columns are added in order:
-#   expr_DMSO_<ct>, total_reads_DMSO_<ct>, expr_Smg1i_<ct>, total_reads_Smg1i_<ct>
-message("  Calculating expression and read counts per cell type...")
-for (ct_name in names(ct_map)) {
-  ct_code <- ct_map[ct_name]
-  ct_suffix <- tolower(gsub("_", "", ct_name))
+  # Calculate mean CPM and total raw read counts per cell type and condition.
+  # For each cell type, columns are added in order:
+  #   expr_DMSO_<ct>, total_reads_DMSO_<ct>, expr_Smg1i_<ct>, total_reads_Smg1i_<ct>
+  message("  Calculating expression and read counts per cell type...")
+  for (ct_name in names(ct_map)) {
+    ct_code <- ct_map[ct_name]
+    ct_suffix <- tolower(gsub("_", "", ct_name))
 
-  for (trt in c("DMSO", "Smg1i")) {
-    trt_samples <- sample_info %>%
-      filter(treatment == trt, ct == ct_code) %>%
-      pull(bamid)
+    for (trt in c("DMSO", "Smg1i")) {
+      trt_samples <- sample_info %>%
+        filter(treatment == trt, ct == ct_code) %>%
+        pull(bamid)
 
-    expr_col  <- paste0("expr_", trt, "_", ct_suffix)
-    reads_col <- paste0("total_reads_", trt, "_", ct_suffix)
+      expr_col  <- paste0("expr_", trt, "_", ct_suffix)
+      reads_col <- paste0("total_reads_", trt, "_", ct_suffix)
 
-    if (length(trt_samples) > 0) {
-      # Mean TMM-normalized CPM across replicates
-      cpm_means <- rowMeans(cpm_normalized[, trt_samples, drop = FALSE])
-      all_isoforms[[expr_col]] <- cpm_means[all_isoforms$isoform_id]
+      if (length(trt_samples) > 0) {
+        # Mean TMM-normalized CPM across replicates
+        cpm_means <- rowMeans(cpm_normalized[, trt_samples, drop = FALSE])
+        all_isoforms[[expr_col]] <- cpm_means[all_isoforms$isoform_id]
 
-      # Sum of raw counts across replicates
-      read_sums <- rowSums(raw_counts[, trt_samples, drop = FALSE])
-      all_isoforms[[reads_col]] <- read_sums[all_isoforms$isoform_id]
+        # Sum of raw counts across replicates
+        read_sums <- rowSums(raw_counts[, trt_samples, drop = FALSE])
+        all_isoforms[[reads_col]] <- read_sums[all_isoforms$isoform_id]
 
-      n_expressed <- sum(!is.na(all_isoforms[[expr_col]]) & all_isoforms[[expr_col]] > 0)
-      n_missing   <- sum(is.na(all_isoforms[[expr_col]]))
-      message(paste("    ", ct_name, trt, ":", n_expressed, "isoforms with expression > 0"))
-      if (n_missing > 0) {
-        message(paste("      Note:", n_missing, "isoforms not found in DGEList"))
+        n_expressed <- sum(!is.na(all_isoforms[[expr_col]]) & all_isoforms[[expr_col]] > 0)
+        n_missing   <- sum(is.na(all_isoforms[[expr_col]]))
+        message(paste("    ", ct_name, trt, ":", n_expressed, "isoforms with expression > 0"))
+        if (n_missing > 0) {
+          message(paste("      Note:", n_missing, "isoforms not found in DGEList"))
+        }
+      } else {
+        all_isoforms[[expr_col]]  <- NA
+        all_isoforms[[reads_col]] <- NA
+        message(paste("    ", ct_name, trt, ": No samples found"))
       }
-    } else {
-      all_isoforms[[expr_col]]  <- NA
-      all_isoforms[[reads_col]] <- NA
-      message(paste("    ", ct_name, trt, ": No samples found"))
     }
   }
-}
 
   message("")
 } else {
@@ -689,11 +893,6 @@ if (INCLUDE_EXPRESSION) {
   )
 }
 
-# Write TSV
-message(paste("  Writing TSV:", OUTPUT_TSV))
-write_tsv(all_isoforms, OUTPUT_TSV)
-message(paste("    Wrote", nrow(all_isoforms), "isoforms"))
-
 # Optional: Write GTF
 if (OUTPUT_GTF) {
   message(paste("  Writing GTF:", OUTPUT_GTF_FILE))
@@ -702,7 +901,12 @@ if (OUTPUT_GTF) {
   output_gtf <- gencode
 
   if (!is.null(sqanti_features) && length(sqanti_features) > 0) {
-    output_gtf <- c(output_gtf, sqanti_features)
+    # Filter to only isoforms belonging to this gene (exclude overlapping genes)
+    sqanti_gene_ids <- sqanti_target$isoform
+    sqanti_features_filtered <- sqanti_features[
+      sqanti_features$transcript_id %in% sqanti_gene_ids
+    ]
+    output_gtf <- c(output_gtf, sqanti_features_filtered)
   }
 
   # Add chr prefix to seqnames for UCSC browser compatibility
@@ -758,6 +962,219 @@ if (OUTPUT_FASTA) {
   }
 }
 
+# Optional: Write protein FASTA
+if (OUTPUT_PROTEIN) {
+  message(paste("  Writing protein FASTA:", OUTPUT_PROTEIN_FILE))
+
+  library(Biostrings)
+
+  protein_sequences <- AAStringSet()
+
+  # Step 1: Get canonical Uniprot sequence
+  message("    Fetching canonical Uniprot sequence...")
+  if (!is.null(UNIPROT_FILE)) {
+    uniprot <- read_uniprot_from_file(UNIPROT_FILE, GENE_NAME)
+  } else {
+    uniprot <- fetch_uniprot_canonical(GENE_NAME)
+  }
+
+  if (!is.null(uniprot)) {
+    canonical_aa <- AAStringSet(uniprot$sequence)
+    names(canonical_aa) <- sub("^>", "", uniprot$header)
+    protein_sequences <- c(protein_sequences, canonical_aa)
+    message(paste("      Uniprot canonical:", nchar(uniprot$sequence), "aa"))
+  } else {
+    message("      WARNING: No Uniprot canonical sequence available")
+  }
+
+  # Step 2: Load transcript sequences (reuse from FASTA step if available, otherwise load fresh)
+  if (!exists("gencode_fasta") || !exists("sqanti_fasta")) {
+    message("    Loading transcript FASTA files for translation...")
+    gencode_fasta <- readDNAStringSet(GENCODE_FASTA)
+    gencode_fasta_ids <- sub("\\|.*", "", names(gencode_fasta))
+    sqanti_fasta <- readDNAStringSet(SQANTI_FASTA)
+  }
+
+  # Pre-load SQANTI protein FASTA for fallback translation
+  sqanti_protein_fasta <- NULL
+  if (file.exists(SQANTI_PROTEIN_FASTA)) {
+    tryCatch({
+      message("    Loading SQANTI protein FASTA for fallback...")
+      sqanti_protein_fasta <- readAAStringSet(SQANTI_PROTEIN_FASTA)
+      # Headers may be tab-delimited (e.g., "PB.14156.12\tPB.14156.12.p2|...") — keep only first field
+      names(sqanti_protein_fasta) <- sub("\t.*", "", names(sqanti_protein_fasta))
+      message(paste("      Loaded", length(sqanti_protein_fasta), "protein sequences"))
+    }, error = function(e) {
+      message(paste("    WARNING: Failed to read SQANTI protein FASTA:", e$message))
+    })
+  }
+
+  # Step 3: Translate protein-coding isoforms
+  protein_coding <- all_isoforms[all_isoforms$is_protein_coding == TRUE, ]
+  message(paste("    Translating", nrow(protein_coding), "protein-coding isoforms..."))
+
+  n_translated <- 0
+  n_failed <- 0
+  translated_proteins <- list()  # Store translations for UniProt comparison
+
+  for (i in seq_len(nrow(protein_coding))) {
+    iso <- protein_coding[i, ]
+    iso_id <- iso$isoform_id
+    iso_source <- iso$source
+
+    translated <- NULL
+
+    if (iso_source == "GENCODE") {
+      # Get transcript sequence from GENCODE FASTA
+      fasta_match <- which(gencode_fasta_ids == iso_id)
+      if (length(fasta_match) == 0) {
+        n_failed <- n_failed + 1
+        next
+      }
+      tx_seq <- gencode_fasta[[fasta_match[1]]]
+
+      # Get CDS features from GTF
+      cds_feats <- gencode[gencode$type == "CDS" & gencode$transcript_id == iso_id]
+      tx_exons <- gencode[gencode$type == "exon" & gencode$transcript_id == iso_id]
+      if (length(cds_feats) == 0 || length(tx_exons) == 0) {
+        n_failed <- n_failed + 1
+        next
+      }
+
+      strand_char <- as.character(strand(tx_exons)[1])
+      coords <- get_cds_transcript_coords(tx_exons, cds_feats, strand_char)
+      if (is.null(coords)) {
+        n_failed <- n_failed + 1
+        next
+      }
+
+      translated <- translate_cds(tx_seq, coords$tx_start, coords$tx_end)
+
+    } else if (iso_source == "SQANTI") {
+      # Try SQANTI GTF CDS features first
+      has_sqanti_cds <- FALSE
+      if (!is.null(sqanti_features)) {
+        cds_feats <- sqanti_features[sqanti_features$type == "CDS" & sqanti_features$transcript_id == iso_id]
+        tx_exons <- sqanti_features[sqanti_features$type == "exon" & sqanti_features$transcript_id == iso_id]
+        if (length(cds_feats) > 0 && length(tx_exons) > 0) {
+          has_sqanti_cds <- TRUE
+          # Get transcript sequence
+          sq_match <- which(names(sqanti_fasta) == iso_id)
+          if (length(sq_match) > 0) {
+            tx_seq <- sqanti_fasta[[sq_match[1]]]
+            strand_char <- as.character(strand(tx_exons)[1])
+            coords <- get_cds_transcript_coords(tx_exons, cds_feats, strand_char)
+            if (!is.null(coords)) {
+              translated <- translate_cds(tx_seq, coords$tx_start, coords$tx_end)
+            }
+          }
+        }
+      }
+
+      # Fallback: try pre-loaded sqanti3_corrected.faa
+      if (is.null(translated) && !is.null(sqanti_protein_fasta)) {
+        faa_match <- which(names(sqanti_protein_fasta) == iso_id)
+        if (length(faa_match) > 0) {
+          translated <- sqanti_protein_fasta[[faa_match[1]]]
+        }
+      }
+    }
+
+    if (!is.null(translated) && !identical(translated, NA)) {
+      aa_entry <- AAStringSet(translated)
+      names(aa_entry) <- iso_id
+      protein_sequences <- c(protein_sequences, aa_entry)
+      translated_proteins[[iso_id]] <- as.character(translated)
+      n_translated <- n_translated + 1
+    } else {
+      n_failed <- n_failed + 1
+    }
+  }
+
+  message(paste("      Translated:", n_translated, "isoforms"))
+  if (n_failed > 0) {
+    message(paste("      Failed:", n_failed, "isoforms"))
+  }
+
+  # Step 4: Compare translated proteins to UniProt canonical
+  all_isoforms$frame_matches_uniprot <- NA
+  all_isoforms$match_pct_uniprot <- NA_real_
+  all_isoforms$matched_range_uniprot <- NA_character_
+  if (!is.null(uniprot) && length(translated_proteins) > 0) {
+    uniprot_seq <- uniprot$sequence
+    uniprot_len <- nchar(uniprot_seq)
+    message("    Comparing translated proteins to UniProt canonical...")
+    n_match <- 0
+    n_no_match <- 0
+    win_size <- 20
+
+    for (iso_id in names(translated_proteins)) {
+      # Strip trailing stop codon (*) for comparison — UniProt doesn't include it
+      iso_seq <- sub("\\*$", "", translated_proteins[[iso_id]])
+      is_match <- (iso_seq == uniprot_seq) || grepl(iso_seq, uniprot_seq, fixed = TRUE)
+      row_idx <- which(all_isoforms$isoform_id == iso_id)
+
+      if (length(row_idx) == 0) next
+
+      all_isoforms$frame_matches_uniprot[row_idx] <- is_match
+      if (is_match) n_match <- n_match + 1 else n_no_match <- n_no_match + 1
+
+      # Window-based sequence comparison
+      iso_chars <- strsplit(iso_seq, "")[[1]]
+      iso_len <- length(iso_chars)
+
+      if (iso_len < win_size) {
+        # Too short for window analysis — use simple substring check
+        all_isoforms$match_pct_uniprot[row_idx] <- if (grepl(iso_seq, uniprot_seq, fixed = TRUE)) 100 else 0
+        if (grepl(iso_seq, uniprot_seq, fixed = TRUE)) {
+          uni_pos <- regexpr(iso_seq, uniprot_seq, fixed = TRUE)
+          all_isoforms$matched_range_uniprot[row_idx] <- paste0(uni_pos, "-", uni_pos + iso_len - 1)
+        }
+        next
+      }
+
+      n_windows <- iso_len - win_size + 1
+      matches <- logical(n_windows)
+      for (w in seq_len(n_windows)) {
+        window <- paste0(iso_chars[w:(w + win_size - 1)], collapse = "")
+        matches[w] <- grepl(window, uniprot_seq, fixed = TRUE)
+      }
+
+      pct <- round(100 * sum(matches) / n_windows, 1)
+      all_isoforms$match_pct_uniprot[row_idx] <- pct
+
+      # Find longest contiguous matching stretch and its UniProt position
+      if (any(matches)) {
+        rle_m <- rle(matches)
+        longest_idx <- which.max(rle_m$lengths * rle_m$values)
+        run_start <- sum(rle_m$lengths[seq_len(longest_idx - 1)]) + 1
+        run_len <- rle_m$lengths[longest_idx]
+        # Contiguous stretch spans from run_start to run_start + run_len - 1 + win_size - 1
+        stretch_end <- run_start + run_len - 1 + win_size - 1
+        stretch_seq <- paste0(iso_chars[run_start:stretch_end], collapse = "")
+        uni_pos <- regexpr(stretch_seq, uniprot_seq, fixed = TRUE)
+        if (uni_pos > 0) {
+          all_isoforms$matched_range_uniprot[row_idx] <- paste0(uni_pos, "-", uni_pos + nchar(stretch_seq) - 1)
+        }
+      }
+    }
+    message(paste("      Exact/subset match:", n_match, "| Partial:", n_no_match,
+                  "| Not translated:", sum(is.na(all_isoforms$frame_matches_uniprot) & all_isoforms$is_protein_coding)))
+  }
+
+  if (length(protein_sequences) > 0) {
+    writeXStringSet(protein_sequences, OUTPUT_PROTEIN_FILE, format = "fasta")
+    message(paste("    Wrote", length(protein_sequences), "protein sequences to", OUTPUT_PROTEIN_FILE))
+  } else {
+    message("    WARNING: No protein sequences generated")
+  }
+}
+
+# Write TSV (after all columns including frame_matches_uniprot are populated)
+message(paste("  Writing TSV:", OUTPUT_TSV))
+write_tsv(all_isoforms, OUTPUT_TSV)
+message(paste("    Wrote", nrow(all_isoforms), "isoforms"))
+
 message("")
 
 # =============================================================================
@@ -781,6 +1198,7 @@ message("Output files:")
 message(paste("  ", OUTPUT_TSV))
 if (OUTPUT_GTF) message(paste("  ", OUTPUT_GTF_FILE))
 if (OUTPUT_FASTA) message(paste("  ", OUTPUT_FASTA_FILE))
+if (OUTPUT_PROTEIN) message(paste("  ", OUTPUT_PROTEIN_FILE))
 message("")
 message("====================================================================")
 message("DONE!")

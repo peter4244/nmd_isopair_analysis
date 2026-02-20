@@ -13,14 +13,20 @@ Rscript gene_isoform_annotation.R MTCL1
 # 2. Include GTF and FASTA outputs
 Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta
 
-# 3. Skip expression calculation (faster)
+# 3. Include protein translation and UniProt comparison
+Rscript gene_isoform_annotation.R MTCL1 --protein
+
+# 4. All outputs
+Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta --protein
+
+# 5. Skip expression calculation (faster)
 Rscript gene_isoform_annotation.R MTCL1 --no-expr
 
-# 4. Use Ensembl ID instead of gene name
-Rscript gene_isoform_annotation.R ENSG00000168502 --gtf --fasta
+# 6. Use Ensembl ID instead of gene name
+Rscript gene_isoform_annotation.R ENSG00000168502 --gtf --fasta --protein
 ```
 
-**Output:** Tab-separated file with comprehensive isoform annotations (exon structures, CDS positions, UTR lengths, expression levels, and more).
+**Output:** Tab-separated file with comprehensive isoform annotations (exon structures, CDS positions, UTR lengths, expression levels, protein analysis, and more).
 
 **Performance:** ~30-60 seconds per gene using tabix-indexed GTF files.
 
@@ -30,7 +36,7 @@ Rscript gene_isoform_annotation.R ENSG00000168502 --gtf --fasta
 
 ## Required Files
 
-Before running the pipeline, ensure these files are accessible and paths are correctly set in the script (lines 76-83):
+Before running the pipeline, ensure these files are accessible and paths are correctly set in the script (lines 89-98):
 
 ### Input Data Files
 
@@ -44,6 +50,7 @@ Before running the pipeline, ensure these files are accessible and paths are cor
 | **SQANTI GTF (indexed)** | Tabix-indexed PacBio isoforms | ~41 MB | `SQANTI_GTF_INDEXED` |
 | **SQANTI GTF index** | Tabix index for SQANTI | ~224 KB | `<SQANTI_GTF_INDEXED>.tbi` |
 | **SQANTI FASTA** | PacBio transcript sequences | ~497 MB | `SQANTI_FASTA` |
+| **SQANTI Protein FASTA** | Pre-translated PacBio ORFs | varies | `SQANTI_PROTEIN_FASTA` |
 | **DGEList RDS** | Expression data with sample metadata | ~29 MB | `DGELIST_RDS` |
 
 ### Required Preprocessing (One-Time Setup)
@@ -55,8 +62,8 @@ bash preprocess_sqanti_tabix.sh
 ```
 
 This script will:
-1. Create tabix-indexed version of GENCODE GTF (2.9 GB → 140 MB compressed)
-2. Create tabix-indexed version of SQANTI GTF (1.0 GB → 41 MB compressed)
+1. Create tabix-indexed version of GENCODE GTF (2.9 GB -> 140 MB compressed)
+2. Create tabix-indexed version of SQANTI GTF (1.0 GB -> 41 MB compressed)
 3. Generate tabix indices for fast coordinate lookups
 
 **Time:** ~10-15 minutes (one-time setup)
@@ -73,35 +80,15 @@ This script will:
 
 **Input:**
 ```bash
-Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta
+Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta --protein
 ```
 
 **Output Files:**
 ```
-isoform_annotation_MTCL1.tsv    # 58 isoforms with 25 annotation columns
-isoform_annotation_MTCL1.gtf    # 640 genomic features
-isoform_annotation_MTCL1.fasta  # 58 transcript sequences
-```
-
-**TSV Columns (25 total):**
-```
-isoform_id          isoform_name    source      chromosome  strand
-tss                 tes             cds_start   cds_end     transcript_length
-n_exons             is_protein_coding           cds_length  protein_length
-utr5_length         utr3_length
-expr_DMSO_ddali     expr_DMSO_dd    expr_DMSO_doali
-expr_DMSO_at2       expr_DMSO_fb    expr_DMSO_mv
-exons               junctions       coding_source
-```
-
-**Sample Data (first isoform):**
-```
-ENST00000695635.1  MTCL1-216  GENCODE  18  +  8705271  8832780  8706689  8826232
-127510  15  TRUE  5830  1943  984  593
-0.18  0.7  NA  0.42  0  0.11
-8705271_8706713_+:CDS;8718424_8718648_+:CDS;...
-8706713_8718424_+;8718648_8720338_+;...
-GENCODE_biotype
+isoform_annotation_MTCL1.tsv       # 58 isoforms with full annotation columns
+isoform_annotation_MTCL1.gtf       # 640 genomic features
+isoform_annotation_MTCL1.fasta     # 58 transcript sequences
+protein_sequences_MTCL1.fasta      # 42 protein sequences (1 UniProt + 41 translated)
 ```
 
 **Summary Statistics:**
@@ -110,6 +97,7 @@ GENCODE_biotype
 - 58 total isoforms annotated
 - 41 protein coding, 17 non-coding
 - 8-9 isoforms with detectable expression per cell type
+- 3 isoforms with exact/subset match to UniProt canonical protein
 
 ---
 
@@ -142,6 +130,8 @@ GENCODE_biotype
 
 **SQANTI**: Software for characterizing PacBio long-read transcripts, including novel isoforms not in reference annotations.
 
+**UniProt**: The Universal Protein Resource, providing reviewed (Swiss-Prot) canonical protein sequences.
+
 ---
 
 ## What the Pipeline Does
@@ -153,27 +143,30 @@ The Gene Isoform Annotation Pipeline extracts and integrates comprehensive trans
 1. **Reference annotations** from GENCODE (canonical transcripts)
 2. **Novel isoforms** from PacBio long-read sequencing (SQANTI)
 3. **Structural features** (exons, CDS regions, UTRs, splice junctions)
-4. **Expression data** (baseline DMSO levels across 6 lung cell types)
+4. **Expression data** (DMSO and Smg1i levels across 6 lung cell types)
+5. **Protein analysis** (CDS translation, UniProt comparison)
 
 ### Step-by-Step Process
 
 #### Step 1: Gene Identification
 - Accepts either gene name (e.g., "MTCL1") or Ensembl ID (e.g., "ENSG00000168502")
-- Searches GENCODE GTF to find gene ID and confirm gene name
+- Searches GENCODE GTF to find gene ID and confirm canonical gene name
 - Extracts gene coordinates (chromosome, start, end) for tabix queries
 - Validates gene exists in reference genome
 
 #### Step 2: GENCODE Isoform Extraction
 - Queries tabix-indexed GENCODE GTF by gene coordinates (<1 second)
+- Filters results to the target gene ID (excludes overlapping genes)
 - Parses GTF to extract transcript features
 - For each transcript:
   - **Exon coordinates** with functional types (CDS, 5'UTR, 3'UTR, mixed)
   - **Splice junctions** between consecutive exons
   - **TSS/TES** (transcription start/end sites, strand-aware)
   - **CDS boundaries** (genomic start/end of coding sequence)
-  - **UTR lengths** calculated from TSS→CDS (5'UTR) and CDS→TES (3'UTR)
+  - **UTR lengths** calculated from TSS->CDS (5'UTR) and CDS->TES (3'UTR)
   - **Protein coding status** from transcript biotype and CDS presence
-  - **Protein length** calculated from CDS length ÷ 3
+  - **CDS length** in nucleotides and amino acids
+  - **In-frame status** (whether CDS length is divisible by 3)
 
 **Key feature:** Strand-aware calculations ensure correct UTR assignment:
 - **Plus strand** (+): TSS < CDS_start < CDS_end < TES
@@ -201,40 +194,135 @@ For each SQANTI isoform:
 **Data Source:** DGEList object containing:
 - TMM-normalized counts from edgeR
 - Sample metadata (treatment, cell type, replicate info)
-- 38 samples across 6 cell types × 2 treatments (DMSO + Smg1i)
+- 38 samples across 6 cell types x 2 treatments (DMSO + Smg1i)
 
 **Process:**
 1. Load DGEList and calculate normalized CPM (counts per million)
-2. Filter samples: Keep only DMSO (control) samples per cell type
-3. Calculate mean DMSO expression across biological replicates
-4. Match isoforms by transcript ID (handles versioned IDs)
-5. Round to 2 significant figures for readability
+2. For each cell type and each treatment (DMSO and Smg1i):
+   - Calculate mean CPM across biological replicates
+   - Calculate sum of raw read counts across replicates
+3. Match isoforms by transcript ID (handles versioned IDs)
+4. Round CPM values to 2 significant figures for readability
 
-**Result:** Cell-type-specific baseline expression (6 columns)
-- Values represent transcript abundance in untreated cells
+**Result:** Per-cell-type expression and read count columns for both conditions
+- `expr_DMSO_{ct}` / `expr_Smg1i_{ct}` - Mean TMM-normalized CPM
+- `total_reads_DMSO_{ct}` / `total_reads_Smg1i_{ct}` - Sum of raw read counts
+- `total_reads_all_samples` - Grand total across all samples
 - Missing values (NA) indicate isoform not detected in sequencing
-- Zero values indicate detected but not expressed
 
-#### Step 5: Output Generation
+#### Step 5: Protein Translation and UniProt Comparison (Optional, `--protein`)
+
+When the `--protein` flag is used, the pipeline performs CDS translation and compares each predicted protein to the UniProt canonical sequence. See [Protein Analysis Algorithms](#protein-analysis-algorithms) for full details.
+
+**Process:**
+1. Fetch the canonical UniProt protein sequence (via REST API or local file)
+2. Load transcript FASTA sequences (GENCODE + SQANTI)
+3. Translate each protein-coding isoform's CDS to amino acids
+4. Compare each translated protein to the UniProt canonical
+5. Write all protein sequences to a FASTA file
+
+**Translation sources (in order of priority):**
+- **GENCODE isoforms**: CDS features from GTF mapped to transcript coordinates, then translated via `Biostrings::translate()`
+- **SQANTI isoforms**: CDS features from SQANTI GTF if available, otherwise falls back to pre-translated ORFs from `sqanti3_corrected.faa`
+
+**UniProt comparison columns added to TSV:**
+- `frame_matches_uniprot` - TRUE if exact match or perfect substring of canonical
+- `match_pct_uniprot` - Percentage of sequence matching the canonical (sliding window)
+- `matched_range_uniprot` - UniProt amino acid range of the longest identical stretch
+
+#### Step 6: Output Generation
 
 **TSV (always created):**
-- 25 columns of integrated annotation data
-- One row per isoform
+- One row per isoform with all annotation columns
 - Expression values rounded to 2 significant figures
+- Protein comparison columns included when `--protein` is used
 - Ready for downstream analysis in R/Python
 
 **GTF (optional, `--gtf` flag):**
 - Contains all genomic features for visualization
-- Combines GENCODE + SQANTI features
+- Combines GENCODE + SQANTI features (filtered to target gene only)
 - Compatible with genome browsers (IGV, UCSC)
 
 **FASTA (optional, `--fasta` flag):**
 - Transcript sequences for all isoforms
 - Extracts from two sources:
-  - GENCODE transcripts → GENCODE FASTA
-  - SQANTI transcripts → SQANTI FASTA
+  - GENCODE transcripts -> GENCODE FASTA
+  - SQANTI transcripts -> SQANTI FASTA
 - Handles pipe-delimited GENCODE headers automatically
 - Useful for sequence analysis, primer design, structure prediction
+
+**Protein FASTA (optional, `--protein` flag):**
+- Protein sequences for all translated isoforms
+- First entry is the UniProt canonical sequence (with full header)
+- Subsequent entries are CDS translations keyed by isoform ID
+- Useful for multiple sequence alignment, domain analysis, structure prediction
+
+---
+
+## Protein Analysis Algorithms
+
+### CDS-to-Transcript Coordinate Mapping
+
+To translate a CDS, the pipeline must map genomic CDS coordinates to positions within the mRNA transcript sequence. This is non-trivial because CDS regions may span multiple exons separated by introns.
+
+**Algorithm (`get_cds_transcript_coords`):**
+
+1. Sort exons by genomic position
+2. Determine transcript order: same as genomic for plus strand, reversed for minus strand
+3. Build cumulative exon length array in transcript order
+4. For each exon (in transcript order), check if the CDS start or end boundary falls within it:
+   - **Plus strand**: CDS start (lowest genomic coordinate) maps to transcript CDS start; CDS end (highest) maps to transcript CDS end
+   - **Minus strand**: CDS end (highest genomic coordinate) maps to transcript CDS start (first codon); CDS start (lowest) maps to transcript CDS end (last codon)
+5. Calculate the 1-based transcript-relative position: `cumulative_length_before_exon + offset_within_exon + 1`
+6. **Sanity check**: Verify that the mapped CDS length (`tx_end - tx_start + 1`) equals the sum of all CDS feature widths from the GTF. If mismatched, the translation is skipped with a warning.
+
+**Translation:**
+
+The mapped CDS subsequence is extracted from the full transcript sequence using `Biostrings::subseq()` and translated with `Biostrings::translate()`. Isoforms with CDS lengths not divisible by 3 will fail translation (caught by `tryCatch`) and are flagged via the `in_frame` column.
+
+### UniProt Comparison: `frame_matches_uniprot`
+
+For each translated protein, the pipeline checks whether it is an **exact match** or a **perfect substring** of the UniProt canonical sequence:
+
+```
+is_match = (isoform_protein == uniprot_canonical) OR
+           (isoform_protein is a contiguous substring of uniprot_canonical)
+```
+
+The trailing stop codon (`*`) produced by `Biostrings::translate()` is stripped before comparison, since UniProt sequences do not include it.
+
+**Values:**
+- `TRUE` - The translated protein is identical to, or perfectly contained within, the UniProt canonical
+- `FALSE` - The translated protein diverges from the canonical (frame shifts, alternative exons, etc.)
+- `NA` - Not protein-coding, or translation failed
+
+### UniProt Comparison: `match_pct_uniprot`
+
+Measures what fraction of the translated protein sequence can be found in the UniProt canonical, using a **sliding window approach**:
+
+1. Slide a 20-amino-acid window across the translated protein, one position at a time
+2. For each window position, check if that exact 20-aa substring exists anywhere in the UniProt canonical sequence (using exact string matching)
+3. Calculate: `match_pct = 100 * (number of matching windows) / (total windows)`
+
+Where `total windows = protein_length - 20 + 1`.
+
+For proteins shorter than 20 aa, a simple full-sequence substring check is used instead.
+
+**Interpretation:**
+- `100%` - Every 20-aa window is found in the canonical (exact match or perfect subset)
+- `90-99%` - Most of the protein matches; divergence at one or both termini (common with alternative first/last exons)
+- `<80%` - Substantial sequence divergence, likely an alternative reading frame or heavily rearranged
+
+### UniProt Comparison: `matched_range_uniprot`
+
+Reports the **UniProt amino acid coordinates** of the longest contiguous stretch of identical sequence between the isoform and the canonical:
+
+1. Using the same 20-aa sliding window results, find the longest run of consecutive matching windows (via run-length encoding)
+2. The contiguous matching stretch spans from the first position of the run to the last position of the run + 19 (window size - 1)
+3. Look up where this stretch falls in the UniProt canonical sequence
+4. Report as `start-end` (1-based UniProt coordinates)
+
+**Example:** `781-1893` means the longest identical stretch maps to UniProt amino acids 781 through 1893 (1113 aa of continuous identity).
 
 ---
 
@@ -242,91 +330,89 @@ For each SQANTI isoform:
 
 ```
 USER INPUT
-    ↓
-┌───────────────────────────────────────────┐
-│  Gene Name (MTCL1)                        │
-│  OR Ensembl ID (ENSG00000168502)          │
-│  + Optional Flags (--gtf, --fasta)        │
-└───────────────────────────────────────────┘
-    ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ STEP 1: GENE IDENTIFICATION                                     │
-│   • Search GENCODE GTF (grep gene feature)                     │
-│   • Resolve gene name ↔ Ensembl ID                              │
-│   • Extract gene coordinates: chr18:8705271-8832780            │
-│   • Result: ENSG00000168502.19 → "MTCL1"                        │
-└─────────────────────────────────────────────────────────────────┘
-    ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ STEP 2: GENCODE EXTRACTION                                      │
-│   Input: Tabix-indexed GENCODE GTF (140 MB compressed)         │
-│   Method: tabix query by coordinates (<1 second)               │
-│   Query: tabix gencode.gtf.gz chr18:8705271-8832780            │
-│   ┌───────────────────────────────────────────────────────┐    │
-│   │ For each transcript:                                  │    │
-│   │  • Parse exons (with CDS/UTR types)                   │    │
-│   │  • Calculate junctions (exon boundaries)              │    │
-│   │  • Extract TSS/TES (strand-aware)                     │    │
-│   │  • Get CDS start/end positions                        │    │
-│   │  • Calculate UTR lengths (TSS↔CDS↔TES)               │    │
-│   │  • Determine protein coding status                    │    │
-│   └───────────────────────────────────────────────────────┘    │
-│   Output: 21 GENCODE isoforms with full annotations            │
-└─────────────────────────────────────────────────────────────────┘
-    ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ STEP 3: SQANTI EXTRACTION                                       │
-│   Input: Tabix-indexed SQANTI GTF (41 MB compressed)           │
-│          + SQANTI Classification (770 MB)                       │
-│   Method: tabix query by coordinates (<1 second)               │
-│   Query: tabix sqanti.gtf.gz chr18:8705271-8832780             │
-│   ┌───────────────────────────────────────────────────────┐    │
-│   │ For each PacBio isoform:                              │    │
-│   │  • Extract exon positions from GTF                    │    │
-│   │  • Get coding status from SQANTI classification       │    │
-│   │  • Calculate CDS positions (if available)             │    │
-│   │  • Calculate UTRs from TSS/CDS/TES                    │    │
-│   └───────────────────────────────────────────────────────┘    │
-│   Output: 37 SQANTI isoforms with annotations                  │
-└─────────────────────────────────────────────────────────────────┘
-    ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ STEP 4: EXPRESSION CALCULATION (if --no-expr NOT set)          │
-│   Input: DGEList RDS (29 MB) - 38 samples                      │
-│   ┌───────────────────────────────────────────────────────┐    │
-│   │ Load normalized counts (TMM/CPM)                      │    │
-│   │         ↓                                              │    │
-│   │ Filter: treatment=="DMSO" for each cell type          │    │
-│   │         ↓                                              │    │
-│   │ Calculate: mean across biological replicates          │    │
-│   │         ↓                                              │    │
-│   │ Match: isoform_id to DGEList rownames                 │    │
-│   │         ↓                                              │    │
-│   │ Round: 2 significant figures                          │    │
-│   └───────────────────────────────────────────────────────┘    │
-│   Cell Types:                                                   │
-│     DD (n=3)  DD_ALI (n=3)  DO_ALI (n=3)                       │
-│     AT2 (n=3)  FB (n=3)     MV (n=3)                           │
-│   Output: 6 expression columns added to all isoforms           │
-└─────────────────────────────────────────────────────────────────┘
-    ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ STEP 5: OUTPUT GENERATION                                       │
-│                                                                 │
-│ ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐ │
-│ │  TSV (always)   │  │  GTF (--gtf)     │  │ FASTA (--fasta)│ │
-│ │  ─────────────  │  │  ─────────────   │  │ ────────────── │ │
-│ │ 58 isoforms     │  │ 640 features     │  │ 58 sequences   │ │
-│ │ 25 columns      │  │ • Genes          │  │ • GENCODE: 21  │ │
-│ │ • Structures    │  │ • Transcripts    │  │ • SQANTI: 37   │ │
-│ │ • CDS/UTR info  │  │ • Exons          │  │ From 2 sources │ │
-│ │ • Expression    │  │ • CDS regions    │  │ Merged output  │ │
-│ │ • 21 GENCODE    │  │ For genome       │  │ For sequence   │ │
-│ │ • 37 SQANTI     │  │ browsers         │  │ analysis       │ │
-│ └─────────────────┘  └──────────────────┘  └────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-    ↓
-FINAL OUTPUT: isoform_annotation_<GENE>.tsv (+ .gtf + .fasta)
+    |
+    v
++-------------------------------------------+
+|  Gene Name (MTCL1)                        |
+|  OR Ensembl ID (ENSG00000168502)          |
+|  + Optional Flags                         |
+|    --gtf --fasta --protein --no-expr      |
++-------------------------------------------+
+    |
+    v
++---------------------------------------------------------------+
+| STEP 1: GENE IDENTIFICATION                                    |
+|   - Search GENCODE GTF (grep gene feature)                    |
+|   - Resolve gene name <-> Ensembl ID                           |
+|   - Extract gene coordinates: chr18:8705271-8832780           |
+|   - Result: ENSG00000168502.19 -> "MTCL1"                      |
++---------------------------------------------------------------+
+    |
+    v
++---------------------------------------------------------------+
+| STEP 2: GENCODE EXTRACTION                                     |
+|   Input: Tabix-indexed GENCODE GTF (140 MB compressed)        |
+|   Method: tabix query by coordinates (<1 second)              |
+|   - Parse exons (with CDS/UTR types)                          |
+|   - Calculate junctions, TSS/TES, CDS positions               |
+|   - Calculate UTR lengths (strand-aware)                       |
+|   - Determine protein coding status and in-frame status        |
+|   Output: 21 GENCODE isoforms with full annotations           |
++---------------------------------------------------------------+
+    |
+    v
++---------------------------------------------------------------+
+| STEP 3: SQANTI EXTRACTION                                      |
+|   Input: Tabix-indexed SQANTI GTF + Classification            |
+|   Method: tabix query by coordinates (<1 second)              |
+|   - Extract exon positions from GTF                           |
+|   - Get coding status from SQANTI classification              |
+|   - Calculate CDS positions and UTRs                          |
+|   Output: 37 SQANTI isoforms with annotations                 |
++---------------------------------------------------------------+
+    |
+    v
++---------------------------------------------------------------+
+| STEP 4: EXPRESSION CALCULATION (if --no-expr NOT set)         |
+|   Input: DGEList RDS (29 MB) - 38 samples                     |
+|   - Load TMM-normalized CPM + raw counts                       |
+|   - For each cell type x treatment (DMSO, Smg1i):             |
+|     - Mean CPM across biological replicates                    |
+|     - Sum of raw read counts across replicates                 |
+|   - Round CPM to 2 significant figures                         |
+|   Output: 24 expression columns + total_reads_all_samples     |
++---------------------------------------------------------------+
+    |
+    v
++---------------------------------------------------------------+
+| STEP 5: PROTEIN ANALYSIS (if --protein set)                   |
+|   - Fetch UniProt canonical sequence (API or local file)       |
+|   - Translate CDS for all protein-coding isoforms:             |
+|     - GENCODE: GTF CDS -> transcript coords -> translate       |
+|     - SQANTI: GTF CDS or sqanti3_corrected.faa fallback        |
+|   - Compare each protein to UniProt canonical:                 |
+|     - Exact/subset match (frame_matches_uniprot)               |
+|     - Sliding 20-aa window match % (match_pct_uniprot)         |
+|     - Longest contiguous match range (matched_range_uniprot)   |
+|   Output: protein FASTA + 3 comparison columns in TSV          |
++---------------------------------------------------------------+
+    |
+    v
++---------------------------------------------------------------+
+| STEP 6: OUTPUT GENERATION                                      |
+|                                                                |
+|  TSV (always)   GTF (--gtf)   FASTA (--fasta)  Protein FASTA  |
+|  58 isoforms    640 features  58 sequences     42 proteins     |
+|  All columns    For genome    For sequence     1 UniProt +     |
+|  Expression +   browsers      analysis         41 translated   |
+|  protein data                                                  |
++---------------------------------------------------------------+
+    |
+    v
+FINAL OUTPUT: isoform_annotation_<GENE>.tsv
+              + isoform_annotation_<GENE>.gtf
+              + isoform_annotation_<GENE>.fasta
+              + protein_sequences_<GENE>.fasta
 ```
 
 ---
@@ -345,6 +431,8 @@ Rscript gene_isoform_annotation.R <GENE_NAME_OR_ID> [OPTIONS]
 **Optional Flags:**
 - `--gtf` - Generate GTF file with all genomic features
 - `--fasta` - Generate FASTA file with transcript sequences
+- `--protein` - Generate protein FASTA with CDS translations and UniProt comparison columns
+- `--uniprot_file <path>` - Use a local UniProt FASTA file instead of fetching from the API
 - `--no-expr` - Skip expression calculation (faster, no DGEList needed)
 
 ### Examples
@@ -359,33 +447,37 @@ Rscript gene_isoform_annotation.R MTCL1 --gtf
 # Include FASTA for sequence analysis
 Rscript gene_isoform_annotation.R MTCL1 --fasta
 
-# Both GTF and FASTA
-Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta
+# Protein translation and UniProt comparison
+Rscript gene_isoform_annotation.R MTCL1 --protein
+
+# Use a local UniProt FASTA instead of API fetch
+Rscript gene_isoform_annotation.R MTCL1 --protein --uniprot_file /path/to/uniprot.fasta
+
+# All outputs
+Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta --protein
 
 # Structural annotations only (skip expression)
 Rscript gene_isoform_annotation.R MTCL1 --no-expr
-
-# All options combined
-Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta --no-expr
 
 # Using Ensembl ID instead of gene name
 Rscript gene_isoform_annotation.R ENSG00000168502
 
 # Batch processing multiple genes
 for gene in MTCL1 TP53 EGFR CFTR; do
-  Rscript gene_isoform_annotation.R $gene --gtf --fasta
+  Rscript gene_isoform_annotation.R $gene --gtf --fasta --protein
 done
 ```
 
 ### Performance
 
-**Runtime:** ~30-60 seconds per gene
+**Runtime:** ~30-60 seconds per gene (without `--protein`); ~60-90 seconds with `--protein`
 
 The pipeline uses tabix-indexed GTF files for fast coordinate-based queries:
 - GENCODE extraction: <1 second (via tabix index)
 - SQANTI extraction: <1 second (via tabix index)
 - Expression calculation: ~15 seconds (DGEList loading and CPM calculation)
-- Total: 30-60 seconds per gene
+- Protein translation: ~15-30 seconds (FASTA loading + translation)
+- Total: 30-90 seconds per gene
 
 ---
 
@@ -395,48 +487,68 @@ The pipeline uses tabix-indexed GTF files for fast coordinate-based queries:
 
 **File:** `isoform_annotation_<GENE>.tsv`
 
-Tab-separated table with one row per isoform and 25 columns:
+Tab-separated table with one row per isoform. See `column_definitions.tsv` for the complete machine-readable column catalog.
+
+#### Structural Columns
 
 | Column | Type | Description | Example |
 |--------|------|-------------|---------|
-| `isoform_id` | String | Transcript identifier | ENST00000695635.1 |
-| `isoform_name` | String | Transcript name | MTCL1-216 |
+| `isoform_id` | String | Transcript identifier | ENST00000306329.16 |
+| `isoform_name` | String | Transcript name | MTCL1-201 |
 | `source` | String | GENCODE or SQANTI | GENCODE |
 | `chromosome` | String | Chromosome location | 18 |
 | `strand` | String | Strand | + |
-| `tss` | Integer | Transcription start site | 8705271 |
-| `tes` | Integer | Transcription end site | 8832780 |
-| `transcript_length` | Integer | Total length (bp) | 127510 |
-| `n_exons` | Integer | Number of exons | 15 |
-| `exons` | String | Exon coords with types | 8705271_8706713_+:CDS;... |
+| `tss` | Integer | Transcription start site (strand-aware) | 8706502 |
+| `tes` | Integer | Transcription end site (strand-aware) | 8832780 |
+| `transcript_length` | Integer | Total length (bp, genomic span) | 126279 |
+| `n_exons` | Integer | Number of exons | 14 |
+| `exons` | String | Exon coords with CDS/UTR types | 8706502_8706713_+:CDS;... |
 | `junctions` | String | Splice junction coords | 8706713_8718424_+;... |
-| `cds_start` | Integer | CDS genomic start | 8706689 |
-| `cds_end` | Integer | CDS genomic end | 8826232 |
-| `cds_length` | Integer | CDS length (bp) | 5830 |
-| `protein_length` | Integer | Protein length (aa) | 1943 |
-| `utr5_length` | Integer | 5' UTR length (bp) | 984 |
-| `utr3_length` | Integer | 3' UTR length (bp) | 593 |
+
+#### CDS and Protein Columns
+
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `cds_start` | Integer | CDS genomic start (always smaller coordinate) | 8706607 |
+| `cds_end` | Integer | CDS genomic end (always larger coordinate) | 8831837 |
+| `cds_length_nt` | Integer | CDS length in nucleotides | 5718 |
+| `cds_length_aa` | Integer | CDS length in amino acids (floor of nt / 3) | 1906 |
+| `in_frame` | Integer | CDS divisible by 3: 1 = yes, 0 = no, NA = no CDS | 1 |
+| `utr5_length` | Integer | 5' UTR length (bp, strand-aware, genomic span) | 105 |
+| `utr3_length` | Integer | 3' UTR length (bp, strand-aware, genomic span) | 943 |
 | `is_protein_coding` | Boolean | Protein coding status | TRUE |
 | `coding_source` | String | Source of coding annotation | GENCODE_biotype |
-| `expr_DMSO_ddali` | Float | DMSO expr in DD_ALI (CPM) | 0.18 |
-| `expr_DMSO_dd` | Float | DMSO expr in DD (CPM) | 0.7 |
-| `expr_DMSO_doali` | Float | DMSO expr in DO_ALI (CPM) | NA |
-| `expr_DMSO_at2` | Float | DMSO expr in AT2 (CPM) | 0.42 |
-| `expr_DMSO_fb` | Float | DMSO expr in FB (CPM) | 0 |
-| `expr_DMSO_mv` | Float | DMSO expr in MV (CPM) | 0.11 |
+
+#### Expression Columns (per cell type, per treatment)
+
+| Column Pattern | Type | Description | Example |
+|----------------|------|-------------|---------|
+| `expr_DMSO_{ct}` | Float | Mean TMM-normalized CPM in DMSO | 12.5 |
+| `total_reads_DMSO_{ct}` | Integer | Sum of raw read counts in DMSO | 347 |
+| `expr_Smg1i_{ct}` | Float | Mean TMM-normalized CPM in Smg1i | 15.3 |
+| `total_reads_Smg1i_{ct}` | Integer | Sum of raw read counts in Smg1i | 412 |
+| `total_reads_all_samples` | Integer | Grand total raw reads across all samples | 1523 |
+
+Cell type suffixes: `ddali`, `dd`, `doali`, `at2`, `fb`, `mv`
+
+#### Protein Comparison Columns (requires `--protein`)
+
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `frame_matches_uniprot` | Boolean | Exact match or perfect subset of UniProt canonical | TRUE |
+| `match_pct_uniprot` | Float | Percentage of 20-aa windows found in UniProt canonical | 93.4 |
+| `matched_range_uniprot` | String | UniProt aa range of longest contiguous identical stretch | 781-1893 |
 
 **Exon Format:** `start_end_strand:type`
 - Types: `CDS`, `5UTR`, `3UTR`, `mixed`, `exon`
 - Multiple exons separated by semicolons
-- Example: `8705271_8706713_+:CDS;8718424_8718648_+:CDS`
 
 **Junction Format:** `exon1_end_exon2_start_strand`
 - Represents splice sites between consecutive exons
-- Example: `8706713_8718424_+;8718648_8720338_+`
 
 **Expression Values:**
 - `NA` - Isoform not detected in sequencing
-- `0` - Detected but not expressed in DMSO
+- `0` - Detected but not expressed
 - `>0` - Expressed; CPM values rounded to 2 sig figs
 
 ### GTF File (Optional)
@@ -445,7 +557,7 @@ Tab-separated table with one row per isoform and 25 columns:
 
 Standard GTF format compatible with genome browsers:
 - Gene, transcript, exon, CDS, and UTR features
-- Both GENCODE and SQANTI isoforms
+- Both GENCODE and SQANTI isoforms (filtered to target gene only)
 - Can be loaded into IGV, UCSC Genome Browser, etc.
 
 ### FASTA File (Optional)
@@ -454,7 +566,7 @@ Standard GTF format compatible with genome browsers:
 
 Standard FASTA format with transcript sequences:
 ```
->ENST00000695635.1
+>ENST00000306329.16
 ATGGCGGCGGCG...
 >PB.14156.3
 ATGGAGGAGCTG...
@@ -462,6 +574,23 @@ ATGGAGGAGCTG...
 - Contains all isoforms (GENCODE + SQANTI)
 - Headers are simple transcript IDs
 - Extracted from two sources (GENCODE and SQANTI FASTA files)
+
+### Protein FASTA File (Optional)
+
+**File:** `protein_sequences_<GENE>.fasta`
+
+Amino acid sequences for all translated isoforms:
+```
+>sp|Q9Y4B5|MTCL1_HUMAN Microtubule cross-linking factor 1 OS=Homo sapiens ...
+MEEAVLQAPGP...
+>ENST00000306329.16
+MEEAVLQAPGP...
+>PB.14156.3
+MFHALLQDSGR...
+```
+- First entry is the UniProt canonical (with full Swiss-Prot header)
+- Subsequent entries are CDS translations keyed by isoform ID
+- Translated proteins may include a trailing `*` (stop codon)
 
 ---
 
@@ -475,7 +604,7 @@ ATGGAGGAGCTG...
 
 ### Required Software
 
-#### R (version ≥ 4.0)
+#### R (version >= 4.0)
 Install from https://cran.r-project.org/
 
 #### R Packages
@@ -488,7 +617,7 @@ BiocManager::install(c(
   "rtracklayer",      # GTF/GFF parsing
   "GenomicRanges",    # Genomic feature handling
   "edgeR",            # DGEList handling, CPM calculation
-  "Biostrings"        # FASTA file handling (only needed for --fasta)
+  "Biostrings"        # FASTA handling and translation (needed for --fasta and --protein)
 ))
 
 # Install CRAN packages
@@ -558,7 +687,6 @@ Solution:
 ```
 Solution:
 - Install htslib: conda install -c bioconda htslib
-- OR continue without preprocessing (grep mode works fine)
 ```
 
 **Warning: "N isoforms not found in DGEList"**
@@ -569,11 +697,19 @@ This is normal:
 - Affected isoforms will have NA expression values
 ```
 
-**Error: Package 'Biostrings' not found (with --fasta)**
+**Error: Package 'Biostrings' not found (with --fasta or --protein)**
 ```
 Solution:
 - Install Biostrings: BiocManager::install("Biostrings")
-- OR run without --fasta flag
+- OR run without --fasta / --protein flags
+```
+
+**Warning: "last base was ignored" during protein translation**
+```
+This is normal:
+- One or more isoforms have a CDS length not divisible by 3
+- The in_frame column flags these (in_frame = 0)
+- Translation proceeds using complete codons only
 ```
 
 ### Performance Issues
@@ -583,6 +719,7 @@ Solution:
 2. Monitor system resources: `top` or `htop`
 3. Large genes (>50 isoforms) take longer
 4. Expression calculation adds ~15-30 seconds - use `--no-expr` if not needed
+5. Protein translation adds ~15-30 seconds (FASTA file loading)
 
 **Out of memory errors?**
 1. Close other applications
@@ -598,10 +735,24 @@ If you use this pipeline in your research, please cite:
 - **GENCODE**: Frankish et al. (2021). GENCODE 2021. *Nucleic Acids Research*, 49(D1), D916-D923.
 - **SQANTI3**: Tardaguila et al. (2018). SQANTI: extensive characterization of long-read transcript sequences. *Genome Research*, 28(3), 396-411.
 - **edgeR**: Robinson et al. (2010). edgeR: a Bioconductor package for differential expression analysis. *Bioinformatics*, 26(1), 139-140.
+- **UniProt**: The UniProt Consortium (2023). UniProt: the Universal Protein Knowledgebase in 2023. *Nucleic Acids Research*, 51(D1), D523-D531.
 
 ---
 
 ## Version History
+
+- **v2.0** (2026-02-20)
+  - Added `--protein` flag for CDS translation and protein FASTA output
+  - Added `--uniprot_file` option for local UniProt FASTA input
+  - Added UniProt comparison columns: `frame_matches_uniprot`, `match_pct_uniprot`, `matched_range_uniprot`
+  - Renamed `cds_length` to `cds_length_nt` and `protein_length` to `cds_length_aa`
+  - Added `in_frame` column (CDS divisible by 3)
+  - Added Smg1i expression and raw read count columns alongside DMSO
+  - Added `total_reads_all_samples` summary column
+  - Added `column_definitions.tsv` machine-readable column catalog
+  - Improved SQANTI protein FASTA header parsing (tab-delimited)
+  - Performance: list accumulation replaces O(n^2) rbind loops
+  - Robustness: CDS length sanity check, URL encoding, API timeout, gene-filtered GTF output
 
 - **v1.0** (2026-02-14)
   - Initial production release
@@ -619,7 +770,7 @@ If you use this pipeline in your research, please cite:
 
 For questions or issues:
 1. Check the Troubleshooting section above
-2. Verify file paths in configuration (lines 66-72 of the script)
+2. Verify file paths in configuration (lines 89-98 of the script)
 3. Ensure all required files are accessible
 4. Review diagnostic messages in output
 
