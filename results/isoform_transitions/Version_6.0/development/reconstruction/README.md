@@ -6,7 +6,7 @@ This workflow detects splicing events between isoform pairs and validates detect
 
 **Current Status (2026-02-19):**
 - Synthetic data: **44/44 tests passing (100%)**
-- Real data (GENCODE): **4,156/4,274 = 97.2%** — 0 FAILs, 118 ERRORs (non-actionable)
+- Real data (GENCODE): **4,258/4,274 = 99.6%** — 0 FAILs, 16 ERRORs (all "No comparator exons")
 
 ## Architecture
 
@@ -65,7 +65,6 @@ No dominance specified — just two isoforms to compare per gene. Dominance is d
 | **IR_diff_5_3** | IR where both boundaries differ | Emitted alongside IR |
 | **Alt_TSS** | Alternative transcription start site | > 20bp TSS difference |
 | **Alt_TES** | Alternative transcription end site | > 20bp TES difference |
-| **beyond_boundary** | Exons outside the overlap region of the two isoforms | Non-overlapping regions |
 
 ### GAIN/LOSS Semantics (CRITICAL)
 
@@ -168,11 +167,11 @@ Events are applied in this order:
 
 ### Terminal Modification Logic
 
-`modify_terminal_exon()` handles both overlapping and non-overlapping terminal events:
-- **LOSS (overlapping)**: Extend existing terminal exon boundary
-- **LOSS (non-overlapping)**: Add missing terminal exons from `missing_terminal_exons`
-- **GAIN (overlapping)**: Trim existing terminal exon boundary
-- **GAIN (non-overlapping)**: Remove exons using coordinate-based filtering (`filter(!(exon_start >= range_start & exon_end <= range_end))`)
+`modify_terminal_exon()` uses event coordinates directly:
+- **LOSS**: Add missing exon ranges from `missing_terminal_exons` field
+- **GAIN**: Use `five_prime` (dominant's terminal boundary) to truncate/remove exons.
+  Cut direction is determined by `event_type + strand`:
+  Alt_TES+/Alt_TSS- → remove high side; Alt_TSS+/Alt_TES- → remove low side.
 
 ## Events File Format
 
@@ -182,8 +181,7 @@ Tab-separated with columns:
 - `chr`, `five_prime`, `three_prime`, `strand`
 - `bp_diff` (NA for IR)
 - `missing_terminal_exons` (coordinate ranges for Alt_TSS/Alt_TES)
-- `n_terminal_regions`
-- `missing_internal_exons` (diagnostic, not used by reconstruction)
+- `orphan_terminal_exons` (comparator exons to remove)
 - `ir_split_exons` (for IR events)
 - `dom_junctions`, `comp_junctions`
 
@@ -202,11 +200,9 @@ Transcript IDs use `DOM::COMP` format: `"ENST00000497506.5::ENST00000412894.5"`
 
 **Synthetic Data**: 44/44 (100%) — covers all event types on both strands
 
-**Real Data (GENCODE)**: 4,156/4,274 (97.2%)
+**Real Data (GENCODE)**: 4,258/4,274 (99.6%)
 - 0 FAILs (exact coordinate mismatches)
-- 118 ERRORs (non-actionable):
-  - ~102: reconstruction yields 0 exons (Alt_TSS GAIN + Alt_TES GAIN remove everything)
-  - ~16: "No comparator exons" (comparator transcript not in comparator.gtf)
+- 16 ERRORs: all "No comparator exons" (comparator transcript not in comparator.gtf)
 
 ## Scripts
 
