@@ -62,11 +62,6 @@ parse_and_find_union_exons <- function(ranges_str, union_exons, gene_id) {
 #' @param union_exons All union exons for the gene
 #' @return Tibble of matching union exons
 find_event_union_exons <- function(event, union_exons) {
-  # For beyond_boundary: use missing_external_exons
-  if (event$event_type == "beyond_boundary") {
-    return(parse_and_find_union_exons(event$missing_external_exons, union_exons, event$gene_id))
-  }
-
   # For Alt_TSS/Alt_TES: use missing_terminal_exons
   if (event$event_type %in% c("Alt_TSS", "Alt_TES")) {
     if (is.na(event$missing_terminal_exons) || event$missing_terminal_exons == "") {
@@ -324,385 +319,53 @@ modify_exon_boundary <- function(exons, event) {
   return(exons)
 }
 
-#' Modify terminal exon using event coordinates directly
+#' Modify terminal exon for Alt_TSS/Alt_TES events
 #'
-#' For Alt_TSS/Alt_TES with multiple regions: process each separately
-#' - Adjacent regions: merge with existing exon
-#' - Gapped regions: add as separate exons
-#'
+#' LOSS: adds missing exon ranges from missing_terminal_exons
+#' GAIN: removes gained sequence using five_prime (dominant's terminal boundary)
+#'       to truncate/remove exons beyond the dominant's extent
 #' @param exons Current exon structure
-#' @param event Event record (uses missing_terminal_exons, five_prime, three_prime)
+#' @param event Event record (uses five_prime for GAIN, missing_terminal_exons for LOSS)
 #' @return Modified exon structure
 modify_terminal_exon <- function(exons, event) {
-  if (nrow(exons) == 0) {
-    return(exons)
-  }
+  five_prime <- event$five_prime
 
-  # For LOSS events with multiple terminal regions, handle each separately
-  if (event$direction == "LOSS" &&
-      !is.na(event$missing_terminal_exons) && event$missing_terminal_exons != "") {
-
-    # Parse individual regions
-    ranges_str <- strsplit(event$missing_terminal_exons, ",")[[1]]
-
-    if (length(ranges_str) > 1) {
-      # Parse and sort regions based on strand and event type
-      regions <- lapply(ranges_str, function(rs) {
+  if (event$direction == "LOSS") {
+    # ADD: insert each missing range as a new exon
+    if (!is.na(event$missing_terminal_exons) && event$missing_terminal_exons != "") {
+      ranges_str <- strsplit(event$missing_terminal_exons, ",")[[1]]
+      for (rs in ranges_str) {
         coords <- as.integer(strsplit(trimws(rs), "-")[[1]])
-        list(start = coords[1], end = coords[2], str = trimws(rs))
-      })
-
-      # Sort regions to process adjacent regions first (closest to comparator terminal exon)
-      # For LOSS: we're adding regions that extend beyond comparator's terminal exon
-      if (event$event_type == "Alt_TSS") {
-        if (event$strand == "+") {
-          # Plus TSS (low coord): dominant extends to LOWER coords than comparator
-          # Process from high to low (closest to comparator first)
-          regions <- regions[order(sapply(regions, function(r) r$start), decreasing = TRUE)]
-        } else {
-          # Minus TSS (high coord): dominant extends to HIGHER coords than comparator
-          # Process from low to high (closest to comparator first)
-          regions <- regions[order(sapply(regions, function(r) r$start))]
-        }
-      } else {  # Alt_TES
-        if (event$strand == "+") {
-          # Plus TES (high coord): dominant extends to HIGHER coords than comparator
-          # Process from low to high (closest to comparator first)
-          regions <- regions[order(sapply(regions, function(r) r$start))]
-        } else {
-          # Minus TES (low coord): dominant extends to LOWER coords than comparator
-          # Process from high to low (closest to comparator first)
-          regions <- regions[order(sapply(regions, function(r) r$start), decreasing = TRUE)]
-        }
+        new_exon <- tibble(
+          chr = exons$chr[1], exon_start = coords[1], exon_end = coords[2],
+          strand = exons$strand[1], gene_id = exons$gene_id[1],
+          transcript_id = exons$transcript_id[1]
+        )
+        exons <- bind_rows(exons, new_exon)
       }
-
-      # Multiple regions - process each individually in sorted order
-      for (region in regions) {
-        region_start <- region$start
-        region_end <- region$end
-
-        # Check if this region is adjacent to the terminal exon
-        if (event$event_type == "Alt_TSS") {
-          if (event$strand == "+") {
-            # Plus: TSS = first exon
-            terminal_exon <- exons[1, ]
-            is_adjacent <- (region_end + 1 >= terminal_exon$exon_start - 1) &&
-                          (region_start <= terminal_exon$exon_start + 1)
-
-            if (is_adjacent) {
-              # Merge: extend terminal exon
-              exons$exon_start[1] <- min(region_start, terminal_exon$exon_start)
-              exons$exon_end[1] <- max(region_end, terminal_exon$exon_end)
-            } else {
-              # Gap: add as separate exon
-              new_exon <- tibble(
-                chr = exons$chr[1],
-                exon_start = region_start,
-                exon_end = region_end,
-                strand = exons$strand[1],
-                gene_id = exons$gene_id[1],
-                transcript_id = exons$transcript_id[1]
-              )
-              exons <- bind_rows(new_exon, exons)
-            }
-          } else {
-            # Minus: TSS = last exon
-            terminal_exon <- exons[nrow(exons), ]
-            is_adjacent <- (region_start <= terminal_exon$exon_end + 1) &&
-                          (region_end + 1 >= terminal_exon$exon_end - 1)
-
-            if (is_adjacent) {
-              # Merge: extend terminal exon
-              exons$exon_start[nrow(exons)] <- min(region_start, terminal_exon$exon_start)
-              exons$exon_end[nrow(exons)] <- max(region_end, terminal_exon$exon_end)
-            } else {
-              # Gap: add as separate exon
-              new_exon <- tibble(
-                chr = exons$chr[1],
-                exon_start = region_start,
-                exon_end = region_end,
-                strand = exons$strand[1],
-                gene_id = exons$gene_id[1],
-                transcript_id = exons$transcript_id[1]
-              )
-              exons <- bind_rows(exons, new_exon)
-            }
-          }
-        } else if (event$event_type == "Alt_TES") {
-          if (event$strand == "+") {
-            # Plus: TES = last exon
-            terminal_exon <- exons[nrow(exons), ]
-            is_adjacent <- (region_start <= terminal_exon$exon_end + 1) &&
-                          (region_end + 1 >= terminal_exon$exon_end - 1)
-
-            if (is_adjacent) {
-              # Merge: extend terminal exon
-              exons$exon_start[nrow(exons)] <- min(region_start, terminal_exon$exon_start)
-              exons$exon_end[nrow(exons)] <- max(region_end, terminal_exon$exon_end)
-            } else {
-              # Gap: add as separate exon
-              new_exon <- tibble(
-                chr = exons$chr[1],
-                exon_start = region_start,
-                exon_end = region_end,
-                strand = exons$strand[1],
-                gene_id = exons$gene_id[1],
-                transcript_id = exons$transcript_id[1]
-              )
-              exons <- bind_rows(exons, new_exon)
-            }
-          } else {
-            # Minus: TES = first exon
-            terminal_exon <- exons[1, ]
-            is_adjacent <- (region_end + 1 >= terminal_exon$exon_start - 1) &&
-                          (region_start <= terminal_exon$exon_start + 1)
-
-            if (is_adjacent) {
-              # Merge: extend terminal exon
-              exons$exon_start[1] <- min(region_start, terminal_exon$exon_start)
-              exons$exon_end[1] <- max(region_end, terminal_exon$exon_end)
-            } else {
-              # Gap: add as separate exon
-              new_exon <- tibble(
-                chr = exons$chr[1],
-                exon_start = region_start,
-                exon_end = region_end,
-                strand = exons$strand[1],
-                gene_id = exons$gene_id[1],
-                transcript_id = exons$transcript_id[1]
-              )
-              exons <- bind_rows(new_exon, exons)
-            }
-          }
-        }
-      }
-
-      # Sort exons after processing all regions
-      exons <- exons %>% arrange(exon_start) %>% distinct(exon_start, exon_end, .keep_all = TRUE)
-      return(exons)
+      exons <- exons %>% arrange(exon_start) %>%
+        distinct(exon_start, exon_end, .keep_all = TRUE)
     }
-  }
-
-  # For GAIN events with multiple terminal regions, remove/trim all affected exons
-  if (event$direction == "GAIN" &&
-      !is.na(event$missing_terminal_exons) && event$missing_terminal_exons != "") {
-
-    # Parse individual regions
-    ranges_str <- strsplit(event$missing_terminal_exons, ",")[[1]]
-
-    if (length(ranges_str) > 1) {
-      # Parse all regions that need to be removed
-      regions <- lapply(ranges_str, function(rs) {
-        coords <- as.integer(strsplit(trimws(rs), "-")[[1]])
-        list(start = coords[1], end = coords[2])
-      })
-
-      # Process each exon and determine if it should be removed or trimmed
-      exons_to_keep <- list()
-
-      for (i in seq_len(nrow(exons))) {
-        exon <- exons[i, ]
-        keep_exon <- TRUE
-        modified_exon <- exon
-
-        # Check against all regions
-        for (region in regions) {
-          # Check if exon is completely within region
-          if (exon$exon_start >= region$start && exon$exon_end <= region$end) {
-            # Completely covered: remove this exon
-            keep_exon <- FALSE
-            break
-          }
-
-          # Check if exon partially overlaps region
-          if (exon$exon_start < region$end && exon$exon_end > region$start) {
-            # Partial overlap: trim the exon
-            if (event$event_type == "Alt_TSS") {
-              if (event$strand == "+") {
-                # Plus TSS: trim start if it overlaps
-                if (exon$exon_start < region$end && exon$exon_start >= region$start) {
-                  modified_exon$exon_start <- region$end + 1
-                }
-              } else {
-                # Minus TSS: trim end if it overlaps
-                if (exon$exon_end > region$start && exon$exon_end <= region$end) {
-                  modified_exon$exon_end <- region$start - 1
-                }
-              }
-            } else {  # Alt_TES
-              if (event$strand == "+") {
-                # Plus TES: trim end if it overlaps
-                if (exon$exon_end > region$start && exon$exon_end <= region$end) {
-                  modified_exon$exon_end <- region$start - 1
-                }
-              } else {
-                # Minus TES: trim start if it overlaps
-                if (exon$exon_start < region$end && exon$exon_start >= region$start) {
-                  modified_exon$exon_start <- region$end + 1
-                }
-              }
-            }
-          }
-        }
-
-        # Validate and keep exon if it's still valid
-        if (keep_exon && modified_exon$exon_start <= modified_exon$exon_end) {
-          exons_to_keep[[length(exons_to_keep) + 1]] <- modified_exon
-        }
-      }
-
-      if (length(exons_to_keep) > 0) {
-        exons <- bind_rows(exons_to_keep) %>%
-          arrange(exon_start) %>%
-          distinct(exon_start, exon_end, .keep_all = TRUE)
-      } else {
-        exons <- exons[0, ]  # Empty tibble with same structure
-      }
-
-      return(exons)
-    }
-  }
-
-  # -------------------------------------------------------------------------
-  # Single-region fall-through: use event coordinates directly
-  # -------------------------------------------------------------------------
-
-  # Determine the coordinate range from event fields
-  if (!is.na(event$missing_terminal_exons) && event$missing_terminal_exons != "") {
-    coords <- as.integer(strsplit(trimws(event$missing_terminal_exons), "-")[[1]])
-    range_start <- coords[1]
-    range_end <- coords[2]
   } else {
-    range_start <- min(event$five_prime, event$three_prime)
-    range_end <- max(event$five_prime, event$three_prime)
-  }
+    # GAIN: remove gained terminal sequence using five_prime (dominant's boundary)
+    # Determine which side to cut based on event type and strand
+    remove_high <- (event$event_type == "Alt_TES" && event$strand == "+") ||
+                   (event$event_type == "Alt_TSS" && event$strand == "-")
 
-  strand <- event$strand
-  event_type <- event$event_type
-  direction <- event$direction
-
-  # Helper: check if a coordinate range overlaps or is adjacent (within 1bp) to a terminal exon
-  check_range_overlap_or_adjacent <- function(terminal_exon, rs, re) {
-    (rs <= terminal_exon$exon_end + 1) && (re + 1 >= terminal_exon$exon_start)
-  }
-
-  # Helper: add a single exon at the given coordinates
-  add_exon_at <- function(exons, rs, re) {
-    new_exon <- tibble(
-      chr = exons$chr[1], exon_start = rs, exon_end = re,
-      strand = exons$strand[1], gene_id = exons$gene_id[1],
-      transcript_id = exons$transcript_id[1]
-    )
-    bind_rows(exons, new_exon) %>% arrange(exon_start)
-  }
-
-  if (event_type == "Alt_TES") {
-    if (strand == "+") {
-      terminal_exon <- exons[nrow(exons), ]
-      exact_match <- (range_start == terminal_exon$exon_start &&
-                     range_end == terminal_exon$exon_end)
-
-      if (exact_match && direction == "GAIN") {
-        exons <- exons[-nrow(exons), ]
-      } else if (check_range_overlap_or_adjacent(terminal_exon, range_start, range_end)) {
-        if (direction == "LOSS") {
-          exons$exon_end[nrow(exons)] <- max(range_end, terminal_exon$exon_end)
-        } else {
-          new_end <- range_start - 1
-          if (new_end < terminal_exon$exon_start) {
-            exons <- exons[-nrow(exons), ]
-          } else {
-            exons$exon_end[nrow(exons)] <- new_end
-          }
-        }
-      } else {
-        if (direction == "LOSS") {
-          exons <- add_exon_at(exons, range_start, range_end)
-        } else {
-          exons <- exons %>% filter(!(exon_start >= range_start & exon_end <= range_end))
-        }
-      }
-
+    if (remove_high) {
+      # Remove exons entirely beyond five_prime (high side)
+      exons <- exons %>% filter(exon_start <= five_prime)
+      # Truncate overlapping exon's end to dominant's boundary
+      exons <- exons %>% mutate(exon_end = pmin(exon_end, five_prime))
     } else {
-      terminal_exon <- exons[1, ]
-      exact_match <- (range_start == terminal_exon$exon_start &&
-                     range_end == terminal_exon$exon_end)
-
-      if (exact_match && direction == "GAIN") {
-        exons <- exons[-1, ]
-      } else if (check_range_overlap_or_adjacent(terminal_exon, range_start, range_end)) {
-        if (direction == "LOSS") {
-          exons$exon_start[1] <- min(range_start, terminal_exon$exon_start)
-        } else {
-          new_start <- range_end + 1
-          if (new_start > terminal_exon$exon_end) {
-            exons <- exons[-1, ]
-          } else {
-            exons$exon_start[1] <- new_start
-          }
-        }
-      } else {
-        if (direction == "LOSS") {
-          exons <- add_exon_at(exons, range_start, range_end)
-        } else {
-          exons <- exons %>% filter(!(exon_start >= range_start & exon_end <= range_end))
-        }
-      }
+      # Remove exons entirely beyond five_prime (low side)
+      exons <- exons %>% filter(exon_end >= five_prime)
+      # Truncate overlapping exon's start to dominant's boundary
+      exons <- exons %>% mutate(exon_start = pmax(exon_start, five_prime))
     }
 
-  } else if (event_type == "Alt_TSS") {
-    if (strand == "+") {
-      terminal_exon <- exons[1, ]
-      exact_match <- (range_start == terminal_exon$exon_start &&
-                     range_end == terminal_exon$exon_end)
-
-      if (exact_match && direction == "GAIN") {
-        exons <- exons[-1, ]
-      } else if (check_range_overlap_or_adjacent(terminal_exon, range_start, range_end)) {
-        if (direction == "LOSS") {
-          exons$exon_start[1] <- min(range_start, terminal_exon$exon_start)
-        } else {
-          new_start <- range_end + 1
-          if (new_start > terminal_exon$exon_end) {
-            exons <- exons[-1, ]
-          } else {
-            exons$exon_start[1] <- new_start
-          }
-        }
-      } else {
-        if (direction == "LOSS") {
-          exons <- add_exon_at(exons, range_start, range_end)
-        } else {
-          exons <- exons %>% filter(!(exon_start >= range_start & exon_end <= range_end))
-        }
-      }
-
-    } else {
-      terminal_exon <- exons[nrow(exons), ]
-      exact_match <- (range_start == terminal_exon$exon_start &&
-                     range_end == terminal_exon$exon_end)
-
-      if (exact_match && direction == "GAIN") {
-        exons <- exons[-nrow(exons), ]
-      } else if (check_range_overlap_or_adjacent(terminal_exon, range_start, range_end)) {
-        if (direction == "LOSS") {
-          exons$exon_end[nrow(exons)] <- max(range_end, terminal_exon$exon_end)
-        } else {
-          new_end <- range_start - 1
-          if (new_end < terminal_exon$exon_start) {
-            exons <- exons[-nrow(exons), ]
-          } else {
-            exons$exon_end[nrow(exons)] <- new_end
-          }
-        }
-      } else {
-        if (direction == "LOSS") {
-          exons <- add_exon_at(exons, range_start, range_end)
-        } else {
-          exons <- exons %>% filter(!(exon_start >= range_start & exon_end <= range_end))
-        }
-      }
-    }
+    # Remove any degenerate exons (safety)
+    exons <- exons %>% filter(exon_start <= exon_end)
   }
 
   return(exons)
@@ -843,22 +506,6 @@ apply_event_union_based <- function(exons, event, union_exons) {
     return(exons)
   }
 
-  # -------------------------------------------------------------------
-  # beyond_boundary: keep UE-based approach
-  # -------------------------------------------------------------------
-  if (event_type == "beyond_boundary") {
-    event_ues <- find_event_union_exons(event, union_exons)
-    if (nrow(event_ues) == 0) {
-      warning(sprintf("No union exons found for %s event", event$event_type))
-      return(exons)
-    }
-    if (direction == "LOSS") {
-      exons <- add_union_exons(exons, event_ues, event$strand)
-    } else {
-      exons <- remove_union_exons(exons, event_ues)
-    }
-  }
-
   return(exons)
 }
 
@@ -934,7 +581,7 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
 
   terminal_events <- events %>%
     filter(event_type %in% c("Alt_TSS", "Alt_TES")) %>%
-    arrange(event_type)  # Alt_TSS before Alt_TES
+    arrange(direction != "LOSS", event_type)  # LOSS before GAIN, then by event type
 
   # PHASE 1: Apply internal events
   for (i in seq_len(nrow(internal_events))) {

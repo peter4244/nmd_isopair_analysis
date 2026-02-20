@@ -1024,105 +1024,6 @@ check_isoform_overlap <- function(comp_ordered, dom_ordered) {
 # Beyond-Boundary Event Detection
 # ==============================================================================
 
-#' Detect dominant exons outside comparator span and vice versa
-#'
-#' Identifies exons that lie entirely outside the opposing isoform's genomic
-#' boundaries. Emits "beyond_boundary" events:
-#'   - LOSS: dominant exon(s) outside comparator span (add to reconstruction)
-#'   - GAIN: comparator exon(s) outside dominant span (remove from reconstruction)
-#'
-#' NOTE: This function is retained for reference but is NOT used in the main
-#' pipeline. Alt_TSS/Alt_TES detection already captures all non-overlapping
-#' terminal exons via compute_missing_terminal_exons_tss/tes.
-#'
-#' @param dom_ordered Dominant exons (ordered biologically TSS -> TES)
-#' @param comp_ordered Comparator exons (ordered biologically TSS -> TES)
-#' @param gene_id Gene identifier
-#' @param dominant_tid Dominant transcript ID
-#' @param comparator_tid Comparator transcript ID
-#' @param strand Gene strand
-#' @return List of event tibbles (may be empty)
-detect_beyond_boundary_exons <- function(dom_ordered, comp_ordered,
-                                          gene_id, dominant_tid, comparator_tid,
-                                          strand) {
-  events <- list()
-
-  comp_genomic_start <- min(comp_ordered$exon_start)
-  comp_genomic_end   <- max(comp_ordered$exon_end)
-  dom_genomic_start  <- min(dom_ordered$exon_start)
-  dom_genomic_end    <- max(dom_ordered$exon_end)
-
-  # --- LOSS: dominant exons entirely outside comparator span ---
-  dom_external <- list()
-  for (i in seq_len(nrow(dom_ordered))) {
-    exon <- dom_ordered[i, ]
-    if (exon$exon_end < comp_genomic_start || exon$exon_start > comp_genomic_end) {
-      dom_external[[length(dom_external) + 1]] <-
-        sprintf("%d-%d", exon$exon_start, exon$exon_end)
-    }
-  }
-
-  if (length(dom_external) > 0) {
-    events[[length(events) + 1]] <- tibble(
-      gene_id                  = gene_id,
-      dominant_transcript_id   = dominant_tid,
-      comparator_transcript_id = comparator_tid,
-      event_type               = "beyond_boundary",
-      direction                = "LOSS",
-      chr                      = dom_ordered$chr[1],
-      five_prime               = NA_integer_,
-      three_prime              = NA_integer_,
-      strand                   = strand,
-      bp_diff                  = NA_integer_,
-      missing_terminal_exons   = "",
-      n_terminal_regions       = NA_integer_,
-      orphan_terminal_exons    = "",
-      missing_internal_exons   = "",
-      missing_internal_exons_gain = "",
-      ir_split_exons           = "",
-      missing_external_exons   = paste(dom_external, collapse = ", "),
-      dom_junctions            = "",
-      comp_junctions           = ""
-    )
-  }
-
-  # --- GAIN: comparator exons entirely outside dominant span ---
-  comp_external <- list()
-  for (i in seq_len(nrow(comp_ordered))) {
-    exon <- comp_ordered[i, ]
-    if (exon$exon_end < dom_genomic_start || exon$exon_start > dom_genomic_end) {
-      comp_external[[length(comp_external) + 1]] <-
-        sprintf("%d-%d", exon$exon_start, exon$exon_end)
-    }
-  }
-
-  if (length(comp_external) > 0) {
-    events[[length(events) + 1]] <- tibble(
-      gene_id                  = gene_id,
-      dominant_transcript_id   = dominant_tid,
-      comparator_transcript_id = comparator_tid,
-      event_type               = "beyond_boundary",
-      direction                = "GAIN",
-      chr                      = comp_ordered$chr[1],
-      five_prime               = NA_integer_,
-      three_prime              = NA_integer_,
-      strand                   = strand,
-      bp_diff                  = NA_integer_,
-      missing_terminal_exons   = "",
-      n_terminal_regions       = NA_integer_,
-      orphan_terminal_exons    = "",
-      missing_internal_exons   = "",
-      missing_internal_exons_gain = "",
-      ir_split_exons           = "",
-      missing_external_exons   = paste(comp_external, collapse = ", "),
-      dom_junctions            = "",
-      comp_junctions           = ""
-    )
-  }
-
-  return(events)
-}
-
 # ==============================================================================
 # Event Detection for Transcript Pair
 # ==============================================================================
@@ -1170,11 +1071,6 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
   comp_genomic_end   <- max(comp_ordered$exon_end)
   dom_genomic_start  <- min(dom_ordered$exon_start)
   dom_genomic_end    <- max(dom_ordered$exon_end)
-
-  # missing_internal_exons fields are kept empty here; unmatched internal exons
-  # are now emitted as standalone Missing_Internal or SE events in STEP 2c.
-  missing_internal_exons      <- ""
-  missing_internal_exons_gain <- ""
 
   all_events <- list()
 
@@ -1260,12 +1156,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
           strand                      = strand,
           bp_diff                     = NA_integer_,
           missing_terminal_exons      = "",
-          n_terminal_regions          = NA_integer_,
           orphan_terminal_exons       = "",
-          missing_internal_exons      = missing_internal_exons,
-          missing_internal_exons_gain = missing_internal_exons_gain,
           ir_split_exons              = paste(overlapping_regions, collapse = ", "),
-          missing_external_exons      = "",
           dom_junctions               = format_junctions(dom_jxns_ir),
           comp_junctions              = ""
         )
@@ -1337,12 +1229,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
           strand                      = strand,
           bp_diff                     = NA_integer_,
           missing_terminal_exons      = "",
-          n_terminal_regions          = NA_integer_,
           orphan_terminal_exons       = "",
-          missing_internal_exons      = missing_internal_exons,
-          missing_internal_exons_gain = missing_internal_exons_gain,
           ir_split_exons              = paste(overlapping_regions, collapse = ", "),
-          missing_external_exons      = "",
           dom_junctions               = "",
           comp_junctions              = format_junctions(comp_jxns_ir)
         )
@@ -1427,12 +1315,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
             strand                      = strand,
             bp_diff                     = event_result$bp_diff,
             missing_terminal_exons      = "",
-            n_terminal_regions          = NA_integer_,
             orphan_terminal_exons       = "",
-            missing_internal_exons      = missing_internal_exons,
-            missing_internal_exons_gain = missing_internal_exons_gain,
             ir_split_exons              = "",
-            missing_external_exons      = "",
             dom_junctions               = format_junctions(dom_jxns_evt),
             comp_junctions              = format_junctions(comp_jxns_evt)
           )
@@ -1481,12 +1365,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
               strand                      = strand,
               bp_diff                     = event_result$second_event$bp_diff,
               missing_terminal_exons      = "",
-              n_terminal_regions          = NA_integer_,
               orphan_terminal_exons       = "",
-              missing_internal_exons      = missing_internal_exons,
-              missing_internal_exons_gain = missing_internal_exons_gain,
               ir_split_exons              = "",
-              missing_external_exons      = "",
               dom_junctions               = format_junctions(dom_jxns_evt2),
               comp_junctions              = format_junctions(comp_jxns_evt2)
             )
@@ -1550,12 +1430,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         strand                      = strand,
         bp_diff                     = dom_exon$exon_end - dom_exon$exon_start + 1,
         missing_terminal_exons      = "",
-        n_terminal_regions          = NA_integer_,
         orphan_terminal_exons       = "",
-        missing_internal_exons      = "",
-        missing_internal_exons_gain = "",
         ir_split_exons              = "",
-        missing_external_exons      = "",
         dom_junctions               = format_junctions(dom_jxns_se),
         comp_junctions              = format_junctions(comp_jxns_se)
       )
@@ -1599,12 +1475,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
         strand                      = strand,
         bp_diff                     = comp_exon$exon_end - comp_exon$exon_start + 1,
         missing_terminal_exons      = "",
-        n_terminal_regions          = NA_integer_,
         orphan_terminal_exons       = "",
-        missing_internal_exons      = "",
-        missing_internal_exons_gain = "",
         ir_split_exons              = "",
-        missing_external_exons      = "",
         dom_junctions               = format_junctions(dom_jxns_se),
         comp_junctions              = format_junctions(comp_jxns_se)
       )
@@ -1664,12 +1536,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       strand                      = strand,
       bp_diff                     = abs(dom_tss - comp_tss),
       missing_terminal_exons      = missing_exons,
-      n_terminal_regions          = n_regions,
       orphan_terminal_exons       = orphan_exons,
-      missing_internal_exons      = missing_internal_exons,
-      missing_internal_exons_gain = missing_internal_exons_gain,
       ir_split_exons              = "",
-      missing_external_exons      = "",
       dom_junctions               = format_junctions(dom_jxns_tss),
       comp_junctions              = format_junctions(comp_jxns_tss)
     )
@@ -1718,12 +1586,8 @@ detect_events_for_pair <- function(dominant_exons, comparator_exons,
       strand                      = strand,
       bp_diff                     = abs(dom_tes - comp_tes),
       missing_terminal_exons      = missing_exons,
-      n_terminal_regions          = n_regions,
       orphan_terminal_exons       = orphan_exons,
-      missing_internal_exons      = missing_internal_exons,
-      missing_internal_exons_gain = missing_internal_exons_gain,
       ir_split_exons              = "",
-      missing_external_exons      = "",
       dom_junctions               = format_junctions(dom_jxns_tes),
       comp_junctions              = format_junctions(comp_jxns_tes)
     )

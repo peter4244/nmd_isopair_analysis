@@ -1,176 +1,82 @@
-# Event Detection Workflow
+# Event Detection and Reconstruction Workflow
 
 ## Purpose
 
-The Event Detection workflow identifies and validates splicing events by comparing isoform pairs within genes. It uses a reconstruction-based validation approach: if we can correctly reconstruct the dominant isoform from the comparator isoform plus detected events, we know the event detection is correct.
+This workflow detects splicing events between isoform pairs and validates detection accuracy through reconstruction. Starting from a comparator isoform plus detected events, the system reconstructs the dominant isoform. If the reconstruction exactly matches the original dominant, the event detection was correct.
 
-This workflow is designed as a modular, standalone component that can integrate into larger isoform analysis pipelines without modification.
+**Current Status (2026-02-19):**
+- Synthetic data: **44/44 tests passing (100%)**
+- Real data (GENCODE): **4,156/4,274 = 97.2%** — 0 FAILs, 118 ERRORs (non-actionable)
+
+## Architecture
+
+This is a self-contained development environment. All scripts source dependencies locally or from `../../scripts/`. The workflow has been validated on both synthetic and real (GENCODE) data.
+
+### Key Design Principle
+
+**Reconstruction uses ONLY event type + associated coordinates.** Union exon lookups are used ONLY for IR events (which need intronic/exonic split structure). All other event types (A5SS, A3SS, Partial_IR, SE, Missing_Internal, Alt_TSS, Alt_TES) reconstruct directly from event coordinate fields (`five_prime`, `three_prime`, `missing_terminal_exons`).
 
 ## Workflow Overview
 
 ```
-Input GTF + Dominant Mapping
+Input GTF + Pairs File
          ↓
-Generate Isoform Pairs (dominant vs non-dominant)
+  1. Create Atomic Union Exons        → union_exons.tsv.gz
          ↓
-Create Atomic Union Exons
+  2. Detect Splicing Events            → events.tsv
+     (determines dominance internally)
          ↓
-Detect Splicing Events
+  3. Extract Comparator GTF            → comparator.gtf
          ↓
-Validate via Reconstruction
+  4. Reconstruct Dominant Isoforms     → reconstructed.gtf
+         ↓
+  5. Verify Reconstruction             → verification.tsv
 ```
+
+**Key Insight:** Dominance is NOT pre-specified. The `detect_and_save_events.R` script determines which isoform is dominant based on total exonic sequence length (dominant = more exonic bp).
 
 ## Input Data Requirements
 
 ### 1. GTF File
 
-**Format**: GTF2 format with exon features
+Standard GTF2 format with exon features. Required attributes: `gene_id`, `transcript_id`. Coordinates are 1-based, inclusive.
 
-**Structure**: GTF files have 9 tab-separated columns. The 9th column (called "Attributes") contains semicolon-separated key-value pairs.
+### 2. Pairs File
 
-**Required Attributes** (within column 9):
-- `gene_id`: Gene identifier (quoted string)
-- `transcript_id`: Transcript/isoform identifier (quoted string)
+Tab-separated with columns: `gene_id`, `isoform_A`, `isoform_B`, `chr`, `strand`
 
-**Note on Exon Numbering**: The `exon_number` attribute is not required. We compute it internally. The exon numbers in the GTF are validated against our own computed numbers.
+No dominance specified — just two isoforms to compare per gene. Dominance is determined internally.
 
-**Required Columns** (all 9 tab-separated fields):
-1. Chromosome/scaffold name
-2. Source (e.g., "GENCODE", "PacBio", "test")
-3. Feature type (must include "exon")
-4. Start position (1-based, inclusive)
-5. End position (1-based, inclusive)
-6. Score (can be ".")
-7. Strand (+ or -)
-8. Frame (can be ".")
-9. Attributes (semicolon-separated key-value pairs)
+## Event Types
 
-**Example**:
-```
-chr1    GENCODE    exon    1000    1200    .    +    .    gene_id "GENE1"; transcript_id "GENE1.1"; exon_number "1";
-chr1    GENCODE    exon    1500    1700    .    +    .    gene_id "GENE1"; transcript_id "GENE1.1"; exon_number "2";
-chr1    GENCODE    exon    1000    1200    .    +    .    gene_id "GENE1"; transcript_id "GENE1.2"; exon_number "1";
-```
+### Core Event Types
 
-**Assumptions**:
-- Coordinates are 1-based, inclusive (standard GTF format)
-- All exons for a given transcript_id belong to the same gene_id
-- All exons for a given gene_id are on the same chromosome and strand
-- Exon coordinates are non-overlapping within a transcript
+| Event Type | Description | Classification Threshold |
+|------------|-------------|------------------------|
+| **SE** | Skipped Exon — exon in one isoform absent in the other, with both flanking exons present | Strict flanking requirement |
+| **Missing_Internal** | Internal exon absent in other isoform, flanking condition NOT met | Weaker than SE |
+| **A5SS** | Alternative 5' splice site — shared acceptor, different donor | < 100bp difference |
+| **A3SS** | Alternative 3' splice site — shared donor, different acceptor | < 100bp difference |
+| **Partial_IR_5** | Partial intron retention at 5' boundary | ≥ 100bp, one shared boundary |
+| **Partial_IR_3** | Partial intron retention at 3' boundary | ≥ 100bp, one shared boundary |
+| **IR** | Intron retention — one exon spans ≥2 exons in the other isoform | ≥2 overlapping exons |
+| **IR_diff_5** | IR where retained exon 5' boundary differs from spanned exons | Emitted alongside IR |
+| **IR_diff_3** | IR where retained exon 3' boundary differs from spanned exons | Emitted alongside IR |
+| **IR_diff_5_3** | IR where both boundaries differ | Emitted alongside IR |
+| **Alt_TSS** | Alternative transcription start site | > 20bp TSS difference |
+| **Alt_TES** | Alternative transcription end site | > 20bp TES difference |
+| **beyond_boundary** | Exons outside the overlap region of the two isoforms | Non-overlapping regions |
 
-**Notes**:
-- Comment lines starting with `#` are ignored
-- GTF files with or without explicit transcript/gene features are supported through initial processing
+### GAIN/LOSS Semantics (CRITICAL)
 
-### 2. Dominant Isoform Mapping
+**GAIN and LOSS are from the COMPARATOR'S perspective:**
 
-**Format**: Tab-separated values (TSV) file
+- **LOSS** = Comparator LOST sequence (dominant has MORE)
+  - Reconstruction action: **ADD** regions to comparator
+- **GAIN** = Comparator GAINED sequence (dominant has LESS)
+  - Reconstruction action: **REMOVE** regions from comparator
 
-**Required Columns**:
-1. `gene_id`: Gene identifier (must match GTF gene_ids)
-2. `dominant_isoform_id`: Transcript identifier designated as dominant (must match GTF transcript_ids)
-
-**Example**:
-```
-gene_id             dominant_isoform_id
-GENE1               GENE1.1
-GENE2               GENE2.3
-```
-
-**Assumptions**:
-- Exactly one dominant isoform per gene
-- All gene_ids in the mapping exist in the GTF
-- All dominant_isoform_ids exist in the GTF
-- Genes with only one isoform in the GTF will not generate pairs (skipped with warning)
-
-**Notes**:
-- The definition of "dominant" is external to this workflow
-- For the NMD project: dominant isoforms are defined by Differential Isoform Expression (DIE) analysis
-- For testing: dominant isoforms may be randomly assigned
-
-## Output Data
-
-### 1. Isoform Pairs File
-**Format**: TSV with columns: gene_id, isoform_A (dominant), isoform_B (comparator), chr, strand
-
-### 2. Atomic Union Exons File
-**Format**: Bgzip-compressed, tabix-indexed TSV
-**Columns**: chr, start, end, union_exon_id, strand, gene_id
-**Files**: `*.tsv.gz` (bgzipped data), `*.tsv.gz.tbi` (tabix index)
-**Note**: Genes can overlap genomically. The same coordinates may appear in multiple union exons with different gene_ids. Union exon IDs are unique within a gene but not globally.
-
-### 3. Detected Events File
-**Format**: Tab-separated values (TSV)
-
-**Columns**:
-- `gene_id`
-- `dominant_transcript_id`
-- `comparator_transcript_id`
-- `event_type`: SE, A5SS, A3SS, Partial_IR_5, Partial_IR_3, IR, Alt_TSS, Alt_TES
-- `direction`: GAIN or LOSS (from comparator's perspective — see GAIN/LOSS Semantics below)
-- `chr`
-- `five_prime`: 5'-most coordinate of the event (genomic; not strand-corrected)
-- `three_prime`: 3'-most coordinate of the event (genomic; not strand-corrected)
-- `strand`
-- `bp_diff`: size of the event in bp (NA for IR)
-- `missing_terminal_exons`: for Alt_TSS/Alt_TES, comma-separated coordinate ranges of the
-  longer isoform's terminal extension (e.g., `"1000-1200,1500-1700"`); empty for other event types
-- `n_terminal_regions`: for Alt_TSS/Alt_TES, count of coordinate ranges in missing_terminal_exons;
-  1 = simple boundary shift on a shared exon, >1 = multiple exons or partial+whole exons differ
-- `missing_internal_exons`: comma-separated coordinate ranges of internal exons present in one
-  isoform but absent in the other (within the overlap span); populated for both GAIN and LOSS;
-  diagnostic only — not consumed by reconstruction
-- `ir_split_exons`: for IR events, comma-separated coordinate ranges of the spanned exons
-
-### 4. Validation Results File
-**Format**: TSV with columns: gene_id, dominant_isoform, comparator_isoform, status (PASS/FAIL), reason
-
-## Creation of Atomic Union Exons
-
-**Purpose**: Atomic union exons provide a common coordinate system for comparing isoforms within a gene. By splitting all exons at every boundary point, we create non-overlapping genomic segments that serve as the basis for event detection and reconstruction.
-
-**Algorithm**:
-1. For each gene independently:
-   - Collect all exon boundaries (start and end positions) for all isoforms in the gene
-   - Sort boundaries and identify unique positions
-   - Create segments by splitting the genomic space between consecutive boundaries
-   - Filter to segments that are actually covered by at least one exon
-2. Assign global union exon IDs across all genes
-
-**Output**: Each atomic union exon represents a contiguous genomic region that is not split by any exon boundary within its gene. These segments are indexed with tabix for efficient coordinate-based queries.
-
-**Overlapping Genes**: When genes overlap genomically, the same genomic coordinates may appear in multiple union exons with different gene_ids and different union_exon_ids. Each gene's union exons are computed independently based on its own isoforms' boundaries.
-
-**Script**: `build_atomic_union_exons.R`
-
-**Key Property**: Union exon boundaries correspond exactly to splice sites and terminal boundaries (TSS/TES), ensuring all event coordinates can be expressed as union exon boundaries.
-
-## Event Detection
-
-**Core Event Types:**
-
-- **SE** (Skipped Exon): Exon present in one isoform but absent in the other, with both flanking
-  exons (upstream and downstream) present in the other isoform (strict flanking requirement)
-
-- **A5SS** (Alternative 5' Splice Site): Different 5' donor boundary, <100bp difference
-
-- **A3SS** (Alternative 3' Splice Site): Different 3' acceptor boundary, <100bp difference
-
-- **IR** (Intron Retention): Exon in one isoform spans multiple (≥2) consecutive exons in the other
-
-- **Partial_IR_5** (Partial Intron Retention, 5' boundary): One boundary similar, 5' boundary
-  differs by ≥100bp
-
-- **Partial_IR_3** (Partial Intron Retention, 3' boundary): One boundary similar, 3' boundary
-  differs by ≥100bp
-
-- **Alt_TSS** (Alternative Transcription Start Site): Different biological first exon TSS position;
-  includes `missing_terminal_exons` coordinate payload and `n_terminal_regions` count
-
-- **Alt_TES** (Alternative Transcription End Site): Different biological last exon TES position;
-  includes `missing_terminal_exons` coordinate payload and `n_terminal_regions` count
-
-**Event Detection Flow:**
+## Event Detection Algorithm
 
 ```
 For each isoform pair (dominant vs comparator):
@@ -178,138 +84,213 @@ For each isoform pair (dominant vs comparator):
 STEP 1: Boundary Determination
 ├─ Order exons TSS→TES (biological order, strand-aware)
 ├─ Compute TSS and TES positions for both isoforms
-└─ Define overlap region for use in Steps 2 and 3
+└─ Define overlap region
 
 STEP 2: Within-Boundary Event Detection
 │  (Skipped entirely for non-overlapping isoforms)
 │
-├─ 2a: IR Detection
-│  ├─ Check each comparator exon vs all dominant exons → detect_ir_simple()
-│  │  └─ If overlaps (≥1bp) with ≥2 dominant exons → IR GAIN event
-│  ├─ Check each dominant exon vs all comparator exons → detect_ir_simple()
-│  │  └─ If overlaps (≥1bp) with ≥2 comparator exons → IR LOSS event
-│  └─ Track all (comparator_idx, dominant_idx) exon pairs involved in IR
-│     to prevent re-analysis in the next step
+├─ 2a: IR Detection (FIRST — prevents re-analysis in later steps)
+│  ├─ Check each comp exon vs all dom exons → IR GAIN if spans ≥2
+│  ├─ Check each dom exon vs all comp exons → IR LOSS if spans ≥2
+│  ├─ Emit IR_diff events when retained exon boundaries differ
+│  └─ Track all exon pairs involved in IR
 │
 ├─ 2b: Boundary Event Detection (A5SS / A3SS / Partial_IR)
-│  └─ For each (comparator, dominant) exon pair with genomic overlap (≥1bp):
-│     └─ Skip if this pair is involved in an IR event (from 2a)
-│     └─ Call detect_shared_boundary_event()
-│        │
-│        ├─ MODE A: Exact Boundary Match (tried first)
-│        │  ├─ Check if acceptor coordinates exactly equal
-│        │  ├─ Check if donor coordinates exactly equal
-│        │  └─ If one shared, one differs:
-│        │     ├─ Difference <100bp → A5SS or A3SS
-│        │     └─ Difference ≥100bp → Partial_IR_5 or Partial_IR_3
-│        │
-│        └─ MODE B: Overlap-Based Detection (fallback if Mode A finds nothing)
-│           ├─ Verify exons overlap by ≥1bp
-│           ├─ Compare boundaries in strand-aware manner
-│           └─ Call check_boundary_within_exon() for each boundary:
-│              ├─ Case A: Comparator boundary within dominant exon
-│              │  ├─ <100bp diff → A5SS/A3SS (LOSS direction)
-│              │  └─ ≥100bp diff → Partial_IR (LOSS direction)
-│              └─ Case B: Comparator boundary extends beyond dominant
-│                 ├─ Check if extends into flanking exon
-│                 │  ├─ <100bp → A5SS/A3SS (GAIN direction)
-│                 │  └─ ≥100bp → IR (GAIN direction)
-│                 └─ Doesn't reach flanking exon
-│                    ├─ <100bp → A5SS/A3SS (GAIN direction)
-│                    └─ ≥100bp → Partial_IR (GAIN direction)
+│  └─ For overlapping exon pairs NOT involved in IR:
+│     ├─ Exact boundary match → A5SS or A3SS or Partial_IR
+│     ├─ Asymmetric terminal pairs → emit second_event for both boundaries
+│     └─ Dual-boundary internal pairs → decompose into two events
 │
-├─ 2c: SE Detection (Skipped Exon — strict flanking required)
-│  └─ For each dominant exon i within overlap region:
-│     ├─ Skip if already involved in IR or boundary events
-│     ├─ Require: dom[i-1] overlaps a comp exon AND dom[i+1] overlaps a comp exon
-│     └─ If dom[i] has no overlap with any comp exon → SE LOSS event
-│  └─ For each comparator exon j within overlap region (symmetric):
-│     ├─ Skip if already involved in IR or boundary events
-│     ├─ Require: comp[j-1] overlaps a dom exon AND comp[j+1] overlaps a dom exon
-│     └─ If comp[j] has no overlap with any dom exon → SE GAIN event
+├─ 2c: SE Detection (strict flanking required)
+│  └─ Internal exons with no overlap AND both flanks present
 │
-└─ 2d: Missing Internal Exons (diagnostic, both directions)
-   ├─ LOSS: dominant exons within comparator span with no comparator overlap
-   └─ GAIN: comparator exons within dominant span with no dominant overlap
-   (Recorded in missing_internal_exons field; not consumed by reconstruction)
+└─ 2d: Missing Internal Exons
+   ├─ Dom exons within comp span with no comp overlap → Missing_Internal LOSS
+   └─ Comp exons within dom span with no dom overlap → Missing_Internal GAIN
 
 STEP 3: Terminal Event Detection
-├─ Alt_TSS: Compare biological first exons (strand-aware)
-│  ├─ If TSS positions differ → Alt_TSS event
-│  ├─ direction: LOSS if dominant extends further 5', GAIN if comparator extends further 5'
-│  ├─ missing_terminal_exons: exonic coordinate ranges of the longer isoform's 5' extension,
-│  │  computed by walking the longer isoform's exons from its TSS to the shorter isoform's TSS
-│  └─ n_terminal_regions: count of coordinate ranges in missing_terminal_exons
-└─ Alt_TES: Compare biological last exons (strand-aware)
-   ├─ If TES positions differ → Alt_TES event
-   ├─ direction: LOSS if dominant extends further 3', GAIN if comparator extends further 3'
-   ├─ missing_terminal_exons: exonic coordinate ranges of the longer isoform's 3' extension,
-   │  computed by walking the longer isoform's exons from its TES to the shorter isoform's TES
-   └─ n_terminal_regions: count of coordinate ranges in missing_terminal_exons
-
-NOTE on non-overlapping isoforms:
-  When the two isoforms share no exon-level overlap, Step 2 is skipped entirely.
-  Step 3 still fires and correctly captures the complete structural difference via
-  Alt_TSS + Alt_TES events. missing_terminal_exons in each event will contain all
-  exonic coordinate ranges of the longer isoform's terminal extension (which may
-  span multiple complete exons).
+├─ Alt_TSS: Compare biological first exons
+│  └─ missing_terminal_exons: coordinate ranges of longer isoform's 5' extension
+└─ Alt_TES: Compare biological last exons
+   └─ missing_terminal_exons: coordinate ranges of longer isoform's 3' extension
 ```
 
-**Technical Note: IR Exon Pair Tracking**
+### Key Detection Features
 
-In Step 2a, IR events are identified when one exon overlaps with multiple exons. Each IR event involves at least 3 exons total: 1 spanning exon and ≥2 spanned exons. To prevent these exons from being re-analyzed in Step 2b (boundary detection), all pairwise combinations of (comparator_exon, dominant_exon) involved in the IR are tracked.
+- **Dual-boundary decomposition**: Internal exon pairs where both boundaries differ are decomposed into two independent events (e.g., A5SS + A3SS, or Partial_IR_5 + Partial_IR_3)
+- **Asymmetric terminal handling**: When one exon is terminal but its pair is not, both boundaries are emitted (the terminal-facing boundary and the splice-site-facing boundary)
+- **Junction tracking**: All events include `dom_junctions` and `comp_junctions` fields
+- **Non-overlapping isoforms**: Step 2 is skipped; Alt_TSS + Alt_TES capture the complete structural difference via `missing_terminal_exons`
 
-**Why pairs?** Each tracked pair consists of exactly one comparator exon index and one dominant exon index, both involved in the same IR event. In Step 2b, before performing boundary analysis on any (comparator, dominant) exon pair, the code checks if that pair is in the IR tracking list and skips it if present.
+## Reconstruction Algorithm
 
-**Order consistency:** The tracking always stores pairs in `(comparator_index, dominant_index)` format, regardless of IR direction:
-- GAIN direction (comparator spans dominant): stores `(comp=i, dom=j)` for each overlapping dominant exon j
-- LOSS direction (dominant spans comparator): stores `(comp=j, dom=i)` for each overlapping comparator exon j
+### Two-Phase Approach
 
-This consistent ordering ensures Step 2b correctly identifies and skips all exon combinations already classified as IR, preventing redundant or conflicting event assignments.
+**Phase 1: LOSS Events (Add to comparator)**
+Events are applied in this order:
+1. Alt_TSS LOSS → Add missing terminal exons at 5' end
+2. Alt_TES LOSS → Add missing terminal exons at 3' end
+3. SE/Missing_Internal LOSS → Add exons by coordinate range
+4. IR LOSS → Split retained intron using union exon structure
+5. A5SS/A3SS/Partial_IR LOSS → Extend exon boundaries algebraically
 
-**Technical Note: SE Strict Flanking**
+**Phase 2: GAIN Events (Remove from comparator)**
+Events are applied in this order:
+1. SE/Missing_Internal GAIN → Remove exons by coordinate range
+2. Alt_TSS GAIN → Remove terminal exons/trim boundary
+3. Alt_TES GAIN → Remove terminal exons/trim boundary
+4. A5SS/A3SS/Partial_IR GAIN → Shrink exon boundaries algebraically
+5. IR GAIN → Split retained intron using union exon structure
 
-SE detection (Step 2c) requires that both flanking exons (the exons immediately upstream and downstream of the candidate SE) are present and overlapping in the other isoform. An internal exon without both flanking exons present is recorded in `missing_internal_exons` instead, which serves as a diagnostic field indicating structural differences that do not fit the SE pattern. This distinction is important because an internal exon absent in the other isoform but without both flanking exons present may indicate a more complex structural rearrangement.
+**Post-processing:**
+- `merge_adjacent_exons()` combines touching/overlapping exon segments
+- Final exons are sorted in biological order
 
-**Script**: `detect_and_save_events.R` (sources local `event_detection_functions.R`)
+### Core Functions (reconstruction_functions.R)
 
-## Validation with Reconstruction
+| Function | Purpose |
+|----------|---------|
+| `reconstruct_dominant_v2()` | Main reconstruction pipeline |
+| `apply_event_union_based()` | Routes events to appropriate handler |
+| `modify_exon_boundary()` | Algebraic boundary adjustment for A5SS/A3SS/Partial_IR |
+| `modify_terminal_exon()` | Handles Alt_TSS/Alt_TES using coordinate ranges |
+| `add_union_exons()` | Adds exons for LOSS events |
+| `remove_union_exons()` | Removes exons for GAIN events |
+| `find_event_union_exons()` | Finds union exons matching event coordinates (IR only) |
+| `merge_adjacent_exons()` | Combines adjacent/overlapping exon segments |
 
-**Purpose**: Reconstruction serves as validation of event detection correctness. If we can accurately reconstruct the dominant isoform from the comparator isoform plus the detected events, this confirms that our event detection captured all meaningful differences between the isoforms.
+### Boundary Modification Logic
 
-**Reconstruction Algorithm**:
-1. Start with the comparator isoform exon structure
-2. For each detected event (in order):
-   - **LOSS events**: Add regions to comparator (dominant has MORE)
-     - Alt_TSS/Alt_TES: Extend terminal exons using missing_terminal_exons coordinates
-     - A5SS/A3SS/Partial_IR: Add sequence at splice boundaries
-     - SE: Add skipped exons
-     - IR: Split retained introns
-   - **GAIN events**: Remove regions from comparator (dominant has LESS)
-     - Alt_TSS/Alt_TES: Trim terminal exons using missing_terminal_exons coordinates
-     - A5SS/A3SS/Partial_IR: Remove sequence at splice boundaries
-     - SE: Remove extra exons
-3. Match reconstructed exons to union exon boundaries
-4. Merge adjacent segments: Combine adjacent or overlapping exon segments into continuous exons. This ensures that when sequence is added to extend an exon (e.g., Alt_TSS extending the first exon), the extension and original exon are joined into a single exon rather than treated as separate exons.
-   - Function: `merge_adjacent_exons()`
-5. Compare reconstructed structure to expected dominant isoform
+`modify_exon_boundary()` uses algebraic derivation from event coordinates — no union exon lookups:
+- Identifies the target exon (overlapping five_prime/three_prime)
+- Computes new boundary from `min()`/`max()` of event coordinates ± 1
+- Strand-aware: accounts for donor/acceptor semantics on plus vs minus strand
 
-**Validation Criteria**:
-- **Exact match**: Reconstructed exon structure matches expected structure exactly
-- **TSS tolerance**: Transcription start site differences within configured tolerance are acceptable (reported in reason field)
-- **TES tolerance**: Transcription end site differences within configured tolerance are acceptable (reported in reason field)
+### Terminal Modification Logic
 
-**Scripts**:
-- `reconstruction_functions.R` — Core reconstruction logic (`reconstruct_dominant_v2()`, `merge_adjacent_exons()`)
-- `reconstruct_dominant_isoforms.R` — Main reconstruction pipeline
-- `verify_reconstruction.R` — Validation script that compares reconstructed isoforms to expected structures and reports pass/fail status
+`modify_terminal_exon()` handles both overlapping and non-overlapping terminal events:
+- **LOSS (overlapping)**: Extend existing terminal exon boundary
+- **LOSS (non-overlapping)**: Add missing terminal exons from `missing_terminal_exons`
+- **GAIN (overlapping)**: Trim existing terminal exon boundary
+- **GAIN (non-overlapping)**: Remove exons using coordinate-based filtering (`filter(!(exon_start >= range_start & exon_end <= range_end))`)
 
-## Technical Notes
+## Events File Format
 
-- **GAIN/LOSS Semantics**: Event directions (GAIN/LOSS) are defined from the comparator's perspective:
-  - LOSS = comparator LOST sequence (dominant has more exonic sequence)
-  - GAIN = comparator GAINED sequence (dominant has less exonic sequence)
-- **Biological Exon Order**: Exons are ordered TSS→TES throughout detection and reconstruction.
-  Plus strand: ascending genomic coordinate. Minus strand: descending genomic coordinate.
-- **Union Exon Approach**: Uses atomic (non-overlapping) union exon segments
-- **Strand-Aware**: All event detection and reconstruction is strand-aware
+Tab-separated with columns:
+- `gene_id`, `dominant_transcript_id`, `comparator_transcript_id`
+- `event_type`, `direction`
+- `chr`, `five_prime`, `three_prime`, `strand`
+- `bp_diff` (NA for IR)
+- `missing_terminal_exons` (coordinate ranges for Alt_TSS/Alt_TES)
+- `n_terminal_regions`
+- `missing_internal_exons` (diagnostic, not used by reconstruction)
+- `ir_split_exons` (for IR events)
+- `dom_junctions`, `comp_junctions`
+
+## Reconstructed GTF Format
+
+Transcript IDs use `DOM::COMP` format: `"ENST00000497506.5::ENST00000412894.5"`
+
+## Validation
+
+### Verification Criteria
+- **Exact match**: All exon coordinates identical
+- **TSS tolerance**: ±20bp at transcription start site
+- **TES tolerance**: ±20bp at transcription end site
+
+### Current Results
+
+**Synthetic Data**: 44/44 (100%) — covers all event types on both strands
+
+**Real Data (GENCODE)**: 4,156/4,274 (97.2%)
+- 0 FAILs (exact coordinate mismatches)
+- 118 ERRORs (non-actionable):
+  - ~102: reconstruction yields 0 exons (Alt_TSS GAIN + Alt_TES GAIN remove everything)
+  - ~16: "No comparator exons" (comparator transcript not in comparator.gtf)
+
+## Scripts
+
+### Pipeline Scripts
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `prepare_test_data.R` | Validate GTF, randomly select dominants | `Rscript prepare_test_data.R <input.gtf> <output_dominant_mapping.tsv>` |
+| `build_atomic_union_exons.R` | Create tabix-indexed atomic union exons | `Rscript build_atomic_union_exons.R <input.gtf> <output_file>` |
+| `generate_pairs_from_dominant.R` | Generate pairs from dominant mapping | `Rscript generate_pairs_from_dominant.R <gtf> <dominant.tsv> <pairs.tsv>` |
+| `detect_and_save_events.R` | Detect events, determine dominance | `Rscript detect_and_save_events.R <gtf> <pairs.tsv> <events.tsv>` |
+| `reconstruct_dominant_isoforms.R` | Reconstruct dominant from comparator + events | `Rscript reconstruct_dominant_isoforms.R <comp.gtf> <events.tsv> <ue.tsv.gz> <out.gtf> <log.tsv>` |
+| `verify_reconstruction.R` | Compare reconstructed vs original | `Rscript verify_reconstruction.R <original.gtf> <reconstructed.gtf> <events.tsv> <verification.tsv>` |
+
+### Function Libraries
+
+| Script | Purpose |
+|--------|---------|
+| `event_detection_functions.R` | All event detection logic (sourced by `detect_and_save_events.R`) |
+| `reconstruction_functions.R` | All reconstruction logic (sourced by `reconstruct_dominant_isoforms.R`) |
+| `visualization_functions.R` | Gene structure plotting |
+
+### Visualization Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `visualize_verification.R` | Visualize verification failures |
+| `visualize_all_three.R` | Plot dominant, reconstructed, and comparator side-by-side |
+| `visualize_failures.R` | Debug failing test cases |
+
+## Complete Validation Workflow
+
+```bash
+cd development/reconstruction/
+
+# Step 1: Validate GTF and select dominants
+Rscript prepare_test_data.R <input.gtf> <data_dir>/dominant_mapping.tsv
+
+# Step 2: Build atomic union exons
+Rscript build_atomic_union_exons.R <input.gtf> <data_dir>/union_exons.tsv
+
+# Step 3: Generate pairs
+Rscript generate_pairs_from_dominant.R <input.gtf> <data_dir>/dominant_mapping.tsv <data_dir>/pairs.tsv
+
+# Step 4: Detect events
+Rscript detect_and_save_events.R <input.gtf> <data_dir>/pairs.tsv <data_dir>/events.tsv
+
+# Step 5: Extract comparator GTF
+tail -n +2 <data_dir>/events.tsv | cut -f3 | sort -u > /tmp/comparator_ids.txt
+grep -Ff /tmp/comparator_ids.txt <input.gtf> > <data_dir>/comparator.gtf
+
+# Step 6: Reconstruct
+Rscript reconstruct_dominant_isoforms.R \
+  <data_dir>/comparator.gtf <data_dir>/events.tsv \
+  <data_dir>/union_exons.tsv.gz <data_dir>/reconstructed.gtf \
+  <data_dir>/reconstruction_log.tsv
+
+# Step 7: Verify
+Rscript verify_reconstruction.R \
+  <input.gtf> <data_dir>/reconstructed.gtf \
+  <data_dir>/events.tsv <data_dir>/verification.tsv
+
+# Step 8 (Optional): Visualize
+Rscript visualize_all_three.R \
+  <input.gtf> <data_dir>/reconstructed.gtf \
+  <data_dir>/comparator.gtf <data_dir>/events.tsv \
+  <data_dir>/three_isoform_viz.pdf
+```
+
+## Working Directories
+
+- `synthetic_data/` — Synthetic test data (44 test cases, 100% pass)
+- `real_data/` — Real GENCODE data testing (4,274 pairs, 97.2% pass)
+
+## Detection Thresholds
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `TSS_TOLERANCE` | 20 bp | Minimum TSS difference for Alt_TSS event |
+| `TES_TOLERANCE` | 20 bp | Minimum TES difference for Alt_TES event |
+| `SPLICE_SITE_THRESHOLD` | 100 bp | < 100bp → A5SS/A3SS; ≥ 100bp → Partial_IR |
+
+## Dependencies
+
+**R packages:** tidyverse (dplyr, readr, tidyr, stringr, purrr), ggplot2, patchwork
+
+**System tools:** bgzip, tabix
