@@ -640,3 +640,73 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
 
   return(reconstructed)
 }
+
+# ==============================================================================
+# Verification Function
+# ==============================================================================
+
+#' Verify that two exon structures match within tolerance
+#'
+#' Internal exon boundaries require exact match. Terminal exon boundaries
+#' (TSS and TES) allow up to TSS_TOLERANCE / TES_TOLERANCE bp difference.
+#' These constants must be defined in the global environment (e.g. by sourcing
+#' event_detection_functions.R) before calling this function.
+#'
+#' @param original_exons Exons from the true dominant isoform
+#' @param reconstructed_exons Exons from reconstruction
+#' @param strand Strand of the gene ("+" or "-")
+#' @return List with pass (logical), reason (character), n_exons_original, n_exons_reconstructed
+verify_transcript <- function(original_exons, reconstructed_exons, strand) {
+
+  if (nrow(original_exons) != nrow(reconstructed_exons)) {
+    return(list(
+      pass = FALSE,
+      reason = sprintf("Exon count mismatch: %d original vs %d reconstructed",
+                       nrow(original_exons), nrow(reconstructed_exons)),
+      n_exons_original = nrow(original_exons),
+      n_exons_reconstructed = nrow(reconstructed_exons)
+    ))
+  }
+
+  original_sorted <- original_exons %>% arrange(exon_start, exon_end)
+  reconstructed_sorted <- reconstructed_exons %>% arrange(exon_start, exon_end)
+
+  n_exons <- nrow(original_sorted)
+
+  for (i in seq_len(n_exons)) {
+    orig  <- original_sorted[i, ]
+    recon <- reconstructed_sorted[i, ]
+
+    is_first_genomic <- (i == 1)
+    is_last_genomic  <- (i == n_exons)
+
+    if (strand == "+") {
+      start_tol <- if (is_first_genomic) TSS_TOLERANCE else 0L
+      end_tol   <- if (is_last_genomic)  TES_TOLERANCE else 0L
+    } else {
+      start_tol <- if (is_first_genomic) TES_TOLERANCE else 0L
+      end_tol   <- if (is_last_genomic)  TSS_TOLERANCE else 0L
+    }
+
+    start_diff <- abs(orig$exon_start - recon$exon_start)
+    end_diff   <- abs(orig$exon_end   - recon$exon_end)
+
+    if (start_diff > start_tol || end_diff > end_tol) {
+      return(list(
+        pass = FALSE,
+        reason = sprintf("Exon %d mismatch: orig [%d-%d] vs recon [%d-%d]",
+                         i, orig$exon_start, orig$exon_end,
+                         recon$exon_start, recon$exon_end),
+        n_exons_original = nrow(original_exons),
+        n_exons_reconstructed = nrow(reconstructed_exons)
+      ))
+    }
+  }
+
+  return(list(
+    pass = TRUE,
+    reason = "Match",
+    n_exons_original = nrow(original_exons),
+    n_exons_reconstructed = nrow(reconstructed_exons)
+  ))
+}

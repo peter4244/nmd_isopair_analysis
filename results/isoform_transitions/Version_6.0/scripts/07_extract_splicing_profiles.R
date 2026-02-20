@@ -20,9 +20,11 @@
 #   - data/splicing_choice_profiles_intermediate.rds (early output for development)
 #
 # Usage:
-#   Rscript scripts/07_extract_splicing_profiles.R           # full run
-#   Rscript scripts/07_extract_splicing_profiles.R --test    # test mode banner
-#   Rscript scripts/07_extract_splicing_profiles.R --test 50 # limit to first 50 genes
+#   Rscript scripts/07_extract_splicing_profiles.R                              # full run
+#   Rscript scripts/07_extract_splicing_profiles.R --test 50                    # limit to 50 genes
+#   Rscript scripts/07_extract_splicing_profiles.R --reconstruction_check       # with reconstruction verification
+#   Rscript scripts/07_extract_splicing_profiles.R --pairs-file pairs.tsv       # explicit pairs
+#   Rscript scripts/07_extract_splicing_profiles.R --test 50 --reconstruction_check  # combined
 #
 ################################################################################
 
@@ -35,7 +37,22 @@ n_genes_limit <- NULL
 if (test_mode) {
   test_idx <- which(args == "--test")
   if (test_idx < length(args)) {
-    n_genes_limit <- as.integer(args[test_idx + 1])
+    next_arg <- args[test_idx + 1]
+    if (!startsWith(next_arg, "--")) {
+      n_genes_limit <- as.integer(next_arg)
+    }
+  }
+}
+
+reconstruction_check <- "--reconstruction_check" %in% args
+
+pairs_file <- NULL
+if ("--pairs-file" %in% args) {
+  pf_idx <- which(args == "--pairs-file")
+  if (pf_idx < length(args)) {
+    pairs_file <- args[pf_idx + 1]
+  } else {
+    stop("--pairs-file requires a file path argument")
   }
 }
 
@@ -85,6 +102,14 @@ if (test_mode) {
   }
 }
 
+if (reconstruction_check) {
+  cat("*** RECONSTRUCTION CHECK: On-the-fly verification enabled ***\n\n")
+}
+
+if (!is.null(pairs_file)) {
+  cat(sprintf("*** PAIRS FILE: %s ***\n\n", pairs_file))
+}
+
 # ==============================================================================
 # 0. Validate Inputs
 # ==============================================================================
@@ -103,7 +128,15 @@ cat("  All required input files found.\n\n")
 
 cat("Loading event detection functions...\n")
 source("scripts/event_detection_functions.R")
-cat("  Functions loaded\n\n")
+cat("  Functions loaded\n")
+
+if (reconstruction_check) {
+  cat("Loading reconstruction functions (--reconstruction_check active)...\n")
+  validate_file("scripts/reconstruction_functions.R")
+  source("scripts/reconstruction_functions.R")
+  cat("  reconstruct_dominant_v2() and verify_transcript() loaded\n")
+}
+cat("\n")
 
 cat("Detection thresholds:\n")
 cat(sprintf("  TSS tolerance: %d bp\n", TSS_TOLERANCE))
@@ -171,6 +204,12 @@ isoform_structures <- isoform_structures_compact %>%
 
 cat(sprintf("  Expanded to %d exon rows\n", nrow(isoform_structures)))
 
+# Prepare union exons for reconstruction (column names reconstruction expects)
+if (reconstruction_check) {
+  union_exons_for_recon <- union_exons %>%
+    rename(start = union_exon_start, end = union_exon_end, chr = seqnames)
+}
+
 # ==============================================================================
 # 2. Identify Non-Dominant Isoforms
 # ==============================================================================
@@ -196,6 +235,30 @@ cat(sprintf("  Dominant isoforms: %d\n", sum(isoforms_classified$is_dominant)))
 cat(sprintf("  Non-dominant isoforms: %d\n", sum(!isoforms_classified$is_dominant)))
 
 # ==============================================================================
+# 2b. Load Explicit Pairs File (if specified)
+# ==============================================================================
+
+explicit_pairs <- NULL
+valid_pairs <- NULL
+
+if (!is.null(pairs_file)) {
+  cat(sprintf("\nLoading explicit pairs from: %s\n", pairs_file))
+  explicit_pairs <- read_tsv(pairs_file, show_col_types = FALSE)
+  validate_columns(explicit_pairs, c("gene_id", "dominant_isoform_id", "comparator_isoform_id"),
+                   "pairs_file")
+  cat(sprintf("  Loaded %d explicit pairs\n", nrow(explicit_pairs)))
+
+  # Validate all isoforms exist in structures
+  all_pair_isoforms <- unique(c(explicit_pairs$dominant_isoform_id,
+                                 explicit_pairs$comparator_isoform_id))
+  missing <- setdiff(all_pair_isoforms, unique(isoform_structures_compact$isoform_id))
+  if (length(missing) > 0) {
+    warning(sprintf("%d isoforms in pairs file not found in structures: %s",
+                    length(missing), paste(head(missing, 5), collapse = ", ")))
+  }
+}
+
+# ==============================================================================
 # 3. Build Comparison Profiles with Event Detection
 # ==============================================================================
 
@@ -208,10 +271,26 @@ splicing_profiles <- list()
 # Only process genes that have dominant info AND structure data AND union exons
 genes_with_structures <- unique(isoform_structures$gene_id)
 genes_with_ue <- unique(union_exons$gene_id)
-genes_with_dominant <- intersect(
-  unique(dominant_isoforms$gene_id),
-  intersect(genes_with_structures, genes_with_ue)
-)
+
+if (!is.null(pairs_file)) {
+  # Explicit pairs mode: filter to valid pairs
+  valid_pairs <- explicit_pairs %>%
+    filter(gene_id %in% genes_with_structures,
+           gene_id %in% genes_with_ue,
+           dominant_isoform_id %in% unique(isoform_structures$isoform_id),
+           comparator_isoform_id %in% unique(isoform_structures$isoform_id))
+
+  cat(sprintf("  Valid pairs (after filtering): %d/%d\n",
+              nrow(valid_pairs), nrow(explicit_pairs)))
+
+  genes_with_dominant <- unique(valid_pairs$gene_id)
+} else {
+  # Auto-generation mode (default)
+  genes_with_dominant <- intersect(
+    unique(dominant_isoforms$gene_id),
+    intersect(genes_with_structures, genes_with_ue)
+  )
+}
 
 cat(sprintf("  Genes with both dominant and structure data: %d\n", length(genes_with_dominant)))
 
@@ -231,13 +310,6 @@ for (batch_idx in 1:n_batches) {
   batch_genes <- genes_with_dominant[start_idx:end_idx]
 
   for (gene in batch_genes) {
-    # Get dominant isoform
-    dom_iso <- dominant_isoforms %>%
-      filter(gene_id == gene) %>%
-      pull(dominant_isoform_id)
-
-    if (length(dom_iso) != 1) next
-
     # Get gene strand
     gene_strand <- union_exons %>%
       filter(gene_id == gene) %>%
@@ -246,10 +318,24 @@ for (batch_idx in 1:n_batches) {
 
     if (length(gene_strand) != 1) next
 
-    # Get non-dominant isoforms for this gene
-    non_dom_isos <- isoforms_classified %>%
-      filter(gene_id == gene, !is_dominant) %>%
-      pull(isoform_id)
+    if (!is.null(pairs_file)) {
+      # Explicit pairs mode: get dominant and comparator from pairs file
+      gene_pairs <- valid_pairs %>% filter(gene_id == gene)
+      dom_iso <- unique(gene_pairs$dominant_isoform_id)
+      if (length(dom_iso) != 1) next  # skip genes with multiple dominant isoforms
+      non_dom_isos <- gene_pairs$comparator_isoform_id
+    } else {
+      # Auto-generation mode (default)
+      dom_iso <- dominant_isoforms %>%
+        filter(gene_id == gene) %>%
+        pull(dominant_isoform_id)
+
+      if (length(dom_iso) != 1) next
+
+      non_dom_isos <- isoforms_classified %>%
+        filter(gene_id == gene, !is_dominant) %>%
+        pull(isoform_id)
+    }
 
     if (length(non_dom_isos) == 0) next
 
@@ -313,6 +399,34 @@ for (batch_idx in 1:n_batches) {
         dom_exons_for_detection, comp_exons_for_detection,
         gene, dom_iso, non_dom_iso, gene_strand
       )
+
+      # On-the-fly reconstruction check
+      recon_status <- NA_character_
+      recon_reason <- NA_character_
+
+      if (reconstruction_check) {
+        recon_result <- tryCatch({
+          comp_exons_for_recon <- non_dom_structure %>%
+            rename(chr = seqnames, transcript_id = isoform_id) %>%
+            select(chr, exon_start, exon_end, strand, gene_id, transcript_id)
+
+          gene_ue <- union_exons_for_recon %>% filter(gene_id == gene)
+
+          reconstructed <- reconstruct_dominant_v2(comp_exons_for_recon, events, gene_ue)
+
+          if (nrow(reconstructed) == 0) {
+            list(status = "ERROR", reason = "Reconstruction produced 0 exons")
+          } else {
+            vr <- verify_transcript(dom_structure, reconstructed, gene_strand)
+            list(status = if (vr$pass) "PASS" else "FAIL", reason = vr$reason)
+          }
+        }, error = function(e) {
+          list(status = "ERROR", reason = paste0("Exception: ", e$message))
+        })
+
+        recon_status <- recon_result$status
+        recon_reason <- recon_result$reason
+      }
 
       # Aggregate event counts (backward compatible with Scripts 08-12)
       if (nrow(events) > 0) {
@@ -395,7 +509,11 @@ for (batch_idx in 1:n_batches) {
         n_differences = n_exons_dominant_only + n_exons_non_dominant_only,
 
         # Store full comparison as nested tibble
-        comparison_detail = list(comparison)
+        comparison_detail = list(comparison),
+
+        # Reconstruction check results (NA when --reconstruction_check not used)
+        reconstruction_status = recon_status,
+        reconstruction_reason = recon_reason
       )
 
       splicing_profiles[[paste0(gene, "_", non_dom_iso)]] <- profile
@@ -532,5 +650,48 @@ cat("\n")
 cat(sprintf("Total events detected: %d\n", sum(splicing_profiles_df$n_events)))
 cat(sprintf("  Mean events per profile: %.1f\n",
             mean(splicing_profiles_df$n_events)))
+
+if (reconstruction_check) {
+  cat("\n")
+  cat("───────────────────────────────────────────────────────────────────\n")
+  cat("RECONSTRUCTION CHECK RESULTS\n")
+  cat("───────────────────────────────────────────────────────────────────\n")
+  rc_pass  <- sum(splicing_profiles_df$reconstruction_status == "PASS", na.rm = TRUE)
+  rc_fail  <- sum(splicing_profiles_df$reconstruction_status == "FAIL", na.rm = TRUE)
+  rc_error <- sum(splicing_profiles_df$reconstruction_status == "ERROR", na.rm = TRUE)
+  rc_total <- rc_pass + rc_fail + rc_error
+  cat(sprintf("  PASS:  %d/%d (%.1f%%)\n", rc_pass, rc_total, 100 * rc_pass / rc_total))
+  cat(sprintf("  FAIL:  %d/%d (%.1f%%)\n", rc_fail, rc_total, 100 * rc_fail / rc_total))
+  cat(sprintf("  ERROR: %d/%d (%.1f%%)\n", rc_error, rc_total, 100 * rc_error / rc_total))
+
+  if (rc_fail > 0) {
+    cat("\nFailed pairs:\n")
+    failures <- splicing_profiles_df %>% filter(reconstruction_status == "FAIL")
+    for (i in seq_len(min(nrow(failures), 20))) {
+      f <- failures[i, ]
+      cat(sprintf("  [FAIL] %s: %s vs %s — %s\n",
+                  f$gene_id, f$dominant_isoform_id, f$non_dominant_isoform_id,
+                  f$reconstruction_reason))
+    }
+    if (nrow(failures) > 20) {
+      cat(sprintf("  ... and %d more\n", nrow(failures) - 20))
+    }
+  }
+
+  if (rc_error > 0) {
+    cat("\nError summary:\n")
+    errors <- splicing_profiles_df %>%
+      filter(reconstruction_status == "ERROR") %>%
+      count(reconstruction_reason, sort = TRUE)
+    for (i in seq_len(nrow(errors))) {
+      cat(sprintf("  %s: %d\n", errors$reconstruction_reason[i], errors$n[i]))
+    }
+  }
+
+  if (rc_pass == rc_total && rc_total > 0) {
+    cat("\n  PERFECT RECONSTRUCTION — All pairs match!\n")
+  }
+}
+
 cat("═══════════════════════════════════════════════════════════════════\n")
 cat("\n")

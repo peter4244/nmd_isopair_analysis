@@ -84,13 +84,12 @@ validate_file("data/union_exons_filtered.rds")
 validate_file("scripts/reconstruction_functions.R")
 cat("  All required input files found.\n\n")
 
-cat("Loading reconstruction functions...\n")
+cat("Loading shared function libraries...\n")
+source("scripts/event_detection_functions.R")
+cat("  event_detection_functions.R loaded (TSS_TOLERANCE=%d, TES_TOLERANCE=%d)\n" |>
+      sprintf(TSS_TOLERANCE, TES_TOLERANCE))
 source("scripts/reconstruction_functions.R")
-cat("  reconstruct_dominant_v2() loaded\n\n")
-
-# Verification tolerance — must match event_detection_functions.R
-TSS_TOLERANCE <- 20
-TES_TOLERANCE <- 20
+cat("  reconstruction_functions.R loaded (reconstruct_dominant_v2, verify_transcript)\n\n")
 
 # ==============================================================================
 # 1. Load Data
@@ -187,70 +186,7 @@ union_exons <- union_exons_raw %>%
 cat(sprintf("  Union exons ready: %d rows\n", nrow(union_exons)))
 
 # ==============================================================================
-# 3. Verification Function (inlined from verify_reconstruction.R)
-# ==============================================================================
-
-#' Verify that two exon structures match within tolerance
-#'
-#' Internal exon boundaries require exact match. Terminal exon boundaries
-#' (TSS and TES) allow up to TSS_TOLERANCE / TES_TOLERANCE bp difference.
-verify_transcript <- function(original_exons, reconstructed_exons, strand) {
-
-  if (nrow(original_exons) != nrow(reconstructed_exons)) {
-    return(list(
-      pass = FALSE,
-      reason = sprintf("Exon count mismatch: %d original vs %d reconstructed",
-                       nrow(original_exons), nrow(reconstructed_exons)),
-      n_exons_original = nrow(original_exons),
-      n_exons_reconstructed = nrow(reconstructed_exons)
-    ))
-  }
-
-  original_sorted <- original_exons %>% arrange(exon_start, exon_end)
-  reconstructed_sorted <- reconstructed_exons %>% arrange(exon_start, exon_end)
-
-  n_exons <- nrow(original_sorted)
-
-  for (i in seq_len(n_exons)) {
-    orig  <- original_sorted[i, ]
-    recon <- reconstructed_sorted[i, ]
-
-    is_first_genomic <- (i == 1)
-    is_last_genomic  <- (i == n_exons)
-
-    if (strand == "+") {
-      start_tol <- if (is_first_genomic) TSS_TOLERANCE else 0L
-      end_tol   <- if (is_last_genomic)  TES_TOLERANCE else 0L
-    } else {
-      start_tol <- if (is_first_genomic) TES_TOLERANCE else 0L
-      end_tol   <- if (is_last_genomic)  TSS_TOLERANCE else 0L
-    }
-
-    start_diff <- abs(orig$exon_start - recon$exon_start)
-    end_diff   <- abs(orig$exon_end   - recon$exon_end)
-
-    if (start_diff > start_tol || end_diff > end_tol) {
-      return(list(
-        pass = FALSE,
-        reason = sprintf("Exon %d mismatch: orig [%d-%d] vs recon [%d-%d]",
-                         i, orig$exon_start, orig$exon_end,
-                         recon$exon_start, recon$exon_end),
-        n_exons_original = nrow(original_exons),
-        n_exons_reconstructed = nrow(reconstructed_exons)
-      ))
-    }
-  }
-
-  return(list(
-    pass = TRUE,
-    reason = "Match",
-    n_exons_original = nrow(original_exons),
-    n_exons_reconstructed = nrow(reconstructed_exons)
-  ))
-}
-
-# ==============================================================================
-# 4. Reconstruct + Verify (per pair)
+# 3. Reconstruct + Verify (per pair)
 # ==============================================================================
 
 cat("\nReconstructing and verifying...\n")
@@ -370,7 +306,7 @@ for (batch_idx in 1:n_batches) {
 verification_df <- bind_rows(verification_results)
 
 # ==============================================================================
-# 5. Summary Statistics
+# 4. Summary Statistics
 # ==============================================================================
 
 cat("\n")
@@ -415,7 +351,7 @@ if (pass_count == total) {
 }
 
 # ==============================================================================
-# 6. Save Results
+# 5. Save Results
 # ==============================================================================
 
 cat("\nSaving results...\n")
