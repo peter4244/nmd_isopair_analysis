@@ -885,11 +885,19 @@ if (INCLUDE_EXPRESSION) {
   }
 }
 
+# Replace NA with 0 in expression and read count columns
+if (INCLUDE_EXPRESSION) {
+  all_expr_reads_cols <- grep("^(expr_|total_reads_)", colnames(all_isoforms), value = TRUE)
+  for (col in all_expr_reads_cols) {
+    all_isoforms[[col]][is.na(all_isoforms[[col]])] <- 0
+  }
+}
+
 # Add total reads across all samples and conditions
 if (INCLUDE_EXPRESSION) {
   reads_cols <- grep("^total_reads_", colnames(all_isoforms), value = TRUE)
   all_isoforms$total_reads_all_samples <- rowSums(
-    all_isoforms[, reads_cols, drop = FALSE], na.rm = TRUE
+    all_isoforms[, reads_cols, drop = FALSE]
   )
 }
 
