@@ -24,6 +24,34 @@
 library(tidyverse)
 
 # ==============================================================================
+# Input Validation Helpers
+# ==============================================================================
+
+validate_file <- function(path) {
+  if (!file.exists(path)) {
+    stop(sprintf("Required input file not found: %s\nHave you run the prerequisite scripts?", path))
+  }
+}
+
+validate_columns <- function(df, required_cols, name) {
+  missing <- setdiff(required_cols, names(df))
+  if (length(missing) > 0) {
+    stop(sprintf("%s is missing required columns: %s", name, paste(missing, collapse = ", ")))
+  }
+}
+
+validate_overlap <- function(ids_a, ids_b, name_a, name_b, min_pct = 10) {
+  overlap <- length(intersect(ids_a, ids_b))
+  pct <- 100 * overlap / length(ids_a)
+  cat(sprintf("  Cross-check: %d/%d %s found in %s (%.1f%%)\n",
+              overlap, length(ids_a), name_a, name_b, pct))
+  if (pct < min_pct) {
+    stop(sprintf("FATAL: Only %.1f%% of %s found in %s. Files may be from different pipeline runs.",
+                 pct, name_a, name_b))
+  }
+}
+
+# ==============================================================================
 # DETECTION THRESHOLDS (adjust these for sensitivity analyses)
 # ==============================================================================
 
@@ -34,12 +62,24 @@ cat("╚════════════════════════
 cat("\n")
 
 # ==============================================================================
-# 0. Load Event Detection Functions (Shared Library)
+# 0. Validate Inputs
+# ==============================================================================
+
+cat("Validating inputs...\n")
+validate_file("data/isoform_union_exons_annotated_filtered.rds")
+validate_file("data/dominant_isoforms_filtered.rds")
+validate_file("data/union_exons_filtered.rds")
+validate_file("data/isoform_structures_filtered.rds")
+validate_file("scripts/event_detection_functions.R")
+cat("  All required input files found.\n\n")
+
+# ==============================================================================
+# 0a. Load Event Detection Functions (Shared Library)
 # ==============================================================================
 
 cat("Loading event detection functions...\n")
 source("scripts/event_detection_functions.R")
-cat("  ✓ Functions loaded\n\n")
+cat("  Functions loaded\n\n")
 
 cat("Detection thresholds:\n")
 cat(sprintf("  TSS tolerance: %d bp\n", TSS_TOLERANCE))
@@ -65,6 +105,30 @@ cat(sprintf("  Annotated mappings: %d\n", nrow(annotated_mapping)))
 cat(sprintf("  Dominant isoforms: %d\n", nrow(dominant_isoforms)))
 cat(sprintf("  Union exons: %d\n", nrow(union_exons)))
 cat(sprintf("  Isoform structures (compact): %d\n", nrow(isoform_structures_compact)))
+
+# Column validation
+validate_columns(annotated_mapping, c("gene_id", "isoform_id", "union_exon_id", "region_type"),
+                 "annotated_mapping")
+validate_columns(dominant_isoforms, c("gene_id", "dominant_isoform_id"),
+                 "dominant_isoforms")
+validate_columns(union_exons, c("gene_id", "union_exon_id", "union_exon_start", "union_exon_end", "strand"),
+                 "union_exons")
+validate_columns(isoform_structures_compact,
+                 c("isoform_id", "gene_id", "seqnames", "strand", "exon_starts", "exon_ends"),
+                 "isoform_structures")
+
+# Cross-file consistency checks
+cat("\nCross-file consistency checks:\n")
+validate_overlap(unique(union_exons$gene_id),
+                 unique(isoform_structures_compact$gene_id),
+                 "union_exons gene_ids", "isoform_structures")
+validate_overlap(unique(dominant_isoforms$gene_id),
+                 unique(union_exons$gene_id),
+                 "dominant_isoforms gene_ids", "union_exons")
+validate_overlap(unique(dominant_isoforms$dominant_isoform_id),
+                 unique(isoform_structures_compact$isoform_id),
+                 "dominant isoform_ids", "isoform_structures")
+cat("")
 
 # Expand isoform_structures to one row per exon (needed for event detection)
 cat("\nExpanding isoform structures to one row per exon...\n")
@@ -117,11 +181,12 @@ cat("  Comparing each non-dominant to dominant isoform...\n")
 # For each gene, compare non-dominant to dominant
 splicing_profiles <- list()
 
-# Only process genes that have both dominant info AND structure data
+# Only process genes that have dominant info AND structure data AND union exons
 genes_with_structures <- unique(isoform_structures$gene_id)
+genes_with_ue <- unique(union_exons$gene_id)
 genes_with_dominant <- intersect(
   unique(dominant_isoforms$gene_id),
-  genes_with_structures
+  intersect(genes_with_structures, genes_with_ue)
 )
 
 cat(sprintf("  Genes with both dominant and structure data: %d\n", length(genes_with_dominant)))

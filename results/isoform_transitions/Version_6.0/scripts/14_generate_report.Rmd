@@ -1,0 +1,143 @@
+---
+title: "Isoform Choice Analysis: Version 6.0"
+author: "NMD Lung Cells Project"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: united
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6
+)
+
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(patchwork)
+
+base_dir <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0"
+```
+
+# Overview
+
+**Analysis Framework:** Dominant isoform-centric splicing choice characterization
+
+**Research Question:** What splicing assembly choices do cells make when shifting from dominant to non-dominant isoforms?
+
+---
+
+# Executive Summary
+
+```{r load-data}
+# TODO: Load all result files
+```
+
+```{r summary-stats}
+# TODO: Generate summary statistics
+```
+
+---
+
+# Category 1: Co-occurrence Analysis
+
+## Crude Co-occurrence Results
+
+```{r cooccurrence-crude}
+# TODO: Load and display crude results
+```
+
+## Structure-Controlled Co-occurrence
+
+```{r cooccurrence-adjusted}
+# TODO: Load and display adjusted results
+```
+
+## Comparison: Crude vs Adjusted
+
+```{r cooccurrence-comparison}
+# TODO: Compare crude vs adjusted ORs
+```
+
+---
+
+# Category 2: Spatial Organization
+
+## Positional Bias
+
+```{r positional-bias}
+# TODO: Load and visualize positional bias results
+```
+
+## Topology Enrichment
+
+```{r topology-enrichment}
+# TODO: Load and visualize topology results
+```
+
+## Proximity Analysis
+
+```{r proximity}
+# TODO: Load and visualize proximity results
+```
+
+---
+
+# Category 3: Functional Context
+
+## Regional Distribution
+
+```{r regional-distribution}
+# TODO: Load and visualize regional enrichment
+```
+
+## ORF Impact
+
+```{r orf-impact}
+# TODO: Summarize ORF-affecting changes
+```
+
+---
+
+# Category 4: Pattern Classification
+
+## Complexity-Event Relationship
+
+```{r complexity-relationship}
+# TODO: Load and visualize complexity analysis
+```
+
+## Pattern Frequencies
+
+```{r pattern-frequencies}
+# TODO: Display pattern frequencies by complexity
+```
+
+## Top Patterns
+
+```{r top-patterns}
+# TODO: Display most common patterns
+```
+
+---
+
+# Conclusions
+
+TODO: Synthesize findings across all categories
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```

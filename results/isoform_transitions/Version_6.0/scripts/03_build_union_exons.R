@@ -17,16 +17,58 @@
 #   boundary-type-aware logic, then filter to segments covered by at least one
 #   exon. This produces fine-grained segments at every exon boundary transition.
 #
+# Performance:
+#   - Pre-splits isoform_structures by gene (avoids repeated filter on full df)
+#   - Vectorized coverage check (no rowwise())
+#   - Vectorized containment join for isoform-UE mapping
+#   - Writes results incrementally to TSV (constant memory)
+#   - Produces both RDS and tabix-indexed TSV outputs
+#
 # Input:
 #   - data/isoform_structures.rds
 #
 # Output:
-#   - data/union_exons.rds (atomic union exon coordinates per gene)
-#   - data/isoform_union_mapping.rds (which union exons each isoform uses)
+#   - data/union_exons.tsv.gz          (tabix-indexed, for random gene-level access)
+#   - data/union_exons.tsv.gz.tbi      (tabix index)
+#   - data/union_exons.rds             (R native, for bulk loading)
+#   - data/isoform_union_mapping.rds   (which union exons each isoform uses)
+#
+# Usage:
+#   Rscript scripts/03_build_union_exons.R              # full run
+#   Rscript scripts/03_build_union_exons.R --test 1000  # first 1000 genes only
 #
 ################################################################################
 
 library(tidyverse)
+
+# ==============================================================================
+# Input Validation Helpers
+# ==============================================================================
+
+validate_file <- function(path) {
+  if (!file.exists(path)) {
+    stop(sprintf("Required input file not found: %s\nHave you run the prerequisite scripts?", path))
+  }
+}
+
+validate_columns <- function(df, required_cols, name) {
+  missing <- setdiff(required_cols, names(df))
+  if (length(missing) > 0) {
+    stop(sprintf("%s is missing required columns: %s", name, paste(missing, collapse = ", ")))
+  }
+}
+
+# Parse command-line arguments
+args <- commandArgs(trailingOnly = TRUE)
+n_genes_limit <- NULL
+if ("--test" %in% args) {
+  test_idx <- which(args == "--test")
+  if (test_idx < length(args)) {
+    n_genes_limit <- as.integer(args[test_idx + 1])
+  } else {
+    n_genes_limit <- 1000L  # default test size
+  }
+}
 
 cat("\n")
 cat("╔════════════════════════════════════════════════════════════════╗\n")
@@ -34,215 +76,298 @@ cat("║   STEP 3: Build Atomic Union Exon Models                     ║\n")
 cat("╚════════════════════════════════════════════════════════════════╝\n")
 cat("\n")
 
+if (!is.null(n_genes_limit)) {
+  cat(sprintf("*** TEST MODE: Processing first %d genes only ***\n\n", n_genes_limit))
+}
+
+# ==============================================================================
+# 0. Validate Inputs
+# ==============================================================================
+
+cat("Validating inputs...\n")
+validate_file("data/isoform_structures.rds")
+cat("  All required input files found.\n\n")
+
 # ==============================================================================
 # 1. Load Isoform Structures
 # ==============================================================================
 
 cat("Loading isoform structures...\n")
 isoform_structures <- readRDS("data/isoform_structures.rds")
+validate_columns(isoform_structures,
+                 c("gene_id", "isoform_id", "seqnames", "strand", "exon_starts", "exon_ends"),
+                 "isoform_structures")
+cat("  Required columns verified.\n")
 
 cat(sprintf("  Loaded %d isoforms from %d genes\n",
             nrow(isoform_structures),
             n_distinct(isoform_structures$gene_id)))
 
 # ==============================================================================
-# 2. Build Atomic Union Exons Per Gene
+# 2. Pre-split by gene (avoids repeated filter on full 500K-row tibble)
+# ==============================================================================
+
+cat("\nPre-splitting isoform structures by gene...\n")
+gene_list <- split(isoform_structures, isoform_structures$gene_id)
+genes <- names(gene_list)
+
+if (!is.null(n_genes_limit)) {
+  genes <- genes[seq_len(min(n_genes_limit, length(genes)))]
+  gene_list <- gene_list[genes]
+  cat(sprintf("  %d genes selected (test mode, %d total available)\n",
+              length(genes), n_distinct(isoform_structures$gene_id)))
+} else {
+  cat(sprintf("  %d genes to process\n", length(genes)))
+}
+
+# ==============================================================================
+# 3. Build Atomic Union Exons Per Gene (incremental output)
 # ==============================================================================
 
 cat("\nBuilding atomic union exon models...\n")
-cat("  Processing genes with progress tracking...\n")
 
-union_exons_list <- list()
-isoform_mapping_list <- list()
+# Temporary TSV files for incremental writing
+ue_tmp_file <- "data/union_exons_tmp.tsv"
+map_tmp_file <- "data/isoform_union_mapping_tmp.tsv"
 
-genes <- unique(isoform_structures$gene_id)
+# Write headers
+ue_header <- "seqnames\tunion_exon_start\tunion_exon_end\tunion_exon_id\tstrand\tgene_id\tunion_exon_number\tunion_exon_length"
+map_header <- "union_exon_id\tunion_exon_number\tunion_exon_start\tunion_exon_end\tunion_exon_length\tgene_id\tseqnames\tstrand\tisoform_id\texon_number_in_isoform\tisoform_exon_start\tisoform_exon_end"
+writeLines(ue_header, ue_tmp_file)
+writeLines(map_header, map_tmp_file)
+
+# Open file connections for appending
+ue_con <- file(ue_tmp_file, open = "a")
+map_con <- file(map_tmp_file, open = "a")
+
 pb <- txtProgressBar(min = 0, max = length(genes), style = 3)
 
-ue_counter <- 1
+total_ues <- 0L
+total_mappings <- 0L
+genes_processed <- 0L
 
 for (i in seq_along(genes)) {
   gene <- genes[i]
-
-  # Get all isoforms for this gene
-  gene_isoforms <- isoform_structures %>%
-    filter(gene_id == gene)
+  gene_isoforms <- gene_list[[gene]]
 
   if (nrow(gene_isoforms) == 0) next
 
-  # Get chromosome and strand
   chr <- gene_isoforms$seqnames[1]
-  strand <- gene_isoforms$strand[1]
-
-  # Extract all exon coordinates across all isoforms
-  all_exons <- map_dfr(1:nrow(gene_isoforms), function(j) {
-    iso <- gene_isoforms[j, ]
-    tibble(
-      isoform_id = iso$isoform_id,
-      exon_start = iso$exon_starts[[1]],
-      exon_end = iso$exon_ends[[1]],
-      exon_number_in_isoform = seq_along(iso$exon_starts[[1]])
-    )
-  })
-
-  if (nrow(all_exons) == 0) next
+  strand_val <- gene_isoforms$strand[1]
 
   # --------------------------------------------------------------------------
-  # Atomic boundary splitting (from build_atomic_union_exons.R)
+  # Expand list columns to per-exon rows (vectorized)
+  # --------------------------------------------------------------------------
+  n_exons_per_iso <- lengths(gene_isoforms$exon_starts)
+  all_exon_starts <- unlist(gene_isoforms$exon_starts)
+  all_exon_ends <- unlist(gene_isoforms$exon_ends)
+  all_iso_ids <- rep(gene_isoforms$isoform_id, n_exons_per_iso)
+  all_exon_nums <- unlist(lapply(n_exons_per_iso, seq_len))
+
+  if (length(all_exon_starts) == 0) next
+
+  # --------------------------------------------------------------------------
+  # Atomic boundary splitting
   # --------------------------------------------------------------------------
 
-  # Collect all unique boundaries and sort
-  all_boundaries <- sort(unique(c(all_exons$exon_start, all_exons$exon_end)))
-
+  # Unique sorted boundaries
+  all_boundaries <- sort(unique(c(all_exon_starts, all_exon_ends)))
   if (length(all_boundaries) < 2) next
 
-  # Determine boundary types: START, END, or BOTH
-  boundary_types <- sapply(all_boundaries, function(b) {
-    is_start <- b %in% all_exons$exon_start
-    is_end <- b %in% all_exons$exon_end
-    if (is_start && is_end) return("BOTH")
-    if (is_start) return("START")
-    return("END")
-  })
+  # Classify boundaries using set lookups (vectorized)
+  starts_set <- unique(all_exon_starts)
+  ends_set <- unique(all_exon_ends)
+  is_start <- all_boundaries %in% starts_set
+  is_end <- all_boundaries %in% ends_set
 
-  # Create atomic segments using boundary-type-aware splitting:
-  # - START boundary (middle): split before it → [..., b-1] then [b, ...]
-  # - END boundary (middle): split after it → [..., b] then [b+1, ...]
-  # - BOTH boundary: split at it → [..., b] then [b+1, ...]
-  # - First boundary: always segment start
-  # - Last boundary: always segment end
-
-  n <- length(all_boundaries)
-  seg_starts <- c()
-  seg_ends <- c()
+  # Build segments — pre-allocate at max possible size
+  n_bounds <- length(all_boundaries)
+  # Max segments: n_bounds - 1 (normal) + number of BOTH boundaries (extra split)
+  n_both <- sum(is_start & is_end)
+  max_segs <- n_bounds - 1 + n_both
+  seg_s <- integer(max_segs)
+  seg_e <- integer(max_segs)
+  n_seg <- 0L
 
   current_start <- all_boundaries[1]
 
-  for (k in seq_len(n - 2) + 1) {
-    b <- all_boundaries[k]
-    if (boundary_types[k] == "START") {
-      # Split before this START boundary
-      seg_starts <- c(seg_starts, current_start)
-      seg_ends <- c(seg_ends, b - 1)
-      current_start <- b
-    } else if (boundary_types[k] == "END") {
-      # Split after this END boundary
-      seg_starts <- c(seg_starts, current_start)
-      seg_ends <- c(seg_ends, b)
-      current_start <- b + 1
-    } else {
-      # BOTH: position is both an exon-end and an exon-start (different isoforms).
-      # Must produce THREE segments: [..., b-1], [b, b], [b+1, ...]
-      # so that both the exon ending at b and the exon starting at b
-      # can claim position b through strict containment.
-      seg_starts <- c(seg_starts, current_start)
-      seg_ends <- c(seg_ends, b - 1)
-      seg_starts <- c(seg_starts, b)
-      seg_ends <- c(seg_ends, b)
-      current_start <- b + 1
+  if (n_bounds > 2) {
+    for (k in 2:(n_bounds - 1)) {
+      b <- all_boundaries[k]
+      if (is_start[k] && is_end[k]) {
+        # BOTH: three segments [..., b-1], [b, b], [b+1, ...]
+        n_seg <- n_seg + 1L; seg_s[n_seg] <- current_start; seg_e[n_seg] <- b - 1L
+        n_seg <- n_seg + 1L; seg_s[n_seg] <- b;             seg_e[n_seg] <- b
+        current_start <- b + 1L
+      } else if (is_start[k]) {
+        # START: split before
+        n_seg <- n_seg + 1L; seg_s[n_seg] <- current_start; seg_e[n_seg] <- b - 1L
+        current_start <- b
+      } else {
+        # END: split after
+        n_seg <- n_seg + 1L; seg_s[n_seg] <- current_start; seg_e[n_seg] <- b
+        current_start <- b + 1L
+      }
     }
   }
 
-  # Add final segment
-  seg_starts <- c(seg_starts, current_start)
-  seg_ends <- c(seg_ends, all_boundaries[n])
+  # Final segment
+  n_seg <- n_seg + 1L; seg_s[n_seg] <- current_start; seg_e[n_seg] <- all_boundaries[n_bounds]
 
-  segments <- tibble(
-    seg_start = seg_starts,
-    seg_end = seg_ends
-  ) %>%
-    filter(seg_start <= seg_end)  # Drop phantom segments from adjacent boundaries
+  # Trim to actual size and filter phantoms (start > end)
+  seg_s <- seg_s[1:n_seg]
+  seg_e <- seg_e[1:n_seg]
+  valid <- seg_s <= seg_e
+  seg_s <- seg_s[valid]
+  seg_e <- seg_e[valid]
 
-  # Filter to segments covered by at least one exon
-  covered_segments <- segments %>%
-    rowwise() %>%
-    filter({
-      any(
-        all_exons$exon_start <= seg_start &
-        all_exons$exon_end >= seg_end
-      )
-    }) %>%
-    ungroup()
-
-  if (nrow(covered_segments) == 0) next
+  if (length(seg_s) == 0) next
 
   # --------------------------------------------------------------------------
-  # Create union exons from covered segments
+  # Vectorized coverage check: is each segment covered by at least one exon?
+  # Uses outer comparison — fine for per-gene sizes (typically small)
   # --------------------------------------------------------------------------
+  n_segs <- length(seg_s)
+  n_exons <- length(all_exon_starts)
 
-  gene_ue_start <- ue_counter
-
-  atomic_exons <- covered_segments %>%
-    mutate(
-      gene_id = gene,
-      seqnames = chr,
-      strand = strand,
-      union_exon_id = paste0(gene, "_UE", row_number()),
-      union_exon_number = row_number(),
-      union_exon_start = seg_start,
-      union_exon_end = seg_end,
-      union_exon_length = seg_end - seg_start + 1
-    ) %>%
-    select(union_exon_id, union_exon_number, union_exon_start, union_exon_end,
-           union_exon_length, gene_id, seqnames, strand)
-
-  ue_counter <- ue_counter + nrow(atomic_exons)
-  union_exons_list[[gene]] <- atomic_exons
-
-  # --------------------------------------------------------------------------
-  # Create isoform-to-union-exon mapping
-  # Uses containment check: atomic UE is fully within isoform exon
-  # --------------------------------------------------------------------------
-
-  for (j in 1:nrow(gene_isoforms)) {
-    iso <- gene_isoforms[j, ]
-    iso_exons <- tibble(
-      exon_start = iso$exon_starts[[1]],
-      exon_end = iso$exon_ends[[1]],
-      exon_number_in_isoform = seq_along(iso$exon_starts[[1]])
-    )
-
-    # Find which atomic UEs are contained within each isoform exon
-    mapping <- map_dfr(1:nrow(iso_exons), function(k) {
-      ex_start <- iso_exons$exon_start[k]
-      ex_end <- iso_exons$exon_end[k]
-
-      # Containment: atomic UE fully within this isoform exon
-      contained <- atomic_exons %>%
-        filter(
-          union_exon_start >= ex_start & union_exon_end <= ex_end
-        )
-
-      if (nrow(contained) > 0) {
-        contained %>%
-          mutate(
-            isoform_id = iso$isoform_id,
-            exon_number_in_isoform = iso_exons$exon_number_in_isoform[k],
-            isoform_exon_start = ex_start,
-            isoform_exon_end = ex_end
-          )
-      } else {
-        tibble()
-      }
-    })
-
-    isoform_mapping_list[[paste0(gene, "_", iso$isoform_id)]] <- mapping
+  # For each segment, check if any exon fully contains it
+  # seg_s[j] >= exon_start[k] AND seg_e[j] <= exon_end[k]
+  covered <- logical(n_segs)
+  for (j in seq_len(n_segs)) {
+    covered[j] <- any(all_exon_starts <= seg_s[j] & all_exon_ends >= seg_e[j])
   }
 
-  setTxtProgressBar(pb, i)
+  seg_s <- seg_s[covered]
+  seg_e <- seg_e[covered]
+
+  if (length(seg_s) == 0) next
+
+  # --------------------------------------------------------------------------
+  # Create union exon records
+  # --------------------------------------------------------------------------
+  n_ue <- length(seg_s)
+  ue_ids <- paste0(gene, "_UE", seq_len(n_ue))
+  ue_lengths <- seg_e - seg_s + 1L
+
+  # Write union exons to TSV (tab-separated, no quotes)
+  # Format: seqnames, start, end, union_exon_id, strand, gene_id, number, length
+  ue_lines <- paste(chr, seg_s, seg_e, ue_ids, strand_val, gene,
+                    seq_len(n_ue), ue_lengths, sep = "\t")
+  writeLines(ue_lines, ue_con)
+
+  total_ues <- total_ues + n_ue
+
+  # --------------------------------------------------------------------------
+  # Vectorized isoform-to-UE mapping via containment
+  # For each isoform exon, find all UEs where ue_start >= exon_start & ue_end <= exon_end
+  # --------------------------------------------------------------------------
+  unique_isos <- unique(all_iso_ids)
+
+  for (iso_id in unique_isos) {
+    mask <- all_iso_ids == iso_id
+    ex_starts <- all_exon_starts[mask]
+    ex_ends <- all_exon_ends[mask]
+    ex_nums <- all_exon_nums[mask]
+
+    # For each exon in this isoform, find contained UEs
+    map_lines <- character(0)
+    for (e_idx in seq_along(ex_starts)) {
+      contained_mask <- seg_s >= ex_starts[e_idx] & seg_e <= ex_ends[e_idx]
+      if (any(contained_mask)) {
+        which_contained <- which(contained_mask)
+        # Format: ue_id, ue_number, ue_start, ue_end, ue_length, gene_id, chr, strand,
+        #         isoform_id, exon_number, iso_exon_start, iso_exon_end
+        new_lines <- paste(
+          ue_ids[which_contained],
+          which_contained,
+          seg_s[which_contained],
+          seg_e[which_contained],
+          ue_lengths[which_contained],
+          gene, chr, strand_val,
+          iso_id, ex_nums[e_idx],
+          ex_starts[e_idx], ex_ends[e_idx],
+          sep = "\t"
+        )
+        map_lines <- c(map_lines, new_lines)
+      }
+    }
+
+    if (length(map_lines) > 0) {
+      writeLines(map_lines, map_con)
+      total_mappings <- total_mappings + length(map_lines)
+    }
+  }
+
+  genes_processed <- genes_processed + 1L
+
+  if (i %% 1000 == 0) {
+    setTxtProgressBar(pb, i)
+  }
 }
 
+setTxtProgressBar(pb, length(genes))
 close(pb)
-
-# Combine results
-union_exons <- bind_rows(union_exons_list)
-isoform_union_mapping <- bind_rows(isoform_mapping_list)
+close(ue_con)
+close(map_con)
 
 cat(sprintf("\n  Created %d atomic union exons across %d genes\n",
-            nrow(union_exons),
-            n_distinct(union_exons$gene_id)))
+            total_ues, genes_processed))
+cat(sprintf("  Created %d isoform-UE mappings\n", total_mappings))
 
 # ==============================================================================
-# 3. Validation
+# 4. Create tabix-indexed union exon file
+# ==============================================================================
+
+cat("\nCreating tabix-indexed union exon file...\n")
+
+# Read the TSV, sort by chr+start (required for tabix), write tabix format
+ue_df <- read_tsv(ue_tmp_file, show_col_types = FALSE)
+
+# Tabix file: chr, start, end, union_exon_id, strand, gene_id (matches development format)
+tabix_file <- "data/union_exons.tsv"
+ue_sorted <- ue_df %>% arrange(seqnames, union_exon_start)
+
+writeLines("#chr\tstart\tend\tunion_exon_id\tstrand\tgene_id", tabix_file)
+tabix_lines <- paste(ue_sorted$seqnames, ue_sorted$union_exon_start,
+                     ue_sorted$union_exon_end, ue_sorted$union_exon_id,
+                     ue_sorted$strand, ue_sorted$gene_id, sep = "\t")
+write(tabix_lines, tabix_file, append = TRUE)
+
+# bgzip and tabix index
+bgzip_status <- system(sprintf("bgzip -f %s", tabix_file))
+if (bgzip_status != 0) {
+  warning(sprintf("bgzip failed with status %d", bgzip_status))
+} else {
+  tabix_status <- system(sprintf("tabix -f -s 1 -b 2 -e 3 %s.gz", tabix_file))
+  if (tabix_status != 0) {
+    warning(sprintf("tabix failed with status %d", tabix_status))
+  } else {
+    cat("  data/union_exons.tsv.gz (tabix-indexed)\n")
+  }
+}
+
+# ==============================================================================
+# 5. Save RDS outputs (for scripts that bulk-load)
+# ==============================================================================
+
+cat("\nSaving RDS outputs...\n")
+
+# Union exons RDS (same columns as before for compatibility)
+union_exons <- ue_df %>%
+  select(union_exon_id, union_exon_number, union_exon_start, union_exon_end,
+         union_exon_length, gene_id, seqnames, strand)
+
+saveRDS(union_exons, "data/union_exons.rds")
+cat("  data/union_exons.rds\n")
+
+# Isoform mapping RDS
+map_df <- read_tsv(map_tmp_file, show_col_types = FALSE)
+
+saveRDS(map_df, "data/isoform_union_mapping.rds")
+cat("  data/isoform_union_mapping.rds\n")
+
+# ==============================================================================
+# 6. Validation
 # ==============================================================================
 
 cat("\nValidating atomic union exons...\n")
@@ -266,7 +391,7 @@ if (n_overlaps > 0) {
 }
 
 # Check mapping completeness
-n_isoforms_with_mapping <- n_distinct(isoform_union_mapping$isoform_id)
+n_isoforms_with_mapping <- n_distinct(map_df$isoform_id)
 n_isoforms_total <- nrow(isoform_structures)
 
 cat(sprintf("  Mapping created for %d / %d isoforms (%.1f%%)\n",
@@ -277,40 +402,33 @@ cat(sprintf("  Mapping created for %d / %d isoforms (%.1f%%)\n",
 # Summary statistics
 cat("\nAtomic union exon statistics:\n")
 cat(sprintf("  Total union exons: %d\n", nrow(union_exons)))
+ue_per_gene <- table(union_exons$gene_id)
 cat(sprintf("  Union exons per gene - mean: %.1f, median: %.0f, range: %d-%d\n",
-            mean(table(union_exons$gene_id)),
-            median(table(union_exons$gene_id)),
-            min(table(union_exons$gene_id)),
-            max(table(union_exons$gene_id))))
+            mean(ue_per_gene), median(ue_per_gene),
+            min(ue_per_gene), max(ue_per_gene)))
 cat(sprintf("  Union exon length - mean: %.0f bp, median: %.0f bp\n",
             mean(union_exons$union_exon_length),
             median(union_exons$union_exon_length)))
 
 cat("\nMapping statistics:\n")
-cat(sprintf("  Total mappings: %d\n", nrow(isoform_union_mapping)))
+cat(sprintf("  Total mappings: %d\n", nrow(map_df)))
 cat(sprintf("  Union exons per isoform - mean: %.1f\n",
-            nrow(isoform_union_mapping) / n_isoforms_with_mapping))
+            nrow(map_df) / n_isoforms_with_mapping))
 
-# ==============================================================================
-# 4. Save Outputs
-# ==============================================================================
-
-cat("\nSaving outputs...\n")
-saveRDS(union_exons, "data/union_exons.rds")
-cat("  data/union_exons.rds\n")
-
-saveRDS(isoform_union_mapping, "data/isoform_union_mapping.rds")
-cat("  data/isoform_union_mapping.rds\n")
+# Clean up temp files
+file.remove(ue_tmp_file)
+file.remove(map_tmp_file)
 
 cat("\nStep 3 complete\n")
 cat("\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
 cat("SUMMARY\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
-cat(sprintf("Genes processed: %d\n", n_distinct(union_exons$gene_id)))
+cat(sprintf("Genes processed: %d\n", genes_processed))
 cat(sprintf("Atomic union exons created: %d\n", nrow(union_exons)))
 cat(sprintf("Isoforms mapped: %d\n", n_isoforms_with_mapping))
-cat(sprintf("Mapping entries: %d\n", nrow(isoform_union_mapping)))
-cat(sprintf("Mean union exons per gene: %.1f\n", mean(table(union_exons$gene_id))))
+cat(sprintf("Mapping entries: %d\n", nrow(map_df)))
+cat(sprintf("Mean union exons per gene: %.1f\n", mean(ue_per_gene)))
+cat(sprintf("Outputs: union_exons.rds, union_exons.tsv.gz (tabix), isoform_union_mapping.rds\n"))
 cat("═══════════════════════════════════════════════════════════════════\n")
 cat("\n")

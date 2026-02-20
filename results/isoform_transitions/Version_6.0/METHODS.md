@@ -1,7 +1,7 @@
 # Isoform Choice Analysis: Computational Methods
 
 **Version:** 6.0
-**Date:** 2026-02-15
+**Date:** 2026-02-20
 **Purpose:** Detailed algorithmic documentation for splicing event detection and isoform comparison
 
 ---
@@ -24,10 +24,14 @@
 
 When cells produce alternative isoforms instead of the dominant isoform, they make deliberate splicing choices. We characterize these choices by comparing each non-dominant isoform to the gene's dominant isoform, identifying:
 
-1. **Transcript boundary changes** (TSS/TES)
-2. **Internal exon inclusion/exclusion** (SE, MXE, runs of missing exons)
-3. **Exon boundary modifications** (A5SS, A3SS)
-4. **Splicing dysfunction** (IR, Partial_IR)
+1. **Transcript boundary changes** (Alt_TSS, Alt_TES)
+2. **Internal exon inclusion/exclusion** (SE, Missing_Internal)
+3. **Exon boundary modifications** (A5SS, A3SS, Partial_IR_5, Partial_IR_3)
+4. **Intron retention** (IR, IR_diff_5, IR_diff_3, IR_diff_5_3)
+
+Each event carries a **direction** (GAIN or LOSS) from the comparator's perspective:
+- **LOSS** = comparator lost sequence relative to dominant (dominant has more). Reconstruction: ADD regions to comparator.
+- **GAIN** = comparator gained sequence relative to dominant (dominant has less). Reconstruction: REMOVE regions from comparator.
 
 ### Computational Approach
 
@@ -39,10 +43,12 @@ Our analysis proceeds in three phases:
 - Annotate region types (5'UTR, CDS, 3'UTR)
 - Identify dominant isoforms
 
-**Phase 2: Event Detection**
-- Compare each non-dominant to dominant isoform
-- Detect all splicing events using validated algorithms
+**Phase 2: Event Detection and Reconstruction Validation**
+- Compare each non-dominant (comparator) to dominant isoform
+- Detect all splicing events using a hierarchical pipeline: IR -> boundary shifts -> exon skipping -> terminal events
+- Reconstruct dominant isoform from comparator + events and verify coordinates match
 - Generate splicing choice profiles
+- Shared libraries: `event_detection_functions.R`, `reconstruction_functions.R`
 
 **Phase 3: Statistical Analysis**
 - Co-occurrence analysis
@@ -60,97 +66,93 @@ For each gene, we construct a **union exon model** that represents all possible 
 
 ### Definition
 
-A **union exon** is a maximal genomic region such that:
-1. At least one isoform of the gene has an exon covering that entire region
-2. No sub-region can be split without breaking condition (1)
+An **atomic union exon** is a minimal genomic segment such that:
+1. Every isoform exon boundary is also a union exon boundary
+2. Each atomic UE is fully contained within at least one isoform exon
+3. No atomic UE can be further split without violating these properties
 
-### Construction Algorithm
+### Construction Algorithm (Atomic Boundary-Type Splitting)
 
 ```
 Input: Set of isoforms I₁, I₂, ..., Iₙ for gene G
        Each isoform Iᵢ has exons E₁ᵢ, E₂ᵢ, ..., Eₘᵢ
-       Each exon Eⱼᵢ has coordinates [start, end]
+       Each exon Eⱼᵢ has coordinates [start, end] (inclusive)
 
-Output: Set of union exons U₁, U₂, ..., Uₖ
+Output: Set of atomic union exons U₁, U₂, ..., Uₖ
         Mapping M: (isoform, union_exon) → present/absent
 
-Step 1: Collect all exon boundaries
-  B = {} (empty set of boundaries)
-  For each isoform Iᵢ:
-    For each exon Eⱼᵢ:
-      Add Eⱼᵢ.start to B
-      Add Eⱼᵢ.end + 1 to B  # End is inclusive, so +1 for next boundary
-  Sort B in ascending order
+Step 1: Collect all unique boundaries
+  B = sorted unique set of all exon starts and ends across all isoforms
 
-Step 2: Create union exons from boundaries
-  U = [] (empty list)
-  For k = 1 to length(B) - 1:
-    candidate_exon = [B[k], B[k+1] - 1]  # Inclusive coordinates
+Step 2: Classify each boundary
+  For each b in B:
+    is_start = b appears as an exon_start in any isoform
+    is_end = b appears as an exon_end in any isoform
+    type(b) = "BOTH" if is_start AND is_end
+              "START" if is_start only
+              "END" if is_end only
 
-    # Check if this region is covered by at least one isoform's exon
-    is_covered = FALSE
-    For each isoform Iᵢ:
-      For each exon Eⱼᵢ:
-        If Eⱼᵢ.start ≤ B[k] AND Eⱼᵢ.end ≥ B[k+1] - 1:
-          is_covered = TRUE
-          break
+Step 3: Split into atomic segments
+  current_start = B[1]
+  segments = []
 
-    If is_covered:
-      Assign union_exon_id: gene_id + "_UE" + k
-      Append candidate_exon to U
+  For each internal boundary b (B[2] through B[n-1]):
+    If type(b) == "START":
+      # Split before: exon starting here needs its own boundary
+      segments += [current_start, b-1]
+      current_start = b
 
-Step 3: Order union exons by transcript direction
-  If strand == "+":
-    Sort U by start position (ascending)
-  Else if strand == "-":
-    Sort U by start position (descending)
+    Else if type(b) == "END":
+      # Split after: exon ending here gets included
+      segments += [current_start, b]
+      current_start = b + 1
 
-  Assign union_exon_index 1, 2, 3, ... (5' to 3' in transcript direction)
+    Else if type(b) == "BOTH":
+      # Position is both an exon-end and exon-start (different isoforms)
+      # Must produce THREE segments so both can claim position b
+      segments += [current_start, b-1]
+      segments += [b, b]           # Single-base segment
+      current_start = b + 1
+
+  # Final segment
+  segments += [current_start, B[n]]
+
+  # Filter: keep only segments where start <= end
+  # Filter: keep only segments covered by at least one exon
 
 Step 4: Create isoform-union exon mapping
   For each isoform Iᵢ:
-    For each union exon Uₖ:
-      # Check if isoform contains this union exon
-      M[Iᵢ, Uₖ] = FALSE
-      For each exon Eⱼᵢ in Iᵢ:
-        If Eⱼᵢ.start ≤ Uₖ.start AND Eⱼᵢ.end ≥ Uₖ.end:
-          M[Iᵢ, Uₖ] = TRUE
-          break
+    For each atomic UE Uₖ:
+      # Strict containment: UE must be fully within isoform exon
+      M[Iᵢ, Uₖ] = any exon Eⱼᵢ where
+        Eⱼᵢ.start <= Uₖ.start AND Eⱼᵢ.end >= Uₖ.end
 ```
 
 ### Properties
 
-1. **Maximality**: Cannot merge adjacent union exons without violating coverage by single exons
-2. **Completeness**: Every exonic position in any isoform belongs to exactly one union exon
-3. **Non-overlapping**: Union exons are disjoint (no overlapping coordinates)
-4. **Ordered**: Union exons are indexed 5' → 3' in transcript direction
+1. **Atomicity**: Every isoform exon boundary is also a union exon boundary
+2. **Completeness**: Every exonic position belongs to exactly one atomic UE
+3. **Non-overlapping**: Atomic UEs are disjoint
+4. **Strict containment**: Every isoform exon decomposes into a set of complete atomic UEs
 
-### Example
+### Example (BOTH Boundary Case)
 
 ```
-Isoform A: Exons [100-300], [500-700], [900-1200]
-Isoform B: Exons [100-300], [500-800], [900-1200]
+Isoform A: Exons [100-300], [500-700]
+Isoform B: Exons [100-300], [300-600]
 
-Boundaries: 100, 301, 500, 701, 801, 900, 1201
-Candidate regions: [100-300], [301-499], [500-700], [701-800], [801-899], [900-1200]
+Boundaries: 100(START), 300(BOTH), 500(START), 600(END), 700(END)
 
-Check coverage:
-  [100-300]: covered by A and B → Union Exon 1
-  [301-499]: not covered by any exon → skip
-  [500-700]: covered by A and B → Union Exon 2
-  [701-800]: covered by B only → Union Exon 3
-  [801-899]: not covered by any exon → skip
-  [900-1200]: covered by A and B → Union Exon 4
-
-Union Exons:
-  UE1: [100-300]   (in both A and B)
-  UE2: [500-700]   (in both A and B)
-  UE3: [701-800]   (in B only)
-  UE4: [900-1200]  (in both A and B)
+Atomic segments:
+  [100-299]: covered by A and B → UE1
+  [300-300]: covered by A and B → UE2  (single-base, BOTH boundary)
+  [301-499]: covered by B only → UE3
+  [500-600]: covered by A and B → UE4
+  [601-700]: covered by A only → UE5
 
 Mapping:
-  A: [present, present, absent, present]
-  B: [present, present, present, present]
+  A: [UE1, UE2, UE4, UE5]         (exon [100-300] → UE1+UE2, exon [500-700] → UE4+UE5)
+  B: [UE1, UE2, UE3, UE4]  (exon [100-300] → UE1+UE2, exon [300-600] → UE2+UE3+UE4)
 ```
 
 ---
@@ -159,7 +161,27 @@ Mapping:
 
 ### Overview
 
-All events are detected by comparing a non-dominant isoform to the dominant isoform. We use the union exon framework to identify differences in exon usage and boundaries.
+All events are detected by comparing a comparator (non-dominant) isoform to the dominant isoform. We use the union exon framework to identify differences in exon usage and boundaries.
+
+**Detection proceeds in biological priority order:**
+
+| Step | What it detects | Event types |
+|------|----------------|-------------|
+| 2a | Intron retention | IR, IR_diff_5, IR_diff_3, IR_diff_5_3 |
+| 2b | Splice-site boundary shifts | A5SS, A3SS, Partial_IR_5, Partial_IR_3 |
+| 2c | Exon skipping / missing exons | SE, Missing_Internal |
+| gap | Non-overlapping dom exons in comp span | Missing_Internal |
+| 3 | Terminal boundary differences | Alt_TSS, Alt_TES |
+
+**Event Direction (GAIN/LOSS)**:
+
+All events carry a direction from the comparator's perspective:
+- **LOSS**: Comparator lost sequence (dominant has more). Reconstruction: ADD regions to comparator.
+- **GAIN**: Comparator gained sequence (dominant has less). Reconstruction: REMOVE regions from comparator.
+
+**Junction Tracking**:
+
+Events include `dom_junctions` and `comp_junctions` fields recording the splice junctions involved in each event.
 
 ### Coordinate System Conventions
 
@@ -345,9 +367,11 @@ Return (detected, bp_diff)
 
 ---
 
-### 5. Partial Intron Retention (Partial_IR) Detection
+### 5. Partial Intron Retention (Partial_IR_5 / Partial_IR_3) Detection
 
-**Definition**: Two exons share one boundary but differ by ≥100bp on the other boundary, suggesting partial intron retention or extension.
+**Definition**: Two exons share one boundary but differ by ≥100bp on the other boundary, suggesting partial intron retention or extension. Partial IR is now split into two subtypes:
+- **Partial_IR_5**: Retention/extension on the 5' (donor) side of the exon
+- **Partial_IR_3**: Retention/extension on the 3' (acceptor) side of the exon
 
 **Algorithm**:
 
@@ -438,6 +462,13 @@ Function exon_overlaps(exon1, exon2):
 - Complete intron retention
 - Often introduces PTCs → triggers NMD
 - May represent splicing errors or regulated NMD-targeting
+
+**IR Subtypes (IR_diff)**: When the retained-intron exon's boundaries don't exactly match the outermost split exons, the event is classified as:
+- **IR_diff_5**: 5' boundary mismatch (retained exon starts at different position than outermost split exon)
+- **IR_diff_3**: 3' boundary mismatch
+- **IR_diff_5_3**: Both boundaries mismatch
+
+These capture cases where intron retention co-occurs with a boundary shift.
 
 ---
 
@@ -580,6 +611,20 @@ Return n_se
 - Cassette exon: discrete functional unit that can be included or excluded
 - Often regulated in a tissue-specific or developmental manner
 - May affect protein domain composition
+
+---
+
+### 8. Missing_Internal Detection
+
+**Definition**: An exon present in only one isoform (within the other's genomic span) where the strict flanking condition for SE is not met.
+
+When a comparator-only or dominant-only exon is found within the other isoform's span, we check if both flanking exons overlap the other isoform. If yes, the event is classified as SE. If no, it is classified as Missing_Internal.
+
+Missing_Internal is also emitted for non-overlapping isoforms: when two isoforms share no exonic overlap, dominant exons within the comparator's genomic span are emitted as Missing_Internal LOSS events.
+
+**Distinction from SE**:
+- **SE**: Missing exon with comparable flanks on both sides (cassette exon skipping)
+- **Missing_Internal**: Missing exon where at least one flanking exon does not overlap the other isoform (structural context differs)
 
 ---
 
@@ -733,6 +778,16 @@ Function calculate_overlap(exon1, exon2):
 - Plus strand: TSS = exon_start, TES = exon_end, acceptor = exon_start, donor = exon_end
 - Minus strand: TSS = exon_end, TES = exon_start, acceptor = exon_end, donor = exon_start
 
+### Asymmetric Terminal Exon Handling
+
+When one exon in a pair is terminal but its pair exon is not (asymmetric case), `detect_shared_boundary_event` returns a `second_event` for the splice-site-facing boundary. This handles cases where one isoform's terminal exon aligns with an internal exon in the other isoform, requiring both a terminal boundary event and a splice-site event to fully describe the difference.
+
+The asymmetric condition fires when: `xor(is_first_exon_dom, is_first_exon_comp)` or `xor(is_last_exon_dom, is_last_exon_comp)`, or when both first AND last flags fire simultaneously.
+
+### Dual-Boundary Decomposition
+
+Internal exon pairs where both boundaries differ are decomposed into two independent events (one per boundary). For example, if the 5' boundary differs as A5SS and the 3' boundary differs as A3SS, two separate events are emitted rather than a single ambiguous event. This decomposition applies to all boundary event types (A5SS, A3SS, Partial_IR_5, Partial_IR_3).
+
 ---
 
 ## Validation Framework
@@ -758,7 +813,7 @@ We validate all event detection algorithms using synthetic test genes with known
 
 #### Validation Results
 
-**Version 6.0 Validation**: 34/34 tests passing (100%)
+**Version 6.0 Validation**: 44/44 synthetic tests passing (100%)
 
 **Test Categories**:
 1. **Basic events** (1 per type): SE, A5SS, A3SS, IR, Alt_TSS, Alt_TES
@@ -767,7 +822,15 @@ We validate all event detection algorithms using synthetic test genes with known
 4. **Overlap-based SE**: Tests SE detection with exact and overlapping flanks
 5. **Multi-event**: Tests detecting multiple co-occurring events
 6. **Partial_IR events**: Tests for Partial_IR_5 and Partial_IR_3 on internal, first, and last exons
-7. **Real-world complex cases**: Including minus strand genes with Alt_TSS, SE, and A3SS combinations
+7. **Dual-boundary decomposition**: Tests for internal exon pairs with both boundaries differing
+8. **Missing_Internal events**: Tests for exons missing without comparable flanks
+9. **IR_diff subtypes**: Tests for IR_diff_5, IR_diff_3, IR_diff_5_3
+10. **Non-overlapping isoforms**: Tests for isoform pairs sharing no exonic overlap
+11. **Real-world complex cases**: Including minus strand genes with Alt_TSS, SE, and A3SS combinations
+
+**Reconstruction Validation**:
+- Reconstruct dominant isoform from comparator + detected events, verify all exon coordinates match
+- GENCODE test: **4258/4274 = 99.6%** (0 FAILs, 16 ERRORs from "No comparator exons")
 
 **Key Validation Case**:
 - **TEST_RealCase19_Minus_AltTSS_SE_A3SS**: Based on PB.19746, a real PacBio gene with 15 vs 12 exons on minus strand
@@ -1025,18 +1088,26 @@ Format: One row per (dominant, non-dominant) comparison
 - `glmnet`: LASSO/ridge regression for co-occurrence analysis
 
 **Scripts** (Version 6.0):
-1. `01_prepare_dge_data.R`: Load expression data, identify dominant isoforms
+1. `01_prepare_dge_data_v2.R`: Load expression data, identify dominant isoforms
 2. `02_extract_isoform_structures.R`: Parse GFF files
-3. `03_build_union_exons.R`: Construct union exon models
+3. `03_build_union_exons.R`: Construct atomic union exon models
 4. `04_extract_cds_annotations.R`: Extract CDS coordinates
 5. `05_annotate_region_types.R`: Classify union exons by region
-6. `06_filter_to_analysis_subset.R`: Apply quality filters
-7. `07_extract_splicing_profiles.R`: Run event detection, generate profiles
-8. `08_analyze_complexity_relationship.R`: Complexity vs event count analysis
-9. `09-12`: Downstream statistical analyses
+6. `06_filter_to_analysis_subset.R`: Apply expression and gene category filters
+7. `07_extract_splicing_profiles.R`: Hierarchical event detection, generate profiles
+8. `08_validate_reconstruction.R`: Reconstruct dominant from comparator + events, verify
+9-13: Downstream statistical analyses
+
+**Shared Libraries**:
+- `event_detection_functions.R`: Core event detection functions (19 functions)
+- `reconstruction_functions.R`: Reconstruction from comparator + events
+
+**Documentation**:
+- `SPLICE_FUNCTION_CATALOG.md`: Comprehensive function catalog linking to splicing biology
+- `EVENT_DETECTION_FLOW.md`: Mermaid flowchart of data flow through event detection
 
 **Validation**:
-- `testing/validate_synthetic_simple.R`: Automated validation on synthetic data
+- `testing/validate_synthetic_simple.R`: Automated validation on synthetic data (44/44)
 - `testing/synthetic/TestData/`: Synthetic test genes and annotations
 - `testing/VALIDATED_REAL_EXAMPLES.md`: Registry of manually validated real examples
 
@@ -1057,6 +1128,6 @@ Format: One row per (dominant, non-dominant) comparison
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-02-15
+**Document Version**: 2.0
+**Last Updated**: 2026-02-20
 **Status**: Complete and validated
