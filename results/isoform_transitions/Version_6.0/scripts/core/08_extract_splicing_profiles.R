@@ -25,6 +25,9 @@
 #   Rscript scripts/core/08_extract_splicing_profiles.R --reconstruction_check       # with reconstruction verification
 #   Rscript scripts/core/08_extract_splicing_profiles.R --pairs-file pairs.tsv       # explicit pairs
 #   Rscript scripts/core/08_extract_splicing_profiles.R --output out/profiles.rds    # custom output path
+#   Rscript scripts/core/08_extract_splicing_profiles.R --run-log path/run_log.txt        # append to run log
+#   Rscript scripts/core/08_extract_splicing_profiles.R --no-store                        # skip profile store
+#   Rscript scripts/core/08_extract_splicing_profiles.R --clear-store                     # clear store, recompute all
 #   Rscript scripts/core/08_extract_splicing_profiles.R --test 50 --reconstruction_check  # combined
 #
 ################################################################################
@@ -66,6 +69,19 @@ if ("--output" %in% args) {
     stop("--output requires a file path argument")
   }
 }
+
+run_log_path <- NULL
+if ("--run-log" %in% args) {
+  rl_idx <- which(args == "--run-log")
+  if (rl_idx < length(args)) {
+    run_log_path <- args[rl_idx + 1]
+  } else {
+    stop("--run-log requires a file path argument")
+  }
+}
+
+use_store <- !("--no-store" %in% args)
+clear_store <- "--clear-store" %in% args
 
 # ==============================================================================
 # Input Validation Helpers
@@ -123,6 +139,12 @@ if (!is.null(pairs_file)) {
 
 if (output_path != "data/splicing_choice_profiles.rds") {
   cat(sprintf("*** OUTPUT: %s ***\n\n", output_path))
+}
+
+if (!use_store) {
+  cat("*** PROFILE STORE: Disabled (--no-store) ***\n\n")
+} else if (clear_store) {
+  cat("*** PROFILE STORE: Will clear existing store (--clear-store) ***\n\n")
 }
 
 # ==============================================================================
@@ -231,6 +253,64 @@ isoform_structures <- isoform_structures_compact %>%
   ungroup()
 
 cat(sprintf("  Expanded to %d exon rows\n", nrow(isoform_structures)))
+
+# ==============================================================================
+# 1b. Profile Store: Load, Validate, Clear
+# ==============================================================================
+# Splicing profiles are purely structural (depend only on exon coordinates and
+# union exons, not on classification thresholds or expression). A central store
+# at data/splicing_profile_store.rds accumulates profiles across runs. core/08
+# checks the store, only computes new pairs, and appends results.
+#
+# Store key: dominant_isoform_id + non_dominant_isoform_id
+# Note: pairs file uses "comparator_isoform_id" which maps to "non_dominant_isoform_id"
+# in the profile output. The store uses the profile column names.
+
+if (clear_store && file.exists("data/splicing_profile_store.rds")) {
+  file.remove("data/splicing_profile_store.rds")
+  cat("\n  Cleared existing profile store.\n")
+}
+
+profile_store <- NULL
+profile_store_keys <- character(0)
+n_store_cached <- 0L
+n_store_new <- 0L
+n_store_reverified <- 0L
+cached_profiles_list <- list()
+
+if (use_store && file.exists("data/splicing_profile_store.rds")) {
+  cat("\nLoading profile store...\n")
+  stored <- readRDS("data/splicing_profile_store.rds")
+
+  # Validate fingerprint: cached profiles depend on exon coordinates, union exons,
+  # annotated mappings, and detection thresholds. If any change, store is stale.
+  current_fp <- list(
+    isoform_structures_mtime = file.mtime("data/isoform_structures_filtered.rds"),
+    union_exons_mtime = file.mtime("data/union_exons_filtered.rds"),
+    annotated_mapping_mtime = file.mtime("data/isoform_union_exons_annotated_filtered.rds"),
+    tss_tolerance = TSS_TOLERANCE,
+    tes_tolerance = TES_TOLERANCE,
+    splice_site_threshold = SPLICE_SITE_THRESHOLD
+  )
+
+  if (!identical(stored$fingerprint, current_fp)) {
+    cat("  WARNING: Store fingerprint mismatch — inputs have changed.\n")
+    for (key in names(current_fp)) {
+      if (!identical(stored$fingerprint[[key]], current_fp[[key]])) {
+        cat(sprintf("    Changed: %s\n", key))
+      }
+    }
+    cat("  Discarding stale store. All pairs will be recomputed.\n")
+  } else {
+    profile_store <- stored$profiles
+    profile_store_keys <- paste(profile_store$dominant_isoform_id,
+                                 profile_store$non_dominant_isoform_id, sep = "::")
+    cat(sprintf("  Profile store: %d existing profiles (fingerprint OK)\n",
+                nrow(profile_store)))
+  }
+} else if (use_store) {
+  cat("\n  No existing profile store found. All pairs will be computed.\n")
+}
 
 # Prepare union exons for reconstruction (column names reconstruction expects)
 if (reconstruction_check) {
@@ -430,6 +510,57 @@ for (batch_idx in 1:n_batches) {
     # Compare each non-dominant to dominant
     for (non_dom_iso in non_dom_isos) {
 
+      # --- Profile store: check for cached profile ---
+      if (use_store && length(profile_store_keys) > 0) {
+        pair_key <- paste(dom_iso, non_dom_iso, sep = "::")
+        if (pair_key %in% profile_store_keys) {
+          cached_idx <- match(pair_key, profile_store_keys)
+          cached_row <- profile_store[cached_idx, ]
+
+          # Re-verify if --reconstruction_check active and cached status is NA
+          if (reconstruction_check && is.na(cached_row$reconstruction_status)) {
+            non_dom_structure_rv <- isoform_structures %>%
+              filter(isoform_id == non_dom_iso) %>% arrange(exon_number)
+
+            if (nrow(non_dom_structure_rv) > 0) {
+              rv_result <- tryCatch({
+                events_rv <- cached_row$detailed_events[[1]]
+                comp_for_recon <- non_dom_structure_rv %>%
+                  rename(chr = seqnames, transcript_id = isoform_id) %>%
+                  select(chr, exon_start, exon_end, strand, gene_id, transcript_id)
+
+                if (nrow(events_rv) == 0) {
+                  dom_for_verify <- dom_structure %>%
+                    rename(chr = seqnames, transcript_id = isoform_id) %>%
+                    select(chr, exon_start, exon_end, strand, gene_id, transcript_id)
+                  vr <- verify_transcript(dom_for_verify, comp_for_recon, gene_strand)
+                  list(status = if (vr$pass) "PASS" else "FAIL", reason = vr$reason)
+                } else {
+                  gene_ue <- union_exons_for_recon %>% filter(gene_id == gene)
+                  reconstructed <- reconstruct_dominant_v2(comp_for_recon, events_rv, gene_ue)
+                  if (nrow(reconstructed) == 0) {
+                    list(status = "ERROR", reason = "Reconstruction produced 0 exons")
+                  } else {
+                    vr <- verify_transcript(dom_structure, reconstructed, gene_strand)
+                    list(status = if (vr$pass) "PASS" else "FAIL", reason = vr$reason)
+                  }
+                }
+              }, error = function(e) {
+                list(status = "ERROR", reason = paste0("Re-verify exception: ", e$message))
+              })
+
+              cached_row$reconstruction_status <- rv_result$status
+              cached_row$reconstruction_reason <- rv_result$reason
+              n_store_reverified <- n_store_reverified + 1L
+            }
+          }
+
+          cached_profiles_list[[pair_key]] <- cached_row
+          n_store_cached <- n_store_cached + 1L
+          next
+        }
+      }
+
       # Get structure for non-dominant isoform
       non_dom_structure <- isoform_structures %>%
         filter(isoform_id == non_dom_iso) %>%
@@ -603,6 +734,7 @@ for (batch_idx in 1:n_batches) {
       )
 
       splicing_profiles[[paste0(gene, "_", dom_iso, "_", non_dom_iso)]] <- profile
+      n_store_new <- n_store_new + 1L
     }
     } # end for (dom_iso ...)
   }
@@ -628,10 +760,27 @@ for (batch_idx in 1:n_batches) {
   }
 }
 
-# Combine profiles
-splicing_profiles_df <- bind_rows(splicing_profiles)
+# Combine newly computed profiles
+new_profiles_df <- bind_rows(splicing_profiles)
 
-cat(sprintf("\n  Created %d splicing choice profiles\n", nrow(splicing_profiles_df)))
+# Merge cached profiles from store
+cached_profiles_df <- if (length(cached_profiles_list) > 0) {
+  bind_rows(cached_profiles_list)
+} else {
+  tibble()
+}
+
+splicing_profiles_df <- bind_rows(new_profiles_df, cached_profiles_df)
+
+if (use_store && (n_store_cached > 0 || n_store_new > 0)) {
+  cat(sprintf("\n  From profile store: %d cached, %d newly computed", n_store_cached, n_store_new))
+  if (n_store_reverified > 0) {
+    cat(sprintf(", %d re-verified", n_store_reverified))
+  }
+  cat("\n")
+}
+
+cat(sprintf("\n  Total splicing choice profiles: %d\n", nrow(splicing_profiles_df)))
 cat(sprintf("  Covering %d genes\n", n_distinct(splicing_profiles_df$gene_id)))
 
 # ==============================================================================
@@ -718,6 +867,33 @@ if (!dir.exists(output_dir)) {
 saveRDS(splicing_profiles_df, output_path)
 cat(sprintf("  ✓ %s\n", output_path))
 
+# Update central profile store
+if (use_store && nrow(new_profiles_df) > 0) {
+  current_fp <- list(
+    isoform_structures_mtime = file.mtime("data/isoform_structures_filtered.rds"),
+    union_exons_mtime = file.mtime("data/union_exons_filtered.rds"),
+    annotated_mapping_mtime = file.mtime("data/isoform_union_exons_annotated_filtered.rds"),
+    tss_tolerance = TSS_TOLERANCE,
+    tes_tolerance = TES_TOLERANCE,
+    splice_site_threshold = SPLICE_SITE_THRESHOLD
+  )
+
+  if (!is.null(profile_store)) {
+    # Merge: new/re-verified profiles first (take precedence), then remaining store profiles
+    updated_store <- bind_rows(new_profiles_df, cached_profiles_df, profile_store) %>%
+      distinct(dominant_isoform_id, non_dominant_isoform_id, .keep_all = TRUE)
+  } else {
+    updated_store <- splicing_profiles_df
+  }
+
+  saveRDS(list(profiles = updated_store, fingerprint = current_fp),
+          "data/splicing_profile_store.rds")
+  cat(sprintf("  ✓ Store updated: %d total profiles (+%d new)\n",
+              nrow(updated_store), nrow(new_profiles_df)))
+} else if (use_store && nrow(new_profiles_df) == 0 && n_store_cached > 0) {
+  cat("  Store unchanged (all profiles were cached).\n")
+}
+
 cat("\n✓ Step 8 complete\n")
 cat("\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
@@ -786,4 +962,185 @@ if (reconstruction_check) {
 }
 
 cat("═══════════════════════════════════════════════════════════════════\n")
+
+# ==============================================================================
+# 6. Append to Run Log (if --run-log specified)
+# ==============================================================================
+
+if (!is.null(run_log_path)) {
+  cat(sprintf("\nAppending to run log: %s\n", run_log_path))
+
+  log_lines <- c(
+    "======================================================================",
+    "  RUN LOG — Event Detection and Splicing Profiles (Script 08)",
+    "======================================================================",
+    "",
+    sprintf("Generated: %s", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+    sprintf("Working directory: %s", getwd()),
+    "",
+    "",
+    "----------------------------------------------------------------------",
+    "  8. EVENT DETECTION PARAMETERS",
+    "----------------------------------------------------------------------",
+    "",
+    sprintf("TSS tolerance:          %d bp", TSS_TOLERANCE),
+    sprintf("TES tolerance:          %d bp", TES_TOLERANCE),
+    sprintf("Splice site threshold:  %d bp", SPLICE_SITE_THRESHOLD),
+    "",
+    "Event detection hierarchy:",
+    "  IR -> Boundary (A5SS/A3SS/Partial_IR) -> SE -> Missing_Internal -> Terminal",
+    "",
+    "Event types detected:",
+    "  Alt_TSS, Alt_TES, A5SS, A3SS, SE, Missing_Internal,",
+    "  IR, IR_diff_5, IR_diff_3, IR_diff_5_3, Partial_IR_5, Partial_IR_3",
+    ""
+  )
+
+  # Input/output
+  log_lines <- c(log_lines,
+    "",
+    "----------------------------------------------------------------------",
+    "  9. INPUT / OUTPUT",
+    "----------------------------------------------------------------------",
+    ""
+  )
+
+  if (!is.null(pairs_file)) {
+    log_lines <- c(log_lines,
+      sprintf("Pairs file:         %s", pairs_file),
+      sprintf("  Total pairs:      %d", nrow(explicit_pairs))
+    )
+    if (!is.null(valid_pairs)) {
+      log_lines <- c(log_lines,
+        sprintf("  Valid pairs:      %d", nrow(valid_pairs)),
+        sprintf("  Genes:            %d", length(genes_with_dominant))
+      )
+    }
+  } else {
+    log_lines <- c(log_lines,
+      "Pairs source:       auto-generated from dominant_isoforms_filtered.rds",
+      sprintf("  Genes:            %d", length(genes_with_dominant))
+    )
+  }
+
+  log_lines <- c(log_lines,
+    "",
+    sprintf("Output file:        %s", output_path),
+    sprintf("  Profiles:         %d", nrow(splicing_profiles_df)),
+    sprintf("  Genes:            %d", n_distinct(splicing_profiles_df$gene_id)),
+    ""
+  )
+
+  if (use_store) {
+    log_lines <- c(log_lines,
+      "Profile store:",
+      sprintf("  From store:       %d cached, %d newly computed", n_store_cached, n_store_new),
+      if (n_store_reverified > 0) sprintf("  Re-verified:      %d", n_store_reverified) else NULL,
+      ""
+    )
+  }
+
+  # Event summary
+  log_lines <- c(log_lines,
+    "",
+    "----------------------------------------------------------------------",
+    "  10. EVENT DETECTION RESULTS",
+    "----------------------------------------------------------------------",
+    "",
+    sprintf("Total profiles:             %d", nrow(splicing_profiles_df)),
+    sprintf("Total events detected:      %d", sum(splicing_profiles_df$n_events)),
+    sprintf("Mean events per profile:    %.1f", mean(splicing_profiles_df$n_events)),
+    sprintf("Mean UE differences:        %.1f", mean(splicing_profiles_df$n_differences)),
+    "",
+    "Event counts:",
+    sprintf("  Alt_TSS:          %d", sum(splicing_profiles_df$n_alt_tss)),
+    sprintf("  Alt_TES:          %d", sum(splicing_profiles_df$n_alt_tes)),
+    sprintf("  A5SS:             %d", sum(splicing_profiles_df$n_a5ss)),
+    sprintf("  A3SS:             %d", sum(splicing_profiles_df$n_a3ss)),
+    sprintf("  SE:               %d", sum(splicing_profiles_df$n_se)),
+    sprintf("  Missing_Internal: %d", sum(splicing_profiles_df$n_missing_internal)),
+    sprintf("  IR:               %d", sum(splicing_profiles_df$n_ir)),
+    sprintf("  IR_diff:          %d", sum(splicing_profiles_df$n_ir_diff)),
+    sprintf("  Partial_IR:       %d", sum(splicing_profiles_df$n_partial_ir)),
+    "",
+    sprintf("TSS changed: %d/%d (%.1f%%)",
+            sum(splicing_profiles_df$tss_changed, na.rm = TRUE),
+            nrow(splicing_profiles_df),
+            100 * mean(splicing_profiles_df$tss_changed, na.rm = TRUE)),
+    sprintf("TES changed: %d/%d (%.1f%%)",
+            sum(splicing_profiles_df$tes_changed, na.rm = TRUE),
+            nrow(splicing_profiles_df),
+            100 * mean(splicing_profiles_df$tes_changed, na.rm = TRUE)),
+    ""
+  )
+
+  # Complexity breakdown
+  complexity_bins_log <- splicing_profiles_df %>%
+    mutate(
+      complexity = case_when(
+        n_differences == 0 ~ "identical",
+        n_differences <= 2 ~ "simple (1-2 diffs)",
+        n_differences <= 5 ~ "moderate (3-5 diffs)",
+        TRUE ~ "complex (6+ diffs)"
+      )
+    ) %>%
+    count(complexity) %>%
+    mutate(percentage = 100 * n / sum(n))
+
+  log_lines <- c(log_lines,
+    "Complexity distribution:",
+    sprintf("  %s: %d (%.1f%%)",
+            complexity_bins_log$complexity,
+            complexity_bins_log$n,
+            complexity_bins_log$percentage),
+    ""
+  )
+
+  # Reconstruction check
+  if (reconstruction_check) {
+    rc_pass  <- sum(splicing_profiles_df$reconstruction_status == "PASS", na.rm = TRUE)
+    rc_fail  <- sum(splicing_profiles_df$reconstruction_status == "FAIL", na.rm = TRUE)
+    rc_error <- sum(splicing_profiles_df$reconstruction_status == "ERROR", na.rm = TRUE)
+    rc_total <- rc_pass + rc_fail + rc_error
+
+    log_lines <- c(log_lines,
+      "",
+      "----------------------------------------------------------------------",
+      "  11. RECONSTRUCTION VERIFICATION",
+      "----------------------------------------------------------------------",
+      "",
+      sprintf("PASS:   %d/%d (%.1f%%)", rc_pass, rc_total, 100 * rc_pass / max(rc_total, 1)),
+      sprintf("FAIL:   %d/%d (%.1f%%)", rc_fail, rc_total, 100 * rc_fail / max(rc_total, 1)),
+      sprintf("ERROR:  %d/%d (%.1f%%)", rc_error, rc_total, 100 * rc_error / max(rc_total, 1)),
+      ""
+    )
+
+    if (rc_pass == rc_total && rc_total > 0) {
+      log_lines <- c(log_lines, "PERFECT RECONSTRUCTION -- All pairs verified.", "")
+    }
+
+    if (rc_fail > 0) {
+      failures_log <- splicing_profiles_df %>% filter(reconstruction_status == "FAIL")
+      log_lines <- c(log_lines, sprintf("Failed pairs (%d):", nrow(failures_log)))
+      for (i in seq_len(min(nrow(failures_log), 20))) {
+        f <- failures_log[i, ]
+        log_lines <- c(log_lines,
+          sprintf("  %s: %s vs %s -- %s",
+                  f$gene_id, f$dominant_isoform_id, f$non_dominant_isoform_id,
+                  f$reconstruction_reason))
+      }
+      if (nrow(failures_log) > 20) {
+        log_lines <- c(log_lines, sprintf("  ... and %d more", nrow(failures_log) - 20))
+      }
+      log_lines <- c(log_lines, "")
+    }
+  }
+
+  log_lines <- c(log_lines, "")
+
+  # Append to existing log file
+  cat(log_lines, file = run_log_path, sep = "\n", append = TRUE)
+  cat(sprintf("  Appended %d lines to run log.\n", length(log_lines)))
+}
+
 cat("\n")
