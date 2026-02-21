@@ -1121,12 +1121,15 @@ Format: One row per (dominant, non-dominant) comparison
 5. `05_annotate_region_types.R`: Classify union exons by region
 6. `06_filter_to_analysis_subset.R`: Apply expression and gene category filters
 7. `07_extract_splicing_profiles.R`: Hierarchical event detection, generate profiles
-8. `08_validate_reconstruction.R`: Reconstruct dominant from comparator + events, verify
+   - `--reconstruction_check`: On-the-fly reconstruction verification (eliminates need for separate Script 08 run)
+   - `--pairs-file <path>`: Specify explicit contrast pairs (TSV: gene_id, dominant_isoform_id, comparator_isoform_id)
+   - `--test N`: Limit to first N genes
+8. `08_validate_reconstruction.R`: Standalone reconstruction validation (batch verification of Script 07 output)
 9-13: Downstream statistical analyses
 
 **Shared Libraries**:
-- `event_detection_functions.R`: Core event detection functions (19 functions)
-- `reconstruction_functions.R`: Reconstruction from comparator + events
+- `event_detection_functions.R`: Core event detection functions (19 functions), detection thresholds (TSS_TOLERANCE, TES_TOLERANCE, SPLICE_SITE_THRESHOLD)
+- `reconstruction_functions.R`: Reconstruction from comparator + events (`reconstruct_dominant_v2`), verification (`verify_transcript`)
 
 **Documentation**:
 - `SPLICE_FUNCTION_CATALOG.md`: Comprehensive function catalog linking to splicing biology

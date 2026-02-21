@@ -7,8 +7,8 @@ Complete system for detecting splicing differences between isoform pairs, valida
 This pipeline:
 1. **Prepares data** from DGEList objects + GFF annotations (Scripts 01-06)
 2. **Detects splicing events** between isoform pairs using hierarchical event detection (Script 07)
-3. **Validates detection** by reconstructing the dominant isoform from comparator + events
-4. **Analyzes splicing patterns** across cell types and NMD conditions (Scripts 08-12)
+3. **Validates detection** by reconstructing the dominant isoform from comparator + events (Script 07 `--reconstruction_check` or Script 08)
+4. **Analyzes splicing patterns** across cell types and NMD conditions (Scripts 09-13)
 
 **Validation Status:**
 - Curated test suite (synthetic + real failures): 126/126 tests (100%)
@@ -24,7 +24,7 @@ Version_6.0/
 ├── DATA_FLOW.md                       # Data pipeline documentation
 ├── MIGRATION_PLAN.md                  # Dev → scripts migration plan
 │
-├── scripts/                           # Main analysis pipeline (Scripts 01-12)
+├── scripts/                           # Main analysis pipeline (Scripts 01-13)
 │   ├── 01_prepare_dge_data_v2.R       # Load DGEList, filter major isoforms, identify dominants
 │   ├── 02_extract_isoform_structures.R # Parse GENCODE/SQANTI GFF to exon structures
 │   ├── 03_build_union_exons.R         # Build union exon models per gene
@@ -32,13 +32,13 @@ Version_6.0/
 │   ├── 05_annotate_region_types.R     # Classify union exons as 5'UTR/CDS/3'UTR
 │   ├── 06_filter_to_analysis_subset.R # Apply expression filters (filterByExpr)
 │   ├── 07_extract_splicing_profiles.R # Event detection + splicing choice profiles
-│   ├── 08_analyze_complexity_relationship.R
-│   ├── 09_analyze_cooccurrence.R
-│   ├── 10_analyze_spatial_patterns.R
-│   ├── 11_analyze_functional_context.R
-│   ├── 12_analyze_patterns.R
-│   ├── event_detection_functions.R    # Shared event detection library
-│   ├── reconstruction_functions.R     # Reconstruction logic (for validation)
+│   │   # --reconstruction_check: on-the-fly reconstruction verification
+│   │   # --pairs-file <path>: explicit contrast pairs (TSV)
+│   │   # --test N: limit to first N genes
+│   ├── 08_validate_reconstruction.R   # Standalone reconstruction validation
+│   ├── 09-13: Downstream analysis scripts (planned)
+│   ├── event_detection_functions.R    # Shared: event detection + thresholds
+│   ├── reconstruction_functions.R     # Shared: reconstruct_dominant_v2 + verify_transcript
 │   └── archive/                       # Archived earlier versions
 │
 ├── development/

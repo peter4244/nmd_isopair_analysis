@@ -442,8 +442,6 @@ Performs statistical analysis on splicing choice profiles.
 
 ### **Script 07: Extract Splicing Choice Profiles**
 
-**Status:** Ready to run (uses filtered data from Script 06)
-
 **Input:**
 - `data/isoform_union_exons_annotated_filtered.rds`
 - `data/dominant_isoforms_filtered.rds`
@@ -451,37 +449,40 @@ Performs statistical analysis on splicing choice profiles.
 - `data/isoform_structures_filtered.rds`
 
 **Process:**
-1. For each gene (59,386 genes):
-   - Identify dominant isoform
+1. For each gene:
+   - Identify dominant isoform (from dominant_isoforms, or from `--pairs-file`)
    - Get dominant's union exon pattern
 2. For each non-dominant isoform in gene:
-   - Compare to dominant isoform
+   - Compare to dominant isoform via hierarchical event detection
    - Extract comprehensive splicing events:
      - **TSS/TES changes:** First/last exon boundaries
      - **Exon inclusion:** Missing/added union exons (by region type)
      - **Boundary modifications:** A5SS/A3SS detection
      - **Splicing dysfunction:** IR/Partial_IR detection
-     - **Spatial metrics:** Distance to first/last change
      - **Complexity metrics:** Number of exons, junctions, length
+3. Optionally reconstruct and verify each pair on-the-fly (`--reconstruction_check`)
 
-**Planned Output:**
+**Output:**
 - `data/splicing_choice_profiles.rds`
-- `data/splicing_choice_profiles_intermediate.rds` (after batch 3, for development)
-- Full profile structure per ANALYSIS_PLAN.md Section 4
+- `data/splicing_choice_profiles_intermediate.rds` (after batch 1, for development)
 
-**Expected Scale (estimated from unfiltered):**
-- ~40,000-60,000 profiles (59% of unfiltered 102,928)
-- Covering ~16,000-20,000 genes (59% of unfiltered 27,674)
+**CLI Flags:**
+- `--test N`: Limit to first N genes
+- `--reconstruction_check`: On-the-fly reconstruction verification per pair. Adds `reconstruction_status` and `reconstruction_reason` columns to profiles. Prints PASS/FAIL/ERROR summary at end. Eliminates need to run Script 08 separately.
+- `--pairs-file <path>`: Specify explicit contrast pairs (TSV with columns: `gene_id`, `dominant_isoform_id`, `comparator_isoform_id`). When used, only the specified pairs are processed instead of auto-generating all non-dominant vs dominant pairs.
 
 **Key Features:**
-- **Comprehensive event detection:** A5SS, A3SS, SE, MXE, IR, Partial_IR
-- **Region-aware classification:** Events classified by 5'UTR/CDS/3'UTR
-- **Topology analysis:** Face-to-face, back-to-back patterns for A5SS/A3SS
+- **Comprehensive event detection:** A5SS, A3SS, SE, Missing_Internal, IR, Partial_IR, IR_diff
+- **Hierarchical detection order:** IR → boundary shifts → exon skipping → terminal events
+- **On-the-fly reconstruction check:** Validates detection accuracy without separate Script 08 run
+- **Explicit pairs mode:** Enables targeted re-analysis of specific isoform pairs
 - **Runs on filtered data:** More efficient, focuses on expressed isoforms
 
 ---
 
-### **Script 08: Validate Reconstruction**
+### **Script 08: Validate Reconstruction (Standalone)**
+
+**Purpose:** Standalone batch reconstruction validation. Useful for validating profiles generated without `--reconstruction_check`, or for re-verification after code changes.
 
 **Input:**
 - `data/splicing_choice_profiles.rds` (events per pair)
@@ -494,7 +495,7 @@ Performs statistical analysis on splicing choice profiles.
    - Apply events to reconstruct the dominant isoform
    - Compare reconstructed exons to original dominant exons
 2. Classification:
-   - **PASS**: All exons match (same count, same coordinates)
+   - **PASS**: All exons match (same count, same coordinates within tolerance)
    - **FAIL**: Exon mismatch (count or coordinate differences)
    - **ERROR**: Reconstruction could not complete (e.g., no comparator exons)
 
@@ -507,8 +508,8 @@ Performs statistical analysis on splicing choice profiles.
 - GENCODE test data: 4258/4274 = 99.6%
 
 **Shared Libraries Used:**
-- `scripts/event_detection_functions.R` -- Hierarchical event detection (IR -> boundary shifts -> exon skipping -> terminal events)
-- `scripts/reconstruction_functions.R` -- Reconstruction from comparator + events
+- `scripts/event_detection_functions.R` -- Hierarchical event detection, detection thresholds (TSS_TOLERANCE, TES_TOLERANCE)
+- `scripts/reconstruction_functions.R` -- Reconstruction (`reconstruct_dominant_v2`) and verification (`verify_transcript`)
 
 ---
 
