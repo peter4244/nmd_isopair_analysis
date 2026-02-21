@@ -29,7 +29,7 @@ setwd(base_dir)
 # 0. Source reconstruction functions (same as Script 08)
 # ==============================================================================
 
-source("scripts/reconstruction_functions.R")
+source("scripts/core/reconstruction_functions.R")
 cat("  Loaded reconstruction_functions.R\n")
 
 # Verification tolerance — same as Script 08

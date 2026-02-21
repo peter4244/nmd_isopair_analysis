@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 ################################################################################
-# Script 08: Validate Reconstruction
+# Script 09: Validate Reconstruction
 ################################################################################
 #
 # Purpose:
@@ -20,8 +20,8 @@
 #   - logs/reconstruction_verification.log  (summary statistics)
 #
 # Usage:
-#   Rscript scripts/08_validate_reconstruction.R           # full run
-#   Rscript scripts/08_validate_reconstruction.R --test    # test mode banner
+#   Rscript scripts/core/09_validate_reconstruction.R           # full run
+#   Rscript scripts/core/09_validate_reconstruction.R --test    # test mode banner
 #
 ################################################################################
 
@@ -61,7 +61,7 @@ validate_overlap <- function(ids_a, ids_b, name_a, name_b, min_pct = 10) {
 
 cat("\n")
 cat("╔════════════════════════════════════════════════════════════════╗\n")
-cat("║   STEP 8: Validate Reconstruction                            ║\n")
+cat("║   STEP 9: Validate Reconstruction                            ║\n")
 cat("╚════════════════════════════════════════════════════════════════╝\n")
 cat("\n")
 
@@ -81,14 +81,14 @@ cat("Validating inputs...\n")
 validate_file("data/splicing_choice_profiles.rds")
 validate_file("data/isoform_structures_filtered.rds")
 validate_file("data/union_exons_filtered.rds")
-validate_file("scripts/reconstruction_functions.R")
+validate_file("scripts/core/reconstruction_functions.R")
 cat("  All required input files found.\n\n")
 
 cat("Loading shared function libraries...\n")
-source("scripts/event_detection_functions.R")
+source("scripts/core/event_detection_functions.R")
 cat("  event_detection_functions.R loaded (TSS_TOLERANCE=%d, TES_TOLERANCE=%d)\n" |>
       sprintf(TSS_TOLERANCE, TES_TOLERANCE))
-source("scripts/reconstruction_functions.R")
+source("scripts/core/reconstruction_functions.R")
 cat("  reconstruction_functions.R loaded (reconstruct_dominant_v2, verify_transcript)\n\n")
 
 # ==============================================================================

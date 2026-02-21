@@ -121,7 +121,7 @@ tryCatch({
   cat("  TES_TOLERANCE <- 10\n")
   cat("  SPLICE_SITE_THRESHOLD <- 50\n")
   cat("  OVERLAP_THRESHOLD <- 0.3\n")
-  cat("  source('scripts/07_extract_splicing_profiles.R')\n\n")
+  cat("  source('scripts/core/08_extract_splicing_profiles.R')\n\n")
 
 }, error = function(e) {
   cat("ERROR:", conditionMessage(e), "\n")

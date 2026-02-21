@@ -8,8 +8,8 @@ library(tidyverse)
 base_dir <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0"
 setwd(base_dir)
 
-source("scripts/reconstruction_functions.R")
-source("scripts/event_detection_functions.R")
+source("scripts/core/reconstruction_functions.R")
+source("scripts/core/event_detection_functions.R")
 
 # Load data
 verification <- readRDS("data/reconstruction_verification.rds")

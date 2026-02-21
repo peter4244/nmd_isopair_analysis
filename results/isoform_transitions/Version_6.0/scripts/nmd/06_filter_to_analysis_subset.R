@@ -17,15 +17,15 @@
 #   - results/filtering_report_script06.txt
 #
 # Usage:
-#   Rscript scripts/06_filter_to_analysis_subset.R           # full run
-#   Rscript scripts/06_filter_to_analysis_subset.R --test    # test mode (skip filterByExpr)
+#   Rscript scripts/nmd/06_filter_to_analysis_subset.R           # full run
+#   Rscript scripts/nmd/06_filter_to_analysis_subset.R --test    # test mode (skip filterByExpr)
 #
-# Quick test (Scripts 03-08 on 100 genes):
-#   Rscript scripts/03_build_union_exons.R --test 100 && \
-#   Rscript scripts/05_annotate_region_types.R && \
-#   Rscript scripts/06_filter_to_analysis_subset.R --test && \
-#   Rscript scripts/07_extract_splicing_profiles.R --test && \
-#   Rscript scripts/08_validate_reconstruction.R --test
+# Quick test (Scripts 03-09 on 100 genes):
+#   Rscript scripts/core/03_build_union_exons.R --test 100 && \
+#   Rscript scripts/core/05_annotate_region_types.R && \
+#   Rscript scripts/nmd/06_filter_to_analysis_subset.R --test && \
+#   Rscript scripts/core/08_extract_splicing_profiles.R --test && \
+#   Rscript scripts/core/09_validate_reconstruction.R --test
 #
 
 library(tidyverse)

@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 ################################################################################
-# Script 07: Extract Splicing Choice Profiles
+# Script 08: Extract Splicing Choice Profiles
 ################################################################################
 #
 # Purpose:
@@ -11,20 +11,21 @@
 #
 # Input:
 #   - data/isoform_union_exons_annotated_filtered.rds
-#   - data/dominant_isoforms_filtered.rds
+#   - data/dominant_isoforms_filtered.rds  (only in auto-generation mode; skipped with --pairs-file)
 #   - data/union_exons_filtered.rds
 #   - data/isoform_structures_filtered.rds
 #
 # Output:
-#   - data/splicing_choice_profiles.rds
+#   - data/splicing_choice_profiles.rds (default, or --output path)
 #   - data/splicing_choice_profiles_intermediate.rds (early output for development)
 #
 # Usage:
-#   Rscript scripts/07_extract_splicing_profiles.R                              # full run
-#   Rscript scripts/07_extract_splicing_profiles.R --test 50                    # limit to 50 genes
-#   Rscript scripts/07_extract_splicing_profiles.R --reconstruction_check       # with reconstruction verification
-#   Rscript scripts/07_extract_splicing_profiles.R --pairs-file pairs.tsv       # explicit pairs
-#   Rscript scripts/07_extract_splicing_profiles.R --test 50 --reconstruction_check  # combined
+#   Rscript scripts/core/08_extract_splicing_profiles.R                              # full run
+#   Rscript scripts/core/08_extract_splicing_profiles.R --test 50                    # limit to 50 genes
+#   Rscript scripts/core/08_extract_splicing_profiles.R --reconstruction_check       # with reconstruction verification
+#   Rscript scripts/core/08_extract_splicing_profiles.R --pairs-file pairs.tsv       # explicit pairs
+#   Rscript scripts/core/08_extract_splicing_profiles.R --output out/profiles.rds    # custom output path
+#   Rscript scripts/core/08_extract_splicing_profiles.R --test 50 --reconstruction_check  # combined
 #
 ################################################################################
 
@@ -53,6 +54,16 @@ if ("--pairs-file" %in% args) {
     pairs_file <- args[pf_idx + 1]
   } else {
     stop("--pairs-file requires a file path argument")
+  }
+}
+
+output_path <- "data/splicing_choice_profiles.rds"
+if ("--output" %in% args) {
+  out_idx <- which(args == "--output")
+  if (out_idx < length(args)) {
+    output_path <- args[out_idx + 1]
+  } else {
+    stop("--output requires a file path argument")
   }
 }
 
@@ -90,7 +101,7 @@ validate_overlap <- function(ids_a, ids_b, name_a, name_b, min_pct = 10) {
 
 cat("\n")
 cat("╔════════════════════════════════════════════════════════════════╗\n")
-cat("║   STEP 7: Extract Splicing Choice Profiles                   ║\n")
+cat("║   STEP 8: Extract Splicing Choice Profiles                   ║\n")
 cat("╚════════════════════════════════════════════════════════════════╝\n")
 cat("\n")
 
@@ -110,16 +121,22 @@ if (!is.null(pairs_file)) {
   cat(sprintf("*** PAIRS FILE: %s ***\n\n", pairs_file))
 }
 
+if (output_path != "data/splicing_choice_profiles.rds") {
+  cat(sprintf("*** OUTPUT: %s ***\n\n", output_path))
+}
+
 # ==============================================================================
 # 0. Validate Inputs
 # ==============================================================================
 
 cat("Validating inputs...\n")
 validate_file("data/isoform_union_exons_annotated_filtered.rds")
-validate_file("data/dominant_isoforms_filtered.rds")
+if (is.null(pairs_file)) {
+  validate_file("data/dominant_isoforms_filtered.rds")
+}
 validate_file("data/union_exons_filtered.rds")
 validate_file("data/isoform_structures_filtered.rds")
-validate_file("scripts/event_detection_functions.R")
+validate_file("scripts/core/event_detection_functions.R")
 cat("  All required input files found.\n\n")
 
 # ==============================================================================
@@ -127,13 +144,13 @@ cat("  All required input files found.\n\n")
 # ==============================================================================
 
 cat("Loading event detection functions...\n")
-source("scripts/event_detection_functions.R")
+source("scripts/core/event_detection_functions.R")
 cat("  Functions loaded\n")
 
 if (reconstruction_check) {
   cat("Loading reconstruction functions (--reconstruction_check active)...\n")
-  validate_file("scripts/reconstruction_functions.R")
-  source("scripts/reconstruction_functions.R")
+  validate_file("scripts/core/reconstruction_functions.R")
+  source("scripts/core/reconstruction_functions.R")
   cat("  reconstruct_dominant_v2() and verify_transcript() loaded\n")
 }
 cat("\n")
@@ -154,20 +171,29 @@ cat(sprintf("  Splice site threshold: %d bp\n\n", SPLICE_SITE_THRESHOLD))
 
 cat("Loading filtered data...\n")
 annotated_mapping <- readRDS("data/isoform_union_exons_annotated_filtered.rds")
-dominant_isoforms <- readRDS("data/dominant_isoforms_filtered.rds")
+dominant_isoforms <- NULL
+if (is.null(pairs_file)) {
+  dominant_isoforms <- readRDS("data/dominant_isoforms_filtered.rds")
+}
 union_exons <- readRDS("data/union_exons_filtered.rds")
 isoform_structures_compact <- readRDS("data/isoform_structures_filtered.rds")
 
 cat(sprintf("  Annotated mappings: %d\n", nrow(annotated_mapping)))
-cat(sprintf("  Dominant isoforms: %d\n", nrow(dominant_isoforms)))
+if (!is.null(dominant_isoforms)) {
+  cat(sprintf("  Dominant isoforms: %d\n", nrow(dominant_isoforms)))
+} else {
+  cat("  Dominant isoforms: (from pairs file)\n")
+}
 cat(sprintf("  Union exons: %d\n", nrow(union_exons)))
 cat(sprintf("  Isoform structures (compact): %d\n", nrow(isoform_structures_compact)))
 
 # Column validation
 validate_columns(annotated_mapping, c("gene_id", "isoform_id", "union_exon_id", "region_type"),
                  "annotated_mapping")
-validate_columns(dominant_isoforms, c("gene_id", "dominant_isoform_id"),
-                 "dominant_isoforms")
+if (!is.null(dominant_isoforms)) {
+  validate_columns(dominant_isoforms, c("gene_id", "dominant_isoform_id"),
+                   "dominant_isoforms")
+}
 validate_columns(union_exons, c("gene_id", "union_exon_id", "union_exon_start", "union_exon_end", "strand"),
                  "union_exons")
 validate_columns(isoform_structures_compact,
@@ -179,12 +205,14 @@ cat("\nCross-file consistency checks:\n")
 validate_overlap(unique(union_exons$gene_id),
                  unique(isoform_structures_compact$gene_id),
                  "union_exons gene_ids", "isoform_structures")
-validate_overlap(unique(dominant_isoforms$gene_id),
-                 unique(union_exons$gene_id),
-                 "dominant_isoforms gene_ids", "union_exons")
-validate_overlap(unique(dominant_isoforms$dominant_isoform_id),
-                 unique(isoform_structures_compact$isoform_id),
-                 "dominant isoform_ids", "isoform_structures")
+if (!is.null(dominant_isoforms)) {
+  validate_overlap(unique(dominant_isoforms$gene_id),
+                   unique(union_exons$gene_id),
+                   "dominant_isoforms gene_ids", "union_exons")
+  validate_overlap(unique(dominant_isoforms$dominant_isoform_id),
+                   unique(isoform_structures_compact$isoform_id),
+                   "dominant isoform_ids", "isoform_structures")
+}
 cat("")
 
 # Expand isoform_structures to one row per exon (needed for event detection)
@@ -214,25 +242,30 @@ if (reconstruction_check) {
 # 2. Identify Non-Dominant Isoforms
 # ==============================================================================
 
-cat("\nIdentifying non-dominant isoforms...\n")
+isoforms_classified <- NULL
+if (is.null(pairs_file)) {
+  cat("\nIdentifying non-dominant isoforms...\n")
 
-# Get list of all isoforms per gene
-all_isoforms <- annotated_mapping %>%
-  distinct(gene_id, isoform_id)
+  # Get list of all isoforms per gene
+  all_isoforms <- annotated_mapping %>%
+    distinct(gene_id, isoform_id)
 
-# Mark which are dominant
-isoforms_classified <- all_isoforms %>%
-  left_join(
-    dominant_isoforms %>% select(gene_id, dominant_isoform_id),
-    by = "gene_id"
-  ) %>%
-  mutate(
-    is_dominant = (isoform_id == dominant_isoform_id),
-    role = if_else(is_dominant, "dominant", "non_dominant")
-  )
+  # Mark which are dominant
+  isoforms_classified <- all_isoforms %>%
+    left_join(
+      dominant_isoforms %>% select(gene_id, dominant_isoform_id),
+      by = "gene_id"
+    ) %>%
+    mutate(
+      is_dominant = (isoform_id == dominant_isoform_id),
+      role = if_else(is_dominant, "dominant", "non_dominant")
+    )
 
-cat(sprintf("  Dominant isoforms: %d\n", sum(isoforms_classified$is_dominant)))
-cat(sprintf("  Non-dominant isoforms: %d\n", sum(!isoforms_classified$is_dominant)))
+  cat(sprintf("  Dominant isoforms: %d\n", sum(isoforms_classified$is_dominant)))
+  cat(sprintf("  Non-dominant isoforms: %d\n", sum(!isoforms_classified$is_dominant)))
+} else {
+  cat("\nSkipping non-dominant identification (using --pairs-file).\n")
+}
 
 # ==============================================================================
 # 2b. Load Explicit Pairs File (if specified)
@@ -244,9 +277,46 @@ valid_pairs <- NULL
 if (!is.null(pairs_file)) {
   cat(sprintf("\nLoading explicit pairs from: %s\n", pairs_file))
   explicit_pairs <- read_tsv(pairs_file, show_col_types = FALSE)
-  validate_columns(explicit_pairs, c("gene_id", "dominant_isoform_id", "comparator_isoform_id"),
+  validate_columns(explicit_pairs, c("gene_id", "dominant_isoform_id"),
                    "pairs_file")
-  cat(sprintf("  Loaded %d explicit pairs\n", nrow(explicit_pairs)))
+
+  # One-vs-all mode: expand rows with empty/NA comparator_isoform_id
+  if (!"comparator_isoform_id" %in% names(explicit_pairs)) {
+    explicit_pairs$comparator_isoform_id <- NA_character_
+  }
+  one_vs_all_rows <- explicit_pairs %>%
+    filter(is.na(comparator_isoform_id) | comparator_isoform_id == "")
+  explicit_rows <- explicit_pairs %>%
+    filter(!is.na(comparator_isoform_id) & comparator_isoform_id != "")
+
+  if (nrow(one_vs_all_rows) > 0) {
+    cat(sprintf("  One-vs-all mode: expanding %d rows...\n", nrow(one_vs_all_rows)))
+    # For each one-vs-all row, pair dominant against all other isoforms for that gene
+    expanded <- list()
+    for (i in seq_len(nrow(one_vs_all_rows))) {
+      g <- one_vs_all_rows$gene_id[i]
+      d <- one_vs_all_rows$dominant_isoform_id[i]
+      other_isos <- isoform_structures_compact %>%
+        filter(gene_id == g, isoform_id != d) %>%
+        pull(isoform_id)
+      if (length(other_isos) > 0) {
+        expanded[[length(expanded) + 1]] <- tibble(
+          gene_id = g,
+          dominant_isoform_id = d,
+          comparator_isoform_id = other_isos
+        )
+      }
+    }
+    if (length(expanded) > 0) {
+      expanded_pairs <- bind_rows(expanded)
+      cat(sprintf("  Expanded to %d pairs\n", nrow(expanded_pairs)))
+      explicit_pairs <- bind_rows(explicit_rows, expanded_pairs)
+    } else {
+      explicit_pairs <- explicit_rows
+    }
+  }
+
+  cat(sprintf("  Total explicit pairs: %d\n", nrow(explicit_pairs)))
 
   # Validate all isoforms exist in structures
   all_pair_isoforms <- unique(c(explicit_pairs$dominant_isoform_id,
@@ -319,19 +389,25 @@ for (batch_idx in 1:n_batches) {
     if (length(gene_strand) != 1) next
 
     if (!is.null(pairs_file)) {
-      # Explicit pairs mode: get dominant and comparator from pairs file
+      # Explicit pairs mode: iterate over each dominant for this gene
       gene_pairs <- valid_pairs %>% filter(gene_id == gene)
-      dom_iso <- unique(gene_pairs$dominant_isoform_id)
-      if (length(dom_iso) != 1) next  # skip genes with multiple dominant isoforms
-      non_dom_isos <- gene_pairs$comparator_isoform_id
+      dom_isos_for_gene <- unique(gene_pairs$dominant_isoform_id)
     } else {
       # Auto-generation mode (default)
-      dom_iso <- dominant_isoforms %>%
+      dom_isos_for_gene <- dominant_isoforms %>%
         filter(gene_id == gene) %>%
         pull(dominant_isoform_id)
 
-      if (length(dom_iso) != 1) next
+      if (length(dom_isos_for_gene) != 1) next
+    }
 
+    for (dom_iso in dom_isos_for_gene) {
+
+    if (!is.null(pairs_file)) {
+      non_dom_isos <- gene_pairs %>%
+        filter(dominant_isoform_id == dom_iso) %>%
+        pull(comparator_isoform_id)
+    } else {
       non_dom_isos <- isoforms_classified %>%
         filter(gene_id == gene, !is_dominant) %>%
         pull(isoform_id)
@@ -522,8 +598,9 @@ for (batch_idx in 1:n_batches) {
         reconstruction_reason = recon_reason
       )
 
-      splicing_profiles[[paste0(gene, "_", non_dom_iso)]] <- profile
+      splicing_profiles[[paste0(gene, "_", dom_iso, "_", non_dom_iso)]] <- profile
     }
+    } # end for (dom_iso ...)
   }
 
   # Progress report
@@ -629,10 +706,15 @@ for (i in 1:nrow(complexity_bins)) {
 # ==============================================================================
 
 cat("\nSaving splicing choice profiles...\n")
-saveRDS(splicing_profiles_df, "data/splicing_choice_profiles.rds")
-cat("  ✓ data/splicing_choice_profiles.rds\n")
+# Ensure output directory exists
+output_dir <- dirname(output_path)
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+saveRDS(splicing_profiles_df, output_path)
+cat(sprintf("  ✓ %s\n", output_path))
 
-cat("\n✓ Step 7 complete\n")
+cat("\n✓ Step 8 complete\n")
 cat("\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
 cat("SUMMARY\n")
