@@ -1,6 +1,6 @@
 # Event Detection Function Catalog
 
-Reference for all functions in `scripts/event_detection_functions.R`, organized by
+Reference for all functions in `scripts/core/event_detection_functions.R`, organized by
 the aspect of splicing biology they address.
 
 ## Event Type Reference

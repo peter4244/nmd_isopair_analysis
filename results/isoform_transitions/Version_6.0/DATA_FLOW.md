@@ -66,19 +66,25 @@
 
 ## **PIPELINE ARCHITECTURE**
 
-### **Phase 1: Data Preparation (Scripts 01-05)**
+Scripts are organized into `scripts/core/` (generic, reusable) and `scripts/nmd/` (NMD study-specific).
+
+### **Phase 1: Data Preparation (nmd/01, core/02-05)**
 
 Builds analysis-ready data structures from raw inputs (unfiltered).
 
-### **Phase 2: Filtering (Script 06)**
+### **Phase 2: Filtering (nmd/06)**
 
 Applies expression filtering (filterByExpr) and gene category filtering to match DGE analysis.
 
-### **Phase 3: Event Detection (Script 07) + Reconstruction Validation (Script 08)**
+### **Phase 3: Classification and Pair Generation (nmd/07)**
+
+Classifies isoforms as NMD-sensitive or non-NMD, generates comparison pairs (C1-C4) across 7 sample sets, deduplicates.
+
+### **Phase 4: Event Detection (core/08) + Reconstruction Validation (core/09)**
 
 Comprehensive splicing event detection on filtered data, followed by reconstruction validation.
 
-### **Phase 4: Analysis (Scripts 09-13)**
+### **Phase 5: Analysis (nmd/09-14)**
 
 Performs statistical analysis on splicing choice profiles.
 
@@ -86,7 +92,7 @@ Performs statistical analysis on splicing choice profiles.
 
 ## **DATA FLOW: PHASE 1 (Preparation)**
 
-### **Script 01: Prepare DGE Data (v2 - Memory Optimized)**
+### **Script nmd/01: Prepare Expression Data (Memory Optimized)**
 
 **Input:**
 - `dge_isoform_nofilter_2026.2.7.rds` (DGEList)
@@ -118,7 +124,7 @@ Performs statistical analysis on splicing choice profiles.
 
 ---
 
-### **Script 02: Extract Isoform Structures**
+### **Script core/02: Extract Isoform Structures**
 
 **Input:**
 - `data/expression_data.rds` (502,994 isoforms)
@@ -154,7 +160,7 @@ Performs statistical analysis on splicing choice profiles.
 
 ---
 
-### **Script 03: Build Union Exons**
+### **Script core/03: Build Union Exons**
 
 **Input:**
 - `data/isoform_structures.rds`
@@ -193,7 +199,7 @@ Performs statistical analysis on splicing choice profiles.
 
 ---
 
-### **Script 04: Extract CDS Annotations**
+### **Script core/04: Extract CDS Annotations**
 
 **Input:**
 - `gencode.v49.chr_patch_hapl_scaff.annotation.gff3.gz`
@@ -264,7 +270,7 @@ Performs statistical analysis on splicing choice profiles.
 
 ---
 
-### **Script 05: Annotate Region Types**
+### **Script core/05: Annotate Region Types**
 
 **Input:**
 - `data/union_exons.rds`
@@ -364,7 +370,7 @@ Performs statistical analysis on splicing choice profiles.
 
 ---
 
-### **Script 06: Filter to Analysis-Ready Subset**
+### **Script nmd/06: Filter to Analysis-Ready Subset**
 
 **Input:**
 - `dge_isoform_nofilter_2026.2.7.rds` (original DGEList)
@@ -434,13 +440,49 @@ Performs statistical analysis on splicing choice profiles.
 
 ## **DATA FLOW: PHASE 2 (Filtering)**
 
-*See Script 06 above*
+*See Script nmd/06 above*
 
 ---
 
-## **DATA FLOW: PHASE 3 (Event Detection + Reconstruction Validation)**
+## **DATA FLOW: PHASE 3 (Classification + Pair Generation)**
 
-### **Script 07: Extract Splicing Choice Profiles**
+### **Script nmd/07: Classify Isoforms and Generate Pairs**
+
+**Input:**
+- `data/expression_data_filtered.rds` — tidy CPM
+- `data/sample_metadata.rds` — sample annotations
+- `data/isoform_structures_filtered.rds` — for validation
+- 6 DE CSVs: `longread_dge/nmd_dge_{ct}_2026.1.18.csv`
+
+**Process:**
+1. Classify isoforms as NMD-sensitive (`adj.P.Val < 0.05 AND logFC > 0`) or non-NMD (`adj.P.Val > 0.95`)
+2. Apply 5% expression filter (treatment-agnostic for C1/C2, DMSO-only for C3/C4)
+3. Calculate dominance proportions (NMD in Smg1i samples, non-NMD in DMSO samples)
+4. Generate comparison pairs for 4 comparison types x 7 runs (all_samples + 6 cell types)
+5. Deduplicate pairs across all 28 sets
+
+**Four Comparison Types:**
+
+| | Dominant | Comparator | Pairs/gene |
+|---|---|---|---|
+| **C1** | Dominant non-NMD (DMSO) | Dominant NMD-sensitive (Smg1i) | 1 |
+| **C2** | Top non-NMD by CPM (DMSO) | Top NMD-sensitive by CPM (Smg1i) | 1 |
+| **C3** | Dominant non-NMD (DMSO) | All other non-NMD | Multiple |
+| **C4** | Dominant non-NMD (DMSO) | Next-best non-NMD by CPM | 1 |
+
+**Output:**
+- `comparisons/{C1,C2,C3,C4}/{run}/classification.rds` — per-run classification
+- `comparisons/{C1,C2,C3,C4}/{run}/pairs.tsv` — per-run pairs
+- `comparisons/deduplicated/all_pairs.tsv` — unique pairs across all 28 sets
+
+**CLI Flags:**
+- `--test N`: Limit to first N genes
+
+---
+
+## **DATA FLOW: PHASE 4 (Event Detection + Reconstruction Validation)**
+
+### **Script core/08: Extract Splicing Choice Profiles**
 
 **Input:**
 - `data/isoform_union_exons_annotated_filtered.rds`
@@ -468,19 +510,20 @@ Performs statistical analysis on splicing choice profiles.
 
 **CLI Flags:**
 - `--test N`: Limit to first N genes
-- `--reconstruction_check`: On-the-fly reconstruction verification per pair. Adds `reconstruction_status` and `reconstruction_reason` columns to profiles. Prints PASS/FAIL/ERROR summary at end. Eliminates need to run Script 08 separately.
-- `--pairs-file <path>`: Specify explicit contrast pairs (TSV with columns: `gene_id`, `dominant_isoform_id`, `comparator_isoform_id`). When used, only the specified pairs are processed instead of auto-generating all non-dominant vs dominant pairs.
+- `--reconstruction_check`: On-the-fly reconstruction verification per pair. Adds `reconstruction_status` and `reconstruction_reason` columns to profiles. Prints PASS/FAIL/ERROR summary at end. Eliminates need to run Script core/09 separately.
+- `--pairs-file <path>`: Specify explicit contrast pairs (TSV with columns: `gene_id`, `dominant_isoform_id`, `comparator_isoform_id`). When used, only the specified pairs are processed instead of auto-generating all non-dominant vs dominant pairs. Skips loading `dominant_isoforms_filtered.rds`.
+- `--output <path>`: Custom output path for splicing profiles RDS (default: `data/splicing_choice_profiles.rds`).
 
 **Key Features:**
 - **Comprehensive event detection:** A5SS, A3SS, SE, Missing_Internal, IR, Partial_IR, IR_diff
 - **Hierarchical detection order:** IR → boundary shifts → exon skipping → terminal events
-- **On-the-fly reconstruction check:** Validates detection accuracy without separate Script 08 run
+- **On-the-fly reconstruction check:** Validates detection accuracy without separate core/09 run
 - **Explicit pairs mode:** Enables targeted re-analysis of specific isoform pairs
 - **Runs on filtered data:** More efficient, focuses on expressed isoforms
 
 ---
 
-### **Script 08: Validate Reconstruction (Standalone)**
+### **Script core/09: Validate Reconstruction (Standalone)**
 
 **Purpose:** Standalone batch reconstruction validation. Useful for validating profiles generated without `--reconstruction_check`, or for re-verification after code changes.
 
@@ -508,23 +551,24 @@ Performs statistical analysis on splicing choice profiles.
 - GENCODE test data: 4258/4274 = 99.6%
 
 **Shared Libraries Used:**
-- `scripts/event_detection_functions.R` -- Hierarchical event detection, detection thresholds (TSS_TOLERANCE, TES_TOLERANCE)
-- `scripts/reconstruction_functions.R` -- Reconstruction (`reconstruct_dominant_v2`) and verification (`verify_transcript`)
+- `scripts/core/event_detection_functions.R` -- Hierarchical event detection, detection thresholds (TSS_TOLERANCE, TES_TOLERANCE)
+- `scripts/core/reconstruction_functions.R` -- Reconstruction (`reconstruct_dominant_v2`) and verification (`verify_transcript`)
 
 ---
 
-## **DATA FLOW: PHASE 4 (Analysis)**
+## **DATA FLOW: PHASE 5 (Analysis)**
 
-*Scripts 09-13 to be implemented*
+*Scripts nmd/09-14*
 
-**Will use:** `data/splicing_choice_profiles.rds` (from Script 07)
+**Will use:** `data/splicing_choice_profiles.rds` or `comparisons/deduplicated/all_splicing_profiles.rds`
 
-**Expected analyses:**
-- Script 09: Co-occurrence analysis
-- Script 10: Spatial pattern analysis
-- Script 11: Functional context analysis
-- Script 12: Pattern classification
-- Script 13: Final report
+**Analysis scripts:**
+- `nmd/09_analyze_complexity_relationship.R`: Complexity analysis
+- `nmd/10_analyze_cooccurrence.R`: Co-occurrence analysis
+- `nmd/11_analyze_spatial_patterns.R`: Spatial pattern analysis
+- `nmd/12_analyze_functional_context.R`: Functional context analysis
+- `nmd/13_analyze_patterns.R`: Pattern classification
+- `nmd/14_generate_report.Rmd`: Final report
 
 **Outputs:** `results/*.tsv`, `figures/*.pdf`
 
@@ -604,40 +648,55 @@ Performs statistical analysis on splicing choice profiles.
 /Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0/
 
 ├── data/
-│   ├── expression_data.rds                              [Script 01 - unfiltered]
-│   ├── dominant_isoforms.rds                            [Script 01 - unfiltered]
-│   ├── sample_metadata.rds                              [Script 01]
-│   ├── filtering_stats.rds                              [Script 01]
-│   ├── isoform_structures.rds                           [Script 02 - unfiltered]
-│   ├── union_exons.rds                                  [Script 03 - unfiltered]
-│   ├── isoform_union_mapping.rds                        [Script 03 - unfiltered]
-│   ├── isoform_cds_metadata.rds                         [Script 04 - unfiltered]
-│   ├── isoform_union_exons_annotated.rds                [Script 05 - unfiltered]
-│   ├── expression_data_filtered.rds                     [Script 06 - FILTERED]
-│   ├── dominant_isoforms_filtered.rds                   [Script 06 - FILTERED]
-│   ├── isoform_structures_filtered.rds                  [Script 06 - FILTERED]
-│   ├── union_exons_filtered.rds                         [Script 06 - FILTERED]
-│   ├── isoform_union_mapping_filtered.rds               [Script 06 - FILTERED]
-│   ├── isoform_cds_metadata_filtered.rds                [Script 06 - FILTERED]
-│   ├── isoform_union_exons_annotated_filtered.rds       [Script 06 - FILTERED]
-│   ├── splicing_choice_profiles.rds                     [Script 07]
-│   └── reconstruction_verification.rds                  [Script 08]
+│   ├── expression_data.rds                              [nmd/01 - unfiltered]
+│   ├── dominant_isoforms.rds                            [nmd/01 - unfiltered]
+│   ├── sample_metadata.rds                              [nmd/01]
+│   ├── filtering_stats.rds                              [nmd/01]
+│   ├── isoform_structures.rds                           [core/02 - unfiltered]
+│   ├── union_exons.rds                                  [core/03 - unfiltered]
+│   ├── isoform_union_mapping.rds                        [core/03 - unfiltered]
+│   ├── isoform_cds_metadata.rds                         [core/04 - unfiltered]
+│   ├── isoform_union_exons_annotated.rds                [core/05 - unfiltered]
+│   ├── expression_data_filtered.rds                     [nmd/06 - FILTERED]
+│   ├── dominant_isoforms_filtered.rds                   [nmd/06 - FILTERED]
+│   ├── isoform_structures_filtered.rds                  [nmd/06 - FILTERED]
+│   ├── union_exons_filtered.rds                         [nmd/06 - FILTERED]
+│   ├── isoform_union_mapping_filtered.rds               [nmd/06 - FILTERED]
+│   ├── isoform_cds_metadata_filtered.rds                [nmd/06 - FILTERED]
+│   ├── isoform_union_exons_annotated_filtered.rds       [nmd/06 - FILTERED]
+│   ├── splicing_choice_profiles.rds                     [core/08]
+│   └── reconstruction_verification.rds                  [core/09]
+│
+├── comparisons/                                         [nmd/07 + core/08]
+│   ├── {C1,C2,C3,C4}/{run}/                            [Per-comparison outputs]
+│   │   ├── classification.rds
+│   │   └── pairs.tsv
+│   └── deduplicated/
+│       ├── all_pairs.tsv                                [Unique pairs across all sets]
+│       └── all_splicing_profiles.rds                    [core/08 on deduplicated pairs]
 │
 ├── results/
 │   └── filtering_report_script06.txt                    [Script 06 report]
 │
 ├── scripts/
-│   ├── 01_prepare_dge_data_v2.R                         [Data prep]
-│   ├── 02_extract_isoform_structures.R                  [Data prep]
-│   ├── 03_build_union_exons.R                           [Data prep]
-│   ├── 04_extract_cds_annotations.R                     [Data prep]
-│   ├── 05_annotate_region_types.R                       [Data prep]
-│   ├── 06_filter_to_analysis_subset.R                   [Filtering]
-│   ├── 07_extract_splicing_profiles.R                   [Event detection]
-│   ├── 08_validate_reconstruction.R                     [Reconstruction validation]
-│   ├── event_detection_functions.R                      [Shared library]
-│   ├── reconstruction_functions.R                       [Shared library]
-│   └── create_union_exons_and_junctions.R               [Shared library]
+│   ├── core/                                            [Generic, reusable]
+│   │   ├── 02_extract_isoform_structures.R              [Data prep]
+│   │   ├── 03_build_union_exons.R                       [Data prep]
+│   │   ├── 04_extract_cds_annotations.R                 [Data prep]
+│   │   ├── 05_annotate_region_types.R                   [Data prep]
+│   │   ├── 08_extract_splicing_profiles.R               [Event detection]
+│   │   ├── 09_validate_reconstruction.R                 [Reconstruction validation]
+│   │   ├── event_detection_functions.R                  [Shared library]
+│   │   ├── reconstruction_functions.R                   [Shared library]
+│   │   └── visualization_functions.R                    [Shared library]
+│   ├── nmd/                                             [NMD study-specific]
+│   │   ├── 01_prepare_expression_data.R                 [Data prep]
+│   │   ├── 06_filter_to_analysis_subset.R               [Filtering]
+│   │   ├── 07_classify_and_pair.R                       [Classification + pairing]
+│   │   └── 09-14_*.R                                    [Downstream analysis]
+│   ├── tests/                                           [Validation suite]
+│   ├── dev/                                             [Development/diagnostic]
+│   └── archive/                                         [Archived earlier versions]
 │
 └── logs/
     └── *.log                                             [Execution logs]
@@ -647,37 +706,38 @@ Performs statistical analysis on splicing choice profiles.
 
 ## **QUALITY CONTROL CHECKPOINTS**
 
-### **Script 01:**
+### **nmd/01:**
 ✓ 100% of genes have filtering stats recorded
 ✓ Mean dominant proportion: 91.3%
 
-### **Script 02:**
+### **core/02:**
 ✓ 100% coverage: all 502,994 major isoforms have structures
 ✓ 0 missing isoforms
 
-### **Script 03:**
+### **core/03:**
 ✓ 0 overlapping union exons (validated in tests)
 ✓ All union exons non-overlapping within gene
 
-### **Script 04:**
+### **core/04:**
 ✓ Coding status assigned for all isoforms
 ✓ CDS coordinates validated
 
-### **Script 05:**
+### **core/05:**
 ✓ Region type distribution as expected (5'UTR → CDS → 3'UTR)
 ✓ No unexpected "unknown" region types
 
-### **Script 06:**
+### **nmd/06:**
 ✓ Exact match: 300,209 isoforms from filterByExpr (reproducible)
 ✓ Gene categories validated (GENCODE, Novel, Fusion)
 ✓ All 7 data files filtered consistently
 
-### **Script 07:**
-✓ 102,928 profiles created
+### **core/08:**
+✓ 102,928 profiles created (full dataset, legacy mode)
 ✓ All profiles have complexity category assigned
 ✓ Mean 5.0 differences per profile
+✓ Supports explicit pairs mode (--pairs-file) for comparison-based analysis
 
-### **Script 08:**
+### **core/09:**
 ✓ Curated test suite (synthetic + real failures): 126/126 (100%)
 ✓ GENCODE test data: 4258/4274 = 99.6% (0 FAILs, 16 ERRORs)
 ✓ All ERRORs are "No comparator exons" edge cases
@@ -702,8 +762,8 @@ Performs statistical analysis on splicing choice profiles.
 
 ### **2026-02-20:**
 - Rewrote Script 03 for atomic union exon construction (BOTH boundary fix)
-- Added shared libraries: event_detection_functions.R, reconstruction_functions.R
-- Added Script 08 for reconstruction validation
+- Added shared libraries: scripts/core/event_detection_functions.R, scripts/core/reconstruction_functions.R
+- Added reconstruction validation (now core/09)
 - Created SPLICE_FUNCTION_CATALOG.md and EVENT_DETECTION_FLOW.md
 
 ---

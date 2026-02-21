@@ -43,12 +43,14 @@ Our analysis proceeds in three phases:
 - Annotate region types (5'UTR, CDS, 3'UTR)
 - Identify dominant isoforms
 
-**Phase 2: Event Detection and Reconstruction Validation**
-- Compare each non-dominant (comparator) to dominant isoform
+**Phase 2: Classification, Pair Generation, and Event Detection**
+- Classify isoforms as NMD-sensitive or non-NMD based on DE results (nmd/07)
+- Generate comparison pairs across 4 comparison types x 7 sample sets (nmd/07)
+- Compare each comparator to dominant isoform (core/08)
 - Detect all splicing events using a hierarchical pipeline: IR -> boundary shifts -> exon skipping -> terminal events
 - Reconstruct dominant isoform from comparator + events and verify coordinates match
 - Generate splicing choice profiles
-- Shared libraries: `event_detection_functions.R`, `reconstruction_functions.R`
+- Shared libraries: `scripts/core/event_detection_functions.R`, `scripts/core/reconstruction_functions.R`
 
 **Phase 3: Statistical Analysis**
 - Co-occurrence analysis
@@ -1113,32 +1115,38 @@ Format: One row per (dominant, non-dominant) comparison
 - `GenomicRanges`: Genomic coordinate operations (optional)
 - `glmnet`: LASSO/ridge regression for co-occurrence analysis
 
-**Scripts** (Version 6.0):
-1. `01_prepare_dge_data_v2.R`: Load expression data, identify dominant isoforms
-2. `02_extract_isoform_structures.R`: Parse GFF files
-3. `03_build_union_exons.R`: Construct atomic union exon models
-4. `04_extract_cds_annotations.R`: Extract CDS coordinates
-5. `05_annotate_region_types.R`: Classify union exons by region
-6. `06_filter_to_analysis_subset.R`: Apply expression and gene category filters
-7. `07_extract_splicing_profiles.R`: Hierarchical event detection, generate profiles
-   - `--reconstruction_check`: On-the-fly reconstruction verification (eliminates need for separate Script 08 run)
-   - `--pairs-file <path>`: Specify explicit contrast pairs (TSV: gene_id, dominant_isoform_id, comparator_isoform_id)
-   - `--test N`: Limit to first N genes
-8. `08_validate_reconstruction.R`: Standalone reconstruction validation (batch verification of Script 07 output)
-9-13: Downstream statistical analyses
+**Scripts** (Version 6.0) — organized into `scripts/core/` (generic) and `scripts/nmd/` (NMD study-specific):
 
-**Shared Libraries**:
+**NMD-specific (`scripts/nmd/`):**
+1. `nmd/01_prepare_expression_data.R`: Load DGEList, calculate CPM, identify dominant isoforms
+6. `nmd/06_filter_to_analysis_subset.R`: Apply expression (filterByExpr) and gene category filters
+7. `nmd/07_classify_and_pair.R`: NMD/non-NMD classification + comparison pair generation (C1-C4, 4 comparisons x 7 runs = 28 sets, with deduplication)
+9-14. `nmd/09-14`: Downstream statistical analyses and report generation
+
+**Core pipeline (`scripts/core/`):**
+2. `core/02_extract_isoform_structures.R`: Parse GFF files to exon structures
+3. `core/03_build_union_exons.R`: Construct atomic union exon models
+4. `core/04_extract_cds_annotations.R`: Extract CDS coordinates
+5. `core/05_annotate_region_types.R`: Classify union exons by region
+8. `core/08_extract_splicing_profiles.R`: Hierarchical event detection, generate profiles
+   - `--reconstruction_check`: On-the-fly reconstruction verification (eliminates need for separate core/09 run)
+   - `--pairs-file <path>`: Specify explicit contrast pairs (TSV: gene_id, dominant_isoform_id, comparator_isoform_id)
+   - `--output <path>`: Custom output path for splicing profiles RDS
+   - `--test N`: Limit to first N genes
+9. `core/09_validate_reconstruction.R`: Standalone batch reconstruction validation
+
+**Shared Libraries** (`scripts/core/`):
 - `event_detection_functions.R`: Core event detection functions (19 functions), detection thresholds (TSS_TOLERANCE, TES_TOLERANCE, SPLICE_SITE_THRESHOLD)
 - `reconstruction_functions.R`: Reconstruction from comparator + events (`reconstruct_dominant_v2`), verification (`verify_transcript`)
+- `visualization_functions.R`: Isoform pair plotting, event annotation brackets, reconstruction mismatch highlighting
+
+**Testing** (`scripts/tests/`):
+- `run_tests.R`: Automated test runner (44 synthetic + 80 real-data + 2 dedup = 126 cases, 100% PASS)
+- `extract_failure_cases.R`: Extract test cases from pipeline failures
 
 **Documentation**:
 - `SPLICE_FUNCTION_CATALOG.md`: Comprehensive function catalog linking to splicing biology
 - `EVENT_DETECTION_FLOW.md`: Mermaid flowchart of data flow through event detection
-
-**Validation**:
-- `testing/validate_synthetic_simple.R`: Automated validation on synthetic data (44/44)
-- `testing/synthetic/TestData/`: Synthetic test genes and annotations
-- `testing/VALIDATED_REAL_EXAMPLES.md`: Registry of manually validated real examples
 
 ---
 

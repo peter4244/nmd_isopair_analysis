@@ -5,10 +5,11 @@ Complete system for detecting splicing differences between isoform pairs, valida
 ## Overview
 
 This pipeline:
-1. **Prepares data** from DGEList objects + GFF annotations (Scripts 01-06)
-2. **Detects splicing events** between isoform pairs using hierarchical event detection (Script 07)
-3. **Validates detection** by reconstructing the dominant isoform from comparator + events (Script 07 `--reconstruction_check` or Script 08)
-4. **Analyzes splicing patterns** across cell types and NMD conditions (Scripts 09-13)
+1. **Prepares data** from DGEList objects + GFF annotations (nmd/01, core/02-05, nmd/06)
+2. **Classifies isoforms and generates comparison pairs** for NMD analysis (nmd/07)
+3. **Detects splicing events** between isoform pairs using hierarchical event detection (core/08)
+4. **Validates detection** by reconstructing the dominant isoform from comparator + events (core/08 `--reconstruction_check` or core/09)
+5. **Analyzes splicing patterns** across cell types and NMD conditions (nmd/09-14)
 
 **Validation Status:**
 - Curated test suite (synthetic + real failures): 126/126 tests (100%)
@@ -24,37 +25,46 @@ Version_6.0/
 ├── DATA_FLOW.md                       # Data pipeline documentation
 ├── MIGRATION_PLAN.md                  # Dev → scripts migration plan
 │
-├── scripts/                           # Main analysis pipeline (Scripts 01-13)
-│   ├── 01_prepare_dge_data_v2.R       # Load DGEList, filter major isoforms, identify dominants
-│   ├── 02_extract_isoform_structures.R # Parse GENCODE/SQANTI GFF to exon structures
-│   ├── 03_build_union_exons.R         # Build union exon models per gene
-│   ├── 04_extract_cds_annotations.R   # Extract CDS start/stop coordinates
-│   ├── 05_annotate_region_types.R     # Classify union exons as 5'UTR/CDS/3'UTR
-│   ├── 06_filter_to_analysis_subset.R # Apply expression filters (filterByExpr)
-│   ├── 07_extract_splicing_profiles.R # Event detection + splicing choice profiles
-│   │   # --reconstruction_check: on-the-fly reconstruction verification
-│   │   # --pairs-file <path>: explicit contrast pairs (TSV)
-│   │   # --test N: limit to first N genes
-│   ├── 08_validate_reconstruction.R   # Standalone reconstruction validation
-│   ├── 09-13: Downstream analysis scripts (planned)
-│   ├── event_detection_functions.R    # Shared: event detection + thresholds
-│   ├── reconstruction_functions.R     # Shared: reconstruct_dominant_v2 + verify_transcript
+├── scripts/
+│   ├── core/                          # Generic, reusable pipeline scripts
+│   │   ├── 02_extract_isoform_structures.R   # Parse GENCODE/SQANTI GFF to exon structures
+│   │   ├── 03_build_union_exons.R            # Build atomic union exon models per gene
+│   │   ├── 04_extract_cds_annotations.R      # Extract CDS start/stop coordinates
+│   │   ├── 05_annotate_region_types.R        # Classify union exons as 5'UTR/CDS/3'UTR
+│   │   ├── 08_extract_splicing_profiles.R    # Event detection + splicing choice profiles
+│   │   │   # --reconstruction_check: on-the-fly reconstruction verification
+│   │   │   # --pairs-file <path>: explicit contrast pairs (TSV)
+│   │   │   # --output <path>: custom output path
+│   │   │   # --test N: limit to first N genes
+│   │   ├── 09_validate_reconstruction.R      # Standalone reconstruction validation
+│   │   ├── event_detection_functions.R       # Shared: event detection + thresholds
+│   │   ├── reconstruction_functions.R        # Shared: reconstruct_dominant_v2 + verify_transcript
+│   │   └── visualization_functions.R         # Shared: isoform pair plotting + visual validation
+│   │
+│   ├── nmd/                           # NMD study-specific scripts
+│   │   ├── 01_prepare_expression_data.R      # Load DGEList, filter major isoforms, identify dominants
+│   │   ├── 06_filter_to_analysis_subset.R    # Apply expression filters (filterByExpr)
+│   │   ├── 07_classify_and_pair.R            # NMD classification + comparison pair generation (C1-C4)
+│   │   ├── 09_analyze_complexity_relationship.R
+│   │   ├── 10_analyze_cooccurrence.R
+│   │   ├── 11_analyze_spatial_patterns.R
+│   │   ├── 12_analyze_functional_context.R
+│   │   ├── 13_analyze_patterns.R
+│   │   └── 14_generate_report.Rmd
+│   │
+│   ├── tests/                         # Validation test suite (126/126 PASS)
+│   │   ├── run_tests.R                       # Test runner (synthetic + real-data cases)
+│   │   ├── extract_failure_cases.R
+│   │   └── visualize_results.R
+│   │
+│   ├── dev/                           # Development and diagnostic scripts
+│   │   ├── visualize_comparisons.R           # CLI wrapper for visual validation
+│   │   ├── summarize_comparisons.R           # Profile summary by comparison type
+│   │   ├── diagnose_failures.R
+│   │   ├── test_08_on_gencode.R
+│   │   └── analyze_08_failures.R
+│   │
 │   └── archive/                       # Archived earlier versions
-│
-├── development/
-│   └── reconstruction/                # Development + validation environment
-│       ├── README.md                  # Detailed workflow documentation
-│       ├── event_detection_functions.R
-│       ├── reconstruction_functions.R
-│       ├── detect_and_save_events.R
-│       ├── reconstruct_dominant_isoforms.R
-│       ├── verify_reconstruction.R
-│       ├── build_atomic_union_exons.R
-│       └── synthetic_data/ & real_data/
-│
-├── testing/                           # Validation infrastructure
-│   ├── reconstruction/                # Git-tracked reconstruction scripts
-│   └── synthetic/                     # Synthetic test data
 │
 ├── data/                              # Pipeline output data (.rds files)
 ├── results/                           # Analysis results
@@ -179,6 +189,19 @@ Tab-separated, 15 columns:
 
 **R packages:** tidyverse, ggplot2, patchwork, edgeR, rtracklayer
 **System tools:** bgzip, tabix
+
+## Comparison Framework (NMD-Specific)
+
+Four comparison types, each run across 7 sample sets (all_samples + 6 cell types):
+
+| | Dominant | Comparator | Pairs/gene |
+|---|---|---|---|
+| **C1** | Dominant non-NMD (DMSO) | Dominant NMD-sensitive (Smg1i) | 1 |
+| **C2** | Top non-NMD by CPM (DMSO) | Top NMD-sensitive by CPM (Smg1i) | 1 |
+| **C3** | Dominant non-NMD (DMSO) | All other non-NMD | Multiple |
+| **C4** | Dominant non-NMD (DMSO) | Next-best non-NMD by CPM | 1 |
+
+Pairs are deduplicated across all 28 sets before running event detection once via core/08.
 
 ## Contact
 
