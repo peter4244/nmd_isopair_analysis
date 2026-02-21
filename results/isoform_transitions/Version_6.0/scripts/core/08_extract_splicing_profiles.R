@@ -488,7 +488,11 @@ for (batch_idx in 1:n_batches) {
 
           if (nrow(events) == 0) {
             # No events: comparator IS the reconstruction — verify directly
-            vr <- verify_transcript(dom_structure, comp_exons_for_recon, gene_strand)
+            # Use consistent column names (rename dom_structure to match comp format)
+            dom_for_verify <- dom_structure %>%
+              rename(chr = seqnames, transcript_id = isoform_id) %>%
+              select(chr, exon_start, exon_end, strand, gene_id, transcript_id)
+            vr <- verify_transcript(dom_for_verify, comp_exons_for_recon, gene_strand)
             list(status = if (vr$pass) "PASS" else "FAIL", reason = vr$reason)
           } else {
             gene_ue <- union_exons_for_recon %>% filter(gene_id == gene)

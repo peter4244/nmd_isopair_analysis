@@ -287,6 +287,8 @@ Performs statistical analysis on splicing choice profiles.
        region_type = "5'UTR"
    elif (exon_start > cds_stop):
        region_type = "3'UTR"
+   elif (exon contains BOTH cds_start AND cds_stop):
+       region_type = "contains_orf_start_stop"
    elif (exon contains cds_start):
        region_type = "contains_orf_start"
    elif (exon contains cds_stop):

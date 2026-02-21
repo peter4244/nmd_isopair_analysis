@@ -1073,7 +1073,7 @@ Ordering: union_exon_index reflects 5' → 3' transcript order
 ```
 Columns: isoform_id, gene_id, union_exon_id, union_exon_index, present (1/0), region_type
 Format: One row per (isoform, union_exon) pair
-Region Types: "5'UTR", "CDS", "3'UTR", "contains_orf_start", "contains_orf_stop", "non_coding", "unknown"
+Region Types: "5'UTR", "CDS", "3'UTR", "contains_orf_start", "contains_orf_stop", "contains_orf_start_stop", "non_coding", "unknown"
 ```
 
 #### Splicing Choice Profile

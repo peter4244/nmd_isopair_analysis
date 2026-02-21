@@ -1,140 +1,15 @@
 #!/usr/bin/env Rscript
 #
-# Reconstruction Functions v2 - Union Exon Based
+# Reconstruction Functions v2 - Direct Coordinate Based
 #
-# Refactored approach: Since event coordinates exactly match atomic union exon
-# boundaries, we reconstruct by finding and applying the specific union exons
-# that represent each event.
+# All event types use direct coordinates (five_prime/three_prime) for
+# reconstruction. Union exon parameter retained in function signatures
+# for backwards compatibility but unused.
 #
 # Key principle:
-#   Event coordinates → Union exons → Add/remove from comparator structure
+#   Comparator exons + events → Apply LOSS then GAIN → Reconstruct dominant
 
 library(tidyverse)
-
-# ==============================================================================
-# Core Helper: Find Union Exons for Event
-# ==============================================================================
-
-#' Parse comma-separated exon ranges and find matching union exons
-#'
-#' @param ranges_str Comma-separated ranges like "72000-72100" or "100-200, 300-400"
-#' @param union_exons All union exons for the gene
-#' @param gene_id Gene identifier
-#' @return Tibble of matching union exons
-parse_and_find_union_exons <- function(ranges_str, union_exons, gene_id) {
-  if (is.na(ranges_str) || ranges_str == "") {
-    return(tibble())
-  }
-
-  # Parse comma-separated ranges
-  ranges_list <- strsplit(ranges_str, ",")[[1]]
-  all_matches <- list()
-
-  for (range_str in ranges_list) {
-    coords <- as.integer(strsplit(trimws(range_str), "-")[[1]])
-    range_start <- coords[1]
-    range_end <- coords[2]
-
-    # Find union exons within this range
-    matches <- union_exons %>%
-      filter(
-        gene_id == !!gene_id,
-        start >= range_start,
-        end <= range_end
-      ) %>%
-      arrange(start)
-
-    if (nrow(matches) > 0) {
-      all_matches[[length(all_matches) + 1]] <- matches
-    }
-  }
-
-  if (length(all_matches) > 0) {
-    return(bind_rows(all_matches) %>% distinct())
-  } else {
-    return(tibble())
-  }
-}
-
-#' Find union exons that match an event's coordinates
-#'
-#' @param event Event record
-#' @param union_exons All union exons for the gene
-#' @return Tibble of matching union exons
-find_event_union_exons <- function(event, union_exons) {
-  # For Alt_TSS/Alt_TES: use missing_terminal_exons
-  if (event$event_type %in% c("Alt_TSS", "Alt_TES")) {
-    if (is.na(event$missing_terminal_exons) || event$missing_terminal_exons == "") {
-      return(tibble())
-    }
-
-    # Parse comma-separated ranges
-    ranges_str <- strsplit(event$missing_terminal_exons, ",")[[1]]
-    all_matches <- list()
-
-    for (range_str in ranges_str) {
-      coords <- as.integer(strsplit(trimws(range_str), "-")[[1]])
-      range_start <- coords[1]
-      range_end <- coords[2]
-
-      # Find union exons that overlap this range, then clip to range boundaries.
-      # Strict containment (start >= range_start) misses union exons that straddle
-      # the event boundary — clipping ensures we capture the correct portion.
-      matches <- union_exons %>%
-        filter(
-          gene_id == event$gene_id,
-          start <= range_end,
-          end >= range_start
-        ) %>%
-        mutate(
-          start = pmax(start, range_start),
-          end = pmin(end, range_end)
-        ) %>%
-        arrange(start)
-
-      if (nrow(matches) > 0) {
-        all_matches[[length(all_matches) + 1]] <- matches
-      }
-    }
-
-    if (length(all_matches) > 0) {
-      return(bind_rows(all_matches) %>% distinct())
-    } else {
-      return(tibble())
-    }
-  }
-
-  # For other events: use five_prime/three_prime
-  event_start <- min(event$five_prime, event$three_prime)
-  event_end <- max(event$five_prime, event$three_prime)
-
-  # Try strict containment first (preserves existing behavior)
-  matches <- union_exons %>%
-    filter(
-      gene_id == event$gene_id,
-      start >= event_start,
-      end <= event_end
-    ) %>%
-    arrange(start)
-
-  # Fallback: if strict containment finds nothing, try overlap + clip.
-  # This handles union exons that straddle the event boundary.
-  if (nrow(matches) == 0) {
-    matches <- union_exons %>%
-      filter(
-        gene_id == event$gene_id,
-        start <= event_end,
-        end >= event_start
-      ) %>%
-      mutate(
-        start = pmax(start, event_start),
-        end = pmin(end, event_end)
-      ) %>%
-      arrange(start)
-  }
-
-  return(matches)
-}
 
 # ==============================================================================
 # Union Exon Addition/Removal
@@ -553,8 +428,7 @@ reconstruct_dominant_v2 <- function(comparator_exons, events, union_exons) {
 
         if (ie_start <= pe_end && ie_end >= pe_start) {
           overlaps <- TRUE
-          cat(sprintf("  [DEBUG] Filtering %s [%d-%d] (overlaps with IR [%d-%d])\n",
-                     pe$event_type, pe_start, pe_end, ie_start, ie_end))
+          # Partial IR overlaps with full IR — filter it out
           break
         }
       }

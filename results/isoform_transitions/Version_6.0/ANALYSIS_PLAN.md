@@ -309,7 +309,7 @@ Exon A [====]^donor1 --intron-- [====]^donor2 Exon B
   - If isoform is non-coding → `region_type = "non_coding"`
   - If isoform is coding:
     - Determine overlap with CDS region
-    - Assign: "5'UTR" / "CDS" / "3'UTR" / "contains_orf_start" / "contains_orf_stop" / "unknown"
+    - Assign: "5'UTR" / "CDS" / "3'UTR" / "contains_orf_start_stop" / "contains_orf_start" / "contains_orf_stop" / "unknown"
 
 **Region type assignment logic:**
 ```
@@ -318,6 +318,9 @@ if (exon_end < cds_start):
 
 elif (exon_start > cds_stop):
     region_type = "3'UTR"
+
+elif (exon contains BOTH cds_start AND cds_stop):
+    region_type = "contains_orf_start_stop"
 
 elif (exon contains cds_start):
     region_type = "contains_orf_start"
@@ -979,6 +982,9 @@ For each (isoform, union_exon) pair where isoform contains union_exon:
 
    elif (exon_start > cds_stop):
        region_type = "3'UTR"
+
+   elif (exon contains BOTH cds_start AND cds_stop):
+       region_type = "contains_orf_start_stop"
 
    elif (exon_start <= cds_start AND exon_end >= cds_start AND exon_end < cds_stop):
        region_type = "contains_orf_start"

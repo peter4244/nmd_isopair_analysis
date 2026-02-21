@@ -371,4 +371,4 @@ log_lines <- c(
 writeLines(log_lines, "logs/reconstruction_verification.log")
 cat("  ✓ logs/reconstruction_verification.log\n")
 
-cat("\n✓ Step 8 complete\n\n")
+cat("\n✓ Step 9 complete\n\n")

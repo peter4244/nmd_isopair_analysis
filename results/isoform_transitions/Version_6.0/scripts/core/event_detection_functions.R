@@ -592,10 +592,13 @@ detect_shared_boundary_event <- function(exon_dom, exon_non_dom, strand,
   }
 
   # ===========================================================================
-  # OVERLAP-BASED DETECTION (fallback when no exact shared boundary)
+  # OVERLAP-BASED DETECTION (disabled — flanking_exons always NULL from caller)
   # ===========================================================================
-  # If no event detected via shared boundary, check if exons overlap
-  # This allows detection of splice site variations even when boundaries don't match exactly
+  # Fallback for exon pairs that overlap without sharing an exact boundary.
+  # Currently inactive because detect_events_for_pair() passes flanking_exons
+  # as NULL, which triggers skip_overlap = TRUE. The shared-boundary logic above
+  # (including the dual-boundary handler) covers all observed cases.
+  # Retained for potential future use if flanking_exons are ever provided.
 
   if (event_type == "none") {
     # Check if exons overlap by at least 1bp
@@ -968,36 +971,6 @@ junctions_spanning_range <- function(jxn_vec, range_start, range_end) {
 format_junctions <- function(jxn_vec) {
   if (length(jxn_vec) == 0) return("")
   paste(jxn_vec, collapse = ",")
-}
-
-#' Detect SE (skipped exon) events
-#' SE = exon present in only one isoform, flanked by shared/comparable exons
-#'
-#' @param comparison Comparison dataframe with union exons and exon_status
-#' @return Integer count of SE events
-detect_se <- function(comparison) {
-  n_se <- 0
-
-  for (i in seq_len(nrow(comparison))) {
-    exon_status <- comparison[i, ]$exon_status
-
-    # Skip if this exon is shared or in neither isoform
-    if (exon_status %in% c("shared", "neither")) next
-
-    # Check if flanking exons are shared (comparable)
-    has_prev <- i > 1
-    has_next <- i < nrow(comparison)
-
-    prev_shared <- has_prev && comparison[i-1, ]$exon_status == "shared"
-    next_shared <- has_next && comparison[i+1, ]$exon_status == "shared"
-
-    # SE if both flanking exons are shared/comparable
-    if (prev_shared && next_shared) {
-      n_se <- n_se + 1
-    }
-  }
-
-  return(n_se)
 }
 
 # ==============================================================================

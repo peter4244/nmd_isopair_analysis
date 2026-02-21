@@ -129,6 +129,9 @@ annotated_mapping <- annotated_mapping %>%
       # Completely after CDS range (3' UTR on both strands)
       isoform_exon_start > cds_stop ~ "3'UTR",
 
+      # Contains BOTH CDS start and stop boundaries (single-CDS-exon genes)
+      isoform_exon_start <= cds_start & isoform_exon_end >= cds_stop ~ "contains_orf_start_stop",
+
       # Contains CDS start boundary (contains first CDS base)
       isoform_exon_start <= cds_start & isoform_exon_end >= cds_start ~ "contains_orf_start",
 
