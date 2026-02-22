@@ -5,12 +5,17 @@
 # Purpose: Test relationship between isoform complexity and event count (foundational for stratification)
 #
 # Input:
-#   - data/splicing_choice_profiles.rds (from Script 07)
+#   - splicing_choice_profiles.rds (from Script 08)
 #
 # Output:
-#   - results/complexity_relationship_results.rds
-#   - results/complexity_bins_definition.rds
-#   - figures/complexity_vs_events.pdf
+#   - {output_dir}/complexity_relationship_results.rds
+#   - {output_dir}/complexity_bins_definition.rds
+#   - {output_dir}/splicing_choice_profiles_with_bins.rds
+#   - {output_dir}/figures/complexity_vs_events.pdf
+#
+# Flags:
+#   --input path.rds       Input profiles (default: data/splicing_choice_profiles.rds)
+#   --output-dir dir/      Output directory (default: results)
 #
 
 library(tidyverse)
@@ -24,18 +29,38 @@ base_dir <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions
 setwd(base_dir)
 
 # ═══════════════════════════════════════════════════════════════════
+# Parse CLI arguments
+# ═══════════════════════════════════════════════════════════════════
+
+args <- commandArgs(trailingOnly = TRUE)
+
+input_path <- "data/splicing_choice_profiles.rds"
+if ("--input" %in% args) {
+  idx <- which(args == "--input")
+  input_path <- args[idx + 1]
+}
+
+output_dir <- "results"
+if ("--output-dir" %in% args) {
+  idx <- which(args == "--output-dir")
+  output_dir <- args[idx + 1]
+}
+
+cat(sprintf("  Input:      %s\n", input_path))
+cat(sprintf("  Output dir: %s\n\n", output_dir))
+
+# ═══════════════════════════════════════════════════════════════════
 # SECTION 1: Load Data
 # ═══════════════════════════════════════════════════════════════════
 
 cat("Loading splicing profiles...\n")
 
-# Check if input file exists
-if (!file.exists("data/splicing_choice_profiles.rds")) {
-  stop("ERROR: Input file 'data/splicing_choice_profiles.rds' not found. Run Script 07 first.")
+if (!file.exists(input_path)) {
+  stop(sprintf("ERROR: Input file '%s' not found. Run Script 08 first.", input_path))
 }
 
 profiles <- tryCatch({
-  readRDS("data/splicing_choice_profiles.rds")
+  readRDS(input_path)
 }, error = function(e) {
   stop(sprintf("ERROR: Failed to load profiles: %s", e$message))
 })
@@ -196,9 +221,10 @@ print(bin_summary)
 
 cat("\nCreating plots...\n")
 
-dir.create("figures", showWarnings = FALSE)
+fig_dir <- file.path(output_dir, "figures")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
 
-pdf("figures/complexity_vs_events.pdf", width = 12, height = 10)
+pdf(file.path(fig_dir, "complexity_vs_events.pdf"), width = 12, height = 10)
 
 # Plot for each metric
 for (metric in names(model_results)) {
@@ -242,7 +268,7 @@ print(p_primary)
 
 dev.off()
 
-cat("  ✓ figures/complexity_vs_events.pdf\n")
+cat(sprintf("  ✓ %s\n", file.path(fig_dir, "complexity_vs_events.pdf")))
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 6: Save Outputs
@@ -250,11 +276,12 @@ cat("  ✓ figures/complexity_vs_events.pdf\n")
 
 cat("\nSaving results...\n")
 
-dir.create("results", showWarnings = FALSE)
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Save model results
-saveRDS(results_df, "results/complexity_relationship_results.rds")
-cat("  ✓ results/complexity_relationship_results.rds\n")
+out_path <- file.path(output_dir, "complexity_relationship_results.rds")
+saveRDS(results_df, out_path)
+cat(sprintf("  ✓ %s\n", out_path))
 
 # Save complexity bins definition
 complexity_bins <- list(
@@ -265,12 +292,14 @@ complexity_bins <- list(
   bin_summary = bin_summary
 )
 
-saveRDS(complexity_bins, "results/complexity_bins_definition.rds")
-cat("  ✓ results/complexity_bins_definition.rds\n")
+out_path <- file.path(output_dir, "complexity_bins_definition.rds")
+saveRDS(complexity_bins, out_path)
+cat(sprintf("  ✓ %s\n", out_path))
 
 # Update profiles with complexity bins
-saveRDS(profiles, "data/splicing_choice_profiles_with_bins.rds")
-cat("  ✓ data/splicing_choice_profiles_with_bins.rds\n")
+out_path <- file.path(output_dir, "splicing_choice_profiles_with_bins.rds")
+saveRDS(profiles, out_path)
+cat(sprintf("  ✓ %s\n", out_path))
 
 cat("\n✓ Step 9 complete\n\n")
 cat("═══════════════════════════════════════════════════════════════════\n")

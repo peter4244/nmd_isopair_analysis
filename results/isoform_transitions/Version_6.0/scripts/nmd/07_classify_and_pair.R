@@ -16,13 +16,14 @@
 #   - 6 DE CSVs from longread_dge/            (txid, adj.P.Val, logFC, hgnc_id)
 #
 # Output:
-#   - comparisons/{C1,C2,C3,C4}/{run}/classification.rds
-#   - comparisons/{C1,C2,C3,C4}/{run}/pairs.tsv
-#   - comparisons/deduplicated/all_pairs.tsv
+#   - comparisons/nonNMD_{threshold}/{C1,C2,C3,C4}/{run}/classification.rds
+#   - comparisons/nonNMD_{threshold}/{C1,C2,C3,C4}/{run}/pairs.tsv
+#   - comparisons/nonNMD_{threshold}/deduplicated/all_pairs.tsv
 #
 # Usage:
-#   Rscript scripts/nmd/07_classify_and_pair.R                # full run
-#   Rscript scripts/nmd/07_classify_and_pair.R --test 50      # limit to 50 genes
+#   Rscript scripts/nmd/07_classify_and_pair.R                           # full run (threshold=0.95)
+#   Rscript scripts/nmd/07_classify_and_pair.R --non-nmd-threshold 0.50  # lenient threshold
+#   Rscript scripts/nmd/07_classify_and_pair.R --test 50                 # limit to 50 genes
 #
 ################################################################################
 
@@ -42,9 +43,23 @@ if (test_mode) {
   }
 }
 
+# Parse --non-nmd-threshold (default: 0.95)
+non_nmd_threshold <- 0.95
+if ("--non-nmd-threshold" %in% args) {
+  thr_idx <- which(args == "--non-nmd-threshold")
+  if (thr_idx < length(args)) {
+    non_nmd_threshold <- as.numeric(args[thr_idx + 1])
+    if (is.na(non_nmd_threshold) || non_nmd_threshold < 0 || non_nmd_threshold > 1) {
+      stop("--non-nmd-threshold must be a number between 0 and 1")
+    }
+  }
+}
+
 cat("\n")
 cat("==================================================================\n")
 cat("   STEP 7: Classify Isoforms and Generate Comparison Pairs\n")
+cat(sprintf("   Non-NMD threshold: adj.P.Val > %s\n", format(non_nmd_threshold, nsmall = 2)))
+cat(sprintf("   Output directory:  comparisons/nonNMD_%s/\n", format(non_nmd_threshold, nsmall = 2)))
 cat("==================================================================\n")
 cat("\n")
 
@@ -75,13 +90,13 @@ ct_to_de_suffix <- c(
 )
 
 # Thresholds
-NMD_ADJ_P_THRESHOLD   <- 0.05
-NON_NMD_ADJ_P_THRESHOLD <- 0.95
-MIN_PROPORTION         <- 0.05
-DOMINANCE_THRESHOLD    <- 0.50
+NMD_ADJ_P_THRESHOLD     <- 0.05
+NON_NMD_ADJ_P_THRESHOLD <- non_nmd_threshold
+MIN_PROPORTION           <- 0.05
+DOMINANCE_THRESHOLD      <- 0.50
 
-# Output base
-output_base <- "comparisons"
+# Output base — nested under threshold-named subdirectory
+output_base <- file.path("comparisons", sprintf("nonNMD_%s", format(NON_NMD_ADJ_P_THRESHOLD, nsmall = 2)))
 
 # ==============================================================================
 # 1. Input Validation
@@ -193,7 +208,7 @@ nmd_sensitive_all <- all_de %>%
   distinct(isoform_id) %>%
   pull(isoform_id)
 
-# Non-NMD (all_samples): must appear in ALL 6 DE files AND have adj.P.Val > 0.95 in EVERY one
+# Non-NMD (all_samples): must appear in ALL 6 DE files AND have adj.P.Val > threshold in EVERY one
 isoforms_per_de <- all_de %>%
   group_by(isoform_id) %>%
   summarize(
@@ -206,7 +221,7 @@ non_nmd_all <- isoforms_per_de %>%
   filter(n_de_files == length(de_files)) %>%
   pull(isoform_id)
 
-# From those present in all files, check each has adj.P.Val > 0.95
+# From those present in all files, check each has adj.P.Val > threshold
 non_nmd_all <- all_de %>%
   filter(isoform_id %in% non_nmd_all) %>%
   group_by(isoform_id) %>%
@@ -616,10 +631,11 @@ all_pairs <- map_dfr(all_pair_files, function(f) {
   p <- read_tsv(f, show_col_types = FALSE)
   if (nrow(p) == 0) return(tibble())
   # Extract comparison and run from path
+  # Path: .../comparisons/nonNMD_X.XX/C{1-4}/{run}/pairs.tsv
   parts <- str_split(f, "/")[[1]]
-  idx <- which(parts == "comparisons")
-  comp <- parts[idx + 1]
-  run  <- parts[idx + 2]
+  comp_idx <- which(parts %in% c("C1", "C2", "C3", "C4"))
+  comp <- parts[comp_idx]
+  run  <- parts[comp_idx + 1]
   p %>% mutate(source_comparison = comp, source_run = run)
 })
 
@@ -700,10 +716,200 @@ if (nrow(all_pairs) > 0) {
   }
 }
 
+# ==============================================================================
+# 10. Write Run Log
+# ==============================================================================
+
+run_log_path <- file.path(output_base, "run_log.txt")
+cat(sprintf("\nWriting run log to: %s\n", run_log_path))
+
+log_lines <- c(
+  "======================================================================",
+  "  RUN LOG — Isoform Classification and Pairing (Script 07)",
+  "======================================================================",
+  "",
+  sprintf("Generated: %s", format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+  sprintf("Working directory: %s", getwd()),
+  "",
+  "",
+  "----------------------------------------------------------------------",
+  "  1. PARAMETERS",
+  "----------------------------------------------------------------------",
+  "",
+  sprintf("Non-NMD adj.P.Val threshold:   > %s", format(NON_NMD_ADJ_P_THRESHOLD, nsmall = 2)),
+  sprintf("NMD-sensitive adj.P.Val threshold: < %s", format(NMD_ADJ_P_THRESHOLD, nsmall = 2)),
+  sprintf("NMD-sensitive logFC requirement:   > 0"),
+  sprintf("Minimum isoform proportion:    >= %s (5%% filter)", format(MIN_PROPORTION, nsmall = 2)),
+  sprintf("Dominance threshold:           > %s", format(DOMINANCE_THRESHOLD, nsmall = 2)),
+  sprintf("Output directory:              %s/", output_base),
+  "",
+  "",
+  "----------------------------------------------------------------------",
+  "  2. CLASSIFICATION DEFINITIONS",
+  "----------------------------------------------------------------------",
+  "",
+  "NMD-sensitive isoform:",
+  "  An isoform with adj.P.Val < 0.05 AND logFC > 0 in the Smg1i vs DMSO",
+  "  differential expression analysis. These are transcripts upregulated",
+  "  when NMD is inhibited, indicating they are normally degraded by the",
+  "  NMD pathway.",
+  "",
+  "Non-NMD isoform:",
+  sprintf("  An isoform with adj.P.Val > %s in the Smg1i vs DMSO analysis,",
+          format(NON_NMD_ADJ_P_THRESHOLD, nsmall = 2)),
+  "  indicating no significant change when NMD is inhibited. These are",
+  "  transcripts that are not subject to NMD-mediated degradation.",
+  "",
+  "all_samples classification:",
+  "  - NMD-sensitive: union across cell types (NMD in ANY cell type)",
+  "  - Non-NMD: intersection across cell types (non-NMD in ALL cell types,",
+  "    must appear in all 6 DE files with adj.P.Val above threshold in each)",
+  "",
+  "Per-cell-type classification:",
+  "  - Each cell type classified independently using its own DE results",
+  "  - Overlaps (isoforms meeting both NMD and non-NMD criteria) are",
+  "    removed from the non-NMD set",
+  "",
+  "",
+  "----------------------------------------------------------------------",
+  "  3. COMPARISON DEFINITIONS",
+  "----------------------------------------------------------------------",
+  "",
+  "C1 — Dominant non-NMD vs dominant NMD-sensitive (1 pair/gene)",
+  "  Dominant: non-NMD isoform with highest dominance proportion (>50%)",
+  "            in DMSO samples",
+  "  Comparator: NMD-sensitive isoform with highest dominance proportion",
+  "              (>50%) in Smg1i samples",
+  "  5% filter scope: all samples (both treatments)",
+  "  Purpose: Compare the main stable transcript to the main NMD target",
+  "",
+  "C2 — Top non-NMD by CPM vs top NMD-sensitive by CPM (1 pair/gene)",
+  "  Dominant: non-NMD isoform with highest dominance proportion (>50%)",
+  "            in DMSO samples",
+  "  Comparator: NMD-sensitive isoform with highest mean CPM in Smg1i",
+  "              samples (no dominance requirement)",
+  "  5% filter scope: all samples (both treatments)",
+  "  Purpose: Compare the main stable transcript to the most expressed",
+  "           NMD target, even if it is not dominant",
+  "",
+  "C3 — Dominant non-NMD vs all other non-NMD (multiple pairs/gene)",
+  "  Dominant: non-NMD isoform with highest dominance proportion (>50%)",
+  "            in DMSO samples",
+  "  Comparator: every other non-NMD isoform for the same gene",
+  "  5% filter scope: DMSO samples only",
+  "  Purpose: Characterize structural diversity among stable (non-NMD)",
+  "           transcripts within a gene — serves as control for C1/C2",
+  "",
+  "C4 — Dominant non-NMD vs next-best non-NMD by CPM (1 pair/gene)",
+  "  Dominant: non-NMD isoform with highest dominance proportion (>50%)",
+  "            in DMSO samples",
+  "  Comparator: non-NMD isoform with highest mean CPM after excluding",
+  "              the dominant",
+  "  5% filter scope: DMSO samples only",
+  "  Purpose: Focused control — compare the top two stable transcripts",
+  "",
+  "Each comparison is run across 7 runs:",
+  sprintf("  all_samples, %s", paste(cell_types, collapse = ", ")),
+  "",
+  "",
+  "----------------------------------------------------------------------",
+  "  4. INPUT DATA",
+  "----------------------------------------------------------------------",
+  "",
+  sprintf("Expression data:      data/expression_data_filtered.rds"),
+  sprintf("  Isoforms: %d", n_distinct(expression_data$isoform_id)),
+  sprintf("  Samples:  %d", n_distinct(expression_data$sample_id)),
+  sprintf("  Rows:     %d", nrow(expression_data)),
+  "",
+  sprintf("Sample metadata:      data/sample_metadata.rds"),
+  sprintf("  Samples:  %d", nrow(sample_metadata)),
+  sprintf("  Cell types: %s", paste(cell_types, collapse = ", ")),
+  sprintf("  Treatments: %s", paste(sort(unique(as.character(sample_metadata$treatment))), collapse = ", ")),
+  "",
+  sprintf("Isoform structures:   data/isoform_structures_filtered.rds"),
+  sprintf("  Isoforms: %d", nrow(isoform_structures)),
+  "",
+  "DE files:",
+  paste0("  ", names(de_files), ": ", de_files),
+  ""
+)
+
+# Classification results
+log_lines <- c(log_lines,
+  "",
+  "----------------------------------------------------------------------",
+  "  5. CLASSIFICATION RESULTS",
+  "----------------------------------------------------------------------",
+  "",
+  sprintf("all_samples: %d NMD-sensitive, %d non-NMD",
+          length(nmd_sensitive_all), length(non_nmd_all)),
+  ""
+)
+for (ct in cell_types) {
+  log_lines <- c(log_lines,
+    sprintf("%s: %d NMD-sensitive, %d non-NMD",
+            ct, length(nmd_sensitive_ct[[ct]]), length(non_nmd_ct[[ct]])))
+}
+
+# Pair counts
+log_lines <- c(log_lines,
+  "",
+  "",
+  "----------------------------------------------------------------------",
+  "  6. PAIR COUNTS",
+  "----------------------------------------------------------------------",
+  ""
+)
+for (i in seq_len(nrow(pair_counts))) {
+  log_lines <- c(log_lines,
+    sprintf("%-4s / %-12s: %d pairs (%d genes)",
+            pair_counts$comparison[i], pair_counts$run[i],
+            pair_counts$n_pairs[i], pair_counts$n_genes[i]))
+}
+log_lines <- c(log_lines,
+  "",
+  sprintf("Total pairs across all 28 sets: %d", sum(pair_counts$n_pairs))
+)
+
+# Deduplication
+if (nrow(all_pairs) > 0) {
+  log_lines <- c(log_lines,
+    "",
+    "",
+    "----------------------------------------------------------------------",
+    "  7. DEDUPLICATION",
+    "----------------------------------------------------------------------",
+    "",
+    sprintf("Total pairs across 28 sets:     %d", nrow(all_pairs)),
+    sprintf("Unique (deduplicated) pairs:     %d", nrow(dedup_pairs)),
+    sprintf("Deduplication ratio:             %.1f%%",
+            100 * (1 - nrow(dedup_pairs) / nrow(all_pairs))),
+    sprintf("Pairs in multiple sets:          %d", nrow(shared_pairs)),
+    "",
+    sprintf("Deduplicated pairs file: %s/deduplicated/all_pairs.tsv", output_base)
+  )
+} else {
+  log_lines <- c(log_lines,
+    "",
+    "",
+    "----------------------------------------------------------------------",
+    "  7. DEDUPLICATION",
+    "----------------------------------------------------------------------",
+    "",
+    "WARNING: No pairs generated across any comparison x run."
+  )
+}
+
+log_lines <- c(log_lines, "", "")
+
+writeLines(log_lines, run_log_path)
+cat(sprintf("  Run log written (%d lines).\n", length(log_lines)))
+
 cat("\n")
 cat("==================================================================\n")
 cat("  Step 7 complete.\n")
 cat(sprintf("  Outputs in: %s/\n", output_base))
 cat(sprintf("  Deduplicated pairs: %s/deduplicated/all_pairs.tsv\n", output_base))
+cat(sprintf("  Run log: %s\n", run_log_path))
 cat("==================================================================\n")
 cat("\n")

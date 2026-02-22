@@ -1,21 +1,36 @@
 #!/usr/bin/env Rscript
 # Quick summary of splicing profiles by comparison type
+#
+# Usage:
+#   Rscript scripts/dev/summarize_comparisons.R                                    # default (nonNMD_0.95)
+#   Rscript scripts/dev/summarize_comparisons.R --threshold-dir nonNMD_0.50        # lenient threshold
 library(tidyverse)
 
+# Parse CLI arguments
+args <- commandArgs(trailingOnly = TRUE)
+threshold_dir <- "nonNMD_0.95"
+if ("--threshold-dir" %in% args) {
+  td_idx <- which(args == "--threshold-dir")
+  if (td_idx < length(args)) threshold_dir <- args[td_idx + 1]
+}
+base_dir <- file.path("comparisons", threshold_dir)
+cat(sprintf("Using threshold directory: %s/\n\n", base_dir))
+
 # Load deduplicated profiles
-profiles <- readRDS("comparisons/deduplicated/all_splicing_profiles.rds")
+profiles <- readRDS(file.path(base_dir, "deduplicated", "all_splicing_profiles.rds"))
 
 # Load all per-comparison pairs and tag them
-pair_files <- list.files("comparisons", pattern = "pairs[.]tsv$",
+pair_files <- list.files(base_dir, pattern = "pairs[.]tsv$",
                           recursive = TRUE, full.names = TRUE)
 pair_files <- pair_files[!grepl("deduplicated", pair_files)]
 
 all_pairs <- map_dfr(pair_files, function(f) {
   p <- read_tsv(f, show_col_types = FALSE)
   if (nrow(p) == 0) return(tibble())
+  # Path: .../comparisons/nonNMD_X.XX/C{1-4}/{run}/pairs.tsv
   parts <- str_split(f, "/")[[1]]
-  idx <- which(parts == "comparisons")
-  tibble(comparison = parts[idx+1], run = parts[idx+2]) %>%
+  comp_idx <- which(parts %in% c("C1", "C2", "C3", "C4"))
+  tibble(comparison = parts[comp_idx], run = parts[comp_idx + 1]) %>%
     bind_cols(p)
 })
 

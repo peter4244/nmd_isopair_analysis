@@ -1,12 +1,12 @@
 # Isoform Choice Analysis: Splicing Decisions When Cells Shift from Dominant Isoforms
 
 **Version:** 6.0
-**Date:** 2026-02-09 (Updated: 2026-02-20)
+**Date:** 2026-02-09 (Updated: 2026-02-21)
 **Analysis Framework:** Dominant isoform-centric splicing choice characterization
 
 ---
 
-## **IMPLEMENTATION STATUS** (Updated 2026-02-20)
+## **IMPLEMENTATION STATUS** (Updated 2026-02-21)
 
 ### **Phase 1: Data Preparation** ✅ **COMPLETE**
 
@@ -19,12 +19,13 @@
 | 05 | ✅ Complete | `isoform_union_exons_annotated.rds` | Region types assigned (5'UTR/CDS/3'UTR) |
 | 06 | ✅ Complete | `*_filtered.rds` | Analysis subset filtered (18,754 dominant, 24,787 non-dominant) |
 
-### **Phase 2: Event Detection & Reconstruction Validation** ✅ **COMPLETE**
+### **Phase 2: Classification, Event Detection & Reconstruction** ✅ **COMPLETE**
 
 | Script | Status | Output | Notes |
 |--------|--------|--------|-------|
-| 07 | ✅ Complete | `splicing_choice_profiles.rds` | ~24,645 profiles from ~24,000 genes |
-| 08 | ✅ Complete | Reconstruction verification | Reconstructs dominant from comparator + events, verifies match |
+| 07 | ✅ Complete | `comparisons/{C1-C4}/{run}/pairs.tsv` | NMD/non-NMD classification + 28 comparison sets + deduplication |
+| 08 | ✅ Complete | `splicing_choice_profiles.rds` | Full event detection on deduplicated pairs (both 0.95 and 0.50 thresholds) |
+| core/09 | ✅ Complete | Reconstruction verification | 126/126 curated tests + 4274/4274 GENCODE test |
 
 **Event Detection Implementation**:
 - ✅ Alt_TSS / Alt_TES detection (terminal boundary events)
@@ -46,15 +47,42 @@
 - Coverage: Both strands, all event types, IR subtypes, edge cases, multi-event scenarios
 - Validation framework: `scripts/tests/run_tests.R`, `scripts/tests/test_data/`
 
-### **Phase 3: Analysis Execution** 🔄 **PENDING**
+### **Phase 3: Downstream Analysis (Pooled)** ✅ **COMPLETE**
 
-| Script | Status | Purpose |
-|--------|--------|---------|
-| 09 | ⏳ Pending | Complexity relationship analysis |
-| 10 | ⏳ Pending | Co-occurrence analysis |
-| 11 | ⏳ Pending | Spatial organization |
-| 12 | ⏳ Pending | Functional context |
-| 13 | ⏳ Pending | Pattern classification + report generation |
+Scripts 09-13 run on pooled deduplicated profiles for both 0.95 and 0.50 thresholds.
+
+| Script | Status | Purpose | Key Results |
+|--------|--------|---------|-------------|
+| 09 | ✅ Complete | Complexity relationship | Primary metric: n_exons_non_dom (R²≈0.06), 4 quartile bins |
+| 10 | ✅ Complete | Co-occurrence | 25-26/28 event pairs significant |
+| 11 | ✅ Complete | Spatial organization | Events cluster closer than chance (z≈-9 to -10); F2F enriched |
+| 12 | ✅ Complete | Functional context | A5SS/A3SS enriched in 5'UTR; saves event_regions.rds for cross-comparison bootstrap |
+| 13 | ✅ Complete | Pattern classification | ~80% Combined type; Terminal+Inclusion most common combo |
+
+### **Phase 4: Cross-Comparison Analysis** 🔄 **IN PROGRESS**
+
+Per-comparison downstream analysis and cross-comparison statistical framework.
+
+| Script | Status | Purpose | Notes |
+|--------|--------|---------|-------|
+| 14 | ✅ Written | Per-comparison runner | Filters profiles per C×run, runs 09-13 (17 valid runs at 0.50 threshold) |
+| 15 | ✅ Written | Cross-comparison stats | NMD vs baseline tests, meta-analysis, sensitivity analyses |
+
+**Comparison scope:** C1, C2, C4 only (C3 excluded — C4 ⊂ C3, pseudo-replication)
+**Cell type scope:** AT2, DD, DD_ALI, FB, MV (DO excluded — too few NMD pairs)
+
+**Profile counts per comparison×run (0.50 threshold):**
+
+| Run | C1 | C2 | C4 |
+|-----|---:|---:|---:|
+| all_samples | 29* | 676 | 1,156 |
+| at | 98 | 640 | 5,533 |
+| dd | 250 | 1,425 | 4,611 |
+| dd_ali | 254 | 880 | 2,348 |
+| fb | 51 | 303 | 5,694 |
+| mv | 178 | 939 | 5,097 |
+
+*Skipped (n < 50 minimum). Total: 18 - 1 skipped = **17 valid runs**.
 
 ### **Key Achievements**
 
@@ -62,9 +90,11 @@
 2. **Validated event detection**: 126/126 curated tests passing (100% accuracy, synthetic + real failures)
 3. **Reconstruction validation**: All event types reconstruct via direct coordinates (no UE lookups), verified round-trip correctness
 4. **Comprehensive event type coverage**: Alt_TSS, Alt_TES, A5SS, A3SS, Partial_IR_5, Partial_IR_3, IR, IR_diff_5, IR_diff_3, IR_diff_5_3, SE, Missing_Internal
-5. **Shared function libraries**: `event_detection_functions.R`, `reconstruction_functions.R`, `create_union_exons_and_junctions.R`
+5. **Shared function libraries**: `event_detection_functions.R`, `reconstruction_functions.R`, `visualization_functions.R`
 6. **Robust terminal detection**: TSS/TES detection uses both coordinate tolerance and exon overlap check
-7. **Production-ready**: Processing full dataset (~24,645 profiles)
+7. **Full dataset processing**: 39,647 profiles (0.50 threshold), 27,065 profiles (0.95 threshold)
+8. **Downstream analysis complete**: Scripts 09-13 run on pooled data for both thresholds
+9. **Cross-comparison framework**: Paired and unpaired NMD vs baseline tests with meta-analysis across cell types
 
 ### **Documentation**
 
@@ -77,11 +107,10 @@
 
 ### **Next Steps**
 
-1. Re-run 1000-gene subset pipeline to verify fixes at scale
-2. Run full NMD dataset with updated reconstruction logic
-3. Begin Script 09: Analyze complexity vs event count relationship
-4. Use Script 09 results to inform stratification strategy for Scripts 10-13
-5. Continue with downstream statistical analyses (co-occurrence, spatial, functional)
+1. Run Script 14 (per-comparison downstream) to generate 17 result sets
+2. Run Script 15 (cross-comparison analysis) on per-comparison results
+3. Interpret cross-comparison results: do NMD transitions differ from baseline?
+4. Prepare for two-repo split (core pipeline vs NMD study)
 
 ---
 

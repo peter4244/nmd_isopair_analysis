@@ -2,7 +2,7 @@
 
 **Purpose:** Track the flow of data through the isoform transitions analysis pipeline, from raw inputs to final analysis-ready datasets.
 
-**Date:** 2026-02-20
+**Date:** 2026-02-21
 
 ---
 
@@ -84,9 +84,13 @@ Classifies isoforms as NMD-sensitive or non-NMD, generates comparison pairs (C1-
 
 Comprehensive splicing event detection on filtered data, followed by reconstruction validation.
 
-### **Phase 5: Analysis (nmd/09-14)**
+### **Phase 5: Downstream Analysis (nmd/09-13, pooled data)**
 
-Performs statistical analysis on splicing choice profiles.
+Performs statistical analysis on pooled deduplicated splicing choice profiles.
+
+### **Phase 6: Cross-Comparison Analysis (nmd/14-15)**
+
+Filters profiles per comparison×run, runs downstream Scripts 09-13 on each, then performs cross-comparison statistical testing (NMD vs baseline).
 
 ---
 
@@ -558,23 +562,153 @@ Performs statistical analysis on splicing choice profiles.
 
 ---
 
-## **DATA FLOW: PHASE 5 (Analysis)**
+## **DATA FLOW: PHASE 5 (Downstream Analysis — Pooled)**
 
-*Scripts nmd/09-14*
+*Scripts nmd/09-13*
 
-**Will use:** `data/splicing_choice_profiles.rds` or `comparisons/deduplicated/all_splicing_profiles.rds`
+All downstream scripts accept `--input <path.rds>` and `--output-dir <dir>` flags for parameterized execution.
 
-**Analysis scripts:**
-- `nmd/09_analyze_complexity_relationship.R`: Complexity analysis
-- `nmd/10_analyze_cooccurrence.R`: Co-occurrence analysis
-- `nmd/11_analyze_spatial_patterns.R`: Spatial pattern analysis
-- `nmd/12_analyze_functional_context.R`: Functional context analysis
-- `nmd/13_analyze_patterns.R`: Pattern classification
-- `nmd/14_generate_report.Rmd`: Final report
+### **Script nmd/09: Complexity Relationship**
 
-**Outputs:** `results/*.tsv`, `figures/*.pdf`
+**Input:**
+- Splicing choice profiles (`.rds`)
 
-*See ANALYSIS_PLAN.md for detailed analysis specifications*
+**Process:**
+1. Test 4 complexity metrics (n_exons_non_dom, length_non_dom, n_junctions_non_dom, n_union_exons_total) against n_events
+2. Fit linear, polynomial, log-linear models; select by R²
+3. Define 4 quartile bins based on primary metric
+
+**Output:**
+- `complexity_relationship_results.rds`
+- `complexity_bins_definition.rds`
+- `splicing_choice_profiles_with_bins.rds` (profiles augmented with complexity_bin)
+
+### **Script nmd/10: Co-occurrence**
+
+**Input:**
+- `splicing_choice_profiles_with_bins.rds` (from Script 09)
+
+**Process:**
+1. Build 2×2 contingency tables for all 28 event type pairs
+2. Fisher's exact test, OR, FDR correction
+3. Stratify by complexity bin
+
+**Output:**
+- `cooccurrence_crude_results.tsv`
+- `cooccurrence_stratified_results.tsv`
+
+### **Script nmd/11: Spatial Patterns**
+
+**Input:**
+- Splicing choice profiles (`.rds`)
+- `data/isoform_structures_filtered.rds`
+
+**Process:**
+1. Positional bias: KS test vs uniform (per event type)
+2. Topology enrichment: F2F/B2B/Distributed vs simulated null
+3. Proximity: permutation test (10,000 permutations)
+
+**Output:**
+- `positional_bias_results.tsv`
+- `topology_enrichment_results.tsv`
+- `proximity_analysis_results.tsv`
+
+### **Script nmd/12: Functional Context**
+
+**Input:**
+- Splicing choice profiles (`.rds`)
+- `data/isoform_union_exons_annotated_filtered.rds`
+- `data/union_exons_filtered.rds`
+
+**Process:**
+1. Map events to genomic regions (5'UTR, CDS, 3'UTR, ORF boundaries)
+2. Enrichment ratios (observed/expected by region size)
+3. ORF boundary susceptibility (A5SS/A3SS in ORF-start/stop exons)
+4. ORF impact (Alt_TSS affecting start codon, Alt_TES affecting stop codon)
+
+**Output:**
+- `event_regions.rds` — per-event region mappings with profile identifiers (used by Script 15 for bootstrap)
+- `regional_distribution_results.tsv`
+- `orf_boundary_susceptibility.tsv`
+- `orf_impact_summary.tsv`
+
+### **Script nmd/13: Pattern Classification**
+
+**Input:**
+- `splicing_choice_profiles_with_bins.rds` (from Script 09)
+
+**Process:**
+1. Classify profiles into 5 categories + Combined
+2. Tabulate frequencies by complexity bin
+3. Identify top event combinations
+
+**Output:**
+- `pattern_frequencies_by_complexity.tsv`
+- `top_patterns.tsv`
+
+---
+
+## **DATA FLOW: PHASE 6 (Cross-Comparison Analysis)**
+
+### **Script nmd/14: Per-Comparison Downstream Runner**
+
+**Input:**
+- `comparisons/nonNMD_{threshold}/deduplicated/splicing_choice_profiles.rds`
+- `comparisons/nonNMD_{threshold}/{C}/{run}/pairs.tsv` (per comparison×run)
+
+**Process:**
+1. Load deduplicated profiles (39,647 at 0.50 threshold)
+2. For each comparison×run (C1, C2, C4 × all_samples, at, dd, dd_ali, fb, mv):
+   - Inner join profiles to pairs on `(gene_id, dominant_isoform_id, non_dominant_isoform_id = comparator_isoform_id)`
+   - Skip if matched profiles < 50
+   - Save filtered profiles
+   - Run Scripts 09→10→11→12→13 sequentially
+
+**Comparison scope:**
+- C3 excluded (C4 ⊂ C3, pseudo-replication)
+- DO excluded (too few NMD pairs: C1=1, C2=6)
+- DO still contributes to Script 07 all_samples classification
+
+**Output (per comparison×run):**
+- `comparisons/nonNMD_{threshold}/{C}/{run}/splicing_choice_profiles.rds`
+- `comparisons/nonNMD_{threshold}/{C}/{run}/results/` — all outputs from Scripts 09-13
+- `comparisons/nonNMD_{threshold}/per_comparison_run_summary.tsv`
+
+**Valid runs at 0.50 threshold:** 17 (C1/all_samples skipped: 29 profiles < 50)
+
+### **Script nmd/15: Cross-Comparison Statistical Framework**
+
+**Input:**
+- Per-comparison filtered profiles: `comparisons/nonNMD_{threshold}/{C}/{run}/splicing_choice_profiles.rds`
+- Per-comparison event_regions: `comparisons/nonNMD_{threshold}/{C}/{run}/results/event_regions.rds`
+
+**Process:**
+
+**Phase 1: NMD vs Baseline (C1 vs C4, C2 vs C4):**
+- Unpaired: Wilcoxon + Cliff's delta (event counts), chi-square + Cramer's V (profile types), two-proportion z-test per event type (8 tests, FDR-corrected)
+- Paired (gene overlap ≥ 50): paired Wilcoxon signed-rank, sign test, McNemar's per event type, profile type transition counts
+- Regional enrichment bootstrap: resample profiles with replacement (1,000 iterations), 95% CI for enrichment difference
+
+**Phase 2: Random-Effects Meta-Analysis (metafor, REML):**
+- Pool effect sizes across 5 cell types (at, dd, dd_ali, fb, mv; excludes all_samples and do)
+- Metrics: Cliff's delta (events), Cramer's V (profile types), log-OR per event type
+- Report: I², Cochran's Q, forest plots
+
+**Phase 3: Sensitivity Analyses:**
+- C1 vs C2 concordance (Pearson r of event prevalence differences)
+- Complexity confound (compare n_exons, length, junctions of NMD vs baseline comparators)
+- Event direction (GAIN vs LOSS proportions between NMD and baseline)
+
+**Output:**
+- `{output_dir}/phase1_unpaired_results.tsv`
+- `{output_dir}/phase1_paired_results.tsv`
+- `{output_dir}/phase1_event_prevalence.tsv`
+- `{output_dir}/phase1_regional_bootstrap.tsv`
+- `{output_dir}/phase2_meta_analysis.tsv`
+- `{output_dir}/phase3_c1c2_concordance.tsv`
+- `{output_dir}/phase3_complexity_confound.tsv`
+- `{output_dir}/phase3_direction.tsv`
+- `{output_dir}/figures/*.pdf` (forest plots, profile type distributions, event prevalence)
 
 ---
 
@@ -669,13 +803,31 @@ Performs statistical analysis on splicing choice profiles.
 │   ├── splicing_choice_profiles.rds                     [core/08]
 │   └── reconstruction_verification.rds                  [core/09]
 │
-├── comparisons/                                         [nmd/07 + core/08]
-│   ├── {C1,C2,C3,C4}/{run}/                            [Per-comparison outputs]
-│   │   ├── classification.rds
-│   │   └── pairs.tsv
-│   └── deduplicated/
-│       ├── all_pairs.tsv                                [Unique pairs across all sets]
-│       └── all_splicing_profiles.rds                    [core/08 on deduplicated pairs]
+├── comparisons/                                         [nmd/07 + core/08 + nmd/14-15]
+│   ├── nonNMD_{threshold}/                              [Per-threshold results]
+│   │   ├── {C1,C2,C4}/{run}/                           [Per-comparison×run]
+│   │   │   ├── classification.rds                       [nmd/07]
+│   │   │   ├── pairs.tsv                                [nmd/07]
+│   │   │   ├── splicing_choice_profiles.rds             [nmd/14 - filtered]
+│   │   │   └── results/                                 [nmd/14 - Scripts 09-13 outputs]
+│   │   │       ├── complexity_relationship_results.rds
+│   │   │       ├── splicing_choice_profiles_with_bins.rds
+│   │   │       ├── cooccurrence_crude_results.tsv
+│   │   │       ├── event_regions.rds                    [For Script 15 bootstrap]
+│   │   │       ├── regional_distribution_results.tsv
+│   │   │       ├── pattern_frequencies_by_complexity.tsv
+│   │   │       └── ...
+│   │   ├── deduplicated/
+│   │   │   ├── all_pairs.tsv                            [Unique pairs across all sets]
+│   │   │   ├── splicing_choice_profiles.rds             [core/08 on deduplicated pairs]
+│   │   │   └── results/                                 [Pooled Scripts 09-13 outputs]
+│   │   ├── cross_comparison/                            [nmd/15 outputs]
+│   │   │   ├── phase1_*.tsv
+│   │   │   ├── phase2_meta_analysis.tsv
+│   │   │   ├── phase3_*.tsv
+│   │   │   └── figures/
+│   │   └── per_comparison_run_summary.tsv               [nmd/14 summary]
+│   └── {C1,C2,C3,C4}/{run}/                            [Legacy: unthresholded]
 │
 ├── results/
 │   └── filtering_report_script06.txt                    [Script 06 report]
@@ -695,7 +847,13 @@ Performs statistical analysis on splicing choice profiles.
 │   │   ├── 01_prepare_expression_data.R                 [Data prep]
 │   │   ├── 06_filter_to_analysis_subset.R               [Filtering]
 │   │   ├── 07_classify_and_pair.R                       [Classification + pairing]
-│   │   └── 09-14_*.R                                    [Downstream analysis]
+│   │   ├── 09_analyze_complexity_relationship.R         [Downstream]
+│   │   ├── 10_analyze_cooccurrence.R                    [Downstream]
+│   │   ├── 11_analyze_spatial_patterns.R                [Downstream]
+│   │   ├── 12_analyze_functional_context.R              [Downstream]
+│   │   ├── 13_analyze_patterns.R                        [Downstream]
+│   │   ├── 14_run_per_comparison.R                      [Per-comparison runner]
+│   │   └── 15_compare_across_comparisons.R              [Cross-comparison stats]
 │   ├── tests/                                           [Validation suite]
 │   ├── dev/                                             [Development/diagnostic]
 │   └── archive/                                         [Archived earlier versions]
@@ -773,14 +931,16 @@ Performs statistical analysis on splicing choice profiles.
 ## **FUTURE WORK**
 
 ### **Immediate:**
-- Run script 07 to generate splicing choice profiles
-- Implement analysis scripts 09-13
+- Run Script 14 to generate 17 per-comparison result sets
+- Run Script 15 for cross-comparison statistical analysis
+- Interpret results: do NMD transitions differ from baseline?
 
 ### **Potential Enhancements:**
 - Cell-type-specific dominant isoforms (currently overall dominant)
 - Sequence-based frameshift analysis
 - NMD prediction (PTC identification)
 - Protein domain impact analysis
+- Split into two GitHub repositories (core pipeline + NMD study)
 
 ---
 

@@ -1,7 +1,7 @@
 # Isoform Choice Analysis: Computational Methods
 
 **Version:** 6.0
-**Date:** 2026-02-20
+**Date:** 2026-02-21
 **Purpose:** Detailed algorithmic documentation for splicing event detection and isoform comparison
 
 ---
@@ -52,11 +52,16 @@ Our analysis proceeds in three phases:
 - Generate splicing choice profiles
 - Shared libraries: `scripts/core/event_detection_functions.R`, `scripts/core/reconstruction_functions.R`
 
-**Phase 3: Statistical Analysis**
-- Co-occurrence analysis
-- Spatial organization
-- Functional context
-- Pattern classification
+**Phase 3: Downstream Statistical Analysis**
+- Complexity relationship (nmd/09)
+- Co-occurrence analysis (nmd/10)
+- Spatial organization (nmd/11)
+- Functional context (nmd/12)
+- Pattern classification (nmd/13)
+
+**Phase 4: Cross-Comparison Analysis**
+- Per-comparison downstream runner (nmd/14): filters profiles to each comparison×run, runs Scripts 09-13
+- Cross-comparison statistical framework (nmd/15): NMD vs baseline comparison, meta-analysis, sensitivity analyses
 
 ---
 
@@ -980,6 +985,104 @@ Model: has_event_B ~ has_event_A + union_exon_composition + complexity
 
 ---
 
+## Cross-Comparison Statistical Framework
+
+### Overview
+
+After characterizing splicing patterns within the pooled dataset, we compare NMD-triggering transitions to baseline splicing variation to determine whether NMD-associated isoform differences are qualitatively distinct from normal splicing diversity.
+
+### Comparison Scope
+
+**Comparisons analyzed:**
+- **C1** (dominant NMD): Dominant non-NMD (DMSO) vs dominant NMD-sensitive (Smg1i)
+- **C2** (top-CPM NMD): Top non-NMD by CPM vs top NMD-sensitive by CPM
+- **C4** (baseline): Dominant non-NMD vs next-best non-NMD by CPM
+
+**C3 excluded:** C4 pairs are a strict subset of C3. Using both introduces pseudo-replication because C3's multiple pairs per gene inflate sample sizes, and C3 and C4 are not statistically independent.
+
+**Cell types analyzed:** AT2, DD, DD_ALI, FB, MV (5 cell types + all_samples aggregate)
+
+**DO excluded from downstream:** DO yields too few NMD pairs for meaningful analysis (C1: 1 pair, C2: 6 pairs at 0.50 threshold). DO still contributes to all_samples isoform classification in Script 07: NMD-sensitive isoforms are defined as the union across ANY cell type (including DO), and non-NMD isoforms require the intersection across ALL cell types (including DO). Removing DO from Script 07 would slightly expand the non-NMD set (one fewer cell type to agree) and slightly shrink the NMD set (lose DO-only NMD isoforms). This marginal influence is accepted because the individual cell-type runs (which exclude DO) are the primary unit of analysis.
+
+### Per-Comparison Filtering (Script 14)
+
+For each comparison×run combination, the deduplicated splicing choice profiles are filtered to include only pairs present in that comparison's pairs file. The join matches on `(gene_id, dominant_isoform_id, non_dominant_isoform_id = comparator_isoform_id)`. Combinations with fewer than 50 matched profiles are skipped. Scripts 09-13 are then run on each filtered profile set.
+
+### Statistical Design: Shared Isoform Structure
+
+A key feature of our comparison framework is that C1/C2 and C4 share the same dominant isoform within each gene. This creates a natural pairing: for genes that appear in both an NMD comparison (C1 or C2) and the baseline (C4), we can perform paired tests that control for gene-level confounds. We use both paired and unpaired analyses:
+
+- **Paired analysis** (gene overlap set, minimum 50 genes): controls for gene-specific effects since both NMD and baseline transitions originate from the same dominant isoform
+- **Unpaired analysis** (full sets): uses all available data for maximum power
+
+### Phase 1: NMD vs Baseline Tests
+
+For each NMD comparison (C1, C2) against baseline (C4), within each run:
+
+#### Test 1: Event Complexity
+
+**Unpaired:** Wilcoxon rank-sum test comparing event counts (n_events) between NMD and baseline profiles. Effect size: Cliff's delta (nonparametric, range -1 to +1).
+
+**Paired:** Wilcoxon signed-rank test on matched gene pairs + sign test (proportion of genes where NMD pair has more events than baseline pair).
+
+#### Test 2: Profile Type Distribution
+
+**Unpaired:** Chi-square test (or Monte Carlo simulation when expected counts < 5) comparing profile type frequencies (Terminal-only, Boundary-only, Inclusion-only, Partial_Retention-only, Full_Retention-only, Combined) between NMD and baseline. Effect size: Cramer's V.
+
+**Paired:** Profile type transition matrix (proportion of genes changing profile type between NMD and baseline).
+
+#### Test 3: Event Type Prevalence
+
+**Unpaired:** Two-proportion z-test for each of 8 event types (Alt_TSS, Alt_TES, A5SS, A3SS, Partial_IR, IR, SE, Missing_Internal). Effect size: odds ratio with Haldane correction (+0.5 to all cells when any cell is zero). FDR correction across 8 tests within each comparison×run.
+
+**Paired:** McNemar's test per event type on discordant gene pairs (exact binomial when discordant count < 10).
+
+#### Test 4: Regional Enrichment Bootstrap
+
+For comparisons where event_regions data is available (from Script 12):
+- Resample profiles (not individual events) with replacement to preserve within-profile event correlation
+- Recompute enrichment ratios (observed proportion / expected proportion based on region sizes) for each event type × region type
+- 1,000 bootstrap iterations; report 95% CI for the NMD-minus-baseline enrichment difference
+- Significance: CI excludes zero
+
+### Phase 2: Random-Effects Meta-Analysis
+
+Meta-analyze key effect sizes across the 5 cell types (AT2, DD, DD_ALI, FB, MV), excluding all_samples (not independent of individual cell types) and DO (excluded from downstream).
+
+**Method:** Random-effects model (REML estimator) via the metafor R package. Random effects are preferred over fixed effects because cell types are biologically distinct populations, not replicate samples from a single population.
+
+**Metrics meta-analyzed:**
+
+1. **Cliff's delta** (event complexity): approximate SE from `sqrt((1 - delta^2) / (n_eff - 1))` where n_eff is the harmonic mean of group sizes
+2. **Cramer's V** (profile type shift): meta-analyzed on raw scale with delta-method SE `sqrt(2/N)`
+3. **Log-odds ratio** per event type: standard SE from `sqrt(1/a + 1/b + 1/c + 1/d)` with Haldane correction
+
+**Heterogeneity:** I² statistic (proportion of variance due to between-study heterogeneity) and Cochran's Q test.
+
+**Output:** Forest plots for each metric; pooled estimates with 95% CI.
+
+### Phase 3: Sensitivity Analyses
+
+#### 3.1: C1 vs C2 Concordance
+
+Tests whether the two NMD comparison definitions yield similar results. For each run, computes Pearson correlation between C1 and C2 event prevalence differences (NMD - baseline). High concordance supports the robustness of findings.
+
+#### 3.2: Complexity Confound Check
+
+Tests whether NMD comparator isoforms are structurally different from baseline comparator isoforms. Compares n_exons, transcript length, and n_junctions of the comparator (non-dominant) isoform between NMD and baseline groups. If NMD comparators are systematically more/less complex, this confounds event count comparisons.
+
+#### 3.3: Event Direction Analysis
+
+Compares the proportion of LOSS vs GAIN events between NMD and baseline transitions. A shift toward more LOSS events in NMD would indicate that NMD-sensitive isoforms are more often "reduced" versions of the dominant (missing exons), while more GAIN events would indicate they carry additional sequence (retained introns, extra exons).
+
+### Multiple Testing Correction
+
+- **Within test families:** FDR (Benjamini-Hochberg) across 8 event types within each comparison×run×analysis_type
+- **Across test families:** Results reported per family without cross-family adjustment (different biological questions)
+- **C1 results flagged:** Lower confidence where sample sizes are small (< 100 profiles)
+
+---
+
 ## Implementation Details
 
 ### GTF Parsing and Data Preparation
@@ -1114,6 +1217,7 @@ Format: One row per (dominant, non-dominant) comparison
 - `tidyverse`: Data manipulation and visualization
 - `GenomicRanges`: Genomic coordinate operations (optional)
 - `glmnet`: LASSO/ridge regression for co-occurrence analysis
+- `metafor`: Random-effects meta-analysis (Phase 2 cross-comparison)
 
 **Scripts** (Version 6.0) — organized into `scripts/core/` (generic) and `scripts/nmd/` (NMD study-specific):
 
@@ -1121,7 +1225,13 @@ Format: One row per (dominant, non-dominant) comparison
 1. `nmd/01_prepare_expression_data.R`: Load DGEList, calculate CPM, identify dominant isoforms
 6. `nmd/06_filter_to_analysis_subset.R`: Apply expression (filterByExpr) and gene category filters
 7. `nmd/07_classify_and_pair.R`: NMD/non-NMD classification + comparison pair generation (C1-C4, 4 comparisons x 7 runs = 28 sets, with deduplication)
-9-14. `nmd/09-14`: Downstream statistical analyses and report generation
+9. `nmd/09_analyze_complexity_relationship.R`: Complexity vs event count, quartile binning
+10. `nmd/10_analyze_cooccurrence.R`: Event co-occurrence (Fisher's exact, LASSO-controlled)
+11. `nmd/11_analyze_spatial_patterns.R`: Positional bias, topology enrichment, proximity
+12. `nmd/12_analyze_functional_context.R`: Regional distribution, ORF boundary susceptibility, ORF impact; saves event_regions.rds for cross-comparison bootstrap
+13. `nmd/13_analyze_patterns.R`: Profile type classification, pattern frequencies by complexity
+14. `nmd/14_run_per_comparison.R`: Filter profiles per comparison×run, run Scripts 09-13 on each set (C1, C2, C4 × 6 runs; excludes C3 and DO)
+15. `nmd/15_compare_across_comparisons.R`: Cross-comparison statistical framework — NMD vs baseline tests (paired + unpaired), random-effects meta-analysis, sensitivity analyses
 
 **Core pipeline (`scripts/core/`):**
 2. `core/02_extract_isoform_structures.R`: Parse GFF files to exon structures
@@ -1165,6 +1275,6 @@ Format: One row per (dominant, non-dominant) comparison
 
 ---
 
-**Document Version**: 2.1
-**Last Updated**: 2026-02-20
+**Document Version**: 2.2
+**Last Updated**: 2026-02-21
 **Status**: Complete and validated

@@ -9,7 +9,9 @@ This pipeline:
 2. **Classifies isoforms and generates comparison pairs** for NMD analysis (nmd/07)
 3. **Detects splicing events** between isoform pairs using hierarchical event detection (core/08)
 4. **Validates detection** by reconstructing the dominant isoform from comparator + events (core/08 `--reconstruction_check` or core/09)
-5. **Analyzes splicing patterns** across cell types and NMD conditions (nmd/09-14)
+5. **Analyzes splicing patterns** — complexity, co-occurrence, spatial, functional, patterns (nmd/09-13)
+6. **Runs per-comparison downstream** — filters profiles to each comparison×run and runs 09-13 (nmd/14)
+7. **Compares NMD vs baseline** — paired/unpaired tests, meta-analysis across cell types (nmd/15)
 
 **Validation Status:**
 - Curated test suite (synthetic + real failures): 126/126 tests (100%)
@@ -45,12 +47,13 @@ Version_6.0/
 │   │   ├── 01_prepare_expression_data.R      # Load DGEList, filter major isoforms, identify dominants
 │   │   ├── 06_filter_to_analysis_subset.R    # Apply expression filters (filterByExpr)
 │   │   ├── 07_classify_and_pair.R            # NMD classification + comparison pair generation (C1-C4)
-│   │   ├── 09_analyze_complexity_relationship.R
-│   │   ├── 10_analyze_cooccurrence.R
-│   │   ├── 11_analyze_spatial_patterns.R
-│   │   ├── 12_analyze_functional_context.R
-│   │   ├── 13_analyze_patterns.R
-│   │   └── 14_generate_report.Rmd
+│   │   ├── 09_analyze_complexity_relationship.R  # Complexity vs event count
+│   │   ├── 10_analyze_cooccurrence.R             # Event co-occurrence
+│   │   ├── 11_analyze_spatial_patterns.R         # Positional bias, topology, proximity
+│   │   ├── 12_analyze_functional_context.R       # Regional distribution, ORF impact
+│   │   ├── 13_analyze_patterns.R                 # Profile type classification
+│   │   ├── 14_run_per_comparison.R               # Per-comparison downstream runner
+│   │   └── 15_compare_across_comparisons.R       # Cross-comparison statistical framework
 │   │
 │   ├── tests/                         # Validation test suite (126/126 PASS)
 │   │   ├── run_tests.R                       # Test runner (synthetic + real-data cases)
@@ -187,7 +190,7 @@ Tab-separated, 15 columns:
 
 ## Dependencies
 
-**R packages:** tidyverse, ggplot2, patchwork, edgeR, rtracklayer
+**R packages:** tidyverse, ggplot2, patchwork, edgeR, rtracklayer, metafor
 **System tools:** bgzip, tabix
 
 ## Comparison Framework (NMD-Specific)
@@ -202,6 +205,8 @@ Four comparison types, each run across 7 sample sets (all_samples + 6 cell types
 | **C4** | Dominant non-NMD (DMSO) | Next-best non-NMD by CPM | 1 |
 
 Pairs are deduplicated across all 28 sets before running event detection once via core/08.
+
+**Downstream scope (Scripts 14-15):** C3 is excluded from cross-comparison analysis because C4 is a strict subset of C3, creating pseudo-replication. DO cell type is excluded from downstream analysis due to insufficient NMD pairs (C1: 1, C2: 6 at 0.50 threshold), though DO still contributes to all_samples isoform classification in Script 07.
 
 ## Contact
 

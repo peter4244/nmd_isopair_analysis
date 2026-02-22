@@ -5,12 +5,16 @@
 # Purpose: Test co-occurrence of splicing events
 #
 # Input:
-#   - data/splicing_choice_profiles_with_bins.rds (from Script 09)
+#   - splicing_choice_profiles_with_bins.rds (from Script 09)
 #
 # Output:
-#   - results/cooccurrence_crude_results.tsv
-#   - results/cooccurrence_stratified_results.tsv
-#   - figures/cooccurrence_heatmap.pdf
+#   - {output_dir}/cooccurrence_crude_results.tsv
+#   - {output_dir}/cooccurrence_stratified_results.tsv
+#   - {output_dir}/figures/cooccurrence_heatmap.pdf
+#
+# Flags:
+#   --input path.rds       Input profiles with bins (default: data/splicing_choice_profiles_with_bins.rds)
+#   --output-dir dir/      Output directory (default: results)
 #
 
 library(tidyverse)
@@ -24,18 +28,38 @@ base_dir <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions
 setwd(base_dir)
 
 # ═══════════════════════════════════════════════════════════════════
+# Parse CLI arguments
+# ═══════════════════════════════════════════════════════════════════
+
+args <- commandArgs(trailingOnly = TRUE)
+
+input_path <- "data/splicing_choice_profiles_with_bins.rds"
+if ("--input" %in% args) {
+  idx <- which(args == "--input")
+  input_path <- args[idx + 1]
+}
+
+output_dir <- "results"
+if ("--output-dir" %in% args) {
+  idx <- which(args == "--output-dir")
+  output_dir <- args[idx + 1]
+}
+
+cat(sprintf("  Input:      %s\n", input_path))
+cat(sprintf("  Output dir: %s\n\n", output_dir))
+
+# ═══════════════════════════════════════════════════════════════════
 # SECTION 1: Load Data
 # ═══════════════════════════════════════════════════════════════════
 
 cat("Loading splicing profiles...\n")
 
-# Check if input file exists
-if (!file.exists("data/splicing_choice_profiles_with_bins.rds")) {
-  stop("ERROR: Input file 'data/splicing_choice_profiles_with_bins.rds' not found. Run Script 09 first.")
+if (!file.exists(input_path)) {
+  stop(sprintf("ERROR: Input file '%s' not found. Run Script 09 first.", input_path))
 }
 
 profiles <- tryCatch({
-  readRDS("data/splicing_choice_profiles_with_bins.rds")
+  readRDS(input_path)
 }, error = function(e) {
   stop(sprintf("ERROR: Failed to load profiles: %s", e$message))
 })
@@ -57,7 +81,7 @@ profiles <- profiles %>%
     has_a5ss = as.integer(n_a5ss > 0),
     has_a3ss = as.integer(n_a3ss > 0),
     has_partial_ir = as.integer(n_partial_ir > 0),
-    has_ir = as.integer(n_ir > 0),
+    has_ir = as.integer((n_ir + n_ir_diff) > 0),
     has_se = as.integer(n_se > 0),
     has_missing_internal = as.integer(n_missing_internal > 0)
   )
@@ -240,8 +264,9 @@ print(strat_summary, n = Inf)
 
 cat("\nCreating heatmaps...\n")
 
-dir.create("figures", showWarnings = FALSE)
-pdf("figures/cooccurrence_heatmap.pdf", width = 14, height = 10)
+fig_dir <- file.path(output_dir, "figures")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+pdf(file.path(fig_dir, "cooccurrence_heatmap.pdf"), width = 14, height = 10)
 
 # Helper function to create matrix for heatmap
 create_or_matrix <- function(results_df) {
@@ -274,7 +299,7 @@ plot_data <- as.data.frame(or_matrix) %>%
   mutate(
     log_or = log2(odds_ratio),
     log_or_capped = pmax(pmin(log_or, 3), -3),  # Cap at ±3 for visualization
-    sig_marker = ifelse(significant == TRUE, "*", "")
+    sig_marker = ifelse(significant %in% TRUE, "*", "")
   )
 
 p1 <- ggplot(plot_data, aes(x = event1, y = event2, fill = log_or_capped)) +
@@ -320,7 +345,7 @@ for (bin in unique(stratified_results$complexity_bin)) {
     mutate(
       log_or = log2(odds_ratio),
       log_or_capped = pmax(pmin(log_or, 3), -3),
-      sig_marker = ifelse(significant == TRUE, "*", "")
+      sig_marker = ifelse(significant %in% TRUE, "*", "")
     )
 
   p <- ggplot(plot_data_bin, aes(x = event1, y = event2, fill = log_or_capped)) +
@@ -349,7 +374,7 @@ for (bin in unique(stratified_results$complexity_bin)) {
 
 dev.off()
 
-cat("  ✓ figures/cooccurrence_heatmap.pdf\n")
+cat(sprintf("  ✓ %s\n", file.path(fig_dir, "cooccurrence_heatmap.pdf")))
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 7: Save Outputs
@@ -357,15 +382,17 @@ cat("  ✓ figures/cooccurrence_heatmap.pdf\n")
 
 cat("\nSaving results...\n")
 
-dir.create("results", showWarnings = FALSE)
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Save crude results
-write_tsv(crude_results, "results/cooccurrence_crude_results.tsv")
-cat("  ✓ results/cooccurrence_crude_results.tsv\n")
+out_path <- file.path(output_dir, "cooccurrence_crude_results.tsv")
+write_tsv(crude_results, out_path)
+cat(sprintf("  ✓ %s\n", out_path))
 
 # Save stratified results
-write_tsv(stratified_results, "results/cooccurrence_stratified_results.tsv")
-cat("  ✓ results/cooccurrence_stratified_results.tsv\n")
+out_path <- file.path(output_dir, "cooccurrence_stratified_results.tsv")
+write_tsv(stratified_results, out_path)
+cat(sprintf("  ✓ %s\n", out_path))
 
 cat("\n✓ Step 10 complete\n\n")
 cat("═══════════════════════════════════════════════════════════════════\n")
