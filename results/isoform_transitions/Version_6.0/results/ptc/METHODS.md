@@ -171,3 +171,4 @@ Six cell types are analyzed: AT (Alveolar Type 2), DD (Differentiated), DD_ALI (
 | `04_ptc_signal_exploration.R` | Multi-angle search (10 angles) |
 | `05_ptc_in_comparisons.R` | PTC/frame-disruption in C1/C2/C4 pairs |
 | `06_rmats_frame_disruption.R` | rMATS frame disruption enrichment analysis |
+| `07_rmats_case_studies.R` | Case study figures (SRSF1/SRSF7 rMATS vs isoform) |

@@ -1,144 +1,26 @@
 # PTC Analysis Results
 
-## 1. PTC Computation Summary
+## Overview
 
-From 235,022 coding isoforms with exon structures:
-- **38,746** PTC+ (stop codon >50nt upstream of last EJC)
-- **170,251** PTC- (stop codon within 50nt of last EJC, multi-exon)
-- **26,025** single-exon (no EJCs, classified as non-PTC)
-- **0** stop codon not in any exon
+Two complementary approaches test whether reading-frame disruption predicts NMD responsiveness (Smg1i upregulation):
 
-Median PTC distance (multi-exon): -117 nt (negative = stop codon is downstream of last EJC, i.e., in last exon).
+1. **Event-level (rMATS, short-read):** Frame-disrupting splice events are ~2x enriched among Smg1i-responsive events (meta OR = 2.13, p = 3e-9). This signal is robust across event types and cell types with adequate power.
 
-### By isoform source:
-| Source | N | PTC+ | PTC rate | Median distance |
-|--------|---:|-----:|---------:|----------------:|
-| GENCODE | 54,952 | 5,397 | 9.8% | -121 |
-| PacBio | 180,070 | 33,349 | 18.5% | -116 |
+2. **Isoform-level (PTC status, long-read):** PTC+ isoforms are NOT enriched among NMD-responsive transcripts, even when restricted to GENCODE-annotated isoforms with validated CDS. This null holds across all six cell types.
 
-PacBio novel isoforms have nearly 2x the PTC rate of GENCODE isoforms, consistent with SQANTI ORF predictions being less constrained than curated annotations.
+The discrepancy reflects a fundamental difference in what these analyses measure, not a technical artifact of CDS annotation quality. Canonical case studies (SRSF1, SRSF7) confirm that rMATS detects poison exon splicing changes that are invisible at the isoform level due to PacBio's limited ability to quantify lowly-expressed NMD substrates.
 
-## 2. GENCODE Validation
+---
 
-Cross-tabulation of computed PTC vs GENCODE `nonsense_mediated_decay` biotype (n = 19,237 GENCODE isoforms):
+## 1. rMATS Frame Disruption Enrichment
 
-| | GENCODE NMD | GENCODE non-NMD |
-|---|---:|---:|
-| **Computed PTC+** | 1,689 | 51 |
-| **Computed PTC-** | 7 | 17,490 |
+### 1.1 Event classification
 
-- **Concordance: 99.7%** (19,179/19,237)
-- Sensitivity: 99.6% (1,689/1,696)
-- Specificity: 99.7% (17,490/17,541)
-- Precision: 97.1% (1,689/1,740)
+1,056,930 rMATS splice events (SE, A5SS, A3SS, MXE, RI) across 6 cell types were classified by frame disruption potential (exon width mod 3) and CDS overlap (gene-level GENCODE CDS envelope). 67.2% of rMATS genes matched CDS envelopes. 60.8% of CDS-overlapping SE events are frame-disrupting (slightly below the theoretical 66.7%, consistent with evolutionary selection for frame-preserving exon lengths).
 
-The 51 false positives and 7 false negatives likely reflect edge cases in coordinate systems or alternative NMD mechanisms.
+### 1.2 Primary result: frame-disrupting enrichment
 
-## 3. PTC -> NMD Responsiveness
-
-### Per cell type (5%-filtered, Fisher test)
-
-| Cell type | N | N PTC+ | NMD rate PTC+ | NMD rate PTC- | OR | 95% CI | p | FDR |
-|-----------|---:|------:|:---:|:---:|----:|--------|--------:|-----:|
-| AT | 68,744 | 10,961 | 3.3% | 3.1% | 1.07 | 0.95-1.20 | 0.233 | 0.297 |
-| DD | 72,892 | 11,610 | 11.1% | 10.6% | 1.06 | 0.99-1.13 | 0.094 | 0.232 |
-| **DD_ALI** | 72,055 | 11,518 | **6.3%** | **9.0%** | **0.68** | **0.63-0.74** | **1.3e-22** | **8.1e-22** |
-| DO | 69,861 | 11,203 | 0.0% | 0.0% | 1.75 | 0.30-7.00 | 0.423 | 0.423 |
-| FB | 65,558 | 10,353 | 1.7% | 1.6% | 1.10 | 0.93-1.30 | 0.248 | 0.297 |
-| MV | 63,484 | 9,946 | 6.1% | 5.7% | 1.08 | 0.98-1.18 | 0.116 | 0.232 |
-
-**Meta-analysis (5%-filtered):** Pooled OR = 0.96 (0.92-1.00), p = 0.03. High heterogeneity: I^2 = 94%.
-
-The pooled result is driven entirely by DD_ALI, where PTC+ isoforms are *less* likely to be NMD-responsive -- the opposite of expectation. This is a GENCODE-specific effect (see below).
-
-### GENCODE vs PacBio Stratification
-
-**Meta-analysis by source:**
-- **GENCODE only:** Pooled OR = 0.88 (0.80-0.98), p = 0.017 (driven by DD_ALI OR = 0.62)
-- **PacBio only:** Pooled OR = 1.05 (1.01-1.10), p = 0.028 (I^2 = 0%, consistent weak signal)
-
-The GENCODE pooled result is reversed (PTC predicts *less* NMD responsiveness), driven entirely by DD_ALI. Excluding DD_ALI, GENCODE ORs are >=1.0 across cell types. PacBio shows a homogeneous but tiny positive association.
-
-### Distance stratification (no dose-response)
-
-NMD rates by PTC distance bin (pooled across cell types):
-- 0-50 (no PTC): 5.2%
-- 51-100: 5.4%
-- 101-200: 5.7%
-- 201-500: 4.6%
-- \>500: 4.7%
-
-No evidence of dose-response. Spearman correlations near zero for all cell types except DD_ALI (rho = -0.014, p = 0.0003, reversed direction).
-
-## 4. GENCODE NMD Biotype -> NMD Responsiveness
-
-The GENCODE `nonsense_mediated_decay` biotype does not consistently predict Smg1i responsiveness:
-- Meta-analysis: Pooled OR = 0.96 (0.87-1.06), p = 0.40
-- DD_ALI again anomalous: OR = 0.75 (0.64-0.88), p = 0.0003
-- Other cell types show ORs near 1.0
-
-## 5. logFC Distribution Analysis
-
-### 5%-filtered
-Only DD_ALI (p = 2.7e-19) and DO (p = 3.2e-13) show significant PTC+ vs PTC- logFC shifts.
-- DD_ALI: PTC+ shifted *lower* (reversed)
-- DO: PTC+ shifted higher (expected), median shift ~+0.06
-
-### Unfiltered
-DO and DD_ALI remain strongly significant. Additional marginal signals in AT (p=0.044), FB (p=0.042), MV (p=0.002).
-
-### By source (unfiltered, significant results)
-| Source | Cell type | Median shift | p |
-|--------|-----------|:-----------:|------:|
-| GENCODE | AT | +0.057 | 0.020 |
-| GENCODE | DD_ALI | **-0.347** | **7.5e-14** |
-| GENCODE | DO | +0.118 | 5.8e-06 |
-| GENCODE | FB | +0.055 | 0.018 |
-| PacBio | DO | +0.029 | 3.7e-05 |
-| PacBio | MV | +0.004 | 0.021 |
-
-The DD_ALI GENCODE signal is the largest effect but in the *wrong* direction. DO shows the strongest expected signal across both sources.
-
-## 6. Signal Exploration: Top Findings
-
-### Top signals with expected direction (PTC+ has higher logFC):
-1. **DO basic PTC (unfiltered):** median shift = +0.064, p = 4.6e-24
-2. **DD_ALI strong PTC (unfiltered):** median shift = +0.664, p = 2.1e-18
-3. **DD_ALI strong PTC (5%-filtered):** median shift = +0.888, p = 3.4e-15
-4. **DO basic PTC (5%-filtered):** median shift = +0.060, p = 3.2e-13
-
-**Key insight**: DD_ALI "strong PTC" (>500nt, >=2 EJCs, GENCODE) shows the largest positive shift (+0.66 to +0.89), while DD_ALI's *overall* signal is reversed. This means a small subset of well-characterized GENCODE PTCs do predict NMD in DD_ALI, but the bulk of computed PTCs (mostly PacBio-derived) do not.
-
-### Within-gene paired analysis
-DO is the only cell type with significant within-gene PTC effects (unfiltered: median diff = +0.015, p = 0.005).
-
-### Quantile enrichment
-- DO: strong positive trend (rho = 0.98, p < 0.001) -- PTC fraction increases with logFC decile
-- DD_ALI: strong negative trend (rho = -0.89, p = 0.001) -- reversed
-
-## 7. Pair-Level PTC and Frame Disruption
-
-### PTC prevalence in comparison pairs
-No significant enrichment of PTC+ isoforms in NMD comparators (C1, C2) vs baseline (C4) after FDR correction. Lowest FDR = 0.096 (DD_ALI C1: OR=0.44, reversed; MV C2: OR=1.30, expected).
-
-### Within-pair PTC asymmetry
-McNemar's test: only C4 (baseline) shows significant asymmetry (p = 0.002), with more comparator-only PTC than dominant-only PTC. C1 and C2 show no asymmetry.
-
-### Frame disruption: NMD vs baseline
-No significant difference in frame disruption rates between NMD comparisons and baseline after FDR correction. Frame disruption rates are ~51-56% across all comparisons (high baseline).
-
-### LOSS + frame-disrupting events
-No significant enrichment in NMD pairs. LOSS frame-disruption rates: ~34% across all comparisons with minimal NMD vs baseline difference.
-
-## 8. rMATS Frame Disruption Enrichment
-
-### Overview
-
-1,056,930 rMATS splice events across 6 cell types were classified by frame disruption potential and CDS overlap. Gene ID matching: 67.2% of rMATS genes mapped to CDS envelopes (18,488 genes from 54,952 GENCODE coding isoforms). 60.8% of CDS-overlapping SE events are frame-disrupting (below the theoretical 66.7%, consistent with evolutionary selection for frame-preserving exon lengths).
-
-### Primary enrichment: frame-disrupting CDS events are significantly enriched
-
-Among all non-RI rMATS events, frame-disrupting CDS events are ~2x more likely to be significant (FDR < 0.05, |dPSI| ≥ 0.05) than frame-preserving CDS events:
+Among non-RI events, frame-disrupting CDS events are ~2x more likely to be significant (FDR < 0.05, |dPSI| >= 0.05) than frame-preserving CDS events:
 
 | Cell type | OR | 95% CI | p | Sig disrupting / total | Sig preserving / total |
 |-----------|---:|--------|------:|---:|---:|
@@ -147,13 +29,13 @@ Among all non-RI rMATS events, frame-disrupting CDS events are ~2x more likely t
 | AT | 2.43 | 1.64-3.72 | 1.8e-6 | 121 / 57,217 | 32 / 36,791 |
 | DD_ALI | 1.32 | 0.52-3.58 | 0.67 | 15 / 50,984 | 8 / 35,768 |
 | FB | 1.98 | 0.35-20.1 | 0.49 | 6 / 45,797 | 2 / 30,222 |
-| DO | — | — | — | 0 / 54,507 | 0 / 37,768 |
+| DO | -- | -- | -- | 0 / 54,507 | 0 / 37,768 |
 
-**Meta-analysis (random effects):** Pooled OR = 2.13 (1.66-2.74), p = 3.15e-9, I² = 69%.
+**Meta-analysis (random effects):** Pooled OR = 2.13 (1.66-2.74), p = 3.15e-9, I^2 = 69%.
 
 DD, MV, and AT all show significant enrichment. DD_ALI, FB, and DO have too few significant events for meaningful tests.
 
-### Enrichment by event type (DD)
+### 1.3 Enrichment by event type (DD)
 
 | Event type | OR | 95% CI | p |
 |------------|---:|--------|------:|
@@ -162,85 +44,170 @@ DD, MV, and AT all show significant enrichment. DD_ALI, FB, and DO have too few 
 | SE | 2.22 | 2.07-2.38 | 3.4e-132 |
 | MXE | 1.24 | 1.16-1.33 | 6.7e-10 |
 
-All four non-RI event types are significantly enriched, with boundary changes (A3SS, A5SS) showing the strongest effects.
+All four non-RI event types are significantly enriched. Boundary changes (A3SS, A5SS) show the strongest effects.
 
-### RI events: no CDS enrichment
+### 1.4 RI events: no CDS enrichment
 
-CDS-overlapping RI events are NOT enriched among significant events compared to non-CDS RI:
+CDS-overlapping RI events are NOT enriched among significant events vs non-CDS RI. Meta-analysis: OR = 0.80 (0.62-1.05), p = 0.11, I^2 = 58%. Among significant CDS RI events, dPSI is biased negative (DD: 27% positive, MV: 35% positive), opposite to the expected positive direction for NMD-coupled intron retention.
 
-**Meta-analysis:** Pooled OR = 0.80 (0.62-1.05), p = 0.11, I² = 58%.
+### 1.5 Direction analysis
 
-MV shows a marginally significant *depletion* (OR = 0.72, p = 0.039). This is unexpected if intron retention were a primary NMD-inducing mechanism, though it may reflect that RI events in UTRs are also functionally impactful.
+Among significant frame-disrupting SE events, the direction of dPSI varies by cell type:
+- AT: 75% positive (n=69, p=2.9e-5)
+- MV: 66% positive (n=271, p=1.4e-7)
+- DD: 38% positive (n=3,855, p=1.4e-53)
+- DD_ALI: 92% positive (n=13, p=0.003)
 
-### Direction analysis
+The opposing directions reflect biological ambiguity: for any given frame-disrupting SE event, either inclusion or skipping can create the PTC depending on reading frame context. The enrichment is robust regardless of direction.
 
-Among significant frame-disrupting events, the direction of dPSI (positive = more inclusion in Smg1i) varies by cell type and event type:
+### 1.6 Magnitude analysis
 
-**SE events:**
-- AT: 75% positive (n=69, p=2.9e-5) — biased toward increased inclusion
-- MV: 66% positive (n=271, p=1.4e-7) — biased toward increased inclusion
-- DD: 38% positive (n=3,855, p=1.4e-53) — biased toward *decreased* inclusion
-- DD_ALI: 92% positive (n=13, p=0.003) — small n but strongly biased
+Frame-disrupting CDS events have modestly larger |dPSI| than frame-preserving CDS events (Wilcoxon, all cell types significant), but absolute differences are small (median |dPSI| ~ 0.01-0.02 for both groups).
 
-The opposing directions across cell types are consistent with the biological ambiguity: for any given SE event, either inclusion or skipping can create the PTC depending on reading frame context. The enrichment signal is robust (two-tailed), but the direction is event-specific, not predictable from frame disruption alone.
+### 1.7 Known NMD-coupled poison exons
 
-**RI events (CDS, one-tailed test for positive dPSI):**
-- DD: 27% positive (n=930, p=1.0) — strongly biased *negative* (opposite of expected)
-- MV: 35% positive (n=113, p=1.0) — also biased negative
+Multiple canonical NMD autoregulatory genes show strong rMATS signals:
+- **SRSF1**: 3 significant frame-disrupting SE events in DD (dPSI ~ -0.31 to -0.33) at the classic poison exon locus (chr17:58005398-58005600)
+- **SRSF6**: SE events in DD (dPSI = +0.65) and MV (dPSI = +0.63) -- strong inclusion increase
+- **SRSF7**: SE event in DD (dPSI = +0.49, FDR = 0.002) -- poison exon inclusion rescued
+- **HNRNPL**: 11 significant frame-disrupting events including SE (dPSI = +0.58) and MXE (dPSI = +0.54) in DD
+- **PTBP1**: 12 significant frame-disrupting events across DD and MV
+- **SRSF5**: 15 significant frame-disrupting events across A3SS, A5SS, MXE, SE in DD
 
-RI events show no evidence of the expected positive dPSI bias. Significant CDS RI events are predominantly associated with *decreased* retention under Smg1i, suggesting these retained introns may not function primarily as NMD-triggering elements.
+---
 
-### Magnitude analysis
+## 2. Isoform-Level PTC Analysis (Summary)
 
-Frame-disrupting CDS events have modestly larger |dPSI| than frame-preserving CDS events across all cell types (Wilcoxon test), but the absolute differences are small (median |dPSI| ≈ 0.01-0.02 for both groups).
+### 2.1 PTC computation
 
-### Known NMD-coupled poison exons
+From 235,022 coding isoforms: 38,746 PTC+ (16.5%), 170,251 PTC- (multi-exon), 26,025 single-exon.
 
-SRSF7 (a canonical NMD autoregulatory gene) shows a strong frame-disrupting SE event in DD with dPSI = +0.49 (FDR = 0.002), consistent with poison exon inclusion being rescued by NMD inhibition. HNRNPL shows a similar pattern (dPSI = +0.58, FDR = 0.004 in DD).
+| Source | N | PTC+ | PTC rate |
+|--------|---:|-----:|---------:|
+| GENCODE | 54,952 | 5,397 | 9.8% |
+| PacBio | 180,070 | 33,349 | 18.5% |
 
-## 9. Interpretation and Conclusions
+PTC computation validated against GENCODE NMD biotype: 99.7% concordance (19,179/19,237).
 
-### Central finding: isoform-level PTC status does not predict NMD responsiveness
-**NMD-responsive transcripts are not enriched for PTC-containing transcripts.** Across six cell types, PTC+ isoforms are no more likely to be NMD-responsive (upregulated by Smg1i) than PTC- isoforms. The only exceptions are a small signal in DO and a subset of well-characterized GENCODE PTCs in DD_ALI ("strong PTC": distance >500nt, >=2 downstream EJCs, GENCODE-annotated).
+### 2.2 PTC does not predict NMD responsiveness
 
-### But: event-level frame disruption DOES predict Smg1i responsiveness
-The rMATS analysis (Section 8) reveals a complementary signal invisible at the isoform level: splice events that disrupt the reading frame are ~2x more likely to be significantly affected by Smg1i treatment (meta OR = 2.13, p = 3e-9). This is consistent across SE, A5SS, A3SS, and MXE event types and across the three cell types with sufficient power (DD, MV, AT).
+| Cell type | NMD rate PTC+ | NMD rate PTC- | OR | p |
+|-----------|:---:|:---:|----:|------:|
+| AT | 3.3% | 3.1% | 1.07 | 0.233 |
+| DD | 11.1% | 10.6% | 1.06 | 0.094 |
+| **DD_ALI** | **6.3%** | **9.0%** | **0.68** | **1.3e-22** |
+| DO | 0.0% | 0.0% | 1.75 | 0.423 |
+| FB | 1.7% | 1.6% | 1.10 | 0.248 |
+| MV | 6.1% | 5.7% | 1.08 | 0.116 |
 
-### Reconciling the two findings
-The apparent contradiction — null isoform-level PTC signal but positive event-level frame disruption signal — has a coherent explanation:
+Meta-analysis: OR = 0.96 (0.92-1.00), p = 0.03, I^2 = 94%. The only significant cell type is DD_ALI, which goes in the *wrong* direction (PTC+ less NMD-responsive).
 
-1. **CDS prediction quality confounds the isoform analysis.** ~75% of coding isoforms are PacBio-derived with SQANTI CDS predictions, yielding a 2x higher PTC rate (18.5% vs 9.8% GENCODE). Misannotated ORFs generate false PTC calls that dilute real signals at the isoform level.
-2. **The rMATS analysis bypasses CDS prediction entirely.** Frame disruption is computed from event geometry (exon width mod 3) relative to gene-level CDS envelopes from GENCODE annotations only. This avoids the PacBio ORF prediction problem.
-3. **Event-level resolution is more precise.** A single splice event can be cleanly classified as frame-disrupting, while an isoform may contain multiple splicing differences whose net effect on the reading frame is ambiguous.
+### 2.3 GENCODE-only analysis: still null
 
-### PTC+ and PTC- NMD-responsive isoforms are indistinguishable
-Among isoforms that *are* NMD-responsive, PTC+ and PTC- isoforms show no meaningful differences in:
-- **DMSO expression level** (baseline CPM distributions overlap)
-- **Response magnitude** (logFC distributions overlap)
-- **Strong response rates** (proportion with logFC > 1 or logFC > 2)
+Restricting to GENCODE isoforms (validated CDS) does not rescue the signal:
+- **GENCODE meta-analysis:** OR = 0.88 (0.80-0.98), p = 0.017, driven by DD_ALI (OR = 0.62)
+- Excluding DD_ALI, GENCODE ORs are all non-significant and near 1.0
 
-This means PTC status does not even identify a distinct *subset* of NMD-responsive isoforms -- the PTC+ NMD-responsive isoforms look identical to PTC- NMD-responsive isoforms on all measurable dimensions.
+This is a critical result: if the isoform-level null were simply due to noisy PacBio CDS predictions, GENCODE-only analysis should show strong PTC enrichment. It does not.
 
-### The DD_ALI paradox
-DD_ALI shows the strongest overall signal but in the *reversed* direction (PTC+ isoforms are less Smg1i-responsive). However, restricting to "strong PTC" features flips the signal to strongly positive. This suggests that the bulk of PTC calls -- driven by PacBio novel isoforms -- are noisy in DD_ALI, masking a real signal in well-annotated isoforms.
+### 2.4 GENCODE NMD biotype: also null
 
-### GENCODE vs PacBio
-PacBio novel isoforms have 2x the PTC rate of GENCODE (18.5% vs 9.8%), likely reflecting less reliable ORF predictions from SQANTI3. The PTC->NMD signal is generally more consistent (though still weak) when restricted to GENCODE isoforms.
+GENCODE's own `nonsense_mediated_decay` biotype annotation does not predict Smg1i responsiveness (meta OR = 0.96, p = 0.40).
 
-### RI events: no evidence for NMD-driven intron retention
-Despite the expectation that retained introns in CDS regions would introduce stop codons and trigger NMD, CDS-overlapping RI events are not enriched among Smg1i-responsive events (meta OR = 0.80, p = 0.11). Among significant CDS RI events, dPSI is biased *negative* (decreased retention under Smg1i), opposite to the expected direction. This suggests that NMD-coupled intron retention is not a dominant mechanism in these cell types, or that RI events detected by rMATS represent a different biological process than PTC-inducing intron retention.
+### 2.5 No dose-response
 
-### Direction ambiguity in frame-disrupting events
-The direction of dPSI for significant frame-disrupting events varies across cell types (DD is biased negative, AT and MV are biased positive for SE events). This is consistent with the biological reality that for any given frame-disrupting SE event, either inclusion or skipping can create the PTC depending on reading frame context. The enrichment signal is robust, but the direction is event-specific, not predictable from frame disruption status alone.
+NMD rates are flat across PTC distance bins (0-50: 5.2%, 51-100: 5.4%, 101-200: 5.7%, 201-500: 4.6%, >500: 4.7%). No dose-response relationship.
 
-### Why is the isoform-level signal weak?
-1. **PTC is neither necessary nor sufficient for NMD.** NMD can be triggered without classical PTCs -- long 3'UTRs, upstream ORFs (uORFs), and other transcript features can independently activate NMD. Conversely, not all PTC-containing transcripts are efficient NMD substrates. The 50-nucleotide rule identifies a *structural feature* that is associated with NMD but does not determine NMD substrate status.
-2. **NMD substrate degradation** occurs co-translationally; the steady-state mRNA level already reflects NMD. Smg1i inhibition rescues degradation, so the logFC captures the *change* in degradation, not PTC status per se.
-3. **CDS prediction quality**: ~75% of coding isoforms are PacBio-derived with SQANTI CDS predictions. Misannotated ORFs generate false PTC calls that dilute real signals. The rMATS event-level analysis, which bypasses CDS predictions, recovers a clear frame disruption signal (OR ≈ 2).
-4. **Multiple testing**: The 5% expression filter restricts to ~60K-70K isoforms per cell type, with only ~1-11% NMD-responsive, creating a strong class imbalance.
+### 2.6 logFC distributions
 
-### Threshold independence
-These analyses are independent of the non-NMD classification threshold (0.50 vs 0.95). Scripts 01-04 operate on raw DE results and expression data, not comparison pairs. Script 05 (pair-level PTC/frame-disruption) uses the comparison framework, and its results are null regardless of threshold. Script 06 (rMATS) uses entirely independent short-read data.
+Only DD_ALI and DO show significant PTC+ vs PTC- logFC shifts. DD_ALI is in the wrong direction; DO shows a small expected signal (median shift +0.06). "Strong PTC" features (>500nt, >=2 EJCs, GENCODE) show a positive shift in DD_ALI (+0.66 to +0.89), representing a small well-characterized subset.
+
+### 2.7 Pair-level analysis
+
+No significant PTC enrichment in NMD comparison pairs (C1, C2) vs baseline (C4). No significant frame disruption differences between NMD and baseline comparisons.
+
+---
+
+## 3. Bridging the Two Analyses: Case Studies
+
+### 3.1 SRSF1 -- the classic poison exon
+
+SRSF1 auto-regulates via a well-characterized poison exon whose inclusion introduces a PTC, targeting the transcript for NMD.
+
+**rMATS (short-read):** 3 significant frame-disrupting SE events in DD at chr17:58005398-58005600 (the known poison exon locus). dPSI ~ -0.31 to -0.33 (FDR ~ 0.02), meaning the poison exon is less included under Smg1i. This is consistent with NMD rescue: when NMD is inhibited, the poison exon-containing transcript accumulates, providing negative feedback that reduces poison exon inclusion.
+
+**Isoform-level (PacBio):** Only a single SRSF1 isoform passes expression filters across all 6 cell types: ENST00000583741.1, annotated as `nonsense_mediated_decay` biotype with PTC+ (distance = 389 nt). This isoform is **not significant in any cell type** (adj.P.Val >> 0.05). The logFC is actually negative in 5 of 6 cell types.
+
+**Interpretation:** PacBio long-read sequencing lacks the depth to quantify the poison exon-containing transcript, which is being actively degraded by NMD. The splicing change is clearly visible at the event level (rMATS) but invisible at the isoform level (PacBio DGE).
+
+### 3.2 SRSF7
+
+**rMATS:** Significant SE event in DD (dPSI = +0.49, FDR = 0.002) and MV (dPSI = +0.32) -- poison exon inclusion increases under Smg1i, consistent with NMD rescue.
+
+**Isoform-level:** 6 isoforms per cell type, only 1 significant hit in DD_ALI (ENST00000477635.5, logFC = +2.89), but PTC status is NA for this isoform.
+
+### 3.3 Linking rMATS genes to isoform-level PTC
+
+As a direct bridge test: among DD GENCODE isoforms in genes with significant rMATS frame-disrupting events (3,237 genes), PTC+ NMD rate = 8.7% vs PTC- NMD rate = 7.6% (Fisher OR = 1.16, p = 0.28). Even restricting to the genes where rMATS independently confirms frame-disrupting splicing, isoform-level PTC status still does not predict NMD responsiveness.
+
+---
+
+## 4. Interpretation and Conclusions
+
+### The two analyses test fundamentally different things
+
+The rMATS and isoform-level analyses are not the same question measured with different precision. They test genuinely different biological quantities:
+
+- **rMATS** asks: does the *usage* of frame-disrupting exons shift under NMD inhibition? This measures splicing changes at individual events, using short-read junction evidence with replicate-aware statistics.
+- **Isoform-level PTC** asks: are full-length transcripts with annotated PTCs upregulated under NMD inhibition? This measures transcript-level abundance changes from PacBio long-read DGE.
+
+### Why rMATS detects a signal that isoform-level analysis does not
+
+1. **Sensitivity to lowly-expressed NMD substrates.** NMD substrates are being actively degraded and are therefore lowly expressed. PacBio long-read sequencing has limited depth; NMD target isoforms may not accumulate enough reads for quantification or statistical testing. The SRSF1 case demonstrates this directly: the known NMD target isoform is detectable but not statistically significant in any cell type. Short-read rMATS, with much higher sequencing depth, detects the splicing shift without needing to quantify full-length isoforms.
+
+2. **Event-level resolution avoids isoform model complexity.** rMATS classifies individual splice events by a simple geometric criterion (exon width mod 3). The isoform-level analysis requires correct CDS annotation for the entire transcript, correct exon-exon junction identification, and sufficient expression for statistical power -- each adding potential failure points.
+
+3. **The rMATS signal may partly reflect non-NMD biology.** SMG1 phosphorylates UPF1, which participates in pathways beyond classical NMD (Staufen-mediated decay, histone mRNA turnover, other RNA surveillance). Frame-disrupting exons may be enriched among Smg1i-responsive events because they engage UPF1-dependent pathways more broadly, not exclusively through PTC-triggered NMD.
+
+### The CDS quality explanation is insufficient
+
+The original hypothesis -- that noisy PacBio CDS predictions mask a real PTC signal -- is directly contradicted by the GENCODE-only analysis:
+
+- GENCODE isoforms have validated CDS annotations (99.7% concordance with GENCODE NMD biotype)
+- Yet GENCODE-only meta-analysis shows OR = 0.88 (PTC predicts *less* NMD responsiveness)
+- Even GENCODE's own `nonsense_mediated_decay` biotype annotation shows OR = 0.96 (p = 0.40)
+
+PacBio CDS quality may add noise, but it is not the primary explanation for the null isoform-level result. The null holds even with the best available CDS annotations.
+
+### PTC is not a useful predictor of Smg1i responsiveness
+
+Across all analysis angles, isoform-level PTC status fails to predict NMD responsiveness:
+- **Overall:** OR near 1.0 across 5 of 6 cell types
+- **GENCODE-only:** OR = 0.88 (wrong direction)
+- **GENCODE NMD biotype:** OR = 0.96 (null)
+- **No dose-response** with PTC distance
+- **No enrichment** in NMD comparison pairs vs baseline
+- **PTC+ and PTC- NMD-responsive isoforms are indistinguishable** in expression level, response magnitude, and strong response rates
+
+This does not mean PTCs are biologically irrelevant to NMD -- it means that static PTC annotation does not capture the dynamic, context-dependent process of NMD substrate recognition as measured by Smg1i treatment.
+
+### The frame disruption enrichment is real but its mechanism is uncertain
+
+The rMATS OR ~ 2 enrichment for frame-disrupting events is statistically robust, but several features complicate a pure NMD interpretation:
+
+- **Direction ambiguity:** In DD (highest power), significant frame-disrupting SE events are biased toward *decreased* inclusion (62% negative dPSI), while AT and MV show the opposite. A pure NMD model does not predict this heterogeneity.
+- **RI events show no CDS enrichment** and have negative dPSI bias, contradicting the expectation that intron retention introduces PTCs rescued by Smg1i.
+- **The enrichment may partly reflect non-NMD UPF1-dependent pathways** or evolutionary selection on exon lengths that correlates with regulatory complexity.
+
+### DD dominance
+
+DD (4 replicates, differentiated cells) has ~10x more significant events than other cell types (3 replicates each). All per-event-type rMATS results are essentially DD-specific. The meta-analysis provides formal pooling, but DD drives the estimate.
+
+### DD_ALI paradox
+
+DD_ALI consistently shows the strongest isoform-level signal but in the reversed direction (PTC+ less NMD-responsive). This holds for GENCODE-only (OR = 0.62) and GENCODE NMD biotype (OR = 0.75). The reversal is unexplained and may reflect cell-type-specific biology. A small subset of "strong PTC" features (>500nt, >=2 EJCs, GENCODE) does show a positive signal in DD_ALI, but this represents ~3% of GENCODE isoforms and emerges from exploratory analysis.
+
+---
 
 ## Output Files
 
@@ -282,3 +249,4 @@ These analyses are independent of the non-NMD classification threshold (0.50 vs 
 | `ptc_logfc_by_source_unfiltered.pdf` | logFC GENCODE vs PacBio (unfiltered) |
 | `rmats_dpsi_by_frame_class.pdf` | dPSI distributions: frame-disrupting vs preserving |
 | `rmats_enrichment_forest.pdf` | Forest plot of enrichment ORs across cell types |
+| `rmats_case_studies.pdf` | SRSF1/SRSF7 rMATS vs isoform-level comparison |
