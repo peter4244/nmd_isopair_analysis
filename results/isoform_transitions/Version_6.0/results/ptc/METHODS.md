@@ -2,7 +2,7 @@
 
 ## Overview
 
-These analyses investigate whether premature termination codons (PTCs) predict NMD responsiveness (Smg1i upregulation) among expressed isoforms in lung cell lines. Five complementary scripts address the question from different angles: isoform-level PTC computation, association testing, logFC distributions, systematic signal exploration, and pair-level analysis within the isoform transition framework.
+These analyses investigate whether premature termination codons (PTCs) predict NMD responsiveness (Smg1i upregulation) among expressed isoforms in lung cell lines. Six scripts address the question from different angles: isoform-level PTC computation, association testing, logFC distributions, systematic signal exploration, pair-level analysis within the isoform transition framework, and short-read rMATS splice event frame disruption analysis.
 
 ## PTC Definition
 
@@ -96,6 +96,63 @@ Event types assessed: SE, Missing_Internal, A5SS, A3SS, Partial_IR_5, Partial_IR
 ### Direction-Based Analysis
 LOSS events (comparator missing sequence relative to dominant) are analyzed separately, as these are most likely to introduce PTCs in the comparator. LOSS + frame-disrupting events represent cases where the comparator has a frameshift relative to the dominant's reading frame.
 
+## rMATS Frame Disruption Analysis
+
+### Overview
+
+As a complement to the long-read PTC analysis (Scripts 01-05), short-read rMATS differential splicing results (Smg1i vs DMSO, 6 cell types) are used to test whether PTC-inducing splice events are preferentially affected by NMD inhibition. This provides event-level resolution with proper replicate-aware statistics, independent of long-read CDS predictions.
+
+### rMATS Data
+
+rMATS identifies five event types: skipped exon (SE), alternative 5' splice site (A5SS), alternative 3' splice site (A3SS), mutually exclusive exons (MXE), and retained intron (RI). Junction-count-only (JC) results are used as primary (pure junction evidence, more conservative). Each event has FDR-corrected p-values and IncLevelDifference (dPSI = PSI_Smg1i - PSI_DMSO).
+
+### Frame Disruption Classification
+
+For each rMATS event, frame disruption potential is determined by whether the splicing change alters the length of the coding sequence by a non-multiple of 3:
+
+| Event Type | Frame-disrupting criterion |
+|---|---|
+| **SE** | exon width mod 3 ≠ 0 |
+| **A5SS/A3SS** | \|long exon width - short exon width\| mod 3 ≠ 0 |
+| **MXE** | \|exon 1 width - exon 2 width\| mod 3 ≠ 0 |
+| **RI** | All CDS-overlapping RI (introns almost universally contain stop codons) |
+
+Coordinates are taken directly from Maser GRanges objects (already 1-based; no BED-to-genomic conversion needed).
+
+### CDS Overlap
+
+A gene-level CDS envelope is computed from all GENCODE coding isoforms: min(cds_start) to max(cds_stop) per gene. An event overlaps CDS if its coordinates fall within this envelope. Events entirely in UTRs or non-coding regions are classified as non-CDS.
+
+Gene IDs are matched by stripping version suffixes from rMATS Ensembl IDs (e.g., ENSG00000277196.4 → ENSG00000277196).
+
+### Three-Way Event Classification
+
+Each event is classified as:
+- **cds_frame_disrupting**: overlaps CDS and splice change is not divisible by 3
+- **cds_frame_preserving**: overlaps CDS and splice change is divisible by 3
+- **cds_ptc_inducing**: RI events overlapping CDS (separate from mod-3 classification)
+- **non_cds**: does not overlap gene CDS envelope
+
+### Statistical Tests
+
+**Enrichment**: Fisher's exact test comparing the rate of significant events (FDR < 0.05, |dPSI| ≥ 0.05) between frame-disrupting and frame-preserving CDS events, per cell type. RI events are tested separately (CDS RI vs non-CDS RI).
+
+**Direction**: Binomial test against 50% null for the fraction of significant events with positive vs negative dPSI. Two-tailed for SE, A5SS, A3SS, MXE (direction of PTC-inducing form is ambiguous). One-tailed (positive) for RI (retention form is expected to introduce PTCs).
+
+**Magnitude**: Wilcoxon rank-sum test comparing |dPSI| between frame-disrupting and frame-preserving CDS events (all events, not limited to significant).
+
+**Meta-analysis**: Random-effects (REML) meta-analysis of log-odds ratios across cell types, with I² heterogeneity statistic.
+
+### Direction Ambiguity
+
+For SE, A5SS, A3SS, and MXE events, we cannot predict whether the inclusion or exclusion form creates the PTC without knowing the reading frame context at exon boundaries. A frame-disrupting exon shifts the frame whether included or excluded; which form hits a premature stop codon depends on downstream sequence. Therefore, direction tests are two-tailed.
+
+### Limitations
+
+- Gene-level CDS envelope is an approximation; events in UTR introns of one isoform may be counted as CDS-overlapping if another isoform of the same gene has a more extreme CDS boundary.
+- SE events with exon width divisible by 3 can still be "poison exons" (in-frame stop codon within the exon), but detecting these requires sequence data.
+- DD has ~10x more significant events than other cell types (4 replicates vs 3), dominating statistical power.
+
 ## Multiple Testing Correction
 
 All per-cell-type p-values within an analysis are corrected using the Benjamini-Hochberg FDR method. The signal exploration script applies FDR correction across all tests within its comprehensive summary.
@@ -113,3 +170,4 @@ Six cell types are analyzed: AT (Alveolar Type 2), DD (Differentiated), DD_ALI (
 | `03_ptc_logfc_distributions.R` | logFC density plots (6 versions) |
 | `04_ptc_signal_exploration.R` | Multi-angle search (10 angles) |
 | `05_ptc_in_comparisons.R` | PTC/frame-disruption in C1/C2/C4 pairs |
+| `06_rmats_frame_disruption.R` | rMATS frame disruption enrichment analysis |

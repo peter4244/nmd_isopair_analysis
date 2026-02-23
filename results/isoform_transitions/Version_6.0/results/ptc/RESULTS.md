@@ -130,10 +130,88 @@ No significant difference in frame disruption rates between NMD comparisons and 
 ### LOSS + frame-disrupting events
 No significant enrichment in NMD pairs. LOSS frame-disruption rates: ~34% across all comparisons with minimal NMD vs baseline difference.
 
-## 8. Interpretation and Conclusions
+## 8. rMATS Frame Disruption Enrichment
 
-### Central finding
+### Overview
+
+1,056,930 rMATS splice events across 6 cell types were classified by frame disruption potential and CDS overlap. Gene ID matching: 67.2% of rMATS genes mapped to CDS envelopes (18,488 genes from 54,952 GENCODE coding isoforms). 60.8% of CDS-overlapping SE events are frame-disrupting (below the theoretical 66.7%, consistent with evolutionary selection for frame-preserving exon lengths).
+
+### Primary enrichment: frame-disrupting CDS events are significantly enriched
+
+Among all non-RI rMATS events, frame-disrupting CDS events are ~2x more likely to be significant (FDR < 0.05, |dPSI| ≥ 0.05) than frame-preserving CDS events:
+
+| Cell type | OR | 95% CI | p | Sig disrupting / total | Sig preserving / total |
+|-----------|---:|--------|------:|---:|---:|
+| DD | 1.80 | 1.72-1.89 | 3.0e-159 | 7,785 / 139,272 | 2,694 / 84,715 |
+| MV | 2.66 | 2.17-3.27 | 3.2e-25 | 496 / 47,470 | 119 / 30,063 |
+| AT | 2.43 | 1.64-3.72 | 1.8e-6 | 121 / 57,217 | 32 / 36,791 |
+| DD_ALI | 1.32 | 0.52-3.58 | 0.67 | 15 / 50,984 | 8 / 35,768 |
+| FB | 1.98 | 0.35-20.1 | 0.49 | 6 / 45,797 | 2 / 30,222 |
+| DO | — | — | — | 0 / 54,507 | 0 / 37,768 |
+
+**Meta-analysis (random effects):** Pooled OR = 2.13 (1.66-2.74), p = 3.15e-9, I² = 69%.
+
+DD, MV, and AT all show significant enrichment. DD_ALI, FB, and DO have too few significant events for meaningful tests.
+
+### Enrichment by event type (DD)
+
+| Event type | OR | 95% CI | p |
+|------------|---:|--------|------:|
+| A3SS | 2.76 | 2.33-3.29 | 1.5e-36 |
+| A5SS | 2.38 | 1.96-2.89 | 1.5e-21 |
+| SE | 2.22 | 2.07-2.38 | 3.4e-132 |
+| MXE | 1.24 | 1.16-1.33 | 6.7e-10 |
+
+All four non-RI event types are significantly enriched, with boundary changes (A3SS, A5SS) showing the strongest effects.
+
+### RI events: no CDS enrichment
+
+CDS-overlapping RI events are NOT enriched among significant events compared to non-CDS RI:
+
+**Meta-analysis:** Pooled OR = 0.80 (0.62-1.05), p = 0.11, I² = 58%.
+
+MV shows a marginally significant *depletion* (OR = 0.72, p = 0.039). This is unexpected if intron retention were a primary NMD-inducing mechanism, though it may reflect that RI events in UTRs are also functionally impactful.
+
+### Direction analysis
+
+Among significant frame-disrupting events, the direction of dPSI (positive = more inclusion in Smg1i) varies by cell type and event type:
+
+**SE events:**
+- AT: 75% positive (n=69, p=2.9e-5) — biased toward increased inclusion
+- MV: 66% positive (n=271, p=1.4e-7) — biased toward increased inclusion
+- DD: 38% positive (n=3,855, p=1.4e-53) — biased toward *decreased* inclusion
+- DD_ALI: 92% positive (n=13, p=0.003) — small n but strongly biased
+
+The opposing directions across cell types are consistent with the biological ambiguity: for any given SE event, either inclusion or skipping can create the PTC depending on reading frame context. The enrichment signal is robust (two-tailed), but the direction is event-specific, not predictable from frame disruption alone.
+
+**RI events (CDS, one-tailed test for positive dPSI):**
+- DD: 27% positive (n=930, p=1.0) — strongly biased *negative* (opposite of expected)
+- MV: 35% positive (n=113, p=1.0) — also biased negative
+
+RI events show no evidence of the expected positive dPSI bias. Significant CDS RI events are predominantly associated with *decreased* retention under Smg1i, suggesting these retained introns may not function primarily as NMD-triggering elements.
+
+### Magnitude analysis
+
+Frame-disrupting CDS events have modestly larger |dPSI| than frame-preserving CDS events across all cell types (Wilcoxon test), but the absolute differences are small (median |dPSI| ≈ 0.01-0.02 for both groups).
+
+### Known NMD-coupled poison exons
+
+SRSF7 (a canonical NMD autoregulatory gene) shows a strong frame-disrupting SE event in DD with dPSI = +0.49 (FDR = 0.002), consistent with poison exon inclusion being rescued by NMD inhibition. HNRNPL shows a similar pattern (dPSI = +0.58, FDR = 0.004 in DD).
+
+## 9. Interpretation and Conclusions
+
+### Central finding: isoform-level PTC status does not predict NMD responsiveness
 **NMD-responsive transcripts are not enriched for PTC-containing transcripts.** Across six cell types, PTC+ isoforms are no more likely to be NMD-responsive (upregulated by Smg1i) than PTC- isoforms. The only exceptions are a small signal in DO and a subset of well-characterized GENCODE PTCs in DD_ALI ("strong PTC": distance >500nt, >=2 downstream EJCs, GENCODE-annotated).
+
+### But: event-level frame disruption DOES predict Smg1i responsiveness
+The rMATS analysis (Section 8) reveals a complementary signal invisible at the isoform level: splice events that disrupt the reading frame are ~2x more likely to be significantly affected by Smg1i treatment (meta OR = 2.13, p = 3e-9). This is consistent across SE, A5SS, A3SS, and MXE event types and across the three cell types with sufficient power (DD, MV, AT).
+
+### Reconciling the two findings
+The apparent contradiction — null isoform-level PTC signal but positive event-level frame disruption signal — has a coherent explanation:
+
+1. **CDS prediction quality confounds the isoform analysis.** ~75% of coding isoforms are PacBio-derived with SQANTI CDS predictions, yielding a 2x higher PTC rate (18.5% vs 9.8% GENCODE). Misannotated ORFs generate false PTC calls that dilute real signals at the isoform level.
+2. **The rMATS analysis bypasses CDS prediction entirely.** Frame disruption is computed from event geometry (exon width mod 3) relative to gene-level CDS envelopes from GENCODE annotations only. This avoids the PacBio ORF prediction problem.
+3. **Event-level resolution is more precise.** A single splice event can be cleanly classified as frame-disrupting, while an isoform may contain multiple splicing differences whose net effect on the reading frame is ambiguous.
 
 ### PTC+ and PTC- NMD-responsive isoforms are indistinguishable
 Among isoforms that *are* NMD-responsive, PTC+ and PTC- isoforms show no meaningful differences in:
@@ -149,14 +227,20 @@ DD_ALI shows the strongest overall signal but in the *reversed* direction (PTC+ 
 ### GENCODE vs PacBio
 PacBio novel isoforms have 2x the PTC rate of GENCODE (18.5% vs 9.8%), likely reflecting less reliable ORF predictions from SQANTI3. The PTC->NMD signal is generally more consistent (though still weak) when restricted to GENCODE isoforms.
 
-### Why is the signal weak?
+### RI events: no evidence for NMD-driven intron retention
+Despite the expectation that retained introns in CDS regions would introduce stop codons and trigger NMD, CDS-overlapping RI events are not enriched among Smg1i-responsive events (meta OR = 0.80, p = 0.11). Among significant CDS RI events, dPSI is biased *negative* (decreased retention under Smg1i), opposite to the expected direction. This suggests that NMD-coupled intron retention is not a dominant mechanism in these cell types, or that RI events detected by rMATS represent a different biological process than PTC-inducing intron retention.
+
+### Direction ambiguity in frame-disrupting events
+The direction of dPSI for significant frame-disrupting events varies across cell types (DD is biased negative, AT and MV are biased positive for SE events). This is consistent with the biological reality that for any given frame-disrupting SE event, either inclusion or skipping can create the PTC depending on reading frame context. The enrichment signal is robust, but the direction is event-specific, not predictable from frame disruption status alone.
+
+### Why is the isoform-level signal weak?
 1. **PTC is neither necessary nor sufficient for NMD.** NMD can be triggered without classical PTCs -- long 3'UTRs, upstream ORFs (uORFs), and other transcript features can independently activate NMD. Conversely, not all PTC-containing transcripts are efficient NMD substrates. The 50-nucleotide rule identifies a *structural feature* that is associated with NMD but does not determine NMD substrate status.
 2. **NMD substrate degradation** occurs co-translationally; the steady-state mRNA level already reflects NMD. Smg1i inhibition rescues degradation, so the logFC captures the *change* in degradation, not PTC status per se.
-3. **CDS prediction quality**: ~75% of coding isoforms are PacBio-derived with SQANTI CDS predictions. Misannotated ORFs generate false PTC calls that dilute real signals.
+3. **CDS prediction quality**: ~75% of coding isoforms are PacBio-derived with SQANTI CDS predictions. Misannotated ORFs generate false PTC calls that dilute real signals. The rMATS event-level analysis, which bypasses CDS predictions, recovers a clear frame disruption signal (OR ≈ 2).
 4. **Multiple testing**: The 5% expression filter restricts to ~60K-70K isoforms per cell type, with only ~1-11% NMD-responsive, creating a strong class imbalance.
 
 ### Threshold independence
-These analyses are independent of the non-NMD classification threshold (0.50 vs 0.95). Scripts 01-04 operate on raw DE results and expression data, not comparison pairs. Only Script 05 (pair-level PTC/frame-disruption) uses the comparison framework, and its results are null regardless of threshold.
+These analyses are independent of the non-NMD classification threshold (0.50 vs 0.95). Scripts 01-04 operate on raw DE results and expression data, not comparison pairs. Script 05 (pair-level PTC/frame-disruption) uses the comparison framework, and its results are null regardless of threshold. Script 06 (rMATS) uses entirely independent short-read data.
 
 ## Output Files
 
@@ -180,6 +264,12 @@ These analyses are independent of the non-NMD classification threshold (0.50 vs 
 | `ptc_within_pair_asymmetry.tsv` | Within-pair PTC asymmetry |
 | `frame_disruption_nmd_vs_baseline.tsv` | Frame disruption NMD vs baseline |
 | `frame_disruption_loss_nmd_vs_baseline.tsv` | LOSS frame-disruption tests |
+| `rmats_event_classification.tsv` | All rMATS events with frame disruption + CDS annotations |
+| `rmats_enrichment_by_celltype.tsv` | Fisher test results per cell type |
+| `rmats_enrichment_by_event_type.tsv` | Enrichment stratified by SE/A5SS/A3SS/MXE |
+| `rmats_direction_tests.tsv` | Binomial direction bias tests |
+| `rmats_magnitude_tests.tsv` | |dPSI| magnitude comparisons |
+| `rmats_summary_stats.tsv` | Event counts by classification |
 
 ### figures/
 | File | Description |
@@ -190,3 +280,5 @@ These analyses are independent of the non-NMD classification threshold (0.50 vs 
 | `ptc_logfc_by_celltype_expression_unfiltered.pdf` | logFC by cell type x expression (unfiltered) |
 | `ptc_logfc_by_source.pdf` | logFC GENCODE vs PacBio (5%-filtered) |
 | `ptc_logfc_by_source_unfiltered.pdf` | logFC GENCODE vs PacBio (unfiltered) |
+| `rmats_dpsi_by_frame_class.pdf` | dPSI distributions: frame-disrupting vs preserving |
+| `rmats_enrichment_forest.pdf` | Forest plot of enrichment ORs across cell types |
