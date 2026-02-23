@@ -27,7 +27,7 @@ cat("==================================================================\n\n")
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
 cat("Loading data...\n")
-ptc_status <- readRDS("comparisons/nonNMD_0.50/ptc/results/ptc_status.rds")
+ptc_status <- readRDS("results/ptc/results/ptc_status.rds")
 cds_meta   <- readRDS("data/isoform_cds_metadata.rds") %>%
   filter(coding_status == "coding")
 profiles   <- readRDS("comparisons/nonNMD_0.50/deduplicated/splicing_choice_profiles.rds")
@@ -424,7 +424,7 @@ loss_results_df %>%
 
 # ─── Save all outputs ────────────────────────────────────────────────────────
 
-output_dir <- "comparisons/nonNMD_0.50/ptc/results"
+output_dir <- "results/ptc/results"
 
 write_tsv(results_df, file.path(output_dir, "ptc_prevalence_nmd_vs_baseline.tsv"))
 write_tsv(comp_ptc_by_run, file.path(output_dir, "ptc_rates_by_comparison_run.tsv"))

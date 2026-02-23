@@ -32,7 +32,7 @@ cat("==================================================================\n\n")
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
 cat("Loading data...\n")
-ptc_status      <- readRDS("comparisons/nonNMD_0.50/ptc/results/ptc_status.rds")
+ptc_status      <- readRDS("results/ptc/results/ptc_status.rds")
 expression_data <- readRDS("data/expression_data_filtered.rds")
 sample_metadata <- readRDS("data/sample_metadata.rds")
 
@@ -51,8 +51,8 @@ ptc_lookup <- ptc_status %>%
   filter(!is.na(has_ptc), n_exons > 1) %>%
   mutate(ptc_label = if_else(has_ptc, "PTC (>50nt)", "No PTC (<=50nt)"))
 
-fig_dir <- "comparisons/nonNMD_0.50/ptc/figures"
-res_dir <- "comparisons/nonNMD_0.50/ptc/results"
+fig_dir <- "results/ptc/figures"
+res_dir <- "results/ptc/results"
 
 # ─── 2. 5% filter ────────────────────────────────────────────────────────────
 

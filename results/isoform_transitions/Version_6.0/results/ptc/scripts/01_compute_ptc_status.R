@@ -212,7 +212,7 @@ gencode_validation <- tibble(
 
 # ─── 5. Save outputs ────────────────────────────────────────────────────────
 
-output_dir <- "comparisons/nonNMD_0.50/ptc/results"
+output_dir <- "results/ptc/results"
 
 # Save the full PTC status table
 ptc_status <- ptc_results %>%

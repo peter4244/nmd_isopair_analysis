@@ -130,22 +130,33 @@ No significant difference in frame disruption rates between NMD comparisons and 
 ### LOSS + frame-disrupting events
 No significant enrichment in NMD pairs. LOSS frame-disruption rates: ~34% across all comparisons with minimal NMD vs baseline difference.
 
-## 8. Interpretation and Limitations
+## 8. Interpretation and Conclusions
 
 ### Central finding
-PTC presence provides a small but detectable positive signal in **DO** across all analyses, and a strong signal for a subset of well-characterized GENCODE PTCs in **DD_ALI** ("strong PTC"). Otherwise, PTC status does not reliably predict Smg1i responsiveness.
+**NMD-responsive transcripts are not enriched for PTC-containing transcripts.** Across six cell types, PTC+ isoforms are no more likely to be NMD-responsive (upregulated by Smg1i) than PTC- isoforms. The only exceptions are a small signal in DO and a subset of well-characterized GENCODE PTCs in DD_ALI ("strong PTC": distance >500nt, >=2 downstream EJCs, GENCODE-annotated).
+
+### PTC+ and PTC- NMD-responsive isoforms are indistinguishable
+Among isoforms that *are* NMD-responsive, PTC+ and PTC- isoforms show no meaningful differences in:
+- **DMSO expression level** (baseline CPM distributions overlap)
+- **Response magnitude** (logFC distributions overlap)
+- **Strong response rates** (proportion with logFC > 1 or logFC > 2)
+
+This means PTC status does not even identify a distinct *subset* of NMD-responsive isoforms -- the PTC+ NMD-responsive isoforms look identical to PTC- NMD-responsive isoforms on all measurable dimensions.
 
 ### The DD_ALI paradox
-DD_ALI shows the strongest overall signal but in the *reversed* direction (PTC+ isoforms are less Smg1i-responsive). However, restricting to "strong PTC" features (distance >500, >=2 downstream EJCs, GENCODE-annotated) flips the signal to strongly positive. This suggests that the bulk of PTC calls -- driven by PacBio novel isoforms -- are noisy in DD_ALI, masking a real signal in well-annotated isoforms.
+DD_ALI shows the strongest overall signal but in the *reversed* direction (PTC+ isoforms are less Smg1i-responsive). However, restricting to "strong PTC" features flips the signal to strongly positive. This suggests that the bulk of PTC calls -- driven by PacBio novel isoforms -- are noisy in DD_ALI, masking a real signal in well-annotated isoforms.
 
 ### GENCODE vs PacBio
 PacBio novel isoforms have 2x the PTC rate of GENCODE (18.5% vs 9.8%), likely reflecting less reliable ORF predictions from SQANTI3. The PTC->NMD signal is generally more consistent (though still weak) when restricted to GENCODE isoforms.
 
 ### Why is the signal weak?
-1. **NMD substrate degradation** occurs co-translationally; the steady-state mRNA level already reflects NMD. Smg1i inhibition rescues degradation, so the logFC captures the *change* in degradation, not PTC status per se.
-2. **PTC is necessary but not sufficient** for NMD. Other factors (exon junction complex composition, translation re-initiation, 3'UTR length) modulate NMD efficiency.
+1. **PTC is neither necessary nor sufficient for NMD.** NMD can be triggered without classical PTCs -- long 3'UTRs, upstream ORFs (uORFs), and other transcript features can independently activate NMD. Conversely, not all PTC-containing transcripts are efficient NMD substrates. The 50-nucleotide rule identifies a *structural feature* that is associated with NMD but does not determine NMD substrate status.
+2. **NMD substrate degradation** occurs co-translationally; the steady-state mRNA level already reflects NMD. Smg1i inhibition rescues degradation, so the logFC captures the *change* in degradation, not PTC status per se.
 3. **CDS prediction quality**: ~75% of coding isoforms are PacBio-derived with SQANTI CDS predictions. Misannotated ORFs generate false PTC calls that dilute real signals.
 4. **Multiple testing**: The 5% expression filter restricts to ~60K-70K isoforms per cell type, with only ~1-11% NMD-responsive, creating a strong class imbalance.
+
+### Threshold independence
+These analyses are independent of the non-NMD classification threshold (0.50 vs 0.95). Scripts 01-04 operate on raw DE results and expression data, not comparison pairs. Only Script 05 (pair-level PTC/frame-disruption) uses the comparison framework, and its results are null regardless of threshold.
 
 ## Output Files
 

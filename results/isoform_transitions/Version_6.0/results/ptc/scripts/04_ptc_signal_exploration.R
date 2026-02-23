@@ -24,7 +24,7 @@ cat("======================================================================\n\n"
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
 cat("Loading data...\n")
-ptc_status      <- readRDS("comparisons/nonNMD_0.50/ptc/results/ptc_status.rds")
+ptc_status      <- readRDS("results/ptc/results/ptc_status.rds")
 expression_data <- readRDS("data/expression_data_filtered.rds")
 sample_metadata <- readRDS("data/sample_metadata.rds")
 
@@ -446,7 +446,7 @@ summary_all %>%
   print(n = 20, width = 150)
 
 # Save
-output_dir <- "comparisons/nonNMD_0.50/ptc/results"
+output_dir <- "results/ptc/results"
 write_tsv(summary_all, file.path(output_dir, "ptc_signal_exploration_all_tests.tsv"))
 cat(sprintf("\nSaved: %s\n", file.path(output_dir, "ptc_signal_exploration_all_tests.tsv")))
 

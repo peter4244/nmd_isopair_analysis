@@ -35,7 +35,7 @@ cat("==================================================================\n\n")
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
 cat("Loading data...\n")
-ptc_status      <- readRDS("comparisons/nonNMD_0.50/ptc/results/ptc_status.rds")
+ptc_status      <- readRDS("results/ptc/results/ptc_status.rds")
 expression_data <- readRDS("data/expression_data_filtered.rds")
 sample_metadata <- readRDS("data/sample_metadata.rds")
 
@@ -511,7 +511,7 @@ run_meta_analysis(enst_results, "ENST-only NMD biotype")
 
 # ─── Save all outputs ────────────────────────────────────────────────────────
 
-output_dir <- "comparisons/nonNMD_0.50/ptc/results"
+output_dir <- "results/ptc/results"
 
 write_tsv(summary_filt, file.path(output_dir, "ptc_predicts_nmd_by_celltype.tsv"))
 write_tsv(summary_unfilt, file.path(output_dir, "ptc_predicts_nmd_unfiltered_by_celltype.tsv"))
