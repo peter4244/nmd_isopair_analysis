@@ -138,6 +138,8 @@ SRSF1 auto-regulates via a well-characterized poison exon whose inclusion introd
 
 **Isoform-level (PacBio):** Only a single SRSF1 isoform passes expression filters across all 6 cell types: ENST00000583741.1, annotated as `nonsense_mediated_decay` biotype with PTC+ (distance = 389 nt). This isoform is **not significant in any cell type** (adj.P.Val >> 0.05). The logFC is actually negative in 5 of 6 cell types.
 
+**Isoform structure context (Script 08):** SRSF1 has 6 GENCODE isoforms and zero PacBio novel isoforms in the isoform catalog. The canonical poison exon (chr17:58,005,398-58,005,600, 203 bp) exists as a discrete exon in GENCODE isoform ENST00000584668.5 -- but this isoform is **not detected** in PacBio expression data. The only detected isoform that overlaps the poison region is ENST00000583741.1 (NMD biotype), which contains the poison region within a larger exon (58,004,849-58,005,600) at very low expression (AveExpr = -3.65, approximately 1 read per sample).
+
 **Interpretation:** PacBio long-read sequencing lacks the depth to quantify the poison exon-containing transcript, which is being actively degraded by NMD. The splicing change is clearly visible at the event level (rMATS) but invisible at the isoform level (PacBio DGE).
 
 ### 3.2 SRSF7
@@ -146,7 +148,25 @@ SRSF1 auto-regulates via a well-characterized poison exon whose inclusion introd
 
 **Isoform-level:** 6 isoforms per cell type, only 1 significant hit in DD_ALI (ENST00000477635.5, logFC = +2.89), but PTC status is NA for this isoform.
 
-### 3.3 Linking rMATS genes to isoform-level PTC
+**Isoform structure context (Script 08):** SRSF7 has 7 GENCODE isoforms and zero PacBio novel isoforms in the isoform catalog. The rMATS poison exon (chr2:38,748,898-38,749,346, 449 bp) has **no compatible isoform** in any source. No detected isoform contains the full poison exon. ENST00000415527.1 has partial overlap (276 bp) but is not expressed. All 6 detected SRSF7 isoforms either skip the poison region entirely or terminate before it. The poison exon-containing transcript is absent from both GENCODE annotations and PacBio novel isoform discovery.
+
+### 3.3 Sequencing depth comparison
+
+The power difference between platforms is not primarily about raw sequencing depth. On a per-nucleotide basis, PacBio actually generates more total bases due to longer reads:
+
+| Platform | Reads/sample (DD median) | Read length | Total bases/sample | Quantified features |
+|----------|-------------------------:|------------:|-------------------:|--------------------:|
+| PacBio long-read | 14.0M | ~2,000 bp | ~28 Gbp | ~300K isoforms |
+| Short-read (DD, paired-end) | 49.1M | 2 x 150 bp | ~14.7 Gbp | ~21K genes |
+
+Short-read sequencing is paired-end for AT2, DD, DD_ALI, and DO (2 x 150 bp), and single-end for FB and MV (1 x 150 bp). DD is the primary cell type for rMATS results due to having 4 replicates, so paired-end applies to the key comparisons. Despite producing fewer total bases, short-read achieves ~58x more reads per expressed feature at the median (526 reads/gene vs 9 reads/isoform in DD), because it quantifies 15x fewer features. The power difference is further amplified by the statistical framework:
+
+- **rMATS** tests a **within-event ratio** (PSI = inclusion junction counts / total junction counts). For the SRSF1 poison exon event in DD, rMATS uses ~1,400-2,100 junction reads per sample. For SRSF7, ~3,800-6,500 junction reads per sample. The ratio-based test provides strong statistical leverage with built-in normalization.
+- **PacBio DGE** tests **absolute transcript abundance** across the full ~300K isoform space using limma-voom. For the SRSF1 NMD isoform (ENST00000583741.1, AveExpr = -3.65), this corresponds to approximately 1 read per sample -- far below the threshold for statistical significance. Even SRSF7's most abundant isoform (ENST00000926876.1, AveExpr = 0.63) has only ~20 reads/sample.
+
+The sensitivity gap is therefore driven by three factors: (1) the ~15x larger feature space dilutes PacBio's per-feature depth, (2) NMD substrate isoforms are specifically depleted relative to other transcripts, and (3) rMATS's ratio-based test is inherently more powerful than absolute abundance testing for detecting splicing changes.
+
+### 3.4 Linking rMATS genes to isoform-level PTC
 
 As a direct bridge test: among DD GENCODE isoforms in genes with significant rMATS frame-disrupting events (3,237 genes), PTC+ NMD rate = 8.7% vs PTC- NMD rate = 7.6% (Fisher OR = 1.16, p = 0.28). Even restricting to the genes where rMATS independently confirms frame-disrupting splicing, isoform-level PTC status still does not predict NMD responsiveness.
 
@@ -163,11 +183,13 @@ The rMATS and isoform-level analyses are not the same question measured with dif
 
 ### Why rMATS detects a signal that isoform-level analysis does not
 
-1. **Sensitivity to lowly-expressed NMD substrates.** NMD substrates are being actively degraded and are therefore lowly expressed. PacBio long-read sequencing has limited depth; NMD target isoforms may not accumulate enough reads for quantification or statistical testing. The SRSF1 case demonstrates this directly: the known NMD target isoform is detectable but not statistically significant in any cell type. Short-read rMATS, with much higher sequencing depth, detects the splicing shift without needing to quantify full-length isoforms.
+1. **Per-feature sensitivity.** Although PacBio generates more total sequencing bases per sample (~28 Gbp vs ~7.4 Gbp), those bases are distributed across ~300K isoforms vs ~21K genes for short-read, resulting in ~58x fewer reads per feature at the median. NMD substrates are further depleted by active degradation. The SRSF1 case demonstrates this: the NMD target isoform averages ~1 PacBio read per sample, while the corresponding rMATS splice junction has ~1,400-2,100 short reads per sample.
 
-2. **Event-level resolution avoids isoform model complexity.** rMATS classifies individual splice events by a simple geometric criterion (exon width mod 3). The isoform-level analysis requires correct CDS annotation for the entire transcript, correct exon-exon junction identification, and sufficient expression for statistical power -- each adding potential failure points.
+2. **Statistical framework.** rMATS tests within-event ratios (PSI), providing built-in normalization and strong statistical leverage. PacBio DGE tests absolute transcript abundance across the entire isoform space, requiring library-size normalization and contending with much larger multiple-testing burden.
 
-3. **The rMATS signal may partly reflect non-NMD biology.** SMG1 phosphorylates UPF1, which participates in pathways beyond classical NMD (Staufen-mediated decay, histone mRNA turnover, other RNA surveillance). Frame-disrupting exons may be enriched among Smg1i-responsive events because they engage UPF1-dependent pathways more broadly, not exclusively through PTC-triggered NMD.
+3. **Event-level resolution avoids isoform model complexity.** rMATS classifies individual splice events by a simple geometric criterion (exon width mod 3). The isoform-level analysis requires correct CDS annotation for the entire transcript, correct exon-exon junction identification, and sufficient expression for statistical power -- each adding potential failure points.
+
+4. **The rMATS signal may partly reflect non-NMD biology.** SMG1 phosphorylates UPF1, which participates in pathways beyond classical NMD (Staufen-mediated decay, histone mRNA turnover, other RNA surveillance). Frame-disrupting exons may be enriched among Smg1i-responsive events because they engage UPF1-dependent pathways more broadly, not exclusively through PTC-triggered NMD.
 
 ### The CDS quality explanation is insufficient
 
@@ -250,3 +272,4 @@ DD_ALI consistently shows the strongest isoform-level signal but in the reversed
 | `rmats_dpsi_by_frame_class.pdf` | dPSI distributions: frame-disrupting vs preserving |
 | `rmats_enrichment_forest.pdf` | Forest plot of enrichment ORs across cell types |
 | `rmats_case_studies.pdf` | SRSF1/SRSF7 rMATS vs isoform-level comparison |
+| `poison_exon_structures.pdf` | Gene structure diagrams showing poison exon vs PacBio isoform models |
