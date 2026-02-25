@@ -1,0 +1,4 @@
+comparison	n	comp_only_ptc	dom_only_ptc	both_ptc	neither_ptc	pct_comp_only	pct_dom_only
+C1	69	7	7	4	51	10.1	10.1
+C2	454	44	46	16	348	9.7	10.1
+C4	2593	232	217	83	2061	8.9	8.4

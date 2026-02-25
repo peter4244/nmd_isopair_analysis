@@ -1,0 +1,3 @@
+source	n_isoforms	n_valid_atg	atg_pct	n_with_stop	n_has_ptc	ptc_rate	median_ptc_distance
+GENCODE	5985	5985	100	5626	384	6.8	-131
+PacBio	5201	5201	100	5053	1213	24	-106
