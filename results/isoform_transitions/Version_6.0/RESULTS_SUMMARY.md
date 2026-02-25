@@ -279,9 +279,39 @@ The proportion of LOSS events (comparator lost sequence relative to dominant) is
 
 ---
 
-## 5. Summary of Key Findings
+## 5. PTC and Frame Disruption Analysis
 
-### 5.1 Splicing Architecture is Remarkably Conserved
+A parallel analysis tested whether premature termination codons (PTCs) and reading-frame disruption predict NMD responsiveness. This connects the isoform comparison framework (Sections 2-4) to the broader question of what makes an isoform an NMD substrate.
+
+### 5.1 rMATS frame-disruption enrichment
+
+Short-read rMATS differential splicing analysis found that frame-disrupting splice events are ~2x enriched among Smg1i-responsive events (meta OR = 2.13, p = 3e-9) across SE, A5SS, A3SS, and MXE event types. DD, MV, and AT showed significant enrichment.
+
+### 5.2 Isoform-level PTC null
+
+Isoform-level PTC status (computed via the 50nt EJC rule) does NOT predict NMD responsiveness (meta OR = 0.96, p = 0.03, with DD_ALI driving the signal in the wrong direction). This null holds for GENCODE-only analysis (OR = 0.88) and GENCODE NMD biotype (OR = 0.96). No dose-response with PTC distance.
+
+### 5.3 Cross-platform concordance resolves the discrepancy
+
+Systematic junction matching between rMATS events and PacBio isoforms (Script 11, results/ptc/) explains why the rMATS signal does not propagate to isoform-level PTC enrichment:
+
+| Bucket | Description | % of events |
+|--------|-------------|---:|
+| 1 | No PacBio gene coverage | 2.8% |
+| 2 | No junction match (forms missing from catalog) | 69.1% |
+| 3 | Both forms present, no PTC difference | 17.0% |
+| 4 | PTC differs, but not NMD-sensitive | 8.5% |
+| 5 | Fully concordant | 2.7% |
+
+**The primary explanation is isoform catalog incompleteness** (71.8% of events). PacBio does not have isoforms representing most of the splice variants rMATS detects. Among events with both forms present, frame disruption does not reliably predict PTC status (42.5% PTC-difference rate, identical to frame-preserving controls).
+
+For full details, see `results/ptc/RESULTS.md` and `results/ptc/METHODS.md`.
+
+---
+
+## 6. Summary of Key Findings
+
+### 6.1 Splicing Architecture is Remarkably Conserved
 
 The most striking finding is the **similarity** between NMD-triggering transitions and baseline splicing variation:
 - Median event count is **3** in both NMD and baseline pairs
@@ -291,7 +321,7 @@ The most striking finding is the **similarity** between NMD-triggering transitio
 
 This suggests that the structural mechanisms distinguishing NMD-sensitive isoforms from non-NMD isoforms are drawn from the same repertoire of splicing variation that distinguishes any two isoforms of the same gene.
 
-### 5.2 Subtle but Consistent Signals
+### 6.2 Subtle but Consistent Signals
 
 Two event-level signals emerge from meta-analysis:
 
@@ -299,7 +329,7 @@ Two event-level signals emerge from meta-analysis:
 
 2. **SE enrichment in C2 (OR = 1.13, p = 0.013):** Isoform pairs defined by top CPM NMD selection are more likely to involve skipped exons. However, this signal should be interpreted cautiously given the complexity confound — C2 NMD comparators tend to be more complex transcripts, which may increase the baseline probability of observing SE events.
 
-### 5.3 C1 and C2 Capture Different Facets
+### 6.3 C1 and C2 Capture Different Facets
 
 C1 (dominant NMD-sensitive) and C2 (top NMD-sensitive by CPM) do not produce identical results:
 - C1 detects Alt_TES enrichment; C2 does not
@@ -308,15 +338,19 @@ C1 (dominant NMD-sensitive) and C2 (top NMD-sensitive by CPM) do not produce ide
 
 This likely reflects their different selection criteria: C1 requires the NMD isoform to be the single most expressed isoform under Smg1i treatment, while C2 selects the highest-CPM NMD isoform regardless of relative expression rank.
 
-### 5.4 Cell-Type Consistency
+### 6.4 Cell-Type Consistency
 
 Meta-analysis heterogeneity (I^2) is generally low (0-30%) for most metrics, indicating that NMD-vs-baseline differences are consistent across the 5 analyzed cell types. The main exception is Alt_TES in C2 (I^2 = 61%) and SE in C1 (I^2 = 62%), where cell-type-specific effects are present.
 
+### 6.5 Cross-Platform Concordance Reveals Isoform Catalog Limitations
+
+The rMATS frame-disruption enrichment (OR = 2.13) does not propagate to isoform-level PTC analysis because 69% of significant frame-disrupting events have no matching junction pair in the PacBio isoform catalog. This identifies a fundamental limitation of long-read isoform-level analysis: many biologically relevant splice variants detected by short-read event-level methods were not assembled as distinct isoforms by PacBio IsoSeq or annotated in GENCODE. The 2.7% fully-concordant rate quantifies the narrow overlap between these two analytical frameworks.
+
 ---
 
-## 6. Generated Figures
+## 7. Generated Figures
 
-### 6.1 Pooled Downstream Analysis Figures
+### 7.1 Pooled Downstream Analysis Figures
 
 | Figure | Location | Description |
 |---|---|---|
@@ -326,7 +360,7 @@ Meta-analysis heterogeneity (I^2) is generally low (0-30%) for most metrics, ind
 | Regional Enrichment | `deduplicated/results/figures/regional_enrichment.pdf` | Event enrichment/depletion across genomic regions |
 | Spatial Patterns | `deduplicated/results/figures/spatial_patterns.pdf` | Event proximity and topology analyses |
 
-### 6.2 Cross-Comparison Analysis Figures
+### 7.2 Cross-Comparison Analysis Figures
 
 | Figure | Location | Description |
 |---|---|---|
@@ -342,11 +376,11 @@ All figure paths are relative to `comparisons/nonNMD_0.50/`.
 
 ---
 
-## 7. Output File Inventory
+## 8. Output File Inventory
 
 All output files are located under `comparisons/nonNMD_0.50/`.
 
-### 7.1 Pooled Results (`deduplicated/results/`)
+### 8.1 Pooled Results (`deduplicated/results/`)
 
 | File | Description |
 |---|---|
@@ -365,13 +399,13 @@ All output files are located under `comparisons/nonNMD_0.50/`.
 | `pattern_complexity_association.tsv` | Chi-square test of pattern x complexity |
 | `top_patterns.tsv` | Top 10 profile pattern signatures |
 
-### 7.2 Per-Comparison Results
+### 8.2 Per-Comparison Results
 
 `per_comparison_run_summary.tsv` — Summary of 18 comparison x run combinations (17 completed, 1 skipped).
 
 Per-run results stored in `{C1,C2,C4}/{run}/results/` with the same file structure as pooled results.
 
-### 7.3 Cross-Comparison Results (`cross_comparison/`)
+### 8.3 Cross-Comparison Results (`cross_comparison/`)
 
 | File | Description |
 |---|---|
@@ -384,9 +418,21 @@ Per-run results stored in `{C1,C2,C4}/{run}/results/` with the same file structu
 | `phase3_complexity_confound.tsv` | Complexity confound analysis (33 tests) |
 | `phase3_direction.tsv` | GAIN/LOSS balance comparison (11 tests) |
 
+### 8.4 PTC and Concordance Results (`results/ptc/results/`)
+
+| File | Description |
+|---|---|
+| `rmats_junction_concordance.tsv` | Per-event junction concordance classification |
+| `rmats_ptc_verification.tsv` | PTC status comparison for events with both PacBio forms |
+| `rmats_psi_concordance.tsv` | rMATS vs PacBio dPSI comparison |
+| `rmats_discrepancy_waterfall.tsv` | Sequential bucket assignment explaining signal loss |
+| `rmats_concordance_summary.tsv` | Summary statistics from concordance analysis |
+
+See `results/ptc/RESULTS.md` for complete output file listing including all PTC and rMATS analysis outputs.
+
 ---
 
-## 8. Validation Status
+## 9. Validation Status
 
 - **Event detection test suite:** 126/126 PASS (100%) — 44 synthetic + 80 real-data + 2 deduplication tests
 - **GENCODE validation:** 4,274/4,274 PASS (100%) — random dominant assignment, seed = 42

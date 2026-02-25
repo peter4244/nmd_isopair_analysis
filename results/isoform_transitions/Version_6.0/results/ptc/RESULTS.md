@@ -8,7 +8,7 @@ Two complementary approaches test whether reading-frame disruption predicts NMD 
 
 2. **Isoform-level (PTC status, long-read):** PTC+ isoforms are NOT enriched among NMD-responsive transcripts, even when restricted to GENCODE-annotated isoforms with validated CDS. This null holds across all six cell types.
 
-The discrepancy reflects a fundamental difference in what these analyses measure, not a technical artifact of CDS annotation quality. Canonical case studies (SRSF1, SRSF7) confirm that rMATS detects poison exon splicing changes that are invisible at the isoform level due to PacBio's limited ability to quantify lowly-expressed NMD substrates.
+3. **Cross-platform concordance (rMATS–PacBio):** Systematic junction matching reveals that the primary explanation for the discrepancy is isoform catalog incompleteness — 69% of significant frame-disrupting events have no matching junction pair in the long-read catalog. Of the 28% with both forms present, frame disruption does not reliably predict PTC status (42.5% PTC-difference rate, identical to frame-preserving controls). Only 2.7% of events are fully concordant through to isoform-level NMD sensitivity.
 
 ---
 
@@ -128,9 +128,85 @@ No significant PTC enrichment in NMD comparison pairs (C1, C2) vs baseline (C4).
 
 ---
 
-## 3. Bridging the Two Analyses: Case Studies
+## 3. rMATS–PacBio Concordance Analysis
 
-### 3.1 SRSF1 -- the classic poison exon
+Script 11 systematically tests why the rMATS frame-disruption enrichment (OR ~ 2.13) does not propagate to isoform-level PTC enrichment. Three cell types with adequate rMATS power were analyzed: DD, MV, AT. Three event types: SE, A5SS, A3SS.
+
+### 3.1 Junction concordance
+
+For 5,653 significant frame-disrupting CDS events across 3 cell types, each rMATS event was classified by whether PacBio has isoforms matching both splice forms (inclusion + skipping):
+
+| Category | n | % |
+|----------|---:|---:|
+| both | 1,593 | 28.2% |
+| inclusion_only | 1,516 | 26.8% |
+| neither | 1,337 | 23.7% |
+| skipping_only | 1,051 | 18.6% |
+| no_pb_gene | 156 | 2.8% |
+
+**Only 28.2% of significant frame-disrupting events have both splice forms represented in PacBio.** The remaining 71.8% are invisible to isoform-level analysis because the relevant splice variant(s) are absent from the long-read catalog.
+
+Near-miss analysis at ±2bp tolerance: only 19/4,060 non-matching events (0.5%) would gain a match, ruling out coordinate representation differences as a significant factor.
+
+Concordance rates vary by event type and cell type:
+
+| Cell type | SE | A5SS | A3SS |
+|-----------|---:|-----:|-----:|
+| DD | 24.4% | 30.3% | 33.2% |
+| MV | 40.2% | 46.7% | 50.0% |
+| AT | 40.6% | 54.8% | 57.1% |
+
+DD has the lowest concordance (~25% for SE) because it has the most statistical power to detect subtle events that are below PacBio's detection threshold. A5SS and A3SS show higher concordance than SE across all cell types, consistent with boundary changes being more likely captured by existing isoform models.
+
+### 3.2 PTC verification
+
+Among the 1,593 events with both forms in PacBio, 1,482 had known PTC status for both forms:
+
+| Outcome | n | % |
+|---------|---:|---:|
+| PTC differs between forms | 630 | 42.5% |
+| PTC same between forms | 852 | 57.5% |
+
+**Frame-preserving control:** Among significant frame-*preserving* CDS events with both PacBio forms, 91/214 (42.5%) also show PTC differences between splice forms — an identical rate. This means frame disruption (exon width mod 3) does not predict whether the splice event actually creates a PTC in the full-length transcript. The PTC difference rate is driven by other factors (e.g., whether the event is upstream or downstream of the stop codon, presence of in-frame stops within inserted/deleted sequence).
+
+### 3.3 PSI concordance
+
+For 1,518 events with both forms and adequate PacBio coverage (mean total counts ≥ 5):
+
+- **Spearman rho = 0.029** (p = 0.27): essentially no correlation between rMATS dPSI and PacBio-computed dPSI
+- **Sign concordance: 743/1,518 (48.9%)** — indistinguishable from chance (50%)
+
+Even when PacBio has both splice forms, its quantification of the splicing change does not track with rMATS quantification. This reflects the fundamental mismatch between junction-count-based PSI (rMATS) and full-length isoform abundance (PacBio).
+
+### 3.4 Discrepancy waterfall
+
+All 5,653 significant frame-disrupting CDS events were sequentially classified into mutually exclusive buckets explaining where the rMATS signal is lost:
+
+| Bucket | Description | n | % | Cumulative % |
+|--------|-------------|---:|---:|---:|
+| 1 | No PacBio gene coverage | 156 | 2.8% | 2.8% |
+| 2 | No junction match (gene present, forms missing) | 3,904 | 69.1% | 71.8% |
+| 3 | Both forms present, no PTC difference | 963 | 17.0% | 88.9% |
+| 4 | PTC differs, but PTC+ isoform not NMD-sensitive | 480 | 8.5% | 97.3% |
+| 5 | **Concordant** (PTC differs + PTC+ is NMD-sensitive) | 150 | 2.7% | 100.0% |
+
+The dominant explanation is **catalog incompleteness** (buckets 1+2 = 71.8%): PacBio simply does not have isoforms representing the splice variants rMATS detects. Of the events where both forms exist, roughly half (bucket 3) show no PTC difference despite frame disruption, supporting H1 (frame disruption ≠ PTC). Only 2.7% of events are fully concordant — the rMATS signal is almost entirely invisible to isoform-level analysis.
+
+### 3.5 Event type comparison
+
+| Event type | Total | Both forms (%) | Bucket 2 (%) | Concordant (%) |
+|------------|------:|---------:|--------:|--------:|
+| SE | 4,195 | 25.7% | 72.4% | 2.2% |
+| A5SS | 675 | 33.6% | 55.6% | 4.4% |
+| A3SS | 783 | 36.7% | 56.0% | 3.6% |
+
+SE events are least likely to have both forms in PacBio (25.7% vs ~35% for boundary events), because SE requires two separate junctions to match simultaneously in the same isoform. A5SS and A3SS show higher concordance and slightly higher fully-concordant rates, but all event types are dominated by catalog incompleteness.
+
+---
+
+## 4. Bridging the Two Analyses: Case Studies
+
+### 4.1 SRSF1 -- the classic poison exon
 
 SRSF1 auto-regulates via a well-characterized poison exon whose inclusion introduces a PTC, targeting the transcript for NMD.
 
@@ -142,7 +218,7 @@ SRSF1 auto-regulates via a well-characterized poison exon whose inclusion introd
 
 **Interpretation:** PacBio long-read sequencing lacks the depth to quantify the poison exon-containing transcript, which is being actively degraded by NMD. The splicing change is clearly visible at the event level (rMATS) but invisible at the isoform level (PacBio DGE).
 
-### 3.2 SRSF7
+### 4.2 SRSF7
 
 **rMATS:** Significant SE event in DD (dPSI = +0.49, FDR = 0.002) and MV (dPSI = +0.32) -- poison exon inclusion increases under Smg1i, consistent with NMD rescue.
 
@@ -150,7 +226,7 @@ SRSF1 auto-regulates via a well-characterized poison exon whose inclusion introd
 
 **Isoform structure context (Script 08):** SRSF7 has 7 GENCODE isoforms and zero PacBio novel isoforms in the isoform catalog. The rMATS poison exon (chr2:38,748,898-38,749,346, 449 bp) has **no compatible isoform** in any source. No detected isoform contains the full poison exon. ENST00000415527.1 has partial overlap (276 bp) but is not expressed. All 6 detected SRSF7 isoforms either skip the poison region entirely or terminate before it. The poison exon-containing transcript is absent from both GENCODE annotations and PacBio novel isoform discovery.
 
-### 3.3 Sequencing depth comparison
+### 4.3 Sequencing depth comparison
 
 The power difference between platforms is not primarily about raw sequencing depth. On a per-nucleotide basis, PacBio actually generates more total bases due to longer reads:
 
@@ -166,13 +242,23 @@ Short-read sequencing is paired-end for AT2, DD, DD_ALI, and DO (2 x 150 bp), an
 
 The sensitivity gap is therefore driven by three factors: (1) the ~15x larger feature space dilutes PacBio's per-feature depth, (2) NMD substrate isoforms are specifically depleted relative to other transcripts, and (3) rMATS's ratio-based test is inherently more powerful than absolute abundance testing for detecting splicing changes.
 
-### 3.4 Linking rMATS genes to isoform-level PTC
+### 4.4 Linking rMATS genes to isoform-level PTC
 
 As a direct bridge test: among DD GENCODE isoforms in genes with significant rMATS frame-disrupting events (3,237 genes), PTC+ NMD rate = 8.7% vs PTC- NMD rate = 7.6% (Fisher OR = 1.16, p = 0.28). Even restricting to the genes where rMATS independently confirms frame-disrupting splicing, isoform-level PTC status still does not predict NMD responsiveness.
 
 ---
 
-## 4. Interpretation and Conclusions
+## 5. Interpretation and Conclusions
+
+### The concordance analysis resolves the discrepancy
+
+The concordance analysis (Section 3) provides a definitive accounting of where the rMATS signal is lost on the path to isoform-level PTC enrichment. The primary explanation is **isoform catalog incompleteness**: 71.8% of significant frame-disrupting events (buckets 1+2) have no matching junction pair in the PacBio long-read isoform catalog. This is not a sensitivity or statistical power issue — the relevant splice variants simply do not exist as annotated isoforms.
+
+For the 28.2% of events where both splice forms are present in PacBio, two additional filters absorb the remaining signal:
+- **Frame disruption ≠ PTC (17.0%):** The frame-disrupting event does not produce a PTC difference between the two splice forms. The control analysis confirms this: frame-preserving events show an identical PTC-difference rate (42.5%), meaning exon width mod 3 is not informative about PTC status in full-length transcripts (H1).
+- **PTC+ isoform not NMD-sensitive (8.5%):** A PTC difference exists, but the PTC-containing isoform is not significantly upregulated under Smg1i in long-read DE, consistent with the insufficient per-feature sensitivity documented in Section 4.3.
+
+Only 2.7% of events survive all filters as fully concordant. The isoform-level PTC null is thus primarily a consequence of what the isoform catalog does not contain, not of what PTC annotations fail to capture.
 
 ### The two analyses test fundamentally different things
 
@@ -183,11 +269,11 @@ The rMATS and isoform-level analyses are not the same question measured with dif
 
 ### Why rMATS detects a signal that isoform-level analysis does not
 
-1. **Per-feature sensitivity.** Although PacBio generates more total sequencing bases per sample (~28 Gbp vs ~7.4 Gbp), those bases are distributed across ~300K isoforms vs ~21K genes for short-read, resulting in ~58x fewer reads per feature at the median. NMD substrates are further depleted by active degradation. The SRSF1 case demonstrates this: the NMD target isoform averages ~1 PacBio read per sample, while the corresponding rMATS splice junction has ~1,400-2,100 short reads per sample.
+1. **Isoform catalog incompleteness (primary).** The concordance analysis demonstrates that 69.1% of significant frame-disrupting events have no matching junction pair in the PacBio isoform catalog, and an additional 2.8% lack any PacBio gene coverage. The relevant splice variants that rMATS detects — many involving subtle or lowly-expressed alternative exons — were not assembled as distinct isoforms by PacBio IsoSeq or annotated in GENCODE. This is the dominant explanation, accounting for 71.8% of the discrepancy.
 
-2. **Statistical framework.** rMATS tests within-event ratios (PSI), providing built-in normalization and strong statistical leverage. PacBio DGE tests absolute transcript abundance across the entire isoform space, requiring library-size normalization and contending with much larger multiple-testing burden.
+2. **Frame disruption ≠ PTC in full-length transcripts.** Among events where both forms exist in PacBio, only 42.5% show a PTC difference — identical to the rate for frame-preserving controls. The simple geometric criterion (exon width mod 3) used by rMATS does not reliably predict whether the splice change creates a PTC in the full-length transcript context.
 
-3. **Event-level resolution avoids isoform model complexity.** rMATS classifies individual splice events by a simple geometric criterion (exon width mod 3). The isoform-level analysis requires correct CDS annotation for the entire transcript, correct exon-exon junction identification, and sufficient expression for statistical power -- each adding potential failure points.
+3. **Per-feature sensitivity (secondary).** For the 28.2% of events with both PacBio forms, PSI concordance is essentially null (Spearman rho = 0.029, sign concordance 48.9%). PacBio's ~58x fewer reads per feature at the median, combined with active NMD-mediated depletion of substrate isoforms, prevents detection of the splicing changes even when the relevant isoforms exist in the catalog.
 
 4. **The rMATS signal may partly reflect non-NMD biology.** SMG1 phosphorylates UPF1, which participates in pathways beyond classical NMD (Staufen-mediated decay, histone mRNA turnover, other RNA surveillance). Frame-disrupting exons may be enriched among Smg1i-responsive events because they engage UPF1-dependent pathways more broadly, not exclusively through PTC-triggered NMD.
 
@@ -259,6 +345,11 @@ DD_ALI consistently shows the strongest isoform-level signal but in the reversed
 | `rmats_direction_tests.tsv` | Binomial direction bias tests |
 | `rmats_magnitude_tests.tsv` | |dPSI| magnitude comparisons |
 | `rmats_summary_stats.tsv` | Event counts by classification |
+| `rmats_junction_concordance.tsv` | Per-event junction concordance classification (both/inclusion_only/skipping_only/neither/no_pb_gene) |
+| `rmats_ptc_verification.tsv` | PTC status comparison for events with both PacBio forms |
+| `rmats_psi_concordance.tsv` | rMATS vs PacBio dPSI comparison for events with both forms |
+| `rmats_discrepancy_waterfall.tsv` | Sequential bucket assignment for all significant frame-disrupting events |
+| `rmats_concordance_summary.tsv` | Summary statistics from concordance analysis |
 
 ### figures/
 | File | Description |

@@ -2,7 +2,7 @@
 
 ## Overview
 
-These analyses investigate whether premature termination codons (PTCs) predict NMD responsiveness (Smg1i upregulation) among expressed isoforms in lung cell lines. Six scripts address the question from different angles: isoform-level PTC computation, association testing, logFC distributions, systematic signal exploration, pair-level analysis within the isoform transition framework, and short-read rMATS splice event frame disruption analysis.
+These analyses investigate whether premature termination codons (PTCs) predict NMD responsiveness (Smg1i upregulation) among expressed isoforms in lung cell lines. Eleven scripts address the question from different angles: isoform-level PTC computation, association testing, logFC distributions, systematic signal exploration, pair-level analysis within the isoform transition framework, short-read rMATS splice event frame disruption analysis, case studies, sequence-based PTC detection, and systematic rMATS–PacBio concordance analysis.
 
 ## PTC Definition
 
@@ -153,6 +153,69 @@ For SE, A5SS, A3SS, and MXE events, we cannot predict whether the inclusion or e
 - SE events with exon width divisible by 3 can still be "poison exons" (in-frame stop codon within the exon), but detecting these requires sequence data.
 - DD has ~10x more significant events than other cell types (4 replicates vs 3), dominating statistical power.
 
+## rMATS–PacBio Concordance Analysis
+
+### Overview
+
+Script 11 performs a systematic cross-platform comparison between rMATS splice-event-level results and PacBio isoform-level data. The analysis tests two hypotheses for why rMATS detects frame-disruption enrichment (OR ~ 2) while PacBio isoform-level PTC analysis shows no NMD signal:
+
+- **H1 (Reconcilable):** Frame-disrupting events at the junction level do not necessarily produce PTCs in full-length transcripts (frame disruption ≠ PTC).
+- **H2 (Catalog incompleteness):** The PacBio isoform catalog does not capture the relevant splice variants that rMATS detects.
+
+The analysis is restricted to three cell types with adequate rMATS power (DD, MV, AT) and three event types (SE, A5SS, A3SS).
+
+### Junction Extraction
+
+**rMATS junctions.** For each significant frame-disrupting CDS event (FDR < 0.05, |dPSI| ≥ 0.05), splice junctions are extracted from maser GRanges objects:
+- **SE:** 3 junctions per event — inclusion_1 (upstream→target), inclusion_2 (target→downstream), skipping (upstream→downstream)
+- **A5SS/A3SS:** 2 junctions per event — long_form and short_form
+
+**PacBio junctions.** For all isoforms at genes with rMATS events, splice junctions are extracted from `isoform_structures.rds` as consecutive exon-end/exon-start pairs.
+
+### Strand-Independent Coordinate Matching
+
+Maser names exons by transcript order (upstream/downstream), which reverses genomic order on minus-strand genes. All junction coordinates are converted to genomic order using `pmin()`/`pmax()` before matching:
+- `donor = pmin(end_of_left_exon, end_of_right_exon)` (leftward exon end in genomic space)
+- `acceptor = pmax(start_of_left_exon, start_of_right_exon)` (rightward exon start in genomic space)
+
+This matches PacBio junction extraction, which is always in genomic order. Exact coordinate matching is required (no tolerance). A near-miss diagnostic at ±2bp quantifies events lost to coordinate representation differences.
+
+### Junction Concordance Classification
+
+Each rMATS event is classified by whether PacBio has matching isoforms:
+- **both:** PacBio has at least one isoform with inclusion junctions AND at least one with skipping junctions (or long-form AND short-form for A3SS/A5SS)
+- **inclusion_only / skipping_only:** PacBio has isoforms matching only one form
+- **neither:** Gene has PacBio isoforms but no junction matches
+- **no_pb_gene:** No PacBio isoforms mapped to this gene
+
+For SE events, "inclusion" requires both inclusion junctions present in the same isoform (not just individually).
+
+### PTC Verification
+
+For events classified as "both" (both splice forms present in PacBio), PTC status is looked up from `ptc_status.rds` for isoforms matching each form. An event has "PTC differs" if one form has at least one PTC+ isoform and the other does not. Frame-preserving CDS events serve as a negative control — the rate at which PTC differs between forms should be similar if frame disruption per se does not predict PTC.
+
+### PSI Computation from Raw Counts
+
+For "both" events, PacBio-based PSI is computed from raw counts in the DGEList:
+1. Sum raw counts across all isoforms matching the inclusion form (per sample)
+2. Sum raw counts across all isoforms matching the skipping form (per sample)
+3. PSI = inclusion_counts / (inclusion_counts + skipping_counts) per sample
+4. dPSI = mean(PSI_Smg1i) - mean(PSI_DMSO)
+
+Spearman correlation and sign concordance compare PacBio dPSI to rMATS dPSI. Events with mean total counts < 5 are excluded.
+
+### Discrepancy Waterfall
+
+All significant frame-disrupting CDS events are sequentially assigned to mutually exclusive buckets explaining why the rMATS signal does not propagate to isoform-level PTC enrichment:
+
+1. **No PB gene:** Gene has no PacBio isoforms in the catalog
+2. **No junction match:** Gene has PacBio isoforms but neither/only one splice form matches
+3. **No PTC difference:** Both forms present but PTC status is the same (or unknown)
+4. **PTC not NMD-sensitive:** PTC differs but the PTC+ isoform is not NMD-responsive (logFC ≤ 0 or adj.P.Val ≥ 0.05 in long-read DE)
+5. **Concordant:** PTC differs AND the PTC+ isoform is NMD-sensitive
+
+Events are assigned to the first applicable bucket (sequential elimination).
+
 ## Multiple Testing Correction
 
 All per-cell-type p-values within an analysis are corrected using the Benjamini-Hochberg FDR method. The signal exploration script applies FDR correction across all tests within its comprehensive summary.
@@ -173,3 +236,6 @@ Six cell types are analyzed: AT (Alveolar Type 2), DD (Differentiated), DD_ALI (
 | `06_rmats_frame_disruption.R` | rMATS frame disruption enrichment analysis |
 | `07_rmats_case_studies.R` | Case study figures (SRSF1/SRSF7 rMATS vs isoform) |
 | `08_poison_exon_structure.R` | Gene structure diagrams showing poison exon compatibility |
+| `09_btn2a1_concordance.R` | BTN2A1 concordance case study figure (rMATS vs isoform-level) |
+| `10_sequence_based_ptc.R` | Sequence-based PTC detection in isoform pairs (dual FASTA, 50nt EJC rule) |
+| `11_rmats_longread_concordance.R` | Systematic rMATS–PacBio concordance analysis and discrepancy waterfall |
