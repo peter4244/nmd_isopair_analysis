@@ -4,8 +4,9 @@
 # Version: 6.0
 # Purpose: Memory-optimized version - Filter to major isoforms FIRST, then identify dominant
 #
-# Strategy: Calculate proportions per sample, filter to major isoforms (≥5% in any sample),
-#           then identify dominant. Avoids massive join on full 1.7M isoform dataset.
+# Strategy: Calculate proportions per sample, filter to major isoforms (≥5% in any sample
+#           within either DMSO or Smg1i condition), then identify dominant isoform per gene
+#           based on DMSO mean CPM. Stores condition-specific proportions and expression.
 #
 # Input:
 #   - /Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_2026.2.7.rds
@@ -55,6 +56,12 @@ cat(sprintf("  Extracted metadata for %d samples\n", nrow(sample_metadata)))
 cat(sprintf("  Cell types: %s\n", paste(unique(sample_metadata$ct), collapse = ", ")))
 cat(sprintf("  Treatments: %s\n", paste(unique(sample_metadata$treatment), collapse = ", ")))
 
+# Pre-compute condition-specific sample column indices (for CPM matrix)
+dmso_cols  <- which(sample_metadata$treatment == "DMSO")
+smg1i_cols <- which(sample_metadata$treatment == "Smg1i")
+cat(sprintf("  DMSO samples: %d, Smg1i samples: %d\n",
+            length(dmso_cols), length(smg1i_cols)))
+
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 3: Calculate CPM (All Isoforms)
 # ═══════════════════════════════════════════════════════════════════
@@ -84,14 +91,16 @@ cat("\nFiltering to major isoforms (≥5% in at least one sample)...\n")
 cat("  This avoids memory-intensive operations on full dataset\n")
 
 # Process per gene to calculate proportions and filter
-# This is memory-efficient: process one gene at a time
+# Condition-stratified: pass if ≥5% in any sample within EITHER condition
 
 major_isoform_indices <- integer(0)
-filtering_stats <- list()
 
 n_genes <- length(unique(isoform_gene_map$gene_id))
 genes_processed <- 0
 genes_with_major <- 0
+n_pass_dmso_only  <- 0L
+n_pass_smg1i_only <- 0L
+n_pass_both       <- 0L
 
 pb <- txtProgressBar(min = 0, max = n_genes, style = 3)
 
@@ -114,9 +123,17 @@ for (gene in unique(isoform_gene_map$gene_id)) {
 
   gene_proportions <- sweep(gene_cpm, 2, gene_totals, "/")
 
-  # Check which isoforms are ≥5% in at least one sample
-  max_prop_per_isoform <- apply(gene_proportions, 1, max)
-  is_major <- max_prop_per_isoform >= 0.05
+  # Condition-stratified 5% filter
+  max_prop_dmso  <- apply(gene_proportions[, dmso_cols, drop = FALSE], 1, max)
+  max_prop_smg1i <- apply(gene_proportions[, smg1i_cols, drop = FALSE], 1, max)
+  pass_dmso  <- max_prop_dmso >= 0.05
+  pass_smg1i <- max_prop_smg1i >= 0.05
+  is_major   <- pass_dmso | pass_smg1i
+
+  # Track which condition caused each isoform to pass
+  n_pass_dmso_only  <- n_pass_dmso_only  + sum(pass_dmso & !pass_smg1i)
+  n_pass_smg1i_only <- n_pass_smg1i_only + sum(!pass_dmso & pass_smg1i)
+  n_pass_both       <- n_pass_both       + sum(pass_dmso & pass_smg1i)
 
   # Keep major isoforms for this gene
   if (any(is_major)) {
@@ -140,6 +157,9 @@ cat(sprintf("    Genes with major isoforms (≥5%%): %d (%.1f%%)\n",
 cat(sprintf("    Major isoforms kept: %d / %d (%.1f%%)\n",
             length(major_isoform_indices), nrow(cpm_matrix),
             100 * length(major_isoform_indices) / nrow(cpm_matrix)))
+cat(sprintf("    Passed in DMSO only:  %d\n", n_pass_dmso_only))
+cat(sprintf("    Passed in Smg1i only: %d\n", n_pass_smg1i_only))
+cat(sprintf("    Passed in both:       %d\n", n_pass_both))
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 5: Create Filtered Expression Data
@@ -189,27 +209,48 @@ cat("  (Freed filtered CPM matrix from memory)\n")
 # SECTION 6: Identify Dominant Isoforms
 # ═══════════════════════════════════════════════════════════════════
 
-cat("\nIdentifying dominant isoforms (from major isoforms)...\n")
+cat("\nIdentifying dominant isoforms (from major isoforms, DMSO-based)...\n")
 
-# Now this is fast because we're only working with major isoforms
-dominant_isoforms <- expression_data %>%
+# Join treatment info for condition-specific calculations
+expr_with_trt <- expression_data %>%
+  left_join(sample_metadata %>% select(sample_id, treatment),
+            by = "sample_id")
+
+# Dominant = highest mean CPM in DMSO samples
+dominant_isoforms <- expr_with_trt %>%
+  filter(treatment == "DMSO") %>%
   group_by(gene_id, isoform_id) %>%
-  summarise(mean_cpm = mean(cpm), .groups = "drop") %>%
+  summarise(mean_expression_dmso = mean(cpm), .groups = "drop") %>%
   group_by(gene_id) %>%
-  arrange(desc(mean_cpm)) %>%
-  mutate(
-    rank = row_number(),
-    is_dominant = (rank == 1)
-  ) %>%
+  arrange(desc(mean_expression_dmso)) %>%
+  mutate(rank = row_number(), is_dominant = (rank == 1)) %>%
   ungroup() %>%
   filter(is_dominant) %>%
-  select(gene_id, dominant_isoform_id = isoform_id, mean_expression = mean_cpm)
+  select(gene_id, dominant_isoform_id = isoform_id, mean_expression_dmso)
 
 cat(sprintf("  Identified dominant isoforms for %d genes\n", nrow(dominant_isoforms)))
 
-# Calculate dominant proportions (now fast with filtered data)
-dominant_proportions <- expression_data %>%
-  group_by(gene_id, sample_id) %>%
+# Add overall and Smg1i mean expression
+dom_expr_overall <- expression_data %>%
+  semi_join(dominant_isoforms, by = c("gene_id", "isoform_id" = "dominant_isoform_id")) %>%
+  group_by(gene_id, isoform_id) %>%
+  summarise(mean_expression = mean(cpm), .groups = "drop") %>%
+  select(gene_id, mean_expression)
+
+dom_expr_smg1i <- expr_with_trt %>%
+  filter(treatment == "Smg1i") %>%
+  semi_join(dominant_isoforms, by = c("gene_id", "isoform_id" = "dominant_isoform_id")) %>%
+  group_by(gene_id, isoform_id) %>%
+  summarise(mean_expression_smg1i = mean(cpm), .groups = "drop") %>%
+  select(gene_id, mean_expression_smg1i)
+
+dominant_isoforms <- dominant_isoforms %>%
+  left_join(dom_expr_overall, by = "gene_id") %>%
+  left_join(dom_expr_smg1i, by = "gene_id")
+
+# Calculate condition-specific dominant proportions
+dominant_proportions <- expr_with_trt %>%
+  group_by(gene_id, sample_id, treatment) %>%
   mutate(gene_total_cpm = sum(cpm)) %>%
   ungroup() %>%
   inner_join(
@@ -217,18 +258,42 @@ dominant_proportions <- expression_data %>%
     by = "gene_id"
   ) %>%
   filter(isoform_id == dominant_isoform_id) %>%
-  mutate(dominant_proportion = cpm / gene_total_cpm) %>%
+  mutate(dominant_proportion = cpm / gene_total_cpm)
+
+# Overall mean proportion
+dom_prop_overall <- dominant_proportions %>%
   group_by(gene_id) %>%
-  summarise(
-    mean_dominant_proportion = mean(dominant_proportion, na.rm = TRUE),
-    .groups = "drop"
-  )
+  summarise(mean_dominant_proportion = mean(dominant_proportion, na.rm = TRUE),
+            .groups = "drop")
+
+# DMSO mean proportion
+dom_prop_dmso <- dominant_proportions %>%
+  filter(treatment == "DMSO") %>%
+  group_by(gene_id) %>%
+  summarise(mean_dominant_proportion_dmso = mean(dominant_proportion, na.rm = TRUE),
+            .groups = "drop")
+
+# Smg1i mean proportion
+dom_prop_smg1i <- dominant_proportions %>%
+  filter(treatment == "Smg1i") %>%
+  group_by(gene_id) %>%
+  summarise(mean_dominant_proportion_smg1i = mean(dominant_proportion, na.rm = TRUE),
+            .groups = "drop")
 
 dominant_isoforms <- dominant_isoforms %>%
-  left_join(dominant_proportions, by = "gene_id")
+  left_join(dom_prop_overall, by = "gene_id") %>%
+  left_join(dom_prop_dmso, by = "gene_id") %>%
+  left_join(dom_prop_smg1i, by = "gene_id")
 
-cat(sprintf("  Mean proportion of gene expression from dominant isoform: %.1f%%\n",
+rm(expr_with_trt, dominant_proportions, dom_expr_overall, dom_expr_smg1i,
+   dom_prop_overall, dom_prop_dmso, dom_prop_smg1i)
+
+cat(sprintf("  Mean dominant proportion (overall): %.1f%%\n",
             mean(dominant_isoforms$mean_dominant_proportion, na.rm = TRUE) * 100))
+cat(sprintf("  Mean dominant proportion (DMSO):    %.1f%%\n",
+            mean(dominant_isoforms$mean_dominant_proportion_dmso, na.rm = TRUE) * 100))
+cat(sprintf("  Mean dominant proportion (Smg1i):   %.1f%%\n",
+            mean(dominant_isoforms$mean_dominant_proportion_smg1i, na.rm = TRUE) * 100))
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 7: Filtering Statistics
@@ -247,6 +312,13 @@ filtering_stats_summary <- isoforms_per_gene_before %>%
     n_isoforms_major = replace_na(n_isoforms_major, 0),
     pct_kept = 100 * n_isoforms_major / n_isoforms_total
   )
+
+# Per-condition pass counts (gene-level aggregation not needed; stored as scalars)
+condition_pass_counts <- list(
+  dmso_only  = n_pass_dmso_only,
+  smg1i_only = n_pass_smg1i_only,
+  both       = n_pass_both
+)
 
 cat(sprintf("  Statistics saved for %d genes\n", nrow(filtering_stats_summary)))
 
@@ -272,8 +344,10 @@ cat(sprintf("  ✓ %s\n", "dominant_isoforms.rds"))
 saveRDS(sample_metadata, file.path(data_dir, "sample_metadata.rds"))
 cat(sprintf("  ✓ %s\n", "sample_metadata.rds"))
 
-# Save filtering statistics
-saveRDS(filtering_stats_summary, file.path(data_dir, "filtering_stats.rds"))
+# Save filtering statistics (gene-level summary + condition pass counts)
+saveRDS(list(per_gene = filtering_stats_summary,
+             condition_pass_counts = condition_pass_counts),
+        file.path(data_dir, "filtering_stats.rds"))
 cat(sprintf("  ✓ %s\n", "filtering_stats.rds"))
 
 cat("\n✓ Step 1.1 complete (v2 - memory-optimized)\n\n")
@@ -289,7 +363,13 @@ cat(sprintf("Samples: %d (%d cell types, %d treatments)\n",
             nrow(sample_metadata),
             length(unique(sample_metadata$ct)),
             length(unique(sample_metadata$treatment))))
-cat(sprintf("Dominant isoforms identified: %d\n", nrow(dominant_isoforms)))
-cat(sprintf("Mean dominant proportion: %.1f%%\n",
+cat(sprintf("Dominant isoforms identified: %d (based on DMSO mean CPM)\n", nrow(dominant_isoforms)))
+cat(sprintf("Mean dominant proportion (overall): %.1f%%\n",
             mean(dominant_isoforms$mean_dominant_proportion, na.rm = TRUE) * 100))
+cat(sprintf("Mean dominant proportion (DMSO):    %.1f%%\n",
+            mean(dominant_isoforms$mean_dominant_proportion_dmso, na.rm = TRUE) * 100))
+cat(sprintf("Mean dominant proportion (Smg1i):   %.1f%%\n",
+            mean(dominant_isoforms$mean_dominant_proportion_smg1i, na.rm = TRUE) * 100))
+cat(sprintf("5%% filter: %d DMSO-only, %d Smg1i-only, %d both\n",
+            n_pass_dmso_only, n_pass_smg1i_only, n_pass_both))
 cat("═══════════════════════════════════════════════════════════════════\n\n")

@@ -273,7 +273,7 @@ for (ct in cell_types) {
 
 #' Apply 5% expression filter
 #' @param expr_df expression data (isoform_id, sample_id, cpm, gene_id)
-#' @param sample_ids samples to consider for the filter
+#' @param sample_ids samples to consider for the filter (all samples for all comparisons)
 #' @return character vector of isoform_ids passing filter
 apply_5pct_filter <- function(expr_df, sample_ids) {
   expr_subset <- expr_df %>% filter(sample_id %in% sample_ids)
@@ -335,17 +335,12 @@ calc_dominance <- function(expr_df, sample_ids) {
 #' @param all_sample_ids all in-scope sample IDs
 #' @param smg1i_ids Smg1i sample IDs
 #' @param dmso_ids DMSO sample IDs
-#' @param filter_scope "all" for treatment-agnostic, "dmso" for DMSO-only
 #' @return list with classification tibble and pairs tibble
 generate_pairs <- function(comparison, nmd_ids, non_nmd_ids, expr_df,
-                           all_sample_ids, smg1i_ids, dmso_ids, filter_scope) {
+                           all_sample_ids, smg1i_ids, dmso_ids) {
 
-  # Step 1: Apply 5% filter
-  if (filter_scope == "all") {
-    passing_5pct <- apply_5pct_filter(expr_df, all_sample_ids)
-  } else {
-    passing_5pct <- apply_5pct_filter(expr_df, dmso_ids)
-  }
+  # Step 1: Apply 5% filter (all samples — pass if ≥5% in either condition)
+  passing_5pct <- apply_5pct_filter(expr_df, all_sample_ids)
 
   # Filter to isoforms passing 5% AND having structural data
   nmd_passing <- intersect(nmd_ids, intersect(passing_5pct, valid_structure_ids))
@@ -560,10 +555,7 @@ for (comp in comparisons) {
       non_nmd_ids <- intersect(non_nmd_ids, active_isoforms)
     }
 
-    # Determine 5% filter scope
-    filter_scope <- if (comp %in% c("C1", "C2")) "all" else "dmso"
-
-    # Generate pairs
+    # Generate pairs (5% filter uses all samples — pass if ≥5% in either condition)
     result <- generate_pairs(
       comparison = comp,
       nmd_ids = nmd_ids,
@@ -571,8 +563,7 @@ for (comp in comparisons) {
       expr_df = expr_run,
       all_sample_ids = run_samples,
       smg1i_ids = smg1i_samples,
-      dmso_ids = dmso_samples,
-      filter_scope = filter_scope
+      dmso_ids = dmso_samples
     )
 
     # Save outputs
@@ -624,8 +615,10 @@ cat(sprintf("\nTotal pairs across all 28 sets: %d\n", sum(pair_counts$n_pairs)))
 cat("\nDeduplicating pairs...\n")
 
 # Collect all pairs across all 28 sets
+# Only collect pairs.tsv from C1-C4 subdirectories (exclude deduplicated/)
 all_pair_files <- list.files(output_base, pattern = "pairs\\.tsv$",
                               recursive = TRUE, full.names = TRUE)
+all_pair_files <- all_pair_files[grepl("/(C[1-4])/", all_pair_files)]
 
 all_pairs <- map_dfr(all_pair_files, function(f) {
   p <- read_tsv(f, show_col_types = FALSE)
@@ -796,7 +789,7 @@ log_lines <- c(
   "  Dominant: non-NMD isoform with highest dominance proportion (>50%)",
   "            in DMSO samples",
   "  Comparator: every other non-NMD isoform for the same gene",
-  "  5% filter scope: DMSO samples only",
+  "  5% filter scope: all samples (both treatments)",
   "  Purpose: Characterize structural diversity among stable (non-NMD)",
   "           transcripts within a gene — serves as control for C1/C2",
   "",
@@ -805,7 +798,7 @@ log_lines <- c(
   "            in DMSO samples",
   "  Comparator: non-NMD isoform with highest mean CPM after excluding",
   "              the dominant",
-  "  5% filter scope: DMSO samples only",
+  "  5% filter scope: all samples (both treatments)",
   "  Purpose: Focused control — compare the top two stable transcripts",
   "",
   "Each comparison is run across 7 runs:",
