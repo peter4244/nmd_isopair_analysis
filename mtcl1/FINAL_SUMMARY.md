@@ -1,6 +1,6 @@
 # Gene Isoform Annotation Pipeline - Final Summary
 
-**Date**: 2026-02-14
+**Date**: 2026-02-26 (updated)
 **Status**: ✅ **Production Ready**
 
 ## What Was Built
@@ -16,10 +16,12 @@ A complete, production-ready pipeline for extracting comprehensive isoform-level
 ✅ **Detailed structural annotations**: Exons (with CDS/UTR types), junctions, TSS/TES
 ✅ **CDS genomic positions**: Start and end coordinates
 ✅ **Strand-aware UTR calculations**: Proper 5' and 3' UTR lengths
-✅ **Cell-type-specific expression**: DMSO baseline expression across 6 lung cell types
+✅ **Cell-type-specific expression**: DMSO + Smg1i expression across 6 lung cell types
+✅ **Protein translation**: CDS translation with UniProt canonical comparison
 ✅ **Command-line interface**: Accepts both gene names and Ensembl IDs
-✅ **Optional expression**: Toggle to skip expression calculation
+✅ **Optional outputs**: --gtf, --fasta, --protein, --no-expr flags
 ✅ **Performance optimization**: Tabix indexing for 15-30x speedup
+✅ **Genome visualization**: BAM extraction + IGV session + sashimi plots
 
 ### Performance
 - **Without tabix**: ~3-5 minutes per gene
@@ -30,98 +32,48 @@ A complete, production-ready pipeline for extracting comprehensive isoform-level
 
 ## Files Delivered
 
-### 1. **`gene_isoform_annotation.R`** (730+ lines)
-Main pipeline script with:
-- Command-line argument parsing (gene name or Ensembl ID)
-- Grep-based filtering for large files (GENCODE GTF: 2.9GB)
-- Tabix-indexed queries for SQANTI (automatic fallback to grep)
-- DGEList-based expression calculation (DMSO-specific, per cell type)
-- Robust error handling and validation
-- Helpful diagnostic messages
+### 1. **`gene_isoform_annotation.R`**
+Main annotation pipeline (R). Extracts isoform structures, expression, and protein analysis.
 
-**Usage:**
 ```bash
-# By gene name
-Rscript gene_isoform_annotation.R MTCL1
-
-# By Ensembl ID
-Rscript gene_isoform_annotation.R ENSG00000168502
+Rscript gene_isoform_annotation.R MTCL1 --gtf --fasta --protein
 ```
 
-**Configuration options** (edit in script):
-```r
-INCLUDE_EXPRESSION <- TRUE   # Set FALSE to skip expression
-OUTPUT_GTF <- FALSE          # Set TRUE to export GTF
-OUTPUT_FASTA <- FALSE        # Set TRUE to export FASTA
-```
+### 2. **`preprocess_sqanti_tabix.sh`**
+One-time preprocessing for tabix-indexed GTF files (~10-15 min, enables 15-30x speedup).
 
-### 2. **`preprocess_sqanti_tabix.sh`** (79 lines)
-One-time preprocessing script for performance optimization.
+### 3. **`extract_gene_region.sh`**
+Extracts gene regions from genome-aligned BAMs and generates IGV sessions.
 
-**Usage:**
 ```bash
-bash preprocess_sqanti_tabix.sh
+bash extract_gene_region.sh --region chr18:8705271-8832780 \
+    --bam-dir ../data/bams/genome_hg38/ \
+    --output-dir ./igv_genome/ --gtf isoform_annotation_MTCL1.gtf
 ```
 
-**Output:**
-- Compressed SQANTI GTF: 1.0GB → 41MB
-- Tabix index: 224KB
-- Enables <1 second SQANTI queries
-
-### 3. **`README.md`** (485 lines)
-Comprehensive user documentation including:
-- Installation instructions for all dependencies
-- System requirements and software versions
-- Step-by-step usage guide
-- Performance benchmarks
-- Troubleshooting section
-- Cell type reference table
-- Output format documentation
-
-### 4. **Documentation Files**
-- `IMPLEMENTATION_STATUS.md` - Technical summary and validation
-- `FINAL_SUMMARY.md` - This file
+### 4. **Supporting Files**
+- `column_definitions.tsv` — Machine-readable output column catalog
+- `README.md` — Comprehensive user documentation
+- `IMPLEMENTATION_STATUS.md` — Technical summary and validation
+- `FINAL_SUMMARY.md` — This file
 
 ---
 
 ## Output Format
 
-### TSV File Columns (25 total)
+### TSV File Columns
 
-| Column | Description |
-|--------|-------------|
-| `isoform_id` | Transcript ID (Ensembl or PacBio) |
-| `isoform_name` | Transcript name from GENCODE |
-| `source` | GENCODE or SQANTI |
-| `chromosome` | Chromosome location |
-| `strand` | Strand (+/-) |
-| `tss` | Transcription start site (strand-aware) |
-| `tes` | Transcription end site (strand-aware) |
-| `transcript_length` | Total length in bp |
-| `n_exons` | Number of exons |
-| `exons` | Exon coordinates with types (format: `start_end_strand:type`) |
-| `junctions` | Splice junctions (format: `end1_start2_strand`) |
-| `cds_start` | CDS genomic start coordinate |
-| `cds_end` | CDS genomic end coordinate |
-| `cds_length` | CDS length in bp |
-| `protein_length` | Protein length in amino acids |
-| `utr5_length` | 5' UTR length (calculated from TSS-CDS, strand-aware) |
-| `utr3_length` | 3' UTR length (calculated from CDS-TES, strand-aware) |
-| `is_protein_coding` | TRUE/FALSE |
-| `coding_source` | GENCODE_biotype, GENCODE_CDS, or SQANTI |
-| `expr_DMSO_ddali` | DMSO expression in DD_ALI cells (CPM, 2 sig figs) |
-| `expr_DMSO_dd` | DMSO expression in DD cells |
-| `expr_DMSO_doali` | DMSO expression in DO_ALI cells |
-| `expr_DMSO_at2` | DMSO expression in AT2 cells |
-| `expr_DMSO_fb` | DMSO expression in fibroblasts |
-| `expr_DMSO_mv` | DMSO expression in microvascular cells |
+See `column_definitions.tsv` for the complete machine-readable column catalog (29 columns). Key column groups:
+
+- **Structural**: isoform_id, source, chromosome, strand, tss, tes, n_exons, exons, junctions
+- **CDS/Protein**: cds_start, cds_end, cds_length_nt, cds_length_aa, in_frame, utr5_length, utr3_length
+- **Expression**: expr_DMSO_{ct}, expr_Smg1i_{ct}, total_reads_DMSO_{ct}, total_reads_Smg1i_{ct}, total_reads_all_samples
+- **Protein comparison**: frame_matches_uniprot, match_pct_uniprot, matched_range_uniprot
 
 **Example output for MTCL1:**
-- 21 GENCODE isoforms
-- 37 SQANTI (PacBio) isoforms
-- 58 total isoforms
+- 21 GENCODE isoforms + 37 SQANTI (PacBio) = 58 total
 - 41 protein coding, 17 non-coding
-- 8-9 isoforms with detectable DMSO expression per cell type
+- 3 isoforms with exact/subset match to UniProt canonical protein
 
 ---
 
@@ -231,14 +183,8 @@ Reviewed by automated code checker:
 
 ## Future Enhancements (Out of Scope)
 
-Potential improvements for future versions:
-
 1. **Batch mode**: Process multiple genes in one run
-2. **Parallel processing**: Multi-gene analysis with parallel workers
-3. **Additional output formats**: BED, GFF3
-4. **Isoform visualization**: Generate structure plots
-5. **Integration with isoform switching analysis**
-6. **Support for multiple DGEList files**: Compare across experiments
+2. **Integration with isoform switching analysis**
 
 ---
 
@@ -271,12 +217,8 @@ done
 
 ### Skip Expression Calculation
 
-```r
-# Edit gene_isoform_annotation.R line 62:
-INCLUDE_EXPRESSION <- FALSE  # Change TRUE to FALSE
-
-# Then run normally
-Rscript gene_isoform_annotation.R GENE_NAME
+```bash
+Rscript gene_isoform_annotation.R GENE_NAME --no-expr
 ```
 
 ---
@@ -316,12 +258,12 @@ Rscript gene_isoform_annotation.R GENE_NAME
 5. ✅ Optional GTF and FASTA outputs
 6. ✅ Fast processing with tabix optimization
 
-### Additional User Requests ✅
-1. ✅ Round expression values to 2 significant digits
-2. ✅ Add CDS start and end position columns
-3. ✅ Calculate UTR lengths from TSS/TES/CDS (strand-aware)
-4. ✅ Accept both gene name and Ensembl ID via command line
-5. ✅ Toggle-able expression calculation
+### Additional Features ✅
+1. ✅ Protein translation with UniProt canonical comparison (--protein)
+2. ✅ Smg1i expression + raw read counts alongside DMSO
+3. ✅ Genome-aligned BAM extraction for IGV visualization
+4. ✅ Sashimi plots via ggsashimi (Docker, with intron shrinking)
+5. ✅ Expression-filtered annotation GTF (primary read count threshold)
 6. ✅ Code review and optimization
 
 ---
@@ -337,6 +279,4 @@ This pipeline provides a **production-ready, reusable workflow** for extracting 
 - Optimized performance (tabix indexing)
 - Robust error handling
 
-The pipeline has been thoroughly tested, code-reviewed, and documented for use by other researchers. It successfully processes genes like MTCL1 in under 1 minute (with preprocessing) while providing 25 columns of detailed isoform annotations.
-
-**Ready for production use in the NMD research project! 🎉**
+The pipeline has been thoroughly tested, code-reviewed, and documented. It processes genes like MTCL1 in under 1 minute (with preprocessing) and provides 29 columns of isoform annotations plus genome-aligned visualization tools.

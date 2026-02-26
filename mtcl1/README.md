@@ -728,6 +728,115 @@ This is normal:
 
 ---
 
+## Genome-Aligned BAM Visualization
+
+### Overview
+
+In addition to the annotation pipeline, this directory includes tools for visualizing genome-aligned (hg38) PacBio long-read BAMs in IGV and as sashimi plots.
+
+The existing `igv/` directory contains **transcriptome-aligned** BAMs (reads mapped against individual transcript sequences). The `igv_genome/` directory contains **genome-aligned** BAMs (reads mapped to hg38), which show reads in genomic context with visible intron/exon structure and splice junctions.
+
+### extract_gene_region.sh
+
+A portable shell script that extracts a gene region from genome-aligned BAMs into small, self-contained files suitable for IGV visualization.
+
+**Dependencies:** `samtools` (required), `tabix` (only for `--gene` lookup)
+
+**Usage:**
+
+```bash
+# Extract by genomic coordinates (primary interface)
+bash extract_gene_region.sh --region chr18:8705271-8832780 \
+    --bam-dir ../data/bams/genome_hg38/ \
+    --output-dir ./igv_genome/ \
+    --gtf isoform_annotation_MTCL1.gtf
+
+# Extract specific BAM files
+bash extract_gene_region.sh --region chr18:8705271-8832780 \
+    --bam /path/to/sample1.bam --bam /path/to/sample2.bam \
+    --output-dir ./igv_genome/
+
+# Look up gene coordinates from GENCODE GTF (slower, greps full file)
+bash extract_gene_region.sh --gene MTCL1 \
+    --gencode-gtf /path/to/gencode.v49.annotation.gtf.gz \
+    --bam-dir ../data/bams/genome_hg38/ \
+    --output-dir ./igv_genome/
+
+# Adjust padding (default: 5000 bp on each side)
+bash extract_gene_region.sh --region chr18:8705271-8832780 \
+    --pad 10000 --bam-dir ../data/bams/genome_hg38/ \
+    --output-dir ./igv_genome/
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--region CHR:START-END` | Genomic region (e.g., `chr18:8705271-8832780`) |
+| `--gene GENE_NAME` | Gene name lookup (requires `--gencode-gtf`) |
+| `--bam-dir DIR` | Directory containing `.bam` files |
+| `--bam FILE` | Specific BAM file (repeatable) |
+| `--output-dir DIR` | Output directory (required) |
+| `--gtf FILE` | Gene annotation GTF to include in IGV session |
+| `--gencode-gtf FILE` | Bgzipped GENCODE GTF for `--gene` lookup |
+| `--pad N` | Padding around region in bp (default: 5000) |
+| `--display-mode MODE` | IGV display mode: SQUISHED, EXPANDED, COLLAPSED (default: SQUISHED) |
+
+**Features:**
+- Detects chromosome naming convention (`chr18` vs `18`) in BAM headers and adjusts queries automatically
+- Validates BAM indexes; creates them if missing
+- Warns when a BAM has 0 reads in the extracted region
+- Generates IGV session XML with tracks sorted by cell type, donor, treatment (DMSO before Smg1i)
+- Produces small BAM slices (~30-50 KB per sample for a single gene, down from ~3-4 GB)
+
+**Output:**
+
+```
+igv_genome/
+├── Sample13_DD_017Q_DMSO.aligned.bam       # Extracted BAM slice
+├── Sample13_DD_017Q_DMSO.aligned.bam.bai   # BAM index
+├── Sample14_DD_017Q_Smg1i.aligned.bam
+├── Sample14_DD_017Q_Smg1i.aligned.bam.bai
+├── gene_annotation.gtf                      # Copied from --gtf
+└── igv_session.xml                          # Open in IGV
+```
+
+### Sashimi Plots with ggsashimi
+
+For publication-quality splice junction visualization with intron shrinking, use [ggsashimi](https://github.com/guigolab/ggsashimi) via Docker:
+
+```bash
+# Pull the Docker image (one-time)
+docker pull guigolab/ggsashimi
+
+# Run with intron shrinking, colored by treatment
+docker run --platform linux/amd64 \
+  -v "$(pwd)/igv_genome:/data" \
+  -w /data \
+  guigolab/ggsashimi \
+  -b /data/input_bams.tsv \
+  -c chr18:8700271-8837780 \
+  -g /data/gene_annotation_filtered.gtf \
+  --shrink \
+  -C 3 -M 2 --fix-y-scale \
+  --height 4 --ann-height 6 --width 20 --base-size 16 --alpha 0.9 \
+  -P /data/palette.tsv \
+  -o /data/sashimi_MTCL1 \
+  -F pdf
+```
+
+**Input files** (in `igv_genome/`):
+
+- `input_bams.tsv` — Tab-separated: `label<TAB>/data/sample.bam<TAB>group` (group is used for coloring with `-C 3`)
+- `palette.tsv` — Tab-separated: `hex_color<TAB>group_name` (e.g., `#2166ac<TAB>DMSO`)
+- `gene_annotation_filtered.gtf` — GTF filtered to expressed isoforms only (reduces annotation clutter)
+
+**Aggressive intron shrinking:** ggsashimi's default `--shrink` uses exponent 0.7. For genes with large introns, a patched version (`ggsashimi_patched.py`) with exponent 0.3 produces more compact plots. Run via `--entrypoint python` with the patched script mounted.
+
+**Filtering the annotation GTF:** The full annotation GTF contains 64 isoforms (43 PacBio + 21 GENCODE), which overwhelms the annotation panel. Filter to expressed isoforms using primary alignment read counts (see `igv_genome/expressed_isoforms.txt`).
+
+---
+
 ## Citation
 
 If you use this pipeline in your research, please cite:
@@ -740,6 +849,12 @@ If you use this pipeline in your research, please cite:
 ---
 
 ## Version History
+
+- **v2.1** (2026-02-26)
+  - Added `extract_gene_region.sh` for genome-aligned BAM extraction and IGV session generation
+  - Added ggsashimi sashimi plot workflow (Docker-based, with intron shrinking)
+  - Genome visualization outputs in `igv_genome/` (separate from transcriptome-aligned `igv/`)
+  - Expression-filtered annotation GTF for cleaner sashimi plot annotation panels
 
 - **v2.0** (2026-02-20)
   - Added `--protein` flag for CDS translation and protein FASTA output

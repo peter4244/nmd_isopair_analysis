@@ -1,7 +1,7 @@
 # Gene Isoform Annotation Pipeline - Implementation Status
 
-**Date**: 2026-02-14
-**Status**: ✅ **Implemented and Testing**
+**Date**: 2026-02-26 (updated)
+**Status**: ✅ **Complete**
 
 ## What's Been Completed
 
@@ -34,15 +34,13 @@
 
 ### Test Gene: MTCL1
 
-**Progress**:
+**Progress**: All steps complete.
 - ✅ Step 1: Gene ID found (ENSG00000168502.19)
-- ✅ Step 2: GENCODE extraction (21 isoforms) - **Completed in ~10 seconds**
-- 🔄 Step 3: SQANTI extraction (37 isoforms) - **Currently running**
-  - **Method**: Grep-based fallback (no tabix index available)
-  - **Current runtime**: ~8+ minutes (still processing)
-  - **CPU usage**: 79% (actively working)
-- ⏳ Step 4: Expression calculation (pending)
-- ⏳ Step 5: Output generation (pending)
+- ✅ Step 2: GENCODE extraction (21 isoforms)
+- ✅ Step 3: SQANTI extraction (37 isoforms) — 58 total isoforms annotated
+- ✅ Step 4: Expression calculation (DMSO + Smg1i per cell type)
+- ✅ Step 5: Protein translation and UniProt comparison
+- ✅ Step 6: Output generation (TSV, GTF, FASTA, Protein FASTA)
 
 ### Performance Observations
 
@@ -115,32 +113,18 @@ if (file.exists(index) && tabix_available) {
 3. **Use optimized pipeline** for all subsequent genes
 
 ### Future Enhancements (Out of Scope)
-- Command-line argument for gene name
 - Batch processing mode for multiple genes
 - Integration with downstream isoform analysis workflows
-- Visualization of isoform structures
 
 ## Files Delivered
 
-1. **`gene_isoform_annotation.R`** (626 lines)
-   - Main analysis pipeline
-   - Configuration parameters at top
-   - Clear step-by-step structure with progress messages
-
-2. **`preprocess_sqanti_tabix.sh`** (79 lines)
-   - One-time preprocessing for speed optimization
-   - Safety checks and validation
-   - Progress reporting
-
-3. **`README.md`** (485 lines)
-   - Complete user documentation
-   - Portable to other systems
-   - Installation and troubleshooting guides
-
-4. **`IMPLEMENTATION_STATUS.md`** (this file)
-   - Technical summary for developers
-   - Performance benchmarks
-   - Known issues and solutions
+1. **`gene_isoform_annotation.R`** — Main annotation pipeline (R)
+2. **`preprocess_sqanti_tabix.sh`** — One-time tabix preprocessing
+3. **`extract_gene_region.sh`** — Genome-aligned BAM extraction + IGV session generation (bash)
+4. **`README.md`** — Complete user documentation
+5. **`column_definitions.tsv`** — Machine-readable output column catalog
+6. **`IMPLEMENTATION_STATUS.md`** (this file)
+7. **`FINAL_SUMMARY.md`** — Project completion summary
 
 ## Performance Summary
 
@@ -170,16 +154,27 @@ if (file.exists(index) && tabix_available) {
 - ✅ Script runs without errors
 - ✅ File existence checks work
 - ✅ Automatic mode detection (tabix vs grep)
-- ✅ GENCODE extraction complete
-- 🔄 SQANTI extraction in progress
-- ⏳ Expression calculation pending
-- ⏳ Output TSV pending
-- ⏳ Verify isoform counts match expectations (21 GENCODE + 37 SQANTI = 58 total)
-- ⏳ Verify expression values are reasonable (non-NA for expressed isoforms)
-- ⏳ Verify exon/junction formats correct
+- ✅ GENCODE extraction (21 isoforms)
+- ✅ SQANTI extraction (37 isoforms)
+- ✅ Expression calculation (DMSO + Smg1i, 6 cell types)
+- ✅ Protein translation and UniProt comparison
+- ✅ Output TSV, GTF, FASTA, Protein FASTA generated
+- ✅ Isoform counts verified (21 GENCODE + 37 SQANTI = 58 total)
+- ✅ Genome-aligned BAM extraction tested (2 samples, MTCL1 region)
+- ✅ IGV session XML generation verified
+- ✅ ggsashimi sashimi plots generated (with intron shrinking)
 
-## Conclusion
+### Genome Visualization (added 2026-02-26)
 
-The pipeline is **functionally complete and robust**. The grep-based fallback ensures it works on any system, while the tabix optimization path provides production-level performance. The comprehensive README makes it accessible to other users.
+5. **`extract_gene_region.sh`**
+   - Extracts gene regions from hg38-aligned BAMs
+   - Auto-detects chromosome naming convention (chr prefix)
+   - Validates BAM indexes
+   - Generates IGV session XML with tracks sorted by cell type/donor/treatment
+   - Tested with DD_017Q DMSO/Smg1i pair: 4.4 GB BAMs → 41 KB + 32 KB slices
 
-**Recommendation**: For the user's workflow (analyzing multiple genes repeatedly), **strongly recommend running the tabix preprocessing** to achieve acceptable performance.
+6. **ggsashimi workflow** (Docker-based)
+   - Sashimi plots with junction arc visualization
+   - Expression-filtered annotation GTF (15 isoforms from 64, filtered by ≥3 primary reads)
+   - Custom palette (blue=DMSO, red=Smg1i)
+   - Patched shrink exponent (0.3 vs default 0.7) for aggressive intron compression
