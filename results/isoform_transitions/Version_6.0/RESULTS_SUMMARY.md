@@ -33,9 +33,11 @@ Pairs were deduplicated across all comparison x cell-type sets, yielding **39,64
 
 ## 2. Pooled Splicing Profile Characterization (Scripts 09-13)
 
-These analyses describe the overall architecture of splicing differences between isoform pairs, pooled across all comparisons.
+These analyses describe the overall architecture of splicing differences between isoform pairs, pooled across all comparisons and cell types (all 39,647 deduplicated pairs from C1, C2, C3, C4).
 
 ### 2.1 Event Complexity (Script 09)
+
+*All 39,647 deduplicated pairs.*
 
 Isoform pairs differ by a median of **3 events** (interquartile range: 2-4). Comparator isoform exon count (a proxy for transcript complexity) shows a weak but significant association with the number of detected events (R^2 ~ 0.06). Profiles were binned into quartiles for downstream stratification:
 
@@ -50,7 +52,9 @@ Higher-complexity transcripts are more likely to exhibit combined (multi-categor
 
 ### 2.2 Event Co-occurrence (Script 10)
 
-Analysis of 28 pairwise event combinations across 39,647 profiles revealed systematic co-occurrence and mutual exclusion patterns:
+*All 39,647 deduplicated pairs.*
+
+Analysis of 28 pairwise event combinations revealed systematic co-occurrence and mutual exclusion patterns:
 
 **Co-occurring event pairs (OR > 1.3):**
 
@@ -75,6 +79,8 @@ Analysis of 28 pairwise event combinations across 39,647 profiles revealed syste
 
 ### 2.3 Spatial Organization (Script 11)
 
+*All 39,647 deduplicated pairs.*
+
 **Proximity analysis:**
 Events cluster significantly closer together than expected by chance. Observed mean inter-event distance = **13,540 bp** vs. permutation expectation = **15,004 bp** (z = -10.1, p < 0.001, 10,000 permutations). This 1,464 bp reduction suggests that splicing differences between isoforms tend to be spatially concentrated.
 
@@ -92,6 +98,10 @@ All event types showed a central/uniform distribution along the transcript (KS t
 
 ### 2.4 Functional Context (Script 12)
 
+*All 39,647 deduplicated pairs.*
+
+**Methodology:** Each event's genomic coordinates are overlapped with the **dominant isoform's** annotated union exons. Region types (5'UTR, CDS, 3'UTR, contains_orf_start, contains_orf_stop) are assigned to union exons based on their position relative to the dominant's CDS boundaries. The **expected proportion** for each region is the total base pairs in that region across all dominant isoforms divided by total bp in all regions. The **enrichment ratio** = observed proportion / expected proportion. Significance is assessed by binomial test with FDR correction. Events that don't overlap any union exon are classified as intronic.
+
 **Regional enrichment/depletion of events:**
 
 | Event Type | 5'UTR | CDS | 3'UTR | ORF Start | ORF Stop |
@@ -104,7 +114,7 @@ All event types showed a central/uniform distribution along the transcript (KS t
 | **Missing_Internal** | **Enriched** (1.21x) | Depleted (0.43x) | **Enriched** (1.12x) | Depleted (0.11x) | Depleted (0.14x) |
 | **IR** | NS | Depleted (0.78x) | Depleted (0.81x) | Depleted (0.37x) | Depleted (0.44x) |
 
-*Note: Most events are intronic (41-77% depending on type). Enrichment ratios are relative to the expected proportion of each region among non-intronic exons. Alt_TSS is the only event type enriched in both 5'UTR and 3'UTR.*
+*Note: Most events are intronic (41-77% depending on type). Enrichment ratios are among non-intronic events only. Alt_TSS enrichment in 3'UTR reflects comparator isoforms that use an internal/downstream promoter starting transcription within a region classified as 3'UTR of the dominant — i.e., a shorter isoform whose TSS falls downstream of the dominant's CDS stop. These are real alternative TSS events where the two isoforms' first exons differ, but the genomic position of the difference overlaps the dominant's 3'UTR.*
 
 **ORF boundary susceptibility:**
 A5SS and A3SS events are depleted at ORF boundary exons (OR = 0.69, p < 10^-20), suggesting splice site variation avoids positions critical for reading frame maintenance.
@@ -117,6 +127,8 @@ A5SS and A3SS events are depleted at ORF boundary exons (OR = 0.69, p < 10^-20),
 | Alt_TES affecting ORF stop | 15.3% | 4,173 / 27,332 |
 
 ### 2.5 Profile Pattern Classification (Script 13)
+
+*All 39,647 deduplicated pairs.*
 
 Splicing choice profiles were classified into 5 primary categories based on the event types present:
 
@@ -174,6 +186,8 @@ This analysis asks: **Do NMD-triggering isoform transitions (C1, C2) differ stru
 
 ### 4.1 Phase 1: NMD vs. Baseline — Per-Cell-Type Tests
 
+Each test compares NMD pairs (C1 or C2) against baseline pairs (C4) within the same cell type. "NMD n" and "Baseline n" are the number of deduplicated pairs in the NMD and C4 comparisons, respectively.
+
 #### 4.1.1 Event Complexity (Unpaired)
 
 | Comparison | Run | NMD n | Baseline n | NMD Median | Baseline Median | Cliff's delta | p |
@@ -192,9 +206,9 @@ This analysis asks: **Do NMD-triggering isoform transitions (C1, C2) differ stru
 
 Both NMD and baseline pairs show a median of 3 events. C1 shows no significant differences in any cell type. C2 shows small but significant positive Cliff's deltas in 4 of 6 runs, indicating slightly more events in NMD pairs.
 
-#### 4.1.2 Paired Analysis (Same Genes in Both Comparisons)
+#### 4.1.2 Paired Analysis (Same Genes in Both NMD and C4)
 
-For genes appearing in both NMD and baseline comparisons, paired tests were performed:
+For genes appearing in both an NMD comparison (C1 or C2) and the baseline (C4), paired within-gene tests compare the event count of the NMD pair vs. the C4 pair for the same gene:
 
 | Comparison | Run | n Paired | Median Diff | Wilcoxon p | % NMD More | % Profile Type Change |
 |:---:|---|:---:|:---:|:---:|:---:|:---:|
@@ -214,7 +228,7 @@ Paired analyses confirm the same pattern: median event count difference is 0 in 
 
 Random-effects meta-analysis (REML) pooled effect sizes across 5 cell types (AT2, DD, DD_ALI, FB, MV):
 
-#### 4.2.1 Event Complexity and Profile Types
+#### 4.2.1 Event Complexity and Profile Types (NMD vs. C4 Baseline)
 
 | Metric | C1 Pooled | C1 95% CI | C1 p | C2 Pooled | C2 95% CI | C2 p |
 |---|:---:|---|:---:|:---:|---|:---:|
@@ -223,7 +237,7 @@ Random-effects meta-analysis (REML) pooled effect sizes across 5 cell types (AT2
 
 C1 shows no event complexity difference (delta ~ 0). C2 shows a small but significant excess of events in NMD pairs (pooled delta = 0.05). Both show statistically significant but very small profile type shifts (Cramer's V ~ 0.03, negligible effect size).
 
-#### 4.2.2 Event Type Prevalence (Odds Ratios, NMD vs. Baseline)
+#### 4.2.2 Event Type Prevalence (Odds Ratios, NMD vs. C4 Baseline)
 
 | Event Type | C1 OR | C1 95% CI | C1 p | C1 I^2 | C2 OR | C2 95% CI | C2 p | C2 I^2 |
 |---|:---:|---|:---:|:---:|:---:|---|:---:|:---:|
@@ -259,7 +273,7 @@ C1 and C2 agree on the direction of overall event complexity effects in 4 of 5 c
 
 #### 4.3.2 Complexity Confound
 
-A potential confound: do NMD comparator isoforms differ in baseline transcript complexity from baseline comparators?
+A potential confound: do NMD comparator isoforms (C1/C2) differ in baseline transcript complexity from C4 comparators?
 
 | Comparison | Pattern | Significant Runs |
 |---|---|---|
@@ -270,7 +284,7 @@ The C2 complexity confound (NMD comparators are more complex) may partially expl
 
 #### 4.3.3 Event Direction (GAIN vs. LOSS)
 
-The proportion of LOSS events (comparator lost sequence relative to dominant) is ~54% in both NMD and baseline comparisons across all cell types. No systematic directional asymmetry distinguishes NMD transitions from baseline variation.
+The proportion of LOSS events (comparator lost sequence relative to dominant) is ~54% in both NMD (C1/C2) and baseline (C4) comparisons across all cell types. No systematic directional asymmetry distinguishes NMD transitions from baseline variation.
 
 | Comparison | LOSS Proportion (NMD) | LOSS Proportion (Baseline) | Largest |diff|| Significant Runs |
 |---|:---:|:---:|:---:|---|
@@ -285,13 +299,19 @@ A parallel analysis tested whether premature termination codons (PTCs) and readi
 
 ### 5.1 rMATS frame-disruption enrichment
 
+*Short-read rMATS events across 6 cell types (independent of isoform comparison framework).*
+
 Short-read rMATS differential splicing analysis found that frame-disrupting splice events are ~2x enriched among Smg1i-responsive events (meta OR = 2.13, p = 3e-9) across SE, A5SS, A3SS, and MXE event types. DD, MV, and AT showed significant enrichment.
 
 ### 5.2 Isoform-level PTC null
 
+*All expressed coding isoforms across 6 cell types (independent of isoform comparison framework).*
+
 Isoform-level PTC status (computed via the 50nt EJC rule) does NOT predict NMD responsiveness (meta OR = 0.96, p = 0.03, with DD_ALI driving the signal in the wrong direction). This null holds for GENCODE-only analysis (OR = 0.88) and GENCODE NMD biotype (OR = 0.96). No dose-response with PTC distance.
 
 ### 5.3 Cross-platform concordance resolves the discrepancy
+
+*5,653 significant frame-disrupting CDS events from rMATS (DD, MV, AT; SE, A5SS, A3SS), matched against PacBio isoform junctions.*
 
 Systematic junction matching between rMATS events and PacBio isoforms (Script 11, results/ptc/) explains why the rMATS signal does not propagate to isoform-level PTC enrichment:
 
