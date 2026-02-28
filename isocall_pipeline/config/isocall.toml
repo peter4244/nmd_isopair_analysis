@@ -1,0 +1,8 @@
+# isocall configuration
+# See https://isocall.readthedocs.io for full options
+
+# Minimum number of reads to support a novel isoform
+# min_reads = 2
+
+# Minimum number of samples to support a novel isoform
+# min_samples = 1
