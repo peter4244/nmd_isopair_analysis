@@ -1,5 +1,0 @@
-computed_ptc	gencode_nmd_biotype	count	concordant	pct
-TRUE	TRUE	1689	TRUE	8.78
-TRUE	FALSE	51	FALSE	0.27
-FALSE	TRUE	7	FALSE	0.04
-FALSE	FALSE	17490	TRUE	90.92

@@ -12,36 +12,34 @@ This pipeline:
 5. **Analyzes splicing patterns** — complexity, co-occurrence, spatial, functional, patterns (nmd/09-13)
 6. **Runs per-comparison downstream** — filters profiles to each comparison×run and runs 09-13 (nmd/14)
 7. **Compares NMD vs baseline** — paired/unpaired tests, meta-analysis across cell types (nmd/15)
+8. **PTC analysis** — premature termination codon prevalence, NMD association, frame disruption, rMATS concordance (ptc/01-05, 11)
 
-**Validation Status:**
+All pipeline scripts accept `--source oarfish` (default) or `--source isocall`. The **isocall** analysis is the primary/active analysis. Oarfish results have been archived.
+
+**Validation Status (isocall):**
 - Curated test suite (synthetic + real failures): 126/126 tests (100%)
-- Real data (GENCODE): 4,258/4,274 pairs (99.6%) — 0 FAILs, 16 ERRORs (missing comparator data)
+- GENCODE validation: 4,274/4,274 pairs (100%)
+- Reconstruction verification: 43,513/43,513 pairs (100%)
 
 ## Directory Structure
 
 ```
 Version_6.0/
 ├── README.md                          # This file
-├── ANALYSIS_PLAN.md                   # Full analysis framework (Sections 1-6)
+├── ISOCALL_RESULTS_SUMMARY.md         # Full results summary (isocall analysis)
 ├── METHODS.md                         # Algorithmic documentation
-├── DATA_FLOW.md                       # Data pipeline documentation
-├── MIGRATION_PLAN.md                  # Dev → scripts migration plan
 │
 ├── scripts/
 │   ├── core/                          # Generic, reusable pipeline scripts
-│   │   ├── 02_extract_isoform_structures.R   # Parse GENCODE/SQANTI GFF to exon structures
+│   │   ├── 02_extract_isoform_structures.R   # Parse GFF to exon structures
 │   │   ├── 03_build_union_exons.R            # Build atomic union exon models per gene
 │   │   ├── 04_extract_cds_annotations.R      # Extract CDS start/stop coordinates
 │   │   ├── 05_annotate_region_types.R        # Classify union exons as 5'UTR/CDS/3'UTR
 │   │   ├── 08_extract_splicing_profiles.R    # Event detection + splicing choice profiles
-│   │   │   # --reconstruction_check: on-the-fly reconstruction verification
-│   │   │   # --pairs-file <path>: explicit contrast pairs (TSV)
-│   │   │   # --output <path>: custom output path
-│   │   │   # --test N: limit to first N genes
 │   │   ├── 09_validate_reconstruction.R      # Standalone reconstruction validation
 │   │   ├── event_detection_functions.R       # Shared: event detection + thresholds
 │   │   ├── reconstruction_functions.R        # Shared: reconstruct_dominant_v2 + verify_transcript
-│   │   └── visualization_functions.R         # Shared: isoform pair plotting + visual validation
+│   │   └── visualization_functions.R         # Shared: isoform pair plotting
 │   │
 │   ├── nmd/                           # NMD study-specific scripts
 │   │   ├── 01_prepare_expression_data.R      # Load DGEList, filter major isoforms, identify dominants
@@ -56,28 +54,65 @@ Version_6.0/
 │   │   └── 15_compare_across_comparisons.R       # Cross-comparison statistical framework
 │   │
 │   ├── tests/                         # Validation test suite (126/126 PASS)
-│   │   ├── run_tests.R                       # Test runner (synthetic + real-data cases)
+│   │   ├── run_tests.R
 │   │   ├── extract_failure_cases.R
 │   │   └── visualize_results.R
 │   │
 │   ├── dev/                           # Development and diagnostic scripts
-│   │   ├── visualize_comparisons.R           # CLI wrapper for visual validation
-│   │   ├── summarize_comparisons.R           # Profile summary by comparison type
+│   │   ├── visualize_comparisons.R
+│   │   ├── summarize_comparisons.R
 │   │   ├── diagnose_failures.R
 │   │   ├── test_08_on_gencode.R
 │   │   └── analyze_08_failures.R
 │   │
 │   └── archive/                       # Archived earlier versions
 │
-├── data/                              # Pipeline output data (.rds files)
-├── results/                           # Analysis results
-├── figures/                           # Generated figures
-├── logs/                              # Execution logs
+├── results/
+│   └── ptc/                           # PTC analysis
+│       ├── scripts/                   # PTC analysis scripts (01-11)
+│       │   ├── 01_compute_ptc_status.R           # Compute PTC status for coding isoforms
+│       │   ├── 02_ptc_nmd_association.R          # PTC → NMD association tests
+│       │   ├── 03_ptc_logfc_distributions.R      # logFC distributions by PTC status
+│       │   ├── 04_ptc_signal_exploration.R       # Systematic 10-angle signal search
+│       │   ├── 05_ptc_in_comparisons.R           # PTC prevalence + frame disruption in pairs
+│       │   └── 11_rmats_longread_concordance.R   # rMATS–long-read concordance
+│       ├── results/isocall/           # Isocall PTC results (TSVs, RDS)
+│       ├── figures/isocall/           # Isocall PTC figures (PDFs)
+│       ├── METHODS.md                 # PTC methodology
+│       └── RESULTS.md                 # PTC results narrative
 │
-├── run_pipeline_03_to_06.sh           # Pipeline runner: data prep
-├── run_analysis_07_to_12.sh           # Pipeline runner: analysis
-└── check_pipeline_status.sh           # Status checker
+├── data/
+│   └── isocall/                       # Active isocall pipeline data (.rds files)
+│
+├── comparisons/
+│   └── isocall_nonNMD_0.50/           # Active isocall comparison results
+│       ├── C1/, C2/, C4/             # Per-comparison pair files + per-run results
+│       ├── deduplicated/             # Pooled dedup profiles + downstream results
+│       └── cross_comparison/         # NMD vs baseline statistical framework
+│
+└── archive/                           # Deprecated oarfish results (pending deletion)
+    ├── data/                          # Oarfish pipeline data
+    ├── nonNMD_0.50/, nonNMD_0.95/    # Oarfish comparison results
+    ├── deduplicated/                  # Oarfish pooled dedup
+    ├── results/                       # Oarfish PTC + pipeline results
+    ├── figures/, logs/, testing/      # Oarfish auxiliary
+    ├── development/, misc_reports/    # Dev artifacts
+    └── RESULTS_SUMMARY.md, etc.      # Oarfish-era documentation
 ```
+
+## Source Parameterization
+
+All scripts accept `--source oarfish` (default) or `--source isocall`:
+
+| Component | Oarfish | Isocall |
+|-----------|---------|---------|
+| Data dir | `data/` | `data/isocall/` |
+| DE dir | `longread_dge/` | `isocall_dge/` |
+| DE ID column | `txid` | `transcript_id` |
+| Novel ID format | `PB.NNNN.NNN` | `ENSG*.novelN` |
+| Gene ID format | Unversioned ENSG | Versioned ENSG |
+| Comparison prefix | `nonNMD_` | `isocall_nonNMD_` |
+| Output dir (PTC) | `results/ptc/results/` | `results/ptc/results/isocall/` |
 
 ## Event Detection Algorithm
 
@@ -145,54 +180,6 @@ From the **comparator's** perspective:
 - **LOSS** = comparator lost sequence (dominant has more) → reconstruction **ADDs** to comparator
 - **GAIN** = comparator gained sequence (dominant has less) → reconstruction **REMOVEs** from comparator
 
-### Dominance
-
-In the development/validation workflow, dominance is determined by total exonic sequence length (dominant = more exonic bp). In the main pipeline, dominance is determined by mean CPM expression across samples.
-
-## Reconstruction Validation
-
-The reconstruction system validates event detection accuracy by rebuilding the dominant isoform from the comparator plus detected events.
-
-### Two-Phase Reconstruction
-
-**Phase 1 — Internal Events (LOSS before GAIN, within shared boundaries):**
-- IR: Direct coordinate reconstruction — LOSS merges split exons, GAIN splits using `ir_split_exons`
-- SE/Missing_Internal: Add or remove exons by coordinate range
-- A5SS/A3SS/Partial_IR: Algebraic boundary adjustment from five_prime/three_prime
-- Pre-merge orphan removal: terminal orphans removed before merge step
-- `merge_adjacent_exons()` combines touching/overlapping segments
-
-**Phase 2 — Terminal Events (LOSS before GAIN):**
-- LOSS: Add missing exon ranges from `missing_terminal_exons`
-- GAIN: Use `five_prime` (dominant's terminal boundary) to truncate/remove exons beyond the dominant's extent
-- Remove any remaining orphan terminal exons
-
-**Key Principle:** Reconstruction uses ONLY event type + associated coordinates. No union exon lookups are performed — all event types (including IR) reconstruct directly from event coordinate fields.
-
-## Events File Format
-
-Tab-separated, 15 columns:
-
-| Column | Description |
-|--------|-------------|
-| `gene_id` | Gene identifier |
-| `dominant_transcript_id` | Dominant isoform |
-| `comparator_transcript_id` | Comparator isoform |
-| `event_type` | Event classification |
-| `direction` | GAIN or LOSS |
-| `chr`, `strand` | Genomic location |
-| `five_prime`, `three_prime` | Event boundary coordinates |
-| `bp_diff` | Base pair difference |
-| `missing_terminal_exons` | Coordinate ranges for Alt_TSS/Alt_TES |
-| `orphan_terminal_exons` | Comparator exons to remove |
-| `ir_split_exons` | Exon coordinate ranges for IR reconstruction |
-| `dom_junctions`, `comp_junctions` | Splice junctions (informational) |
-
-## Dependencies
-
-**R packages:** tidyverse, ggplot2, patchwork, edgeR, rtracklayer, metafor
-**System tools:** bgzip, tabix
-
 ## Comparison Framework (NMD-Specific)
 
 Four comparison types, each run across 7 sample sets (all_samples + 6 cell types):
@@ -207,6 +194,11 @@ Four comparison types, each run across 7 sample sets (all_samples + 6 cell types
 Pairs are deduplicated across all 28 sets before running event detection once via core/08.
 
 **Downstream scope (Scripts 14-15):** C3 is excluded from cross-comparison analysis because C4 is a strict subset of C3, creating pseudo-replication. DO cell type is excluded from downstream analysis due to insufficient NMD pairs (C1: 1, C2: 6 at 0.50 threshold), though DO still contributes to all_samples isoform classification in Script 07.
+
+## Dependencies
+
+**R packages:** tidyverse, ggplot2, patchwork, edgeR, rtracklayer, metafor
+**System tools:** bgzip, tabix
 
 ## Contact
 

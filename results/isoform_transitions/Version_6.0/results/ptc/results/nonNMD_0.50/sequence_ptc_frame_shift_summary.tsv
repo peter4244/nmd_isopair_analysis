@@ -1,7 +1,0 @@
-comparison	net_frame_status	n	pct
-C1	frame_disrupted	38	32.2
-C1	frame_preserved	80	67.8
-C2	frame_disrupted	240	35.3
-C2	frame_preserved	439	64.7
-C4	frame_disrupted	949	31.4
-C4	frame_preserved	2074	68.6

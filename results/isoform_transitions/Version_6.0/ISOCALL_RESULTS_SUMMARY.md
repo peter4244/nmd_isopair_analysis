@@ -520,8 +520,120 @@ The isocall joint calling approach produces a fundamentally different isoform ca
 
 ### 9.2 PTC Analysis
 
-PTC (premature termination codon) and frame disruption analysis has not been performed on the isocall data. See the oarfish `RESULTS_SUMMARY.md` (Section 5) for the rMATS-PacBio concordance analysis.
+PTC analysis has been completed on the isocall data (Scripts 01-05, 11). Results are in `results/ptc/results/isocall/`. See Section 10 below for full results.
 
 ### 9.3 Pooled Characterization
 
 Scripts 09-13 have been run on the full 43,513 deduplicated pair set. Results are in `comparisons/isocall_nonNMD_0.50/deduplicated/results/` and summarized in Section 2.
+
+---
+
+## 10. PTC Analysis (Scripts 01-05, 11)
+
+PTC (premature termination codon) analysis tests whether stop codons positioned >50 nt upstream of the last exon-exon junction predict NMD responsiveness. All scripts accept `--source isocall`. Results are in `results/ptc/results/isocall/`.
+
+### 10.1 PTC Status Computation (Script 01)
+
+Of the 160,131 coding isoforms with CDS annotations:
+
+| Category | Count | PTC Rate |
+|---|:---:|:---:|
+| All coding | 160,131 | 15.7% (25,145 PTC+) |
+| GENCODE | 41,356 | 6.0% |
+| Novel | 118,775 | 19.1% |
+
+Novel isoforms have a ~3x higher PTC rate than GENCODE isoforms, consistent with novel transcripts more frequently containing premature stop codons.
+
+### 10.2 PTC–NMD Association (Script 02)
+
+Fisher exact tests per cell type assessed whether PTC+ isoforms are enriched among NMD-responsive transcripts (logFC > 0, adj.P.Val < 0.05 under Smg1i):
+
+| Cell Type | OR (all) | p | OR (GENCODE) | OR (novel) |
+|---|:---:|:---:|:---:|:---:|
+| AT | 10.45 | < 10^-300 | 29.16 | 6.29 |
+| DD | 11.53 | < 10^-300 | 34.67 | 6.82 |
+| DD_ALI | 10.29 | < 10^-300 | 29.34 | 6.13 |
+| DO | 10.88 | < 10^-300 | 33.07 | 6.49 |
+| FB | 10.83 | < 10^-300 | 32.44 | 6.45 |
+| MV | 11.08 | < 10^-300 | 32.48 | 6.63 |
+
+**Pooled OR = 10.80** across all cell types. This is a dramatic improvement over the oarfish analysis (pooled OR ~ 0.96, essentially null). The isocall catalog's CDS annotations from SQANTI correctly identify PTC-containing isoforms, and PTC status is a strong predictor of NMD sensitivity.
+
+GENCODE isoforms show ~5x stronger PTC–NMD association (OR ~31) than novel isoforms (OR ~6.5), likely because GENCODE CDS annotations are more accurate.
+
+### 10.3 logFC Distributions (Script 03)
+
+All 6 cell types show significant upward shifts in logFC (Smg1i vs. DMSO) for PTC+ isoforms compared to PTC- isoforms:
+
+- Median logFC shifts range from 0.1 to 2.7 across cell types
+- The strongest signal is at low baseline (DMSO) expression, where PTC+ isoforms rescued by NMD inhibition show the largest upregulation
+- All Wilcoxon rank-sum tests significant (p < 10^-10)
+
+### 10.4 Signal Exploration (Script 04)
+
+Systematic search across 10 angles (Angle 2 skipped — requires biotype column):
+
+| Angle | Description | Result |
+|---|---|---|
+| 1 | PTC prevalence by NMD status | PTC enriched in NMD-sensitive (all p = 0) |
+| 3 | logFC shift by PTC | PTC+ shifted up (all p = 0) |
+| 4 | Dose-response (PTC distance) | Closer PTC → stronger NMD (all p = 0) |
+| 5 | Expression-stratified PTC | Signal strongest at low DMSO expression |
+| 6 | Novel vs. GENCODE PTC | Both show signal; GENCODE stronger |
+| 7 | Multi-PTC isoforms | Multiple PTCs → even stronger NMD |
+| 8 | GENCODE vs. novel isoforms | Both categories contribute to signal |
+| 9 | Cell-type consistency | Signal present in all 6 cell types |
+| 10 | Top 30 specific tests | All in expected direction (all p = 0) |
+
+All angles show strong, consistent signal. The isocall PTC analysis reveals biology that was completely absent in the oarfish analysis.
+
+### 10.5 PTC in Comparison Pairs (Script 05)
+
+PTC prevalence and frame disruption analysis in isoform comparison pairs (threshold = 0.50):
+
+**PTC Prevalence:**
+
+| Comparison | NMD PTC+ Rate | Baseline PTC+ Rate | Odds Ratio |
+|---|:---:|:---:|:---:|
+| C1 | 54–63% | 6–9% | 15–26x |
+| C2 | 54–60% | 6–9% | 15–22x |
+
+NMD comparator isoforms are overwhelmingly PTC+, while baseline comparators match the background rate (~6-9%).
+
+**Frame Disruption:**
+Frame disruption (events that alter the reading frame) is enriched in C2 NMD pairs relative to baseline, consistent with NMD-triggering structural changes frequently disrupting the open reading frame.
+
+### 10.6 rMATS–Isocall Concordance (Script 11)
+
+This analysis tests whether long-read isoform-level splicing events are concordant with short-read (rMATS) exon-level splicing calls.
+
+**Key result: 49.9% junction concordance** — a dramatic improvement from 2.7% in the oarfish analysis.
+
+| Metric | Oarfish | Isocall |
+|---|:---:|:---:|
+| Junction concordance | 2.7% | **49.9%** |
+| PSI Spearman rho | N/A | **0.915** |
+| Fully concordant (waterfall) | N/A | 19.1% |
+
+The ~18x improvement in concordance rate demonstrates that the isocall catalog's larger, more complete set of isoform structures captures splice junctions that the oarfish catalog missed. The PSI correlation (rho = 0.915) shows that when junctions match, their usage levels are highly correlated between platforms.
+
+### 10.7 PTC Output Files
+
+All files in `results/ptc/results/isocall/`:
+
+| File | Description |
+|---|---|
+| `ptc_status.rds` | PTC status for 160,131 coding isoforms |
+| `ptc_predicts_nmd_by_celltype.tsv` | Fisher test ORs per cell type (filtered) |
+| `ptc_predicts_nmd_unfiltered_by_celltype.tsv` | Fisher test ORs (unfiltered) |
+| `ptc_predicts_nmd_by_source.tsv` | ORs stratified by GENCODE vs. novel |
+| `ptc_distance_nmd_rate.tsv` | PTC distance → NMD rate relationship |
+| `ptc_distance_nmd_rate_by_celltype.tsv` | Distance–NMD by cell type |
+| `ptc_logfc_shift_summary.tsv` | logFC shift statistics |
+| `ptc_signal_exploration_all_tests.tsv` | All 10-angle test results |
+| `rmats_concordance_summary.tsv` | rMATS concordance overview |
+| `rmats_discrepancy_waterfall.tsv` | Waterfall concordance categories |
+| `rmats_junction_concordance.tsv` | Per-junction concordance |
+| `rmats_psi_concordance.tsv` | PSI correlation results |
+| `rmats_ptc_verification.tsv` | PTC verification against rMATS |
+| `nonNMD_0.50/*.tsv` (5 files) | Frame disruption and PTC prevalence per comparison |
