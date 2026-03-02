@@ -16,27 +16,47 @@
 
 suppressPackageStartupMessages(library(tidyverse))
 
+# ─── Parse arguments ─────────────────────────────────────────────────────────
+
+args <- commandArgs(trailingOnly = TRUE)
+source_type <- "oarfish"  # default
+if ("--source" %in% args) {
+  idx <- which(args == "--source")
+  if (idx < length(args)) source_type <- args[idx + 1]
+}
+stopifnot(source_type %in% c("oarfish", "isocall"))
+
 cat("\n")
 cat("======================================================================\n")
-cat("   04: PTC Signal Exploration\n")
+cat(sprintf("   04: PTC Signal Exploration (%s)\n", source_type))
 cat("======================================================================\n\n")
 
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
-cat("Loading data...\n")
-ptc_status      <- readRDS("results/ptc/results/ptc_status.rds")
-expression_data <- readRDS("data/expression_data_filtered.rds")
-sample_metadata <- readRDS("data/sample_metadata.rds")
+data_dir <- if (source_type == "isocall") "data/isocall/" else "data/"
+ptc_dir  <- if (source_type == "isocall") "results/ptc/results/isocall" else "results/ptc/results"
+
+cat(sprintf("Loading data from %s...\n", data_dir))
+ptc_status      <- readRDS(file.path(ptc_dir, "ptc_status.rds"))
+expression_data <- readRDS(file.path(data_dir, "expression_data_filtered.rds"))
+sample_metadata <- readRDS(file.path(data_dir, "sample_metadata.rds"))
 
 expression_data <- expression_data %>%
   left_join(sample_metadata %>% select(sample_id, treatment, ct), by = "sample_id")
 
-de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
-de_date <- "2026.1.18"
-ct_to_de_suffix <- c(
-  "AT" = "at2", "DD" = "dd", "DD_ALI" = "ddali",
-  "DO" = "doali", "FB" = "fb", "MV" = "mv"
-)
+if (source_type == "isocall") {
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge"
+  ct_to_de_suffix <- c(
+    "AT" = "at", "DD" = "dd", "DD_ALI" = "ddali",
+    "DO" = "do", "FB" = "fb", "MV" = "mv"
+  )
+} else {
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
+  ct_to_de_suffix <- c(
+    "AT" = "at2", "DD" = "dd", "DD_ALI" = "ddali",
+    "DO" = "doali", "FB" = "fb", "MV" = "mv"
+  )
+}
 cell_types <- sort(unique(as.character(sample_metadata$ct)))
 
 ptc_lookup <- ptc_status %>% filter(!is.na(has_ptc), n_exons > 1)
@@ -69,11 +89,19 @@ cat("Loading DE results...\n")
 
 all_de <- list()
 for (ct in cell_types) {
-  de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_", de_date, ".csv"))
-  de <- read_csv(de_file, show_col_types = FALSE) %>%
-    select(txid, adj.P.Val, logFC, biotype) %>%
-    rename(isoform_id = txid) %>%
-    mutate(cell_type = ct)
+  if (source_type == "isocall") {
+    de_file <- file.path(de_dir, paste0("nmd_isocall_dge_", ct_to_de_suffix[ct], "_2026.3.1.csv"))
+    de <- read_csv(de_file, show_col_types = FALSE) %>%
+      select(transcript_id, adj.P.Val, logFC) %>%
+      rename(isoform_id = transcript_id) %>%
+      mutate(cell_type = ct)
+  } else {
+    de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_2026.1.18.csv"))
+    de <- read_csv(de_file, show_col_types = FALSE) %>%
+      select(txid, adj.P.Val, logFC, biotype) %>%
+      rename(isoform_id = txid) %>%
+      mutate(cell_type = ct)
+  }
   all_de[[ct]] <- de
 }
 all_de <- bind_rows(all_de)
@@ -85,7 +113,7 @@ merged_unf <- all_de %>%
   mutate(
     mean_dmso_cpm = replace_na(mean_dmso_cpm, 0),
     nmd_responsive = adj.P.Val < 0.05 & logFC > 0,
-    nmd_biotype = !is.na(biotype) & biotype == "nonsense_mediated_decay"
+    nmd_biotype = if (source_type == "isocall") FALSE else (!is.na(biotype) & biotype == "nonsense_mediated_decay")
   )
 
 # 5%-filtered
@@ -153,19 +181,23 @@ cat("======================================================================\n")
 cat("  ANGLE 2: GENCODE NMD Biotype Isoforms Only\n")
 cat("======================================================================\n\n")
 
-results_a2 <- list()
-for (ct in cell_types) {
-  for (dataset_label in c("unfiltered", "5pct_filtered")) {
-    df <- if (dataset_label == "unfiltered") merged_unf else merged_filt
-    ct_df <- df %>% filter(cell_type == ct, nmd_biotype == TRUE)
-    r <- run_logfc_test(ct_df, sprintf("NMD_biotype_%s_%s", ct, dataset_label))
-    if (!is.null(r)) results_a2[[length(results_a2) + 1]] <- r
+if (source_type == "isocall") {
+  cat("  Skipped — isocall DE files lack biotype column\n")
+} else {
+  results_a2 <- list()
+  for (ct in cell_types) {
+    for (dataset_label in c("unfiltered", "5pct_filtered")) {
+      df <- if (dataset_label == "unfiltered") merged_unf else merged_filt
+      ct_df <- df %>% filter(cell_type == ct, nmd_biotype == TRUE)
+      r <- run_logfc_test(ct_df, sprintf("NMD_biotype_%s_%s", ct, dataset_label))
+      if (!is.null(r)) results_a2[[length(results_a2) + 1]] <- r
+    }
   }
-}
-if (length(results_a2) > 0) {
-  bind_rows(results_a2) %>%
-    mutate(across(where(is.numeric), ~round(., 4))) %>%
-    print(n = 20, width = 140)
+  if (length(results_a2) > 0) {
+    bind_rows(results_a2) %>%
+      mutate(across(where(is.numeric), ~round(., 4))) %>%
+      print(n = 20, width = 140)
+  }
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -238,8 +270,10 @@ if (length(results_a5) > 0) {
 
 # ═══════════════════════════════════════════════════════════════════════════════
 cat("\n")
+novel_source_label <- if (source_type == "isocall") "novel" else "PacBio"
+
 cat("======================================================================\n")
-cat("  ANGLE 6: Novel (PacBio) vs GENCODE Isoforms\n")
+cat(sprintf("  ANGLE 6: Novel (%s) vs GENCODE Isoforms\n", novel_source_label))
 cat("======================================================================\n\n")
 
 for (dataset_label in c("unfiltered", "5pct_filtered")) {
@@ -247,10 +281,11 @@ for (dataset_label in c("unfiltered", "5pct_filtered")) {
   cat(sprintf("--- %s ---\n", dataset_label))
   results_a6 <- list()
   for (ct in cell_types) {
-    for (iso_type in c("GENCODE", "PacBio")) {
+    for (iso_type in c("GENCODE", novel_source_label)) {
       ct_df <- df %>%
         filter(cell_type == ct,
                if (iso_type == "GENCODE") is_gencode else is_novel)
+      if (nrow(ct_df) == 0) next
       r <- run_logfc_test(ct_df, sprintf("%s_%s", ct, iso_type))
       if (!is.null(r)) results_a6[[length(results_a6) + 1]] <- r
     }
@@ -400,7 +435,7 @@ for (ct in cell_types) {
 
     # Novel only
     r <- run_logfc_test(ct_df %>% filter(is_novel),
-                        sprintf("%s_%s_PacBio_only", ct, dataset_label))
+                        sprintf("%s_%s_%s_only", ct, dataset_label, novel_source_label))
     if (!is.null(r)) all_tests[[length(all_tests) + 1]] <- r
 
     # Strong PTC
@@ -446,7 +481,8 @@ summary_all %>%
   print(n = 20, width = 150)
 
 # Save
-output_dir <- "results/ptc/results"
+output_dir <- if (source_type == "isocall") "results/ptc/results/isocall" else "results/ptc/results"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 write_tsv(summary_all, file.path(output_dir, "ptc_signal_exploration_all_tests.tsv"))
 cat(sprintf("\nSaved: %s\n", file.path(output_dir, "ptc_signal_exploration_all_tests.tsv")))
 

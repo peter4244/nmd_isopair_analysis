@@ -16,28 +16,52 @@
 #   frame_disruption_loss_nmd_vs_baseline.tsv
 #
 # Run from: results/isoform_transitions/Version_6.0/
+# Usage: Rscript 05_ptc_in_comparisons.R [--threshold 0.50|0.95]
+#   Default threshold: 0.50
 
 suppressPackageStartupMessages(library(tidyverse))
 
+# ─── Parse arguments ─────────────────────────────────────────────────────────
+
+args <- commandArgs(trailingOnly = TRUE)
+threshold <- "0.50"  # default
+source_type <- "oarfish"  # default
+if ("--threshold" %in% args) {
+  idx <- which(args == "--threshold")
+  if (idx < length(args)) threshold <- args[idx + 1]
+}
+if ("--source" %in% args) {
+  idx <- which(args == "--source")
+  if (idx < length(args)) source_type <- args[idx + 1]
+}
+stopifnot(threshold %in% c("0.50", "0.95"))
+stopifnot(source_type %in% c("oarfish", "isocall"))
+
+data_dir <- if (source_type == "isocall") "data/isocall/" else "data/"
+ptc_dir  <- if (source_type == "isocall") "results/ptc/results/isocall" else "results/ptc/results"
+comp_prefix <- if (source_type == "isocall") "isocall_nonNMD" else "nonNMD"
+
 cat("\n")
 cat("==================================================================\n")
-cat("   05: PTC in Comparison Pairs + Frame Disruption\n")
+cat(sprintf("   05: PTC in Comparison Pairs + Frame Disruption (%s_%s, %s)\n",
+            comp_prefix, threshold, source_type))
 cat("==================================================================\n\n")
 
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
 cat("Loading data...\n")
-ptc_status <- readRDS("results/ptc/results/ptc_status.rds")
-cds_meta   <- readRDS("data/isoform_cds_metadata.rds") %>%
+ptc_status <- readRDS(file.path(ptc_dir, "ptc_status.rds"))
+cds_meta   <- readRDS(file.path(data_dir, "isoform_cds_metadata.rds")) %>%
   filter(coding_status == "coding")
-profiles   <- readRDS("comparisons/nonNMD_0.50/deduplicated/splicing_choice_profiles.rds")
+
+base_dir <- sprintf("comparisons/%s_%s", comp_prefix, threshold)
+profiles <- readRDS(file.path(base_dir, "deduplicated/splicing_choice_profiles.rds"))
 
 ptc_lookup <- ptc_status %>%
   filter(!is.na(has_ptc)) %>%
   select(isoform_id, n_exons, ptc_distance, has_ptc, orf_length)
 
 # Load comparison pairs
-base_dir <- "comparisons/nonNMD_0.50"
 comparisons <- c("C1", "C2", "C4")
 runs <- c("all_samples", "at", "dd", "dd_ali", "fb", "mv")
 
@@ -424,7 +448,12 @@ loss_results_df %>%
 
 # ─── Save all outputs ────────────────────────────────────────────────────────
 
-output_dir <- "results/ptc/results"
+output_dir <- if (source_type == "isocall") {
+  sprintf("results/ptc/results/isocall/nonNMD_%s", threshold)
+} else {
+  sprintf("results/ptc/results/nonNMD_%s", threshold)
+}
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 write_tsv(results_df, file.path(output_dir, "ptc_prevalence_nmd_vs_baseline.tsv"))
 write_tsv(comp_ptc_by_run, file.path(output_dir, "ptc_rates_by_comparison_run.tsv"))

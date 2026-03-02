@@ -27,27 +27,47 @@
 
 suppressPackageStartupMessages(library(tidyverse))
 
+# ─── Parse arguments ─────────────────────────────────────────────────────────
+
+args <- commandArgs(trailingOnly = TRUE)
+source_type <- "oarfish"  # default
+if ("--source" %in% args) {
+  idx <- which(args == "--source")
+  if (idx < length(args)) source_type <- args[idx + 1]
+}
+stopifnot(source_type %in% c("oarfish", "isocall"))
+
 cat("\n")
 cat("==================================================================\n")
-cat("   02: PTC / NMD Biotype → NMD Responsiveness\n")
+cat(sprintf("   02: PTC / NMD Biotype → NMD Responsiveness (%s)\n", source_type))
 cat("==================================================================\n\n")
 
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
-cat("Loading data...\n")
-ptc_status      <- readRDS("results/ptc/results/ptc_status.rds")
-expression_data <- readRDS("data/expression_data_filtered.rds")
-sample_metadata <- readRDS("data/sample_metadata.rds")
+data_dir <- if (source_type == "isocall") "data/isocall/" else "data/"
+ptc_dir  <- if (source_type == "isocall") "results/ptc/results/isocall" else "results/ptc/results"
+
+cat(sprintf("Loading data from %s...\n", data_dir))
+ptc_status      <- readRDS(file.path(ptc_dir, "ptc_status.rds"))
+expression_data <- readRDS(file.path(data_dir, "expression_data_filtered.rds"))
+sample_metadata <- readRDS(file.path(data_dir, "sample_metadata.rds"))
 
 expression_data <- expression_data %>%
   left_join(sample_metadata %>% select(sample_id, treatment, ct), by = "sample_id")
 
-de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
-de_date <- "2026.1.18"
-ct_to_de_suffix <- c(
-  "AT" = "at2", "DD" = "dd", "DD_ALI" = "ddali",
-  "DO" = "doali", "FB" = "fb", "MV" = "mv"
-)
+if (source_type == "isocall") {
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge"
+  ct_to_de_suffix <- c(
+    "AT" = "at", "DD" = "dd", "DD_ALI" = "ddali",
+    "DO" = "do", "FB" = "fb", "MV" = "mv"
+  )
+} else {
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
+  ct_to_de_suffix <- c(
+    "AT" = "at2", "DD" = "dd", "DD_ALI" = "ddali",
+    "DO" = "doali", "FB" = "fb", "MV" = "mv"
+  )
+}
 cell_types <- sort(unique(as.character(sample_metadata$ct)))
 
 # ─── 2. 5% expression filter ────────────────────────────────────────────────
@@ -124,10 +144,17 @@ for (ct in cell_types) {
   cat(sprintf("  --- %s ---\n", ct))
 
   # Load DE results
-  de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_", de_date, ".csv"))
-  de <- read_csv(de_file, show_col_types = FALSE) %>%
-    select(txid, adj.P.Val, logFC) %>%
-    rename(isoform_id = txid)
+  if (source_type == "isocall") {
+    de_file <- file.path(de_dir, paste0("nmd_isocall_dge_", ct_to_de_suffix[ct], "_2026.3.1.csv"))
+    de <- read_csv(de_file, show_col_types = FALSE) %>%
+      select(transcript_id, adj.P.Val, logFC) %>%
+      rename(isoform_id = transcript_id)
+  } else {
+    de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_2026.1.18.csv"))
+    de <- read_csv(de_file, show_col_types = FALSE) %>%
+      select(txid, adj.P.Val, logFC) %>%
+      rename(isoform_id = txid)
+  }
 
   ct_samples <- sample_metadata %>% filter(ct == !!ct) %>% pull(sample_id)
   passing_5pct <- apply_5pct_filter(expression_data, ct_samples)
@@ -196,13 +223,14 @@ for (ct in cell_types) {
                 ft_gc$p.value, nrow(analysis_gc)))
   }
 
-  # ── PacBio-only analysis (5% filtered) ──
+  # ── Novel-only analysis (5% filtered) ──
+  novel_source_label <- if (source_type == "isocall") "novel" else "PacBio"
   analysis_pb <- analysis_filt %>% filter(is_novel)
   tab_pb <- table(PTC = analysis_pb$has_ptc, NMD = analysis_pb$nmd_responsive)
   if (all(dim(tab_pb) == 2)) {
     ft_pb <- fisher.test(tab_pb)
     all_results_pacbio[[ct]] <- tibble(
-      cell_type = ct, source = "PacBio", filter = "5pct",
+      cell_type = ct, source = novel_source_label, filter = "5pct",
       n_total = nrow(analysis_pb), n_ptc = sum(analysis_pb$has_ptc),
       n_nmd_responsive = sum(analysis_pb$nmd_responsive),
       nmd_rate_ptc = tab_pb["TRUE", "TRUE"] / sum(tab_pb["TRUE", ]),
@@ -211,7 +239,7 @@ for (ct in cell_types) {
       or_ci_lower = ft_pb$conf.int[1], or_ci_upper = ft_pb$conf.int[2],
       p_value = ft_pb$p.value
     )
-    cat(sprintf("    [PacBio]  OR = %.2f (%.2f-%.2f), p = %g (n=%d)\n",
+    cat(sprintf("    [%s]  OR = %.2f (%.2f-%.2f), p = %g (n=%d)\n", novel_source_label,
                 ft_pb$estimate, ft_pb$conf.int[1], ft_pb$conf.int[2],
                 ft_pb$p.value, nrow(analysis_pb)))
   }
@@ -332,12 +360,23 @@ strat_pooled %>%
 
 # ─── Trend tests ─────────────────────────────────────────────────────────────
 
+load_de <- function(ct) {
+  if (source_type == "isocall") {
+    de_file <- file.path(de_dir, paste0("nmd_isocall_dge_", ct_to_de_suffix[ct], "_2026.3.1.csv"))
+    read_csv(de_file, show_col_types = FALSE) %>%
+      select(transcript_id, adj.P.Val, logFC) %>%
+      rename(isoform_id = transcript_id)
+  } else {
+    de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_2026.1.18.csv"))
+    read_csv(de_file, show_col_types = FALSE) %>%
+      select(txid, adj.P.Val, logFC) %>%
+      rename(isoform_id = txid)
+  }
+}
+
 cat("\nSpearman correlation: PTC distance vs NMD responsiveness\n")
 for (ct in cell_types) {
-  de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_", de_date, ".csv"))
-  de <- read_csv(de_file, show_col_types = FALSE) %>%
-    select(txid, adj.P.Val, logFC) %>%
-    rename(isoform_id = txid)
+  de <- load_de(ct)
   ct_samples <- sample_metadata %>% filter(ct == !!ct) %>% pull(sample_id)
   passing_5pct <- apply_5pct_filter(expression_data, ct_samples)
 
@@ -357,10 +396,7 @@ for (ct in cell_types) {
 
 cat("\nLogistic regression: log(ptc_distance) -> NMD responsiveness\n")
 for (ct in cell_types) {
-  de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_", de_date, ".csv"))
-  de <- read_csv(de_file, show_col_types = FALSE) %>%
-    select(txid, adj.P.Val, logFC) %>%
-    rename(isoform_id = txid)
+  de <- load_de(ct)
   ct_samples <- sample_metadata %>% filter(ct == !!ct) %>% pull(sample_id)
   passing_5pct <- apply_5pct_filter(expression_data, ct_samples)
 
@@ -386,149 +422,163 @@ for (ct in cell_types) {
 # PART B: GENCODE NMD Biotype → NMD Responsiveness
 # ═══════════════════════════════════════════════════════════════════════════════
 
-cat("\n\n")
-cat("==================================================================\n")
-cat("   PART B: GENCODE NMD Biotype → NMD Responsiveness\n")
-cat("==================================================================\n\n")
-
-all_biotype_results <- list()
-all_biotype_tables <- list()
+biotype_summary <- NULL
+bt_pooled <- NULL
 enst_results <- list()
 
-for (ct in cell_types) {
-  cat(sprintf("  --- %s ---\n", ct))
+if (source_type == "isocall") {
+  cat("\n  Skipping Part B (GENCODE NMD biotype analysis) — isocall DE files lack biotype column\n")
+} else {
+  cat("\n\n")
+  cat("==================================================================\n")
+  cat("   PART B: GENCODE NMD Biotype → NMD Responsiveness\n")
+  cat("==================================================================\n\n")
 
-  de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_", de_date, ".csv"))
-  de <- read_csv(de_file, show_col_types = FALSE) %>%
-    select(txid, adj.P.Val, logFC, biotype) %>%
-    rename(isoform_id = txid)
+  all_biotype_results <- list()
+  all_biotype_tables <- list()
 
-  ct_samples <- sample_metadata %>% filter(ct == !!ct) %>% pull(sample_id)
-  passing_5pct <- apply_5pct_filter(expression_data, ct_samples)
+  for (ct in cell_types) {
+    cat(sprintf("  --- %s ---\n", ct))
 
-  # ── 5%-filtered, all isoforms ──
-  analysis_df <- de %>%
-    filter(isoform_id %in% passing_5pct, !is.na(biotype)) %>%
-    mutate(nmd_biotype = biotype == "nonsense_mediated_decay",
-           nmd_responsive = adj.P.Val < 0.05 & logFC > 0)
+    de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_2026.1.18.csv"))
+    de <- read_csv(de_file, show_col_types = FALSE) %>%
+      select(txid, adj.P.Val, logFC, biotype) %>%
+      rename(isoform_id = txid)
 
-  tab <- table(NMD_biotype = analysis_df$nmd_biotype,
-               NMD_responsive = analysis_df$nmd_responsive)
+    ct_samples <- sample_metadata %>% filter(ct == !!ct) %>% pull(sample_id)
+    passing_5pct <- apply_5pct_filter(expression_data, ct_samples)
 
-  if (all(dim(tab) == 2)) {
-    ft <- fisher.test(tab)
-    nmd_rate_biotype <- tab["TRUE", "TRUE"] / sum(tab["TRUE", ])
-    nmd_rate_other <- tab["FALSE", "TRUE"] / sum(tab["FALSE", ])
+    # ── 5%-filtered, all isoforms ──
+    analysis_df <- de %>%
+      filter(isoform_id %in% passing_5pct, !is.na(biotype)) %>%
+      mutate(nmd_biotype = biotype == "nonsense_mediated_decay",
+             nmd_responsive = adj.P.Val < 0.05 & logFC > 0)
 
-    cat(sprintf("    OR = %.2f (%.2f-%.2f), p = %g\n",
-                ft$estimate, ft$conf.int[1], ft$conf.int[2], ft$p.value))
+    tab <- table(NMD_biotype = analysis_df$nmd_biotype,
+                 NMD_responsive = analysis_df$nmd_responsive)
 
-    all_biotype_results[[ct]] <- tibble(
-      cell_type = ct,
-      n_total = nrow(analysis_df), n_nmd_biotype = sum(analysis_df$nmd_biotype),
-      n_nmd_responsive = sum(analysis_df$nmd_responsive),
-      nmd_rate_biotype = nmd_rate_biotype, nmd_rate_other = nmd_rate_other,
-      rate_ratio = nmd_rate_biotype / nmd_rate_other,
-      odds_ratio = ft$estimate,
-      or_ci_lower = ft$conf.int[1], or_ci_upper = ft$conf.int[2],
-      p_value = ft$p.value
-    )
+    if (all(dim(tab) == 2)) {
+      ft <- fisher.test(tab)
+      nmd_rate_biotype <- tab["TRUE", "TRUE"] / sum(tab["TRUE", ])
+      nmd_rate_other <- tab["FALSE", "TRUE"] / sum(tab["FALSE", ])
+
+      cat(sprintf("    OR = %.2f (%.2f-%.2f), p = %g\n",
+                  ft$estimate, ft$conf.int[1], ft$conf.int[2], ft$p.value))
+
+      all_biotype_results[[ct]] <- tibble(
+        cell_type = ct,
+        n_total = nrow(analysis_df), n_nmd_biotype = sum(analysis_df$nmd_biotype),
+        n_nmd_responsive = sum(analysis_df$nmd_responsive),
+        nmd_rate_biotype = nmd_rate_biotype, nmd_rate_other = nmd_rate_other,
+        rate_ratio = nmd_rate_biotype / nmd_rate_other,
+        odds_ratio = ft$estimate,
+        or_ci_lower = ft$conf.int[1], or_ci_upper = ft$conf.int[2],
+        p_value = ft$p.value
+      )
+    }
+
+    # ── Biotype breakdown ──
+    bt_table <- analysis_df %>%
+      group_by(biotype) %>%
+      summarise(n = n(), n_nmd = sum(nmd_responsive),
+                nmd_rate = mean(nmd_responsive), .groups = "drop") %>%
+      arrange(desc(n_nmd)) %>%
+      mutate(cell_type = ct)
+    all_biotype_tables[[ct]] <- bt_table
+
+    # ── ENST-only sensitivity analysis ──
+    analysis_enst <- de %>%
+      filter(isoform_id %in% passing_5pct,
+             startsWith(isoform_id, "ENST"),
+             !is.na(biotype)) %>%
+      mutate(nmd_biotype = biotype == "nonsense_mediated_decay",
+             nmd_responsive = adj.P.Val < 0.05 & logFC > 0)
+
+    tab_e <- table(NMD_biotype = analysis_enst$nmd_biotype,
+                    NMD_responsive = analysis_enst$nmd_responsive)
+    if (all(dim(tab_e) == 2)) {
+      ft_e <- fisher.test(tab_e)
+      enst_results[[ct]] <- tibble(
+        cell_type = ct,
+        n_total = nrow(analysis_enst), n_nmd_biotype = sum(analysis_enst$nmd_biotype),
+        nmd_rate_biotype = tab_e["TRUE", "TRUE"] / sum(tab_e["TRUE", ]),
+        nmd_rate_other = tab_e["FALSE", "TRUE"] / sum(tab_e["FALSE", ]),
+        odds_ratio = ft_e$estimate,
+        or_ci_lower = ft_e$conf.int[1], or_ci_upper = ft_e$conf.int[2],
+        p_value = ft_e$p.value
+      )
+    }
   }
 
-  # ── Biotype breakdown ──
-  bt_table <- analysis_df %>%
+  # ─── Biotype summary ─────────────────────────────────────────────────────────
+
+  biotype_summary <- bind_rows(all_biotype_results) %>%
+    mutate(fdr = p.adjust(p_value, method = "BH"))
+
+  cat("\n\nNMD biotype results (5%-filtered):\n\n")
+  biotype_summary %>%
+    mutate(
+      across(c(nmd_rate_biotype, nmd_rate_other), ~ sprintf("%.1f%%", 100 * .)),
+      rate_ratio = round(rate_ratio, 2),
+      across(c(odds_ratio, or_ci_lower, or_ci_upper), ~ round(., 2)),
+      p_value = signif(p_value, 3), fdr = signif(fdr, 3)
+    ) %>%
+    select(cell_type, n_total, n_nmd_biotype, nmd_rate_biotype, nmd_rate_other,
+           rate_ratio, odds_ratio, or_ci_lower, or_ci_upper, p_value, fdr) %>%
+    print(n = 10, width = 140)
+
+  cat("\nMeta-analysis (NMD biotype):\n")
+  run_meta_analysis(all_biotype_results, "NMD biotype")
+
+  # Biotype pooled table
+  bt_all <- bind_rows(all_biotype_tables)
+  bt_pooled <- bt_all %>%
     group_by(biotype) %>%
-    summarise(n = n(), n_nmd = sum(nmd_responsive),
-              nmd_rate = mean(nmd_responsive), .groups = "drop") %>%
-    arrange(desc(n_nmd)) %>%
-    mutate(cell_type = ct)
-  all_biotype_tables[[ct]] <- bt_table
+    summarise(
+      n_cell_types = n(), total_n = sum(n), total_nmd = sum(n_nmd),
+      pooled_nmd_rate = sum(n_nmd) / sum(n),
+      mean_nmd_rate = mean(nmd_rate), .groups = "drop"
+    ) %>%
+    filter(total_n >= 100) %>%
+    arrange(desc(pooled_nmd_rate))
 
-  # ── ENST-only sensitivity analysis ──
-  analysis_enst <- de %>%
-    filter(isoform_id %in% passing_5pct,
-           startsWith(isoform_id, "ENST"),
-           !is.na(biotype)) %>%
-    mutate(nmd_biotype = biotype == "nonsense_mediated_decay",
-           nmd_responsive = adj.P.Val < 0.05 & logFC > 0)
+  cat("\nNMD rate by biotype (pooled, n >= 100):\n")
+  bt_pooled %>%
+    mutate(pooled_nmd_rate = sprintf("%.2f%%", 100 * pooled_nmd_rate)) %>%
+    print(n = 30, width = 120)
 
-  tab_e <- table(NMD_biotype = analysis_enst$nmd_biotype,
-                  NMD_responsive = analysis_enst$nmd_responsive)
-  if (all(dim(tab_e) == 2)) {
-    ft_e <- fisher.test(tab_e)
-    enst_results[[ct]] <- tibble(
-      cell_type = ct,
-      n_total = nrow(analysis_enst), n_nmd_biotype = sum(analysis_enst$nmd_biotype),
-      nmd_rate_biotype = tab_e["TRUE", "TRUE"] / sum(tab_e["TRUE", ]),
-      nmd_rate_other = tab_e["FALSE", "TRUE"] / sum(tab_e["FALSE", ]),
-      odds_ratio = ft_e$estimate,
-      or_ci_lower = ft_e$conf.int[1], or_ci_upper = ft_e$conf.int[2],
-      p_value = ft_e$p.value
-    )
-  }
+  # ENST-only meta
+  cat("\nENST-only meta-analysis:\n")
+  run_meta_analysis(enst_results, "ENST-only NMD biotype")
 }
-
-# ─── Biotype summary ─────────────────────────────────────────────────────────
-
-biotype_summary <- bind_rows(all_biotype_results) %>%
-  mutate(fdr = p.adjust(p_value, method = "BH"))
-
-cat("\n\nNMD biotype results (5%-filtered):\n\n")
-biotype_summary %>%
-  mutate(
-    across(c(nmd_rate_biotype, nmd_rate_other), ~ sprintf("%.1f%%", 100 * .)),
-    rate_ratio = round(rate_ratio, 2),
-    across(c(odds_ratio, or_ci_lower, or_ci_upper), ~ round(., 2)),
-    p_value = signif(p_value, 3), fdr = signif(fdr, 3)
-  ) %>%
-  select(cell_type, n_total, n_nmd_biotype, nmd_rate_biotype, nmd_rate_other,
-         rate_ratio, odds_ratio, or_ci_lower, or_ci_upper, p_value, fdr) %>%
-  print(n = 10, width = 140)
-
-cat("\nMeta-analysis (NMD biotype):\n")
-run_meta_analysis(all_biotype_results, "NMD biotype")
-
-# Biotype pooled table
-bt_all <- bind_rows(all_biotype_tables)
-bt_pooled <- bt_all %>%
-  group_by(biotype) %>%
-  summarise(
-    n_cell_types = n(), total_n = sum(n), total_nmd = sum(n_nmd),
-    pooled_nmd_rate = sum(n_nmd) / sum(n),
-    mean_nmd_rate = mean(nmd_rate), .groups = "drop"
-  ) %>%
-  filter(total_n >= 100) %>%
-  arrange(desc(pooled_nmd_rate))
-
-cat("\nNMD rate by biotype (pooled, n >= 100):\n")
-bt_pooled %>%
-  mutate(pooled_nmd_rate = sprintf("%.2f%%", 100 * pooled_nmd_rate)) %>%
-  print(n = 30, width = 120)
-
-# ENST-only meta
-cat("\nENST-only meta-analysis:\n")
-run_meta_analysis(enst_results, "ENST-only NMD biotype")
 
 # ─── Save all outputs ────────────────────────────────────────────────────────
 
-output_dir <- "results/ptc/results"
+output_dir <- if (source_type == "isocall") "results/ptc/results/isocall" else "results/ptc/results"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-write_tsv(summary_filt, file.path(output_dir, "ptc_predicts_nmd_by_celltype.tsv"))
-write_tsv(summary_unfilt, file.path(output_dir, "ptc_predicts_nmd_unfiltered_by_celltype.tsv"))
-write_tsv(source_results, file.path(output_dir, "ptc_predicts_nmd_by_source.tsv"))
-write_tsv(strat_pooled, file.path(output_dir, "ptc_distance_nmd_rate.tsv"))
+n_files <- 0
+
+write_tsv(summary_filt, file.path(output_dir, "ptc_predicts_nmd_by_celltype.tsv")); n_files <- n_files + 1
+write_tsv(summary_unfilt, file.path(output_dir, "ptc_predicts_nmd_unfiltered_by_celltype.tsv")); n_files <- n_files + 1
+write_tsv(source_results, file.path(output_dir, "ptc_predicts_nmd_by_source.tsv")); n_files <- n_files + 1
+write_tsv(strat_pooled, file.path(output_dir, "ptc_distance_nmd_rate.tsv")); n_files <- n_files + 1
 
 strat_all_out <- strat_all %>%
   select(cell_type, ptc_distance_bin, n, n_nmd, nmd_rate, median_distance)
-write_tsv(strat_all_out, file.path(output_dir, "ptc_distance_nmd_rate_by_celltype.tsv"))
+write_tsv(strat_all_out, file.path(output_dir, "ptc_distance_nmd_rate_by_celltype.tsv")); n_files <- n_files + 1
 
-write_tsv(biotype_summary, file.path(output_dir, "nmd_biotype_predicts_nmd_by_celltype.tsv"))
-write_tsv(bt_pooled, file.path(output_dir, "nmd_rate_by_biotype.tsv"))
+if (!is.null(biotype_summary)) {
+  write_tsv(biotype_summary, file.path(output_dir, "nmd_biotype_predicts_nmd_by_celltype.tsv")); n_files <- n_files + 1
+}
+if (!is.null(bt_pooled)) {
+  write_tsv(bt_pooled, file.path(output_dir, "nmd_rate_by_biotype.tsv")); n_files <- n_files + 1
+}
 
 if (length(enst_results) > 0) {
   write_tsv(bind_rows(enst_results),
-            file.path(output_dir, "nmd_biotype_predicts_nmd_enst_only.tsv"))
+            file.path(output_dir, "nmd_biotype_predicts_nmd_enst_only.tsv")); n_files <- n_files + 1
 }
 
-cat(sprintf("\nSaved %d output files to: %s\n", 8, output_dir))
+cat(sprintf("\nSaved %d output files to: %s\n", n_files, output_dir))
 cat("\nDone.\n")

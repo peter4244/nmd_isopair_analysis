@@ -24,35 +24,62 @@ suppressPackageStartupMessages({
   library(patchwork)
 })
 
+# ─── Parse arguments ─────────────────────────────────────────────────────────
+
+args <- commandArgs(trailingOnly = TRUE)
+source_type <- "oarfish"  # default
+if ("--source" %in% args) {
+  idx <- which(args == "--source")
+  if (idx < length(args)) source_type <- args[idx + 1]
+}
+stopifnot(source_type %in% c("oarfish", "isocall"))
+
 cat("\n")
 cat("==================================================================\n")
-cat("   03: PTC logFC Distributions\n")
+cat(sprintf("   03: PTC logFC Distributions (%s)\n", source_type))
 cat("==================================================================\n\n")
 
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
-cat("Loading data...\n")
-ptc_status      <- readRDS("results/ptc/results/ptc_status.rds")
-expression_data <- readRDS("data/expression_data_filtered.rds")
-sample_metadata <- readRDS("data/sample_metadata.rds")
+data_dir <- if (source_type == "isocall") "data/isocall/" else "data/"
+ptc_dir  <- if (source_type == "isocall") "results/ptc/results/isocall" else "results/ptc/results"
+
+cat(sprintf("Loading data from %s...\n", data_dir))
+ptc_status      <- readRDS(file.path(ptc_dir, "ptc_status.rds"))
+expression_data <- readRDS(file.path(data_dir, "expression_data_filtered.rds"))
+sample_metadata <- readRDS(file.path(data_dir, "sample_metadata.rds"))
 
 expression_data <- expression_data %>%
   left_join(sample_metadata %>% select(sample_id, treatment, ct), by = "sample_id")
 
-de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
-de_date <- "2026.1.18"
-ct_to_de_suffix <- c(
-  "AT" = "at2", "DD" = "dd", "DD_ALI" = "ddali",
-  "DO" = "doali", "FB" = "fb", "MV" = "mv"
-)
+if (source_type == "isocall") {
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge"
+  ct_to_de_suffix <- c(
+    "AT" = "at", "DD" = "dd", "DD_ALI" = "ddali",
+    "DO" = "do", "FB" = "fb", "MV" = "mv"
+  )
+} else {
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
+  ct_to_de_suffix <- c(
+    "AT" = "at2", "DD" = "dd", "DD_ALI" = "ddali",
+    "DO" = "doali", "FB" = "fb", "MV" = "mv"
+  )
+}
 cell_types <- sort(unique(as.character(sample_metadata$ct)))
 
 ptc_lookup <- ptc_status %>%
   filter(!is.na(has_ptc), n_exons > 1) %>%
   mutate(ptc_label = if_else(has_ptc, "PTC (>50nt)", "No PTC (<=50nt)"))
 
-fig_dir <- "results/ptc/figures"
-res_dir <- "results/ptc/results"
+if (source_type == "isocall") {
+  fig_dir <- "results/ptc/figures/isocall"
+  res_dir <- "results/ptc/results/isocall"
+} else {
+  fig_dir <- "results/ptc/figures"
+  res_dir <- "results/ptc/results"
+}
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(res_dir, recursive = TRUE, showWarnings = FALSE)
 
 # ─── 2. 5% filter ────────────────────────────────────────────────────────────
 
@@ -87,10 +114,17 @@ data_filt <- list()
 data_unfilt <- list()
 
 for (ct in cell_types) {
-  de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_", de_date, ".csv"))
-  de <- read_csv(de_file, show_col_types = FALSE) %>%
-    select(txid, adj.P.Val, logFC) %>%
-    rename(isoform_id = txid)
+  if (source_type == "isocall") {
+    de_file <- file.path(de_dir, paste0("nmd_isocall_dge_", ct_to_de_suffix[ct], "_2026.3.1.csv"))
+    de <- read_csv(de_file, show_col_types = FALSE) %>%
+      select(transcript_id, adj.P.Val, logFC) %>%
+      rename(isoform_id = transcript_id)
+  } else {
+    de_file <- file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix[ct], "_2026.1.18.csv"))
+    de <- read_csv(de_file, show_col_types = FALSE) %>%
+      select(txid, adj.P.Val, logFC) %>%
+      rename(isoform_id = txid)
+  }
 
   ct_samples <- sample_metadata %>% filter(ct == !!ct) %>% pull(sample_id)
   passing_5pct <- apply_5pct_filter(expression_data, ct_samples)
@@ -283,74 +317,79 @@ ggsave(file.path(fig_dir, "ptc_logfc_by_celltype_expression_unfiltered.pdf"), p4
        width = 12, height = 9)
 cat(sprintf("  Saved: ptc_logfc_by_celltype_expression_unfiltered.pdf\n"))
 
-# ─── Plot 5: GENCODE vs PacBio, 5%-filtered ──────────────────────────────────
+# ─── Plot 5-6: GENCODE vs novel source stratification ─────────────────────────
+
+novel_source_label <- if (source_type == "isocall") "novel" else "PacBio"
 
 combined_filt_source <- combined_filt %>%
-  mutate(source = case_when(is_gencode ~ "GENCODE", is_novel ~ "PacBio", TRUE ~ NA_character_)) %>%
+  mutate(source = case_when(is_gencode ~ "GENCODE", is_novel ~ novel_source_label, TRUE ~ NA_character_)) %>%
   filter(!is.na(source))
-
-p5 <- ggplot(combined_filt_source, aes(x = logFC, fill = ptc_label)) +
-  geom_density(alpha = 0.4, linewidth = 0.3) +
-  facet_grid(source ~ cell_type, scales = "free_y") +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
-  scale_fill_manual(values = c("PTC (>50nt)" = "#d62728", "No PTC (<=50nt)" = "#1f77b4")) +
-  labs(
-    title = "logFC Distribution by PTC Status: GENCODE vs PacBio (5% filter)",
-    subtitle = "Rows = isoform source; Columns = Cell type",
-    x = "logFC (Smg1i vs DMSO)", y = "Density", fill = NULL
-  ) +
-  theme_minimal(base_size = 10) +
-  theme(legend.position = "top", strip.text = element_text(face = "bold"))
-
-ggsave(file.path(fig_dir, "ptc_logfc_by_source.pdf"), p5, width = 12, height = 6)
-cat(sprintf("  Saved: ptc_logfc_by_source.pdf\n"))
-
-# ─── Plot 6: GENCODE vs PacBio, unfiltered ──────────────────────────────────
 
 combined_unfilt_source <- combined_unfilt %>%
-  mutate(source = case_when(is_gencode ~ "GENCODE", is_novel ~ "PacBio", TRUE ~ NA_character_)) %>%
+  mutate(source = case_when(is_gencode ~ "GENCODE", is_novel ~ novel_source_label, TRUE ~ NA_character_)) %>%
   filter(!is.na(source))
 
-# Wilcoxon tests per source x cell_type
-wilcox_source <- combined_unfilt_source %>%
-  group_by(cell_type, source) %>%
-  summarise(
-    p = tryCatch(wilcox.test(logFC ~ has_ptc)$p.value, error = function(e) NA_real_),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    is_sig = !is.na(p) & p < 0.05,
-    sig_star = case_when(
-      is.na(p) ~ "", p < 0.001 ~ "***", p < 0.01 ~ "**", p < 0.05 ~ "*", TRUE ~ ""
+# Only generate source-stratified plots if both sources have data
+if (n_distinct(combined_filt_source$source) >= 2) {
+  p5 <- ggplot(combined_filt_source, aes(x = logFC, fill = ptc_label)) +
+    geom_density(alpha = 0.4, linewidth = 0.3) +
+    facet_grid(source ~ cell_type, scales = "free_y") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+    scale_fill_manual(values = c("PTC (>50nt)" = "#d62728", "No PTC (<=50nt)" = "#1f77b4")) +
+    labs(
+      title = sprintf("logFC Distribution by PTC Status: GENCODE vs %s (5%% filter)", novel_source_label),
+      subtitle = "Rows = isoform source; Columns = Cell type",
+      x = "logFC (Smg1i vs DMSO)", y = "Density", fill = NULL
+    ) +
+    theme_minimal(base_size = 10) +
+    theme(legend.position = "top", strip.text = element_text(face = "bold"))
+
+  ggsave(file.path(fig_dir, "ptc_logfc_by_source.pdf"), p5, width = 12, height = 6)
+  cat(sprintf("  Saved: ptc_logfc_by_source.pdf\n"))
+
+  # Wilcoxon tests per source x cell_type
+  wilcox_source <- combined_unfilt_source %>%
+    group_by(cell_type, source) %>%
+    summarise(
+      p = tryCatch(wilcox.test(logFC ~ has_ptc)$p.value, error = function(e) NA_real_),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      is_sig = !is.na(p) & p < 0.05,
+      sig_star = case_when(
+        is.na(p) ~ "", p < 0.001 ~ "***", p < 0.01 ~ "**", p < 0.05 ~ "*", TRUE ~ ""
+      )
     )
-  )
 
-sig_source <- wilcox_source %>% filter(is_sig)
+  sig_source <- wilcox_source %>% filter(is_sig)
 
-p6 <- ggplot(combined_unfilt_source, aes(x = logFC, color = ptc_label)) +
-  geom_rect(data = sig_source,
-            aes(fill = is_sig), xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf,
-            alpha = 0.07, inherit.aes = FALSE, show.legend = FALSE) +
-  scale_fill_manual(values = c("TRUE" = "gold"), guide = "none") +
-  geom_density(linewidth = 0.5, fill = NA) +
-  facet_grid(source ~ cell_type, scales = "free_y") +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
-  geom_text(data = wilcox_source,
-            aes(label = sig_star),
-            x = Inf, y = Inf, hjust = 1.2, vjust = 1.5,
-            size = 5, color = "black", fontface = "bold",
-            inherit.aes = FALSE) +
-  scale_color_manual(values = c("PTC (>50nt)" = "#d62728", "No PTC (<=50nt)" = "#1f77b4")) +
-  labs(
-    title = "logFC Distribution by PTC Status: GENCODE vs PacBio (NO 5% filter)",
-    subtitle = "Yellow / stars = significant (Wilcoxon p < 0.05)",
-    x = "logFC (Smg1i vs DMSO)", y = "Density", color = NULL
-  ) +
-  theme_minimal(base_size = 10) +
-  theme(legend.position = "top", strip.text = element_text(face = "bold"))
+  p6 <- ggplot(combined_unfilt_source, aes(x = logFC, color = ptc_label)) +
+    geom_rect(data = sig_source,
+              aes(fill = is_sig), xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf,
+              alpha = 0.07, inherit.aes = FALSE, show.legend = FALSE) +
+    scale_fill_manual(values = c("TRUE" = "gold"), guide = "none") +
+    geom_density(linewidth = 0.5, fill = NA) +
+    facet_grid(source ~ cell_type, scales = "free_y") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+    geom_text(data = wilcox_source,
+              aes(label = sig_star),
+              x = Inf, y = Inf, hjust = 1.2, vjust = 1.5,
+              size = 5, color = "black", fontface = "bold",
+              inherit.aes = FALSE) +
+    scale_color_manual(values = c("PTC (>50nt)" = "#d62728", "No PTC (<=50nt)" = "#1f77b4")) +
+    labs(
+      title = sprintf("logFC Distribution by PTC Status: GENCODE vs %s (NO 5%% filter)", novel_source_label),
+      subtitle = "Yellow / stars = significant (Wilcoxon p < 0.05)",
+      x = "logFC (Smg1i vs DMSO)", y = "Density", color = NULL
+    ) +
+    theme_minimal(base_size = 10) +
+    theme(legend.position = "top", strip.text = element_text(face = "bold"))
 
-ggsave(file.path(fig_dir, "ptc_logfc_by_source_unfiltered.pdf"), p6, width = 12, height = 6)
-cat(sprintf("  Saved: ptc_logfc_by_source_unfiltered.pdf\n"))
+  ggsave(file.path(fig_dir, "ptc_logfc_by_source_unfiltered.pdf"), p6, width = 12, height = 6)
+  cat(sprintf("  Saved: ptc_logfc_by_source_unfiltered.pdf\n"))
+} else {
+  cat("  Skipping source-stratified plots (only one source category present)\n")
+}
 
 # ─── Shift summary statistics ────────────────────────────────────────────────
 
@@ -408,7 +447,7 @@ for (ct in cell_types) {
 }
 
 cat("\n  By source (unfiltered):\n")
-for (src in c("GENCODE", "PacBio")) {
+for (src in c("GENCODE", novel_source_label)) {
   for (ct in cell_types) {
     d <- combined_unfilt_source %>% filter(cell_type == ct, source == src)
     if (sum(d$has_ptc) >= 10 && sum(!d$has_ptc) >= 10) {

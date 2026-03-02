@@ -14,16 +14,28 @@
 
 suppressPackageStartupMessages(library(tidyverse))
 
+# ─── Parse arguments ─────────────────────────────────────────────────────────
+
+args <- commandArgs(trailingOnly = TRUE)
+source_type <- "oarfish"  # default
+if ("--source" %in% args) {
+  idx <- which(args == "--source")
+  if (idx < length(args)) source_type <- args[idx + 1]
+}
+stopifnot(source_type %in% c("oarfish", "isocall"))
+
 cat("\n")
 cat("==================================================================\n")
-cat("   01: Compute PTC Status for All Coding Isoforms\n")
+cat(sprintf("   01: Compute PTC Status for All Coding Isoforms (%s)\n", source_type))
 cat("==================================================================\n\n")
 
 # ─── 1. Load data ────────────────────────────────────────────────────────────
 
-cat("Loading data...\n")
-cds_meta <- readRDS("data/isoform_cds_metadata.rds")
-structs  <- readRDS("data/isoform_structures.rds")
+data_dir <- if (source_type == "isocall") "data/isocall/" else "data/"
+
+cat(sprintf("Loading data from %s...\n", data_dir))
+cds_meta <- readRDS(file.path(data_dir, "isoform_cds_metadata.rds"))
+structs  <- readRDS(file.path(data_dir, "isoform_structures.rds"))
 
 coding <- cds_meta %>%
   filter(coding_status == "coding") %>%
@@ -117,7 +129,7 @@ ptc_results <- coding %>%
       TRUE ~ ">500"
     ),
     is_gencode = startsWith(isoform_id, "ENST"),
-    is_novel = startsWith(isoform_id, "PB.")
+    is_novel = if (source_type == "isocall") grepl("\\.novel\\d+$", isoform_id) else startsWith(isoform_id, "PB.")
   )
 
 # ─── 3. Summary statistics ──────────────────────────────────────────────────
@@ -129,8 +141,9 @@ cat(sprintf("  Stop not in exon (NA): %d\n",
 cat(sprintf("  PTC (>50nt): %d\n", sum(ptc_results$has_ptc == TRUE, na.rm = TRUE)))
 cat(sprintf("  Not PTC (<=50nt): %d\n",
             sum(ptc_results$has_ptc == FALSE & ptc_results$n_exons > 1, na.rm = TRUE)))
-cat(sprintf("  GENCODE: %d, PacBio novel: %d\n",
-            sum(ptc_results$is_gencode), sum(ptc_results$is_novel)))
+novel_label <- if (source_type == "isocall") "novel" else "PacBio novel"
+cat(sprintf("  GENCODE: %d, %s: %d\n",
+            sum(ptc_results$is_gencode), novel_label, sum(ptc_results$is_novel)))
 
 # Distance distribution for multi-exon coding isoforms
 multi_exon <- ptc_results %>% filter(n_exons > 1, !is.na(ptc_distance))
@@ -146,7 +159,7 @@ print(q)
 cat("\nPTC rates by isoform source:\n")
 ptc_results %>%
   filter(!is.na(has_ptc)) %>%
-  mutate(source = case_when(is_gencode ~ "GENCODE", is_novel ~ "PacBio", TRUE ~ "other")) %>%
+  mutate(source = case_when(is_gencode ~ "GENCODE", is_novel ~ novel_label, TRUE ~ "other")) %>%
   group_by(source) %>%
   summarise(
     n = n(),
@@ -159,60 +172,67 @@ ptc_results %>%
 
 # ─── 4. GENCODE NMD biotype validation ──────────────────────────────────────
 
-cat("\n\n")
-cat("==================================================================\n")
-cat("   GENCODE Validation: Computed PTC vs NMD Biotype\n")
-cat("==================================================================\n\n")
+if (source_type == "isocall") {
+  cat("\n  Note: Skipping GENCODE NMD biotype validation for isocall\n")
+  cat("  (isocall DE files lack biotype column; algorithm already validated by oarfish run)\n")
+  gencode_validation <- NULL
+} else {
+  cat("\n\n")
+  cat("==================================================================\n")
+  cat("   GENCODE Validation: Computed PTC vs NMD Biotype\n")
+  cat("==================================================================\n\n")
 
-# Load biotype info from DE files (GENCODE isoforms only)
-de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
-de_date <- "2026.1.18"
+  # Load biotype info from DE files (GENCODE isoforms only)
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
+  de_date <- "2026.1.18"
 
-# Use any one DE file to get biotype annotations (they're the same across cell types)
-de_sample <- read_csv(file.path(de_dir, paste0("nmd_dge_at2_", de_date, ".csv")),
-                       show_col_types = FALSE) %>%
-  select(txid, biotype) %>%
-  rename(isoform_id = txid) %>%
-  distinct()
+  # Use any one DE file to get biotype annotations (they're the same across cell types)
+  de_sample <- read_csv(file.path(de_dir, paste0("nmd_dge_at2_", de_date, ".csv")),
+                         show_col_types = FALSE) %>%
+    select(txid, biotype) %>%
+    rename(isoform_id = txid) %>%
+    distinct()
 
-validation <- ptc_results %>%
-  filter(is_gencode, !is.na(has_ptc)) %>%
-  inner_join(de_sample, by = "isoform_id") %>%
-  mutate(nmd_biotype = biotype == "nonsense_mediated_decay")
+  validation <- ptc_results %>%
+    filter(is_gencode, !is.na(has_ptc)) %>%
+    inner_join(de_sample, by = "isoform_id") %>%
+    mutate(nmd_biotype = biotype == "nonsense_mediated_decay")
 
-cat("Cross-tabulation: Computed PTC × GENCODE NMD biotype\n\n")
-tab <- table(Computed_PTC = validation$has_ptc,
-             GENCODE_NMD_biotype = validation$nmd_biotype)
-print(tab)
+  cat("Cross-tabulation: Computed PTC × GENCODE NMD biotype\n\n")
+  tab <- table(Computed_PTC = validation$has_ptc,
+               GENCODE_NMD_biotype = validation$nmd_biotype)
+  print(tab)
 
-# Concordance
-concordant <- sum(validation$has_ptc & validation$nmd_biotype) +
-  sum(!validation$has_ptc & !validation$nmd_biotype)
-cat(sprintf("\nConcordance: %d / %d (%.1f%%)\n",
-            concordant, nrow(validation), 100 * concordant / nrow(validation)))
+  # Concordance
+  concordant <- sum(validation$has_ptc & validation$nmd_biotype) +
+    sum(!validation$has_ptc & !validation$nmd_biotype)
+  cat(sprintf("\nConcordance: %d / %d (%.1f%%)\n",
+              concordant, nrow(validation), 100 * concordant / nrow(validation)))
 
-# Sensitivity/specificity of our PTC call vs GENCODE annotation
-tp <- sum(validation$has_ptc & validation$nmd_biotype)
-fp <- sum(validation$has_ptc & !validation$nmd_biotype)
-fn <- sum(!validation$has_ptc & validation$nmd_biotype)
-tn <- sum(!validation$has_ptc & !validation$nmd_biotype)
-cat(sprintf("Sensitivity (recall): %.1f%% (%d/%d)\n", 100 * tp / (tp + fn), tp, tp + fn))
-cat(sprintf("Specificity: %.1f%% (%d/%d)\n", 100 * tn / (tn + fp), tn, tn + fp))
-cat(sprintf("Precision (PPV): %.1f%% (%d/%d)\n", 100 * tp / (tp + fp), tp, tp + fp))
+  # Sensitivity/specificity of our PTC call vs GENCODE annotation
+  tp <- sum(validation$has_ptc & validation$nmd_biotype)
+  fp <- sum(validation$has_ptc & !validation$nmd_biotype)
+  fn <- sum(!validation$has_ptc & validation$nmd_biotype)
+  tn <- sum(!validation$has_ptc & !validation$nmd_biotype)
+  cat(sprintf("Sensitivity (recall): %.1f%% (%d/%d)\n", 100 * tp / (tp + fn), tp, tp + fn))
+  cat(sprintf("Specificity: %.1f%% (%d/%d)\n", 100 * tn / (tn + fp), tn, tn + fp))
+  cat(sprintf("Precision (PPV): %.1f%% (%d/%d)\n", 100 * tp / (tp + fp), tp, tp + fp))
 
-gencode_validation <- tibble(
-  computed_ptc = c(TRUE, TRUE, FALSE, FALSE),
-  gencode_nmd_biotype = c(TRUE, FALSE, TRUE, FALSE),
-  count = c(tp, fp, fn, tn)
-) %>%
-  mutate(
-    concordant = computed_ptc == gencode_nmd_biotype,
-    pct = round(100 * count / sum(count), 2)
-  )
+  gencode_validation <- tibble(
+    computed_ptc = c(TRUE, TRUE, FALSE, FALSE),
+    gencode_nmd_biotype = c(TRUE, FALSE, TRUE, FALSE),
+    count = c(tp, fp, fn, tn)
+  ) %>%
+    mutate(
+      concordant = computed_ptc == gencode_nmd_biotype,
+      pct = round(100 * count / sum(count), 2)
+    )
+}
 
 # ─── 5. Save outputs ────────────────────────────────────────────────────────
 
-output_dir <- "results/ptc/results"
+output_dir <- if (source_type == "isocall") "results/ptc/results/isocall" else "results/ptc/results"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # Save the full PTC status table
 ptc_status <- ptc_results %>%
@@ -225,7 +245,9 @@ saveRDS(ptc_status, file.path(output_dir, "ptc_status.rds"))
 cat(sprintf("\nSaved: %s (%d isoforms)\n",
             file.path(output_dir, "ptc_status.rds"), nrow(ptc_status)))
 
-write_tsv(gencode_validation, file.path(output_dir, "gencode_validation.tsv"))
-cat(sprintf("Saved: %s\n", file.path(output_dir, "gencode_validation.tsv")))
+if (!is.null(gencode_validation)) {
+  write_tsv(gencode_validation, file.path(output_dir, "gencode_validation.tsv"))
+  cat(sprintf("Saved: %s\n", file.path(output_dir, "gencode_validation.tsv")))
+}
 
 cat("\nDone.\n")
