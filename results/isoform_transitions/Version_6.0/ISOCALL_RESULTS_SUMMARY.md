@@ -50,11 +50,146 @@ Pairs were deduplicated across all comparison x cell-type sets, yielding **43,51
 
 ---
 
-## 2. Per-Comparison Analysis (Script 14)
+## 2. Pooled Splicing Profile Characterization (Scripts 09-13)
 
-Script 14 filtered the 43,513 deduplicated profiles to each comparison x cell-type combination and ran Scripts 09-13 on each subset. Note: pooled analysis (Scripts 09-13 on all 43,513 deduplicated pairs) was not run; all characterization data below comes from per-comparison subsets.
+These analyses describe the overall architecture of splicing differences between isoform pairs, pooled across all comparisons and cell types (all 43,513 deduplicated pairs from C1, C2, C3, C4).
 
-### 2.1 Profile Counts
+### 2.1 Event Complexity (Script 09)
+
+*All 43,513 deduplicated pairs.*
+
+Isoform pairs differ by a median of **2 events** (interquartile range: 1-3), lower than the oarfish median of 3, reflecting more closely related pairs from the larger isocall catalog. Comparator isoform length shows a weak association with the number of detected events (R^2 = 0.007, primary metric: `length_non_dom`). Profiles were binned into quartiles for downstream stratification:
+
+| Bin | Mean length (bp) | Profiles | Mean events |
+|-----|:---:|:---:|:---:|
+| Q1 (low) | 4,747 | 10,880 | 2.39 |
+| Q2 (medium-low) | 12,633 | 10,877 | 2.47 |
+| Q3 (medium-high) | 28,824 | 10,878 | 2.55 |
+| Q4 (high) | 106,790 | 10,878 | 2.56 |
+
+Higher-complexity transcripts are modestly more likely to have more events, but the effect is much weaker than in the oarfish analysis (R^2 = 0.007 vs. ~0.06).
+
+### 2.2 Event Co-occurrence (Script 10)
+
+*All 43,513 deduplicated pairs.*
+
+Analysis of 28 pairwise event combinations revealed 23 significant associations (82.1%). The isocall data shows a strikingly different co-occurrence landscape from oarfish, dominated by **mutual exclusion** between internal event types:
+
+**Co-occurring event pairs (OR > 1.3):**
+
+| Event Pair | Odds Ratio | 95% CI | Interpretation |
+|---|:---:|---|---|
+| Alt_TSS + Partial_IR | 1.59 | 1.50–1.69 | Terminal + partial retention co-occur |
+| Alt_TES + Missing_Internal | 1.51 | 1.41–1.62 | Terminal + missing exons co-occur |
+| Alt_TES + Partial_IR | 1.44 | 1.38–1.51 | Terminal + partial retention co-occur |
+
+**Mutually exclusive event pairs (OR < 0.5):**
+
+| Event Pair | Odds Ratio | 95% CI | Interpretation |
+|---|:---:|---|---|
+| Partial_IR + IR | 0.029 | 0.024–0.034 | Partial vs. full retention strongly exclusive |
+| IR + Missing_Internal | 0.031 | 0.021–0.044 | Retention vs. missing exons exclusive |
+| IR + SE | 0.060 | 0.051–0.070 | Retention vs. skipping exclusive |
+| A3SS + IR | 0.078 | 0.062–0.098 | Boundary vs. retention exclusive |
+| SE + Missing_Internal | 0.109 | 0.091–0.130 | Two inclusion types exclusive |
+| A5SS + IR | 0.098 | 0.074–0.128 | Boundary vs. retention exclusive |
+| A3SS + Partial_IR | 0.139 | 0.123–0.158 | Boundary vs. partial retention exclusive |
+| A3SS + SE | 0.191 | 0.167–0.219 | Boundary vs. skipping exclusive |
+| A5SS + Partial_IR | 0.192 | 0.166–0.221 | Boundary vs. partial retention exclusive |
+
+**Comparison to oarfish:** The oarfish analysis found A5SS + A3SS co-occurring (OR = 1.45) and A5SS + SE co-occurring (OR = 1.45). In the isocall data, A5SS + A3SS are **mutually exclusive** (OR = 0.55), and A5SS + SE are also exclusive (OR = 0.31). This reversal likely reflects the isocall catalog's finer structural granularity — with more closely related isoform pairs, internal events (boundary, retention, skipping) tend to appear individually rather than in combination.
+
+### 2.3 Spatial Organization (Script 11)
+
+*All 43,513 deduplicated pairs.*
+
+**Proximity analysis:**
+Events cluster significantly closer together than expected by chance. Observed mean inter-event distance = **9,071 bp** vs. permutation expectation = **13,519 bp** (z = -19.3, p < 0.001, 10,000 permutations). This 4,448 bp reduction is larger than in the oarfish analysis (1,464 bp), suggesting tighter spatial concentration of splicing differences.
+
+**Event topology:**
+Among profiles with exactly 2 internal events (n = 152), face-to-face (F2F) topology was significantly enriched:
+
+| Topology | Observed % | Permutation p |
+|---|:---:|:---:|
+| Face-to-face (F2F) | 40.8% | < 0.001 |
+| Interleaved | 38.8% | < 0.001 |
+| Back-to-back (B2B) | 20.4% | < 0.001 |
+
+F2F enrichment is even stronger than in oarfish (40.8% vs. 14.0%), consistent with more localized structural differences.
+
+**Positional bias:**
+All 12 event types showed significant non-uniform positional distributions (KS test, all p < 0.001), with median positions clustering around 0.47-0.57 (central).
+
+### 2.4 Functional Context (Script 12)
+
+*All 43,513 deduplicated pairs.*
+
+**Methodology:** Each event's genomic coordinates are overlapped with the **dominant isoform's** annotated union exons. Region types (5'UTR, CDS, 3'UTR, contains_orf_start, contains_orf_stop) are assigned to union exons based on their position relative to the dominant's CDS boundaries. The **expected proportion** for each region is the total base pairs in that region across all dominant isoforms divided by total bp in all regions. The **enrichment ratio** = observed proportion / expected proportion. Significance is assessed by binomial test with FDR correction. Events that don't overlap any union exon are classified as intronic.
+
+**Regional enrichment/depletion of events:**
+
+| Event Type | 5'UTR | CDS | 3'UTR | ORF Start | ORF Stop |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Alt_TSS** | **Enriched** (5.3x) | Depleted (0.71x) | **Enriched** (5.1x) | Depleted (0.92x) | Depleted (0.82x) |
+| **Alt_TES** | Depleted (0.82x) | Depleted (0.52x) | Depleted (0.80x) | **Enriched** (1.26x) | **Enriched** (1.22x) |
+| **A5SS** | **Enriched** (1.85x) | NS (1.05x) | **Enriched** (1.70x) | Depleted (0.23x) | Depleted (0.16x) |
+| **A3SS** | Depleted (0.69x) | NS (0.96x) | Depleted (0.65x) | Depleted (0.30x) | Depleted (0.26x) |
+| **SE** | Depleted (0.62x) | **Enriched** (1.95x) | Depleted (0.63x) | Depleted (0.08x) | Depleted (0.08x) |
+| **Missing_Internal** | **Enriched** (2.39x) | **Enriched** (1.55x) | **Enriched** (2.52x) | Depleted (0.39x) | Depleted (0.38x) |
+| **IR** | **Enriched** (1.46x) | **Enriched** (2.11x) | **Enriched** (1.21x) | Depleted (0.63x) | Depleted (0.62x) |
+
+*Note: Most events are intronic (43-81% depending on type). Enrichment ratios are among non-intronic events only. Alt_TSS enrichment in 3'UTR reflects comparator isoforms that use an internal/downstream promoter starting transcription within a region classified as 3'UTR of the dominant.*
+
+**ORF boundary susceptibility:**
+A5SS and A3SS events are depleted at ORF boundary exons (OR = 0.66, p < 10^-25), consistent with the oarfish finding (OR = 0.69). Splice site variation avoids positions critical for reading frame maintenance.
+
+**ORF impact of terminal events:**
+
+| Event | % Affecting ORF Boundary | n Events |
+|---|:---:|:---:|
+| Alt_TSS affecting ORF start | 35.3% | 12,738 / 36,080 |
+| Alt_TES affecting ORF stop | 46.3% | 12,744 / 27,497 |
+
+These rates are substantially higher than in the oarfish analysis (12.5% and 15.3%), suggesting that isocall's more complete isoform catalog captures a larger proportion of terminal events that impact ORF boundaries.
+
+### 2.5 Profile Pattern Classification (Script 13)
+
+*All 43,513 deduplicated pairs.*
+
+Splicing choice profiles were classified into 5 primary categories based on the event types present:
+
+1. **Terminal:** Alt_TSS, Alt_TES
+2. **Boundary:** A5SS, A3SS
+3. **Inclusion:** SE, Missing_Internal
+4. **Partial Retention:** Partial_IR_5, Partial_IR_3
+5. **Full Retention:** IR, IR_diff_5/3/5_3
+
+Profiles containing events from multiple categories were classified as **Combined** (84.1%, vs. ~80% in oarfish).
+
+**Top 10 profile signatures:**
+
+| Rank | Signature | n | % | Cumulative % |
+|:---:|---|:---:|:---:|:---:|
+| 1 | Terminal + Partial Retention | 11,859 | 32.4% | 32.4% |
+| 2 | Terminal + Inclusion | 10,936 | 29.9% | 62.3% |
+| 3 | Terminal + Full Retention | 6,800 | 18.6% | 80.8% |
+| 4 | Terminal + Boundary | 4,934 | 13.5% | 94.3% |
+| 5 | Terminal + Inclusion + Partial Retention | 620 | 1.7% | 96.0% |
+| 6 | Terminal + Boundary + Inclusion | 478 | 1.3% | 97.3% |
+| 7 | Terminal + Boundary + Partial Retention | 379 | 1.0% | 98.4% |
+| 8 | Terminal + Inclusion + Full Retention | 160 | 0.4% | 98.8% |
+| 9 | Terminal + Boundary + Full Retention | 114 | 0.3% | 99.1% |
+| 10 | Terminal + Partial Retention + Full Retention | 114 | 0.3% | 99.4% |
+
+Terminal events are nearly ubiquitous — **all top 10 signatures include Terminal events**. The most common pattern is Terminal + Partial Retention (32.4%), followed by Terminal + Inclusion (29.9%). This differs from the oarfish ranking where Terminal + Inclusion was #1 (20.2%). The top 4 two-category combinations account for 94.3% of all profiles, with very few three-or-more-category profiles (5.7%), indicating that isocall pairs typically differ by at most two types of structural change.
+
+---
+
+## 3. Per-Comparison Analysis (Script 14)
+
+Script 14 filtered the 43,513 deduplicated profiles to each comparison x cell-type combination and ran Scripts 09-13 on each subset.
+
+### 3.1 Profile Counts
 
 | Run | C1 | C2 | C4 |
 |---|:---:|:---:|:---:|
@@ -93,13 +228,13 @@ Terminal events are nearly ubiquitous in both NMD and baseline pairs. However, N
 
 ---
 
-## 3. Cross-Comparison Statistical Framework (Script 15)
+## 4. Cross-Comparison Statistical Framework (Script 15)
 
 This analysis asks: **Do NMD-triggering isoform transitions (C1, C2) differ structurally from baseline splicing variation (C4)?**
 
-### 3.1 Phase 1: NMD vs. Baseline — Per-Cell-Type Tests
+### 4.1 Phase 1: NMD vs. Baseline — Per-Cell-Type Tests
 
-#### 3.1.1 Event Complexity (Unpaired)
+#### 4.1.1 Event Complexity (Unpaired)
 
 | Comparison | Run | NMD n | Baseline n | NMD Median | Baseline Median | Cliff's delta | p |
 |:---:|---|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -115,7 +250,7 @@ This analysis asks: **Do NMD-triggering isoform transitions (C1, C2) differ stru
 
 Both NMD and baseline pairs show a median of **2 events** (lower than oarfish's median of 3), likely reflecting the larger isoform catalog producing more closely related pairs. C1 shows a negative (non-significant) trend, while C2 shows consistently significant positive Cliff's deltas across all 6 runs.
 
-#### 3.1.2 Paired Analysis (Same Genes in Both NMD and C4)
+#### 4.1.2 Paired Analysis (Same Genes in Both NMD and C4)
 
 For genes appearing in both an NMD comparison (C2) and the baseline (C4), paired within-gene tests compare the event count of the NMD pair vs. the C4 pair for the same gene. C1 was excluded from paired analysis due to insufficient overlap.
 
@@ -130,20 +265,20 @@ For genes appearing in both an NMD comparison (C2) and the baseline (C4), paired
 
 All C2 paired analyses are significant (all p < 0.003), with 55-64% of NMD pairs having more events than their baseline counterparts for the same gene. This is considerably stronger than the oarfish analysis (where most paired results were non-significant at p ~ 0.04-0.69).
 
-### 3.2 Phase 2: Meta-Analysis Across Cell Types
+### 4.2 Phase 2: Meta-Analysis Across Cell Types
 
 Random-effects meta-analysis (REML) pooled effect sizes across cell types (3 for C1, 5 for C2):
 
-#### 3.2.1 Event Complexity and Profile Types (NMD vs. C4 Baseline)
+#### 4.2.1 Event Complexity and Profile Types (NMD vs. C4 Baseline)
 
 | Metric | C1 Pooled | C1 95% CI | C1 p | C2 Pooled | C2 95% CI | C2 p |
 |---|:---:|---|:---:|:---:|---|:---:|
 | Cliff's delta (events) | -0.072 | -0.180, 0.035 | 0.186 | 0.089 | 0.066, 0.111 | **< 10^-13** |
 | Cramer's V (profile types) | 0.059 | 0.026, 0.092 | **< 0.001** | 0.132 | 0.116, 0.148 | **< 10^-57** |
 
-C1 shows no event complexity difference (delta ~ -0.07, NS). C2 shows a highly significant excess of events in NMD pairs (pooled delta = 0.089, p < 10^-13). Profile type distributions differ substantially for C2 (Cramer's V = 0.132, a moderate effect size — approximately 4x larger than oarfish's 0.03).
+C1 shows no event complexity difference (delta ~ -0.07, NS). C2 shows a highly significant excess of events in NMD pairs (pooled delta = 0.089, p < 10^-13). Profile type distributions differ substantially for C2 (Cramer's V = 0.132, a moderate effect size — approximately 4x larger than oarfish's 0.03). See Section 4.3.2 for the complexity confound that partially explains C2's event excess.
 
-#### 3.2.2 Event Type Prevalence (Odds Ratios, NMD vs. C4 Baseline)
+#### 4.2.2 Event Type Prevalence (Odds Ratios, NMD vs. C4 Baseline)
 
 | Event Type | C1 OR | C1 95% CI | C1 p | C1 I^2 | C2 OR | C2 95% CI | C2 p | C2 I^2 |
 |---|:---:|---|:---:|:---:|:---:|---|:---:|:---:|
@@ -168,9 +303,9 @@ C1 shows no event complexity difference (delta ~ -0.07, NS). C2 shows a highly s
 
 **Comparison to oarfish results:** The oarfish analysis found Alt_TES enrichment in C1 (OR = 1.24, p = 0.008) and SE enrichment in C2 (OR = 1.13, p = 0.013). Neither signal replicates here. Instead, the isocall analysis reveals a novel Alt_TSS enrichment in C2 (not seen in oarfish) and a Missing_Internal depletion (not seen in oarfish). This divergence may reflect the larger, more complete isoform catalog from joint calling capturing different structural relationships.
 
-### 3.3 Phase 3: Sensitivity Analyses
+### 4.3 Phase 3: Sensitivity Analyses
 
-#### 3.3.1 C1 vs. C2 Concordance
+#### 4.3.1 C1 vs. C2 Concordance
 
 Correlation of event-level Cliff's deltas between C1 and C2 across 3 cell types:
 
@@ -184,7 +319,7 @@ C1 and C2 show strong event-level correlations (r = 0.77-0.91, all significant),
 
 **Comparison to oarfish:** In the oarfish analysis, C1-C2 concordance was much weaker (only DD_ALI significant at r = 0.78). The isocall analysis shows uniformly strong concordance, possibly because the larger isoform catalog provides more statistical stability at the event-type level.
 
-#### 3.3.2 Complexity Confound
+#### 4.3.2 Complexity Confound
 
 A critical confound: do NMD comparator isoforms (C1/C2) differ in baseline transcript complexity from C4 comparators?
 
@@ -193,11 +328,11 @@ A critical confound: do NMD comparator isoforms (C1/C2) differ in baseline trans
 | **C1** | Mixed; DD_ALI comparators have fewer exons (median 4 vs. 6) | DD_ALI (p < 10^-8) | delta = -0.43 |
 | **C2** | NMD comparators have **substantially more** exons (median 9-10 vs. 6) | AT, DD, FB, MV (p < 10^-100) | delta = 0.41-0.44 |
 
-The C2 complexity confound is **much larger** in the isocall analysis than in oarfish (Cliff's delta ~ 0.43 vs. ~0.1 in oarfish). NMD comparator isoforms selected by top CPM from the isocall catalog tend to be complex multi-exon transcripts (median 9-10 exons) compared to baseline comparators (median 6 exons). This means the C2 event count excess (Section 3.2.1) is substantially confounded by transcript complexity, and event-level results (especially SE) should be interpreted with caution.
+The C2 complexity confound is **much larger** in the isocall analysis than in oarfish (Cliff's delta ~ 0.43 vs. ~0.1 in oarfish). NMD comparator isoforms selected by top CPM from the isocall catalog tend to be complex multi-exon transcripts (median 9-10 exons) compared to baseline comparators (median 6 exons). This means the C2 event count excess (Section 4.2.1) is substantially confounded by transcript complexity, and event-level results (especially SE) should be interpreted with caution.
 
 DD_ALI shows the opposite pattern in both C1 and C2 (NMD comparators are simpler), suggesting cell-type-specific differences in NMD target architecture.
 
-#### 3.3.3 Event Direction (GAIN vs. LOSS)
+#### 4.3.3 Event Direction (GAIN vs. LOSS)
 
 The proportion of LOSS events (comparator lost sequence relative to dominant) reveals a striking directional asymmetry in the isocall data:
 
@@ -221,9 +356,9 @@ DD_ALI is again the exception, showing the opposite pattern (more LOSS in NMD), 
 
 ---
 
-## 4. Summary of Key Findings
+## 5. Summary of Key Findings
 
-### 4.1 Isocall Reveals Stronger NMD Signals Than Oarfish
+### 5.1 Isocall Reveals Stronger NMD Signals Than Oarfish
 
 The expanded isoform catalog from joint calling (645K vs. ~200K isoforms) produces substantially different results compared to the oarfish analysis:
 
@@ -236,7 +371,7 @@ The expanded isoform catalog from joint calling (645K vs. ~200K isoforms) produc
 | Direction asymmetry | None | LOSS deficit in NMD | New finding from isocall |
 | C2 complexity confound | Moderate (delta ~0.1) | Large (delta ~0.43) | More confounded in isocall |
 
-### 4.2 Alt_TSS Enrichment is the Dominant Signal
+### 5.2 Alt_TSS Enrichment is the Dominant Signal
 
 The most robust finding is that NMD transitions (C2) are 39% more likely to involve alternative transcription start sites compared to baseline splicing variation (OR = 1.39, p < 10^-18, I^2 = 0%). This signal:
 - Is perfectly consistent across all 5 cell types
@@ -244,7 +379,7 @@ The most robust finding is that NMD transitions (C2) are 39% more likely to invo
 - Represents a novel finding not detected in the oarfish analysis
 - Suggests that NMD-sensitive isoforms frequently differ from non-NMD isoforms at their 5' end
 
-### 4.3 The Complexity Confound is Substantial
+### 5.3 The Complexity Confound is Substantial
 
 The C2 NMD comparator isoforms have dramatically more exons than baseline comparators (median 9-10 vs. 6, delta ~0.43). This confound:
 - Likely inflates the C2 event count excess
@@ -252,15 +387,15 @@ The C2 NMD comparator isoforms have dramatically more exons than baseline compar
 - Does NOT explain the Alt_TSS enrichment (Alt_TSS is not mechanistically linked to exon count)
 - Suggests that NMD-sensitive isoforms in the isocall catalog tend to be complex, multi-exon transcripts
 
-### 4.4 Directional Asymmetry is a New Finding
+### 5.4 Directional Asymmetry is a New Finding
 
 The isocall analysis reveals that NMD comparator isoforms tend to have gained sequence (GAIN events) relative to their non-NMD dominants, whereas baseline pairs show balanced GAIN/LOSS. This directional bias (LOSS proportion 37-39% in NMD vs. 54% in baseline) was absent in the oarfish analysis and represents a potentially important structural signature of NMD-triggering isoforms.
 
-### 4.5 C1 Has Limited Power
+### 5.5 C1 Has Limited Power
 
 With only 50-63 profiles per completed run (and 3 of 6 runs skipped), C1 lacks sufficient power for definitive conclusions in the isocall analysis. The isocall catalog's granularity appears to dilute per-gene dominance, making it harder for any single isoform to be "dominant" under both DMSO and Smg1i conditions.
 
-### 4.6 Cell-Type Heterogeneity
+### 5.6 Cell-Type Heterogeneity
 
 DD_ALI consistently shows divergent patterns from other cell types:
 - Reversed complexity confound (NMD comparators are simpler)
@@ -269,9 +404,19 @@ DD_ALI consistently shows divergent patterns from other cell types:
 
 ---
 
-## 5. Generated Figures
+## 6. Generated Figures
 
-### 5.1 Cross-Comparison Analysis Figures
+### 6.1 Pooled Downstream Analysis Figures
+
+| Figure | Location | Description |
+|---|---|---|
+| Complexity vs. Events | `deduplicated/results/figures/complexity_vs_events.pdf` | Scatter/density plot of transcript complexity vs. event count |
+| Co-occurrence Heatmap | `deduplicated/results/figures/cooccurrence_heatmap.pdf` | Heatmap of pairwise event co-occurrence odds ratios |
+| Pattern Classification | `deduplicated/results/figures/pattern_classification.pdf` | Distribution of splicing profile pattern categories |
+| Regional Enrichment | `deduplicated/results/figures/regional_enrichment.pdf` | Event enrichment/depletion across genomic regions |
+| Spatial Patterns | `deduplicated/results/figures/spatial_patterns.pdf` | Event proximity and topology analyses |
+
+### 6.2 Cross-Comparison Analysis Figures
 
 | Figure | Location | Description |
 |---|---|---|
@@ -283,7 +428,7 @@ DD_ALI consistently shows divergent patterns from other cell types:
 | Forest Plot — C1 Events | `cross_comparison/figures/forest_events_C1.pdf` | Cell-type-specific event ORs for C1 |
 | Forest Plot — C2 Events | `cross_comparison/figures/forest_events_C2.pdf` | Cell-type-specific event ORs for C2 |
 
-### 5.2 Per-Comparison Analysis Figures
+### 6.3 Per-Comparison Analysis Figures
 
 Each completed comparison x run has analysis figures in `{C}/{run}/results/figures/`.
 
@@ -291,11 +436,11 @@ All figure paths are relative to `comparisons/isocall_nonNMD_0.50/`.
 
 ---
 
-## 6. Output File Inventory
+## 7. Output File Inventory
 
 All output files are located under `comparisons/isocall_nonNMD_0.50/`.
 
-### 6.1 Data Preparation (`data/isocall/`)
+### 7.1 Data Preparation (`data/isocall/`)
 
 | File | Description |
 |---|---|
@@ -310,7 +455,26 @@ All output files are located under `comparisons/isocall_nonNMD_0.50/`.
 | `isoform_union_exons_annotated.rds` | Union exons with region type annotations |
 | `*_filtered.rds` (7 files) | Post-filterByExpr versions of all data files |
 
-### 6.2 Per-Comparison Results
+### 7.2 Pooled Results (`deduplicated/results/`)
+
+| File | Description |
+|---|---|
+| `splicing_choice_profiles_with_bins.rds` | 43,513 profiles with complexity quartile bins |
+| `complexity_relationship_results.rds` | Linear model results |
+| `complexity_bins_definition.rds` | Quartile boundary definitions |
+| `cooccurrence_crude_results.tsv` | 28 pairwise event co-occurrence tests |
+| `cooccurrence_stratified_results.tsv` | Stratified co-occurrence with ORs and CIs |
+| `positional_bias_results.tsv` | KS test results for 12 event types |
+| `proximity_analysis_results.tsv` | Permutation test for event clustering |
+| `topology_enrichment_results.tsv` | F2F/B2B/Interleaved enrichment |
+| `regional_distribution_results.tsv` | Event enrichment across genomic regions |
+| `orf_boundary_susceptibility.tsv` | A5SS/A3SS depletion at ORF boundaries |
+| `orf_impact_summary.tsv` | Alt_TSS/Alt_TES impact on ORF start/stop |
+| `pattern_frequencies_by_complexity.tsv` | Pattern types stratified by complexity quartile |
+| `pattern_complexity_association.tsv` | Chi-square test of pattern x complexity |
+| `top_patterns.tsv` | Top 10 profile pattern signatures |
+
+### 7.3 Per-Comparison Results
 
 `per_comparison_run_summary.tsv` — Summary of 18 comparison x run combinations (15 completed, 3 skipped).
 
@@ -321,7 +485,7 @@ Per-run results stored in `{C1,C2,C4}/{run}/results/` with analysis output files
 - `regional_distribution_results.tsv`, `orf_boundary_susceptibility.tsv`, `orf_impact_summary.tsv`
 - `pattern_frequencies_by_complexity.tsv`, `pattern_complexity_association.tsv`, `top_patterns.tsv`
 
-### 6.3 Cross-Comparison Results (`cross_comparison/`)
+### 7.4 Cross-Comparison Results (`cross_comparison/`)
 
 | File | Description |
 |---|---|
@@ -336,7 +500,7 @@ Per-run results stored in `{C1,C2,C4}/{run}/results/` with analysis output files
 
 ---
 
-## 7. Validation Status
+## 8. Validation Status
 
 - **Event detection test suite:** 126/126 PASS (100%) — 44 synthetic + 80 real-data + 2 deduplication tests
 - **GENCODE validation:** 4,274/4,274 PASS (100%) — random dominant assignment, seed = 42
@@ -344,9 +508,9 @@ Per-run results stored in `{C1,C2,C4}/{run}/results/` with analysis output files
 
 ---
 
-## 8. Methodological Notes
+## 9. Methodological Notes
 
-### 8.1 Isocall vs. Oarfish Catalog Properties
+### 9.1 Isocall vs. Oarfish Catalog Properties
 
 The isocall joint calling approach produces a fundamentally different isoform catalog:
 - **3x more isoforms** (645K vs. ~200K), including many novel isoforms not in GENCODE
@@ -354,10 +518,10 @@ The isocall joint calling approach produces a fundamentally different isoform ca
 - **Different dominant isoform selection**: the larger catalog means more candidates per gene, diluting per-gene dominance and reducing C1 pair counts
 - **Novel isoform CDS**: 118,775 novel isoforms received CDS annotations from SQANTI; 43,192 remain unknown
 
-### 8.2 PTC Analysis
+### 9.2 PTC Analysis
 
 PTC (premature termination codon) and frame disruption analysis has not been performed on the isocall data. See the oarfish `RESULTS_SUMMARY.md` (Section 5) for the rMATS-PacBio concordance analysis.
 
-### 8.3 Pooled Characterization
+### 9.3 Pooled Characterization
 
-Scripts 09-13 were run per-comparison (via Script 14) but not on the full 43,513 deduplicated pair set. To generate pooled characterization (analogous to Section 2 of the oarfish summary), run Scripts 09-13 directly on `comparisons/isocall_nonNMD_0.50/deduplicated/splicing_choice_profiles.rds`.
+Scripts 09-13 have been run on the full 43,513 deduplicated pair set. Results are in `comparisons/isocall_nonNMD_0.50/deduplicated/results/` and summarized in Section 2.
