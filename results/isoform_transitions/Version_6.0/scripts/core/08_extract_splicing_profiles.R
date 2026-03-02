@@ -60,7 +60,7 @@ if ("--pairs-file" %in% args) {
   }
 }
 
-output_path <- "data/splicing_choice_profiles.rds"
+output_path <- NULL  # will be set after data_dir is known
 if ("--output" %in% args) {
   out_idx <- which(args == "--output")
   if (out_idx < length(args)) {
@@ -82,6 +82,26 @@ if ("--run-log" %in% args) {
 
 use_store <- !("--no-store" %in% args)
 clear_store <- "--clear-store" %in% args
+
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+# Set data directory based on source
+data_dir <- if (source_type == "isocall") "data/isocall" else "data"
+
+# Default output path if not specified via --output
+if (is.null(output_path)) {
+  output_path <- file.path(data_dir, "splicing_choice_profiles.rds")
+}
 
 # ==============================================================================
 # Input Validation Helpers
@@ -137,7 +157,7 @@ if (!is.null(pairs_file)) {
   cat(sprintf("*** PAIRS FILE: %s ***\n\n", pairs_file))
 }
 
-if (output_path != "data/splicing_choice_profiles.rds") {
+if (output_path != file.path(data_dir, "splicing_choice_profiles.rds")) {
   cat(sprintf("*** OUTPUT: %s ***\n\n", output_path))
 }
 
@@ -152,12 +172,12 @@ if (!use_store) {
 # ==============================================================================
 
 cat("Validating inputs...\n")
-validate_file("data/isoform_union_exons_annotated_filtered.rds")
+validate_file(file.path(data_dir, "isoform_union_exons_annotated_filtered.rds"))
 if (is.null(pairs_file)) {
-  validate_file("data/dominant_isoforms_filtered.rds")
+  validate_file(file.path(data_dir, "dominant_isoforms_filtered.rds"))
 }
-validate_file("data/union_exons_filtered.rds")
-validate_file("data/isoform_structures_filtered.rds")
+validate_file(file.path(data_dir, "union_exons_filtered.rds"))
+validate_file(file.path(data_dir, "isoform_structures_filtered.rds"))
 validate_file("scripts/core/event_detection_functions.R")
 cat("  All required input files found.\n\n")
 
@@ -192,13 +212,13 @@ cat(sprintf("  Splice site threshold: %d bp\n\n", SPLICE_SITE_THRESHOLD))
 # ==============================================================================
 
 cat("Loading filtered data...\n")
-annotated_mapping <- readRDS("data/isoform_union_exons_annotated_filtered.rds")
+annotated_mapping <- readRDS(file.path(data_dir, "isoform_union_exons_annotated_filtered.rds"))
 dominant_isoforms <- NULL
 if (is.null(pairs_file)) {
-  dominant_isoforms <- readRDS("data/dominant_isoforms_filtered.rds")
+  dominant_isoforms <- readRDS(file.path(data_dir, "dominant_isoforms_filtered.rds"))
 }
-union_exons <- readRDS("data/union_exons_filtered.rds")
-isoform_structures_compact <- readRDS("data/isoform_structures_filtered.rds")
+union_exons <- readRDS(file.path(data_dir, "union_exons_filtered.rds"))
+isoform_structures_compact <- readRDS(file.path(data_dir, "isoform_structures_filtered.rds"))
 
 cat(sprintf("  Annotated mappings: %d\n", nrow(annotated_mapping)))
 if (!is.null(dominant_isoforms)) {
@@ -266,8 +286,9 @@ cat(sprintf("  Expanded to %d exon rows\n", nrow(isoform_structures)))
 # Note: pairs file uses "comparator_isoform_id" which maps to "non_dominant_isoform_id"
 # in the profile output. The store uses the profile column names.
 
-if (clear_store && file.exists("data/splicing_profile_store.rds")) {
-  file.remove("data/splicing_profile_store.rds")
+store_path <- file.path(data_dir, "splicing_profile_store.rds")
+if (clear_store && file.exists(store_path)) {
+  file.remove(store_path)
   cat("\n  Cleared existing profile store.\n")
 }
 
@@ -278,16 +299,16 @@ n_store_new <- 0L
 n_store_reverified <- 0L
 cached_profiles_list <- list()
 
-if (use_store && file.exists("data/splicing_profile_store.rds")) {
+if (use_store && file.exists(store_path)) {
   cat("\nLoading profile store...\n")
-  stored <- readRDS("data/splicing_profile_store.rds")
+  stored <- readRDS(store_path)
 
   # Validate fingerprint: cached profiles depend on exon coordinates, union exons,
   # annotated mappings, and detection thresholds. If any change, store is stale.
   current_fp <- list(
-    isoform_structures_mtime = file.mtime("data/isoform_structures_filtered.rds"),
-    union_exons_mtime = file.mtime("data/union_exons_filtered.rds"),
-    annotated_mapping_mtime = file.mtime("data/isoform_union_exons_annotated_filtered.rds"),
+    isoform_structures_mtime = file.mtime(file.path(data_dir, "isoform_structures_filtered.rds")),
+    union_exons_mtime = file.mtime(file.path(data_dir, "union_exons_filtered.rds")),
+    annotated_mapping_mtime = file.mtime(file.path(data_dir, "isoform_union_exons_annotated_filtered.rds")),
     tss_tolerance = TSS_TOLERANCE,
     tes_tolerance = TES_TOLERANCE,
     splice_site_threshold = SPLICE_SITE_THRESHOLD
@@ -750,9 +771,9 @@ for (batch_idx in 1:n_batches) {
     cat("  CHECKPOINT: Saving intermediate results for development\n")
     cat("  ═══════════════════════════════════════════════════════════\n")
     intermediate_profiles <- bind_rows(splicing_profiles)
-    saveRDS(intermediate_profiles, "data/splicing_choice_profiles_intermediate.rds")
+    saveRDS(intermediate_profiles, file.path(data_dir, "splicing_choice_profiles_intermediate.rds"))
     cat(sprintf("  ✓ Saved %d profiles to:\n", nrow(intermediate_profiles)))
-    cat("     data/splicing_choice_profiles_intermediate.rds\n")
+    cat(sprintf("     %s/splicing_choice_profiles_intermediate.rds\n", data_dir))
     cat(sprintf("  ✓ Covering %d genes\n", n_distinct(intermediate_profiles$gene_id)))
     cat("\n  This file can be used for developing Scripts 08-12\n")
     cat("  while the full processing continues...\n")
@@ -870,9 +891,9 @@ cat(sprintf("  ✓ %s\n", output_path))
 # Update central profile store
 if (use_store && nrow(new_profiles_df) > 0) {
   current_fp <- list(
-    isoform_structures_mtime = file.mtime("data/isoform_structures_filtered.rds"),
-    union_exons_mtime = file.mtime("data/union_exons_filtered.rds"),
-    annotated_mapping_mtime = file.mtime("data/isoform_union_exons_annotated_filtered.rds"),
+    isoform_structures_mtime = file.mtime(file.path(data_dir, "isoform_structures_filtered.rds")),
+    union_exons_mtime = file.mtime(file.path(data_dir, "union_exons_filtered.rds")),
+    annotated_mapping_mtime = file.mtime(file.path(data_dir, "isoform_union_exons_annotated_filtered.rds")),
     tss_tolerance = TSS_TOLERANCE,
     tes_tolerance = TES_TOLERANCE,
     splice_site_threshold = SPLICE_SITE_THRESHOLD
@@ -887,7 +908,7 @@ if (use_store && nrow(new_profiles_df) > 0) {
   }
 
   saveRDS(list(profiles = updated_store, fingerprint = current_fp),
-          "data/splicing_profile_store.rds")
+          store_path)
   cat(sprintf("  ✓ Store updated: %d total profiles (+%d new)\n",
               nrow(updated_store), nrow(new_profiles_df)))
 } else if (use_store && nrow(new_profiles_df) == 0 && n_store_cached > 0) {

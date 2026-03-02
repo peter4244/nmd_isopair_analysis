@@ -70,6 +70,21 @@ if ("--test" %in% args) {
   }
 }
 
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+# Set data directory based on source
+data_dir <- if (source_type == "isocall") "data/isocall" else "data"
+
 cat("\n")
 cat("╔════════════════════════════════════════════════════════════════╗\n")
 cat("║   STEP 3: Build Atomic Union Exon Models                     ║\n")
@@ -85,7 +100,7 @@ if (!is.null(n_genes_limit)) {
 # ==============================================================================
 
 cat("Validating inputs...\n")
-validate_file("data/isoform_structures.rds")
+validate_file(file.path(data_dir, "isoform_structures.rds"))
 cat("  All required input files found.\n\n")
 
 # ==============================================================================
@@ -93,7 +108,7 @@ cat("  All required input files found.\n\n")
 # ==============================================================================
 
 cat("Loading isoform structures...\n")
-isoform_structures <- readRDS("data/isoform_structures.rds")
+isoform_structures <- readRDS(file.path(data_dir, "isoform_structures.rds"))
 validate_columns(isoform_structures,
                  c("gene_id", "isoform_id", "seqnames", "strand", "exon_starts", "exon_ends"),
                  "isoform_structures")
@@ -127,8 +142,8 @@ if (!is.null(n_genes_limit)) {
 cat("\nBuilding atomic union exon models...\n")
 
 # Temporary TSV files for incremental writing
-ue_tmp_file <- "data/union_exons_tmp.tsv"
-map_tmp_file <- "data/isoform_union_mapping_tmp.tsv"
+ue_tmp_file <- file.path(data_dir, "union_exons_tmp.tsv")
+map_tmp_file <- file.path(data_dir, "isoform_union_mapping_tmp.tsv")
 
 # Write headers
 ue_header <- "seqnames\tunion_exon_start\tunion_exon_end\tunion_exon_id\tstrand\tgene_id\tunion_exon_number\tunion_exon_length"
@@ -324,7 +339,7 @@ cat("\nCreating tabix-indexed union exon file...\n")
 ue_df <- read_tsv(ue_tmp_file, show_col_types = FALSE)
 
 # Tabix file: chr, start, end, union_exon_id, strand, gene_id (matches development format)
-tabix_file <- "data/union_exons.tsv"
+tabix_file <- file.path(data_dir, "union_exons.tsv")
 ue_sorted <- ue_df %>% arrange(seqnames, union_exon_start)
 
 writeLines("#chr\tstart\tend\tunion_exon_id\tstrand\tgene_id", tabix_file)
@@ -342,7 +357,7 @@ if (bgzip_status != 0) {
   if (tabix_status != 0) {
     warning(sprintf("tabix failed with status %d", tabix_status))
   } else {
-    cat("  data/union_exons.tsv.gz (tabix-indexed)\n")
+    cat(sprintf("  %s/union_exons.tsv.gz (tabix-indexed)\n", data_dir))
   }
 }
 
@@ -357,14 +372,14 @@ union_exons <- ue_df %>%
   select(union_exon_id, union_exon_number, union_exon_start, union_exon_end,
          union_exon_length, gene_id, seqnames, strand)
 
-saveRDS(union_exons, "data/union_exons.rds")
-cat("  data/union_exons.rds\n")
+saveRDS(union_exons, file.path(data_dir, "union_exons.rds"))
+cat(sprintf("  %s/union_exons.rds\n", data_dir))
 
 # Isoform mapping RDS
 map_df <- read_tsv(map_tmp_file, show_col_types = FALSE)
 
-saveRDS(map_df, "data/isoform_union_mapping.rds")
-cat("  data/isoform_union_mapping.rds\n")
+saveRDS(map_df, file.path(data_dir, "isoform_union_mapping.rds"))
+cat(sprintf("  %s/isoform_union_mapping.rds\n", data_dir))
 
 # ==============================================================================
 # 6. Validation

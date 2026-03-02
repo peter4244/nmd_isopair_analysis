@@ -47,8 +47,24 @@ if ("--output-dir" %in% args) {
   output_dir <- args[idx + 1]
 }
 
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+# Set data directory based on source
+data_dir <- if (source_type == "isocall") "data/isocall" else "data"
+
 cat(sprintf("  Input:      %s\n", input_path))
-cat(sprintf("  Output dir: %s\n\n", output_dir))
+cat(sprintf("  Output dir: %s\n", output_dir))
+cat(sprintf("  Source:     %s\n\n", source_type))
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 1: Load Data
@@ -64,7 +80,7 @@ profiles <- readRDS(input_path)
 cat(sprintf("  Loaded %d profiles\n", nrow(profiles)))
 
 # Load isoform structures for gene span and exon boundary mapping
-structures <- readRDS("data/isoform_structures_filtered.rds")
+structures <- readRDS(file.path(data_dir, "isoform_structures_filtered.rds"))
 cat(sprintf("  Loaded %d isoform structures\n", nrow(structures)))
 
 # ═══════════════════════════════════════════════════════════════════

@@ -9,12 +9,17 @@
 #   This includes start codon, stop codon positions, and ORF length calculations.
 #
 # Input:
-#   - data/expression_data.rds (major isoforms list)
-#   - reference_files/gencode.v49.chr_patch_hapl_scaff.annotation.gff3.gz
-#   - isoseq/collapse/merge-collapsed.gff (PacBio, if available)
+#   --source oarfish (default):
+#     - data/expression_data.rds
+#     - reference_files/gencode.v49.chr_patch_hapl_scaff.annotation.gff3.gz
+#     - reference_files/sqanti3_corrected.cds.gff3 (PacBio CDS)
+#   --source isocall:
+#     - data/isocall/expression_data.rds
+#     - reference_files/gencode.v49.chr_patch_hapl_scaff.annotation.gff3.gz (ENST CDS)
+#     - SQANTI CDS output for novel isoforms (path TBD)
 #
 # Output:
-#   - data/isoform_cds_metadata.rds
+#   - data/isoform_cds_metadata.rds (oarfish) or data/isocall/isoform_cds_metadata.rds
 #
 # Structure:
 #   isoform_id, coding_status (coding/non_coding/unknown),
@@ -24,6 +29,25 @@
 
 library(tidyverse)
 library(rtracklayer)
+
+# Parse command-line arguments
+args <- commandArgs(trailingOnly = TRUE)
+
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+# Set paths based on source
+data_dir <- if (source_type == "isocall") "data/isocall" else "data"
+output_file <- file.path(data_dir, "isoform_cds_metadata.rds")
 
 # ==============================================================================
 # Input Validation Helpers
@@ -44,7 +68,8 @@ validate_columns <- function(df, required_cols, name) {
 
 cat("\n")
 cat("╔════════════════════════════════════════════════════════════════╗\n")
-cat("║   STEP 4: Extract CDS Annotations                            ║\n")
+cat(sprintf("║   STEP 4: Extract CDS Annotations [source: %s]%s║\n",
+            source_type, strrep(" ", 15 - nchar(source_type))))
 cat("╚════════════════════════════════════════════════════════════════╝\n")
 cat("\n")
 
@@ -53,9 +78,12 @@ cat("\n")
 # ==============================================================================
 
 cat("Validating inputs...\n")
-validate_file("data/expression_data.rds")
+validate_file(file.path(data_dir, "expression_data.rds"))
 validate_file("/Users/petecastaldi/claude_projects/nmd/reference_files/gencode.v49.chr_patch_hapl_scaff.annotation.gff3.gz")
-validate_file("/Users/petecastaldi/claude_projects/nmd/reference_files/sqanti3_corrected.cds.gff3")
+if (source_type == "oarfish") {
+  validate_file("/Users/petecastaldi/claude_projects/nmd/reference_files/sqanti3_corrected.cds.gff3")
+}
+# Note: isocall SQANTI CDS path validated below (TBD)
 cat("  All required input files found.\n\n")
 
 # ==============================================================================
@@ -63,24 +91,37 @@ cat("  All required input files found.\n\n")
 # ==============================================================================
 
 cat("Loading major isoforms list...\n")
-expression_data <- readRDS("data/expression_data.rds")
+expression_data <- readRDS(file.path(data_dir, "expression_data.rds"))
 validate_columns(expression_data, c("isoform_id"), "expression_data")
 cat("  Required columns verified.\n")
 
 major_isoforms <- unique(expression_data$isoform_id)
 cat(sprintf("  Loaded %d major isoforms\n", length(major_isoforms)))
 
-# Separate GENCODE (ENST) and PacBio (PB) isoforms
-enst_isoforms <- major_isoforms[str_detect(major_isoforms, "^ENST")]
-pb_isoforms <- major_isoforms[str_detect(major_isoforms, "^PB\\.")]
+if (source_type == "isocall") {
+  # Isocall: ENST (versioned) + novel (ENSG*.novelN)
+  enst_isoforms <- major_isoforms[str_detect(major_isoforms, "^ENST")]
+  novel_isoforms <- major_isoforms[str_detect(major_isoforms, "\\.novel\\d+$")]
 
-# Strip version numbers for GENCODE only
-# IMPORTANT: PacBio IDs (PB.gene.isoform) are NOT versioned - the last number is the isoform ID, not a version!
-enst_no_version <- str_replace(enst_isoforms, "\\.\\d+$", "")
-pb_no_version <- pb_isoforms  # Do NOT strip - already unique identifiers
+  # For GENCODE CDS matching: need to strip version from isocall ENST IDs
+  # (GENCODE GFF3 has unversioned ENST, isocall has versioned ENST)
+  enst_no_version <- str_replace(enst_isoforms, "\\.\\d+$", "")
 
-cat(sprintf("  GENCODE isoforms: %d\n", length(enst_isoforms)))
-cat(sprintf("  PacBio isoforms: %d\n", length(pb_isoforms)))
+  cat(sprintf("  ENST isoforms: %d\n", length(enst_isoforms)))
+  cat(sprintf("  Novel isoforms: %d\n", length(novel_isoforms)))
+} else {
+  # Oarfish: ENST + PB.
+  enst_isoforms <- major_isoforms[str_detect(major_isoforms, "^ENST")]
+  pb_isoforms <- major_isoforms[str_detect(major_isoforms, "^PB\\.")]
+
+  # Strip version numbers for GENCODE only
+  # IMPORTANT: PacBio IDs (PB.gene.isoform) are NOT versioned
+  enst_no_version <- str_replace(enst_isoforms, "\\.\\d+$", "")
+  pb_no_version <- pb_isoforms
+
+  cat(sprintf("  GENCODE isoforms: %d\n", length(enst_isoforms)))
+  cat(sprintf("  PacBio isoforms: %d\n", length(pb_isoforms)))
+}
 
 # ==============================================================================
 # 2. Extract CDS from GENCODE
@@ -179,81 +220,144 @@ cat(sprintf("    Coding: %d\n", sum(gencode_cds_summary$coding_status == "coding
 cat(sprintf("    Non-coding: %d\n", sum(gencode_cds_summary$coding_status == "non_coding")))
 
 # ==============================================================================
-# 3. Extract CDS from PacBio (if available)
+# 3. Extract CDS for Non-ENST Isoforms (PacBio or Novel)
 # ==============================================================================
 
-if (length(pb_isoforms) > 0) {
-  cat("\nExtracting PacBio CDS features...\n")
-  cat("  Loading SQANTI CDS GFF (this may take a moment)...\n")
+if (source_type == "isocall") {
+  # --- Isocall novel isoforms: SQANTI CDS (TBD) ---
+  if (length(novel_isoforms) > 0) {
+    cat(sprintf("\nNovel isoforms requiring SQANTI CDS: %d\n", length(novel_isoforms)))
 
-  tryCatch({
-    # Note: Despite .gff3 extension, this file is in GTF format (uses quotes)
-    pacbio_gff <- import("/Users/petecastaldi/claude_projects/nmd/reference_files/sqanti3_corrected.cds.gff3",
-                         format = "gtf")
+    isocall_sqanti_cds_file <- "/Users/petecastaldi/claude_projects/nmd/sqanti/nmd_lungcells/results/nmd_lungcells_corrected.cds.gff3"
 
-    pacbio_cds <- pacbio_gff %>%
-      as_tibble() %>%
-      filter(
-        type %in% c("CDS", "start_codon", "stop_codon"),
-        # PacBio IDs are NOT versioned - match directly without stripping
-        transcript_id %in% pb_isoforms
+    if (file.exists(isocall_sqanti_cds_file)) {
+      cat("  Loading isocall SQANTI CDS GFF...\n")
+
+      tryCatch({
+        sqanti_gff <- import(isocall_sqanti_cds_file, format = "gtf")
+
+        sqanti_cds <- sqanti_gff %>%
+          as_tibble() %>%
+          filter(
+            type %in% c("CDS", "start_codon", "stop_codon"),
+            transcript_id %in% novel_isoforms
+          )
+
+        cat(sprintf("  Found %d CDS/codon features for %d novel isoforms\n",
+                    nrow(sqanti_cds), n_distinct(sqanti_cds$transcript_id)))
+
+        novel_cds_summary <- sqanti_cds %>%
+          group_by(transcript_id) %>%
+          summarise(
+            coding_status = if_else(any(type == "CDS"), "coding", "non_coding"),
+            cds_start = if_else(
+              any(type == "CDS"),
+              min(start[type == "CDS"]),
+              NA_integer_
+            ),
+            cds_stop = if_else(
+              any(type == "CDS"),
+              max(end[type == "CDS"]),
+              NA_integer_
+            ),
+            orf_length = if_else(
+              any(type == "CDS"),
+              as.integer(sum(end[type == "CDS"] - start[type == "CDS"] + 1)),
+              NA_integer_
+            ),
+            .groups = "drop"
+          ) %>%
+          dplyr::rename(isoform_id = transcript_id) %>%
+          select(isoform_id, coding_status, cds_start, cds_stop, orf_length)
+
+        cat(sprintf("  Novel CDS metadata: %d isoforms\n", nrow(novel_cds_summary)))
+      },
+      error = function(e) {
+        cat(sprintf("  WARNING: Failed to load SQANTI CDS: %s\n", conditionMessage(e)))
+        cat("  All novel isoforms will be marked as 'unknown'\n")
+        novel_cds_summary <<- tibble(
+          isoform_id = character(), coding_status = character(),
+          cds_start = integer(), cds_stop = integer(), orf_length = integer()
+        )
+      })
+    } else {
+      cat(sprintf("  SQANTI CDS file not yet available: %s\n", isocall_sqanti_cds_file))
+      cat("  All novel isoforms will be marked as 'unknown'\n")
+      novel_cds_summary <- tibble(
+        isoform_id = character(), coding_status = character(),
+        cds_start = integer(), cds_stop = integer(), orf_length = integer()
       )
-
-    cat(sprintf("  Found %d CDS/codon features for %d PacBio isoforms\n",
-                nrow(pacbio_cds), n_distinct(pacbio_cds$transcript_id)))
-
-    pacbio_cds_summary <- pacbio_cds %>%
-      group_by(transcript_id) %>%
-      summarise(
-        coding_status = if_else(any(type == "CDS"), "coding", "non_coding"),
-
-        # SQANTI doesn't have start_codon/stop_codon features
-        # Use CDS min/max genomic coordinates (strand-independent)
-        # cds_start = minimum genomic coordinate
-        # cds_stop = maximum genomic coordinate
-        # This allows strand-independent range checking in downstream scripts
-
-        cds_start = if_else(
-          any(type == "CDS"),
-          min(start[type == "CDS"]),
-          NA_integer_
-        ),
-        cds_stop = if_else(
-          any(type == "CDS"),
-          max(end[type == "CDS"]),
-          NA_integer_
-        ),
-        orf_length = if_else(
-          any(type == "CDS"),
-          as.integer(sum(end[type == "CDS"] - start[type == "CDS"] + 1)),
-          NA_integer_
-        ),
-        .groups = "drop"
-      ) %>%
-      dplyr::rename(isoform_id = transcript_id) %>%  # PacBio IDs are already unique
-      select(isoform_id, coding_status, cds_start, cds_stop, orf_length)
-
-    cat(sprintf("  PacBio CDS metadata: %d isoforms\n", nrow(pacbio_cds_summary)))
-  },
-  error = function(e) {
-    cat("  ⚠ Warning: Failed to load PacBio GFF, skipping PacBio CDS extraction\n")
-    pacbio_cds_summary <<- tibble(
-      isoform_id = character(),
-      coding_status = character(),
-      cds_start = integer(),
-      cds_stop = integer(),
-      orf_length = integer()
+    }
+  } else {
+    novel_cds_summary <- tibble(
+      isoform_id = character(), coding_status = character(),
+      cds_start = integer(), cds_stop = integer(), orf_length = integer()
     )
-  })
+  }
+  # Use novel_cds_summary as the "non-ENST" CDS (analogous to pacbio_cds_summary)
+  pacbio_cds_summary <- novel_cds_summary
+
 } else {
-  cat("\nNo PacBio isoforms to extract (skipping)\n")
-  pacbio_cds_summary <- tibble(
-    isoform_id = character(),
-    coding_status = character(),
-    cds_start = integer(),
-    cds_stop = integer(),
-    orf_length = integer()
-  )
+  # --- Oarfish: PacBio CDS from SQANTI ---
+  if (length(pb_isoforms) > 0) {
+    cat("\nExtracting PacBio CDS features...\n")
+    cat("  Loading SQANTI CDS GFF (this may take a moment)...\n")
+
+    tryCatch({
+      # Note: Despite .gff3 extension, this file is in GTF format (uses quotes)
+      pacbio_gff <- import("/Users/petecastaldi/claude_projects/nmd/reference_files/sqanti3_corrected.cds.gff3",
+                           format = "gtf")
+
+      pacbio_cds <- pacbio_gff %>%
+        as_tibble() %>%
+        filter(
+          type %in% c("CDS", "start_codon", "stop_codon"),
+          transcript_id %in% pb_isoforms
+        )
+
+      cat(sprintf("  Found %d CDS/codon features for %d PacBio isoforms\n",
+                  nrow(pacbio_cds), n_distinct(pacbio_cds$transcript_id)))
+
+      pacbio_cds_summary <- pacbio_cds %>%
+        group_by(transcript_id) %>%
+        summarise(
+          coding_status = if_else(any(type == "CDS"), "coding", "non_coding"),
+          cds_start = if_else(
+            any(type == "CDS"),
+            min(start[type == "CDS"]),
+            NA_integer_
+          ),
+          cds_stop = if_else(
+            any(type == "CDS"),
+            max(end[type == "CDS"]),
+            NA_integer_
+          ),
+          orf_length = if_else(
+            any(type == "CDS"),
+            as.integer(sum(end[type == "CDS"] - start[type == "CDS"] + 1)),
+            NA_integer_
+          ),
+          .groups = "drop"
+        ) %>%
+        dplyr::rename(isoform_id = transcript_id) %>%
+        select(isoform_id, coding_status, cds_start, cds_stop, orf_length)
+
+      cat(sprintf("  PacBio CDS metadata: %d isoforms\n", nrow(pacbio_cds_summary)))
+    },
+    error = function(e) {
+      cat("  WARNING: Failed to load PacBio GFF, skipping PacBio CDS extraction\n")
+      pacbio_cds_summary <<- tibble(
+        isoform_id = character(), coding_status = character(),
+        cds_start = integer(), cds_stop = integer(), orf_length = integer()
+      )
+    })
+  } else {
+    cat("\nNo PacBio isoforms to extract (skipping)\n")
+    pacbio_cds_summary <- tibble(
+      isoform_id = character(), coding_status = character(),
+      cds_start = integer(), cds_stop = integer(), orf_length = integer()
+    )
+  }
 }
 
 # ==============================================================================
@@ -320,8 +424,8 @@ if (nrow(coding_isoforms) > 0) {
 # ==============================================================================
 
 cat("\nSaving CDS metadata...\n")
-saveRDS(cds_metadata, "data/isoform_cds_metadata.rds")
-cat("  ✓ data/isoform_cds_metadata.rds\n")
+saveRDS(cds_metadata, output_file)
+cat(sprintf("  ✓ %s\n", output_file))
 
 cat("\n✓ Step 4 complete\n")
 cat("\n")

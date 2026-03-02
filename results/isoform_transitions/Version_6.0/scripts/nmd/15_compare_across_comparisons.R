@@ -82,7 +82,20 @@ if ("--n-bootstrap" %in% args) {
   n_bootstrap <- as.integer(args[idx + 1])
 }
 
-comp_dir <- file.path("comparisons", paste0("nonNMD_", threshold))
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+comp_prefix <- if (source_type == "isocall") "isocall_nonNMD_" else "nonNMD_"
+comp_dir <- file.path("comparisons", paste0(comp_prefix, threshold))
 
 output_dir <- file.path(comp_dir, "cross_comparison")
 if ("--output-dir" %in% args) {

@@ -55,11 +55,30 @@ if ("--non-nmd-threshold" %in% args) {
   }
 }
 
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+# Set paths based on source
+data_subdir <- if (source_type == "isocall") "data/isocall" else "data"
+
 cat("\n")
 cat("==================================================================\n")
-cat("   STEP 7: Classify Isoforms and Generate Comparison Pairs\n")
+cat(sprintf("   STEP 7: Classify and Pair [source: %s]\n", source_type))
 cat(sprintf("   Non-NMD threshold: adj.P.Val > %s\n", format(non_nmd_threshold, nsmall = 2)))
-cat(sprintf("   Output directory:  comparisons/nonNMD_%s/\n", format(non_nmd_threshold, nsmall = 2)))
+if (source_type == "isocall") {
+  cat(sprintf("   Output directory:  comparisons/isocall_nonNMD_%s/\n", format(non_nmd_threshold, nsmall = 2)))
+} else {
+  cat(sprintf("   Output directory:  comparisons/nonNMD_%s/\n", format(non_nmd_threshold, nsmall = 2)))
+}
 cat("==================================================================\n")
 cat("\n")
 
@@ -75,19 +94,35 @@ if (test_mode) {
 # 0. Configuration
 # ==============================================================================
 
-# DE CSV paths — one per cell type
-de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
-de_date <- "2026.1.18"
+# DE CSV paths — one per cell type (source-specific)
+if (source_type == "isocall") {
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge"
+  de_date <- "2026.3.1"
+  de_prefix <- "nmd_isocall_dge_"
 
-# Mapping from sample_metadata ct values to DE file name suffixes
-ct_to_de_suffix <- c(
-  "AT"     = "at2",
-  "DD"     = "dd",
-  "DD_ALI" = "ddali",
-  "DO"     = "doali",
-  "FB"     = "fb",
-  "MV"     = "mv"
-)
+  # Mapping from sample_metadata ct values to DE file name suffixes
+  ct_to_de_suffix <- c(
+    "AT"     = "at",
+    "DD"     = "dd",
+    "DD_ALI" = "ddali",
+    "DO"     = "do",
+    "FB"     = "fb",
+    "MV"     = "mv"
+  )
+} else {
+  de_dir <- "/Users/petecastaldi/claude_projects/nmd/longread_dge"
+  de_date <- "2026.1.18"
+  de_prefix <- "nmd_dge_"
+
+  ct_to_de_suffix <- c(
+    "AT"     = "at2",
+    "DD"     = "dd",
+    "DD_ALI" = "ddali",
+    "DO"     = "doali",
+    "FB"     = "fb",
+    "MV"     = "mv"
+  )
+}
 
 # Thresholds
 NMD_ADJ_P_THRESHOLD     <- 0.05
@@ -96,7 +131,11 @@ MIN_PROPORTION           <- 0.05
 DOMINANCE_THRESHOLD      <- 0.50
 
 # Output base — nested under threshold-named subdirectory
-output_base <- file.path("comparisons", sprintf("nonNMD_%s", format(NON_NMD_ADJ_P_THRESHOLD, nsmall = 2)))
+if (source_type == "isocall") {
+  output_base <- file.path("comparisons", sprintf("isocall_nonNMD_%s", format(NON_NMD_ADJ_P_THRESHOLD, nsmall = 2)))
+} else {
+  output_base <- file.path("comparisons", sprintf("nonNMD_%s", format(NON_NMD_ADJ_P_THRESHOLD, nsmall = 2)))
+}
 
 # ==============================================================================
 # 1. Input Validation
@@ -109,14 +148,13 @@ validate_file <- function(path) {
 }
 
 cat("Validating inputs...\n")
-validate_file("data/expression_data_filtered.rds")
-validate_file("data/sample_metadata.rds")
-validate_file("data/isoform_structures_filtered.rds")
+validate_file(file.path(data_subdir, "expression_data_filtered.rds"))
+validate_file(file.path(data_subdir, "sample_metadata.rds"))
+validate_file(file.path(data_subdir, "isoform_structures_filtered.rds"))
 
 # Validate DE files
 de_files <- setNames(
-
-  file.path(de_dir, paste0("nmd_dge_", ct_to_de_suffix, "_", de_date, ".csv")),
+  file.path(de_dir, paste0(de_prefix, ct_to_de_suffix, "_", de_date, ".csv")),
   names(ct_to_de_suffix)
 )
 for (ct in names(de_files)) {
@@ -129,9 +167,9 @@ cat("  All input files found.\n\n")
 # ==============================================================================
 
 cat("Loading data...\n")
-expression_data <- readRDS("data/expression_data_filtered.rds")
-sample_metadata <- readRDS("data/sample_metadata.rds")
-isoform_structures <- readRDS("data/isoform_structures_filtered.rds")
+expression_data <- readRDS(file.path(data_subdir, "expression_data_filtered.rds"))
+sample_metadata <- readRDS(file.path(data_subdir, "sample_metadata.rds"))
+isoform_structures <- readRDS(file.path(data_subdir, "isoform_structures_filtered.rds"))
 
 cat(sprintf("  Expression: %d rows (%d isoforms, %d samples)\n",
             nrow(expression_data),
@@ -173,9 +211,19 @@ expr_isoform_ids <- unique(expression_data$isoform_id)
 
 de_results <- list()
 for (ct in names(de_files)) {
-  de <- read_csv(de_files[[ct]], show_col_types = FALSE) %>%
-    select(txid, adj.P.Val, logFC, hgnc_id) %>%
-    rename(isoform_id = txid, gene_id_de = hgnc_id) %>%
+  de <- read_csv(de_files[[ct]], show_col_types = FALSE)
+
+  if (source_type == "isocall") {
+    de <- de %>%
+      select(transcript_id, adj.P.Val, logFC, gene_id) %>%
+      rename(isoform_id = transcript_id, gene_id_de = gene_id)
+  } else {
+    de <- de %>%
+      select(txid, adj.P.Val, logFC, hgnc_id) %>%
+      rename(isoform_id = txid, gene_id_de = hgnc_id)
+  }
+
+  de <- de %>%
     mutate(de_ct = ct) %>%
     filter(isoform_id %in% expr_isoform_ids)
   de_results[[ct]] <- de

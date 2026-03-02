@@ -34,6 +34,21 @@ library(tidyverse)
 args <- commandArgs(trailingOnly = TRUE)
 test_mode <- "--test" %in% args
 
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+# Set paths based on source
+data_subdir <- if (source_type == "isocall") "data/isocall" else "data"
+
 if (!test_mode) {
   library(edgeR)
 }
@@ -67,7 +82,8 @@ validate_overlap <- function(ids_a, ids_b, name_a, name_b, min_pct = 10) {
 }
 
 cat("\n╔════════════════════════════════════════════════════════════════╗\n")
-cat("║   STEP 6: Filter to Analysis-Ready Subset                    ║\n")
+cat(sprintf("║   STEP 6: Filter to Analysis Subset [source: %s]%s║\n",
+            source_type, strrep(" ", 14 - nchar(source_type))))
 cat("╚════════════════════════════════════════════════════════════════╝\n\n")
 
 if (test_mode) {
@@ -76,7 +92,12 @@ if (test_mode) {
 
 # Paths
 base_dir <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0"
-dge_file <- "/Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_2026.2.7.rds"
+
+if (source_type == "isocall") {
+  dge_file <- file.path(base_dir, "data/isocall/dge_isocall_unfiltered.rds")
+} else {
+  dge_file <- "/Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_2026.2.7.rds"
+}
 
 # ==============================================================================
 # 0. Validate Inputs
@@ -86,13 +107,13 @@ cat("Validating inputs...\n")
 if (!test_mode) {
   validate_file(dge_file)
 }
-validate_file(file.path(base_dir, "data/expression_data.rds"))
-validate_file(file.path(base_dir, "data/dominant_isoforms.rds"))
-validate_file(file.path(base_dir, "data/isoform_structures.rds"))
-validate_file(file.path(base_dir, "data/union_exons.rds"))
-validate_file(file.path(base_dir, "data/isoform_union_mapping.rds"))
-validate_file(file.path(base_dir, "data/isoform_cds_metadata.rds"))
-validate_file(file.path(base_dir, "data/isoform_union_exons_annotated.rds"))
+validate_file(file.path(base_dir, data_subdir, "expression_data.rds"))
+validate_file(file.path(base_dir, data_subdir, "dominant_isoforms.rds"))
+validate_file(file.path(base_dir, data_subdir, "isoform_structures.rds"))
+validate_file(file.path(base_dir, data_subdir, "union_exons.rds"))
+validate_file(file.path(base_dir, data_subdir, "isoform_union_mapping.rds"))
+validate_file(file.path(base_dir, data_subdir, "isoform_cds_metadata.rds"))
+validate_file(file.path(base_dir, data_subdir, "isoform_union_exons_annotated.rds"))
 cat("  All required input files found.\n\n")
 
 if (test_mode) {
@@ -102,12 +123,12 @@ if (test_mode) {
   # ═══════════════════════════════════════════════════════════════════
 
   cat("TEST MODE: Deriving gene/isoform filter from union_exons.rds...\n")
-  union_exons <- readRDS(file.path(base_dir, "data/union_exons.rds"))
+  union_exons <- readRDS(file.path(base_dir, data_subdir, "union_exons.rds"))
   gene_ids_to_keep <- unique(union_exons$gene_id)
   cat(sprintf("  Genes in union_exons: %d\n", length(gene_ids_to_keep)))
 
   # Get all isoforms for these genes from isoform_structures
-  isoform_structures <- readRDS(file.path(base_dir, "data/isoform_structures.rds"))
+  isoform_structures <- readRDS(file.path(base_dir, data_subdir, "isoform_structures.rds"))
   isoform_ids_to_keep <- isoform_structures %>%
     filter(gene_id %in% gene_ids_to_keep) %>%
     pull(isoform_id) %>%
@@ -124,13 +145,22 @@ if (test_mode) {
   cat("Loading original DGEList...\n")
   dge <- readRDS(dge_file)
 
+  # Column names differ by source
+  if (source_type == "isocall") {
+    gene_id_col <- "gene_id"
+    isoform_id_col <- "transcript_id"
+  } else {
+    gene_id_col <- "gene_id_ens115_sqanti"
+    isoform_id_col <- "txid"
+  }
+
   cat(sprintf("  Original: %s isoforms, %s genes\n",
               format(nrow(dge), big.mark=","),
-              format(length(unique(dge$genes$gene_id_ens115_sqanti)), big.mark=",")))
+              format(length(unique(dge$genes[[gene_id_col]])), big.mark=",")))
 
   cat("\nBuilding design matrix...\n")
   design_all <- model.matrix(formula("~treatment+ct+ct*treatment"), data = dge$samples)
-  cat(sprintf("  Design: %d samples × %d coefficients\n", nrow(design_all), ncol(design_all)))
+  cat(sprintf("  Design: %d samples x %d coefficients\n", nrow(design_all), ncol(design_all)))
 
   cat("\nApplying filterByExpr (matching DGE analysis)...\n")
   cat("  Parameters: min.count=5, min.total.count=10, min.prop=0\n")
@@ -145,21 +175,34 @@ if (test_mode) {
   # ═══════════════════════════════════════════════════════════════════
 
   cat("\nExcluding fusion/chimeric genes...\n")
-  cat("  KEEP: GENCODE (ENSG[0-9]+) + PacBio Novel (novelGene_*)\n")
-  cat("  EXCLUDE: Fusion/Chimeric (e.g., ENSG_ENSG)\n")
 
   # Subset to isoforms passing expression filter
   dge_expr <- dge[keep_expr, , keep.lib.sizes=FALSE]
-  gene_ids_expr <- dge_expr$genes$gene_id_ens115_sqanti
+  gene_ids_expr <- dge_expr$genes[[gene_id_col]]
 
-  # Categorize genes
-  is_gencode <- grepl("^ENSG[0-9]+$", gene_ids_expr)
-  is_novel <- grepl("^novelGene_", gene_ids_expr)
-  is_fusion <- !is_gencode & !is_novel
+  if (source_type == "isocall") {
+    # Isocall: all genes are ENSG-based (versioned: ENSG00000196878.16)
+    # No novelGene_ IDs; fusion = anything not matching versioned ENSG pattern
+    cat("  KEEP: ENSG (versioned)\n")
+    cat("  EXCLUDE: Fusion/Chimeric (if any)\n")
+
+    is_gencode <- grepl("^ENSG[0-9]+\\.\\d+$", gene_ids_expr)
+    is_novel <- rep(FALSE, length(gene_ids_expr))  # no novelGene_ in isocall
+    is_fusion <- !is_gencode
+  } else {
+    cat("  KEEP: GENCODE (ENSG[0-9]+) + PacBio Novel (novelGene_*)\n")
+    cat("  EXCLUDE: Fusion/Chimeric (e.g., ENSG_ENSG)\n")
+
+    is_gencode <- grepl("^ENSG[0-9]+$", gene_ids_expr)
+    is_novel <- grepl("^novelGene_", gene_ids_expr)
+    is_fusion <- !is_gencode & !is_novel
+  }
 
   cat(sprintf("\n  Gene categories after filterByExpr:\n"))
   cat(sprintf("    GENCODE: %s genes\n", format(length(unique(gene_ids_expr[is_gencode])), big.mark=",")))
-  cat(sprintf("    PacBio Novel: %s genes\n", format(length(unique(gene_ids_expr[is_novel])), big.mark=",")))
+  if (any(is_novel)) {
+    cat(sprintf("    PacBio Novel: %s genes\n", format(length(unique(gene_ids_expr[is_novel])), big.mark=",")))
+  }
   cat(sprintf("    Fusion/Chimeric: %s genes (will be excluded)\n",
               format(length(unique(gene_ids_expr[is_fusion])), big.mark=",")))
 
@@ -169,11 +212,11 @@ if (test_mode) {
 
   cat(sprintf("\n  Final filtered dataset:\n"))
   cat(sprintf("    Isoforms: %s\n", format(nrow(dge_filtered), big.mark=",")))
-  cat(sprintf("    Genes: %s\n", format(length(unique(dge_filtered$genes$gene_id_ens115_sqanti)), big.mark=",")))
+  cat(sprintf("    Genes: %s\n", format(length(unique(dge_filtered$genes[[gene_id_col]])), big.mark=",")))
 
   # Create isoform and gene ID lists for filtering downstream data
-  isoform_ids_to_keep <- dge_filtered$genes$txid
-  gene_ids_to_keep <- unique(dge_filtered$genes$gene_id_ens115_sqanti)
+  isoform_ids_to_keep <- dge_filtered$genes[[isoform_id_col]]
+  gene_ids_to_keep <- unique(dge_filtered$genes[[gene_id_col]])
 
   cat(sprintf("\n  Created filter lists:\n"))
   cat(sprintf("    %s isoform IDs\n", format(length(isoform_ids_to_keep), big.mark=",")))
@@ -189,7 +232,7 @@ cat("\n\nFiltering downstream data structures...\n")
 if (!test_mode) {
   # Cross-check: verify DGE isoform IDs overlap with pipeline expression data
   cat("\n  Cross-file consistency checks:\n")
-  expr_check <- readRDS(file.path(base_dir, "data/expression_data.rds"))
+  expr_check <- readRDS(file.path(base_dir, data_subdir, "expression_data.rds"))
   validate_overlap(isoform_ids_to_keep, unique(expr_check$isoform_id),
                    "DGE filter isoform_ids", "expression_data")
   rm(expr_check)
@@ -197,43 +240,43 @@ if (!test_mode) {
 
 # ---- 3.1: expression_data ----
 cat("\n  [1/7] Filtering expression_data.rds...\n")
-expression_data <- readRDS(file.path(base_dir, "data/expression_data.rds"))
+expression_data <- readRDS(file.path(base_dir, data_subdir, "expression_data.rds"))
 cat(sprintf("    Before: %s rows\n", format(nrow(expression_data), big.mark=",")))
 
 expression_data_filtered <- expression_data %>%
   filter(isoform_id %in% isoform_ids_to_keep)
 
 cat(sprintf("    After: %s rows\n", format(nrow(expression_data_filtered), big.mark=",")))
-saveRDS(expression_data_filtered, file.path(base_dir, "data/expression_data_filtered.rds"))
-cat("    ✓ Saved: data/expression_data_filtered.rds\n")
+saveRDS(expression_data_filtered, file.path(base_dir, data_subdir, "expression_data_filtered.rds"))
+cat(sprintf("    ✓ Saved: %s/expression_data_filtered.rds\n", data_subdir))
 
 # ---- 3.2: dominant_isoforms ----
 cat("\n  [2/7] Filtering dominant_isoforms.rds...\n")
-dominant_isoforms <- readRDS(file.path(base_dir, "data/dominant_isoforms.rds"))
+dominant_isoforms <- readRDS(file.path(base_dir, data_subdir, "dominant_isoforms.rds"))
 cat(sprintf("    Before: %s genes\n", format(nrow(dominant_isoforms), big.mark=",")))
 
 dominant_isoforms_filtered <- dominant_isoforms %>%
   filter(gene_id %in% gene_ids_to_keep)
 
 cat(sprintf("    After: %s genes\n", format(nrow(dominant_isoforms_filtered), big.mark=",")))
-saveRDS(dominant_isoforms_filtered, file.path(base_dir, "data/dominant_isoforms_filtered.rds"))
-cat("    ✓ Saved: data/dominant_isoforms_filtered.rds\n")
+saveRDS(dominant_isoforms_filtered, file.path(base_dir, data_subdir, "dominant_isoforms_filtered.rds"))
+cat(sprintf("    ✓ Saved: %s/dominant_isoforms_filtered.rds\n", data_subdir))
 
 # ---- 3.3: isoform_structures ----
 cat("\n  [3/7] Filtering isoform_structures.rds...\n")
-isoform_structures <- readRDS(file.path(base_dir, "data/isoform_structures.rds"))
+isoform_structures <- readRDS(file.path(base_dir, data_subdir, "isoform_structures.rds"))
 cat(sprintf("    Before: %s rows\n", format(nrow(isoform_structures), big.mark=",")))
 
 isoform_structures_filtered <- isoform_structures %>%
   filter(isoform_id %in% isoform_ids_to_keep)
 
 cat(sprintf("    After: %s rows\n", format(nrow(isoform_structures_filtered), big.mark=",")))
-saveRDS(isoform_structures_filtered, file.path(base_dir, "data/isoform_structures_filtered.rds"))
-cat("    ✓ Saved: data/isoform_structures_filtered.rds\n")
+saveRDS(isoform_structures_filtered, file.path(base_dir, data_subdir, "isoform_structures_filtered.rds"))
+cat(sprintf("    ✓ Saved: %s/isoform_structures_filtered.rds\n", data_subdir))
 
 # ---- 3.4: union_exons ----
 cat("\n  [4/7] Filtering union_exons.rds...\n")
-union_exons <- readRDS(file.path(base_dir, "data/union_exons.rds"))
+union_exons <- readRDS(file.path(base_dir, data_subdir, "union_exons.rds"))
 cat(sprintf("    Before: %s union exons from %s genes\n",
             format(nrow(union_exons), big.mark=","),
             format(length(unique(union_exons$gene_id)), big.mark=",")))
@@ -244,12 +287,12 @@ union_exons_filtered <- union_exons %>%
 cat(sprintf("    After: %s union exons from %s genes\n",
             format(nrow(union_exons_filtered), big.mark=","),
             format(length(unique(union_exons_filtered$gene_id)), big.mark=",")))
-saveRDS(union_exons_filtered, file.path(base_dir, "data/union_exons_filtered.rds"))
-cat("    ✓ Saved: data/union_exons_filtered.rds\n")
+saveRDS(union_exons_filtered, file.path(base_dir, data_subdir, "union_exons_filtered.rds"))
+cat(sprintf("    ✓ Saved: %s/union_exons_filtered.rds\n", data_subdir))
 
 # ---- 3.5: isoform_union_mapping ----
 cat("\n  [5/7] Filtering isoform_union_mapping.rds...\n")
-isoform_union_mapping <- readRDS(file.path(base_dir, "data/isoform_union_mapping.rds"))
+isoform_union_mapping <- readRDS(file.path(base_dir, data_subdir, "isoform_union_mapping.rds"))
 cat(sprintf("    Before: %s rows\n", format(nrow(isoform_union_mapping), big.mark=",")))
 
 # Filter by both isoform_id and gene_id
@@ -258,24 +301,24 @@ isoform_union_mapping_filtered <- isoform_union_mapping %>%
          gene_id %in% gene_ids_to_keep)
 
 cat(sprintf("    After: %s rows\n", format(nrow(isoform_union_mapping_filtered), big.mark=",")))
-saveRDS(isoform_union_mapping_filtered, file.path(base_dir, "data/isoform_union_mapping_filtered.rds"))
-cat("    ✓ Saved: data/isoform_union_mapping_filtered.rds\n")
+saveRDS(isoform_union_mapping_filtered, file.path(base_dir, data_subdir, "isoform_union_mapping_filtered.rds"))
+cat(sprintf("    ✓ Saved: %s/isoform_union_mapping_filtered.rds\n", data_subdir))
 
 # ---- 3.6: isoform_cds_metadata ----
 cat("\n  [6/7] Filtering isoform_cds_metadata.rds...\n")
-isoform_cds_metadata <- readRDS(file.path(base_dir, "data/isoform_cds_metadata.rds"))
+isoform_cds_metadata <- readRDS(file.path(base_dir, data_subdir, "isoform_cds_metadata.rds"))
 cat(sprintf("    Before: %s isoforms\n", format(nrow(isoform_cds_metadata), big.mark=",")))
 
 isoform_cds_metadata_filtered <- isoform_cds_metadata %>%
   filter(isoform_id %in% isoform_ids_to_keep)
 
 cat(sprintf("    After: %s isoforms\n", format(nrow(isoform_cds_metadata_filtered), big.mark=",")))
-saveRDS(isoform_cds_metadata_filtered, file.path(base_dir, "data/isoform_cds_metadata_filtered.rds"))
-cat("    ✓ Saved: data/isoform_cds_metadata_filtered.rds\n")
+saveRDS(isoform_cds_metadata_filtered, file.path(base_dir, data_subdir, "isoform_cds_metadata_filtered.rds"))
+cat(sprintf("    ✓ Saved: %s/isoform_cds_metadata_filtered.rds\n", data_subdir))
 
 # ---- 3.7: isoform_union_exons_annotated ----
 cat("\n  [7/7] Filtering isoform_union_exons_annotated.rds...\n")
-isoform_union_exons_annotated <- readRDS(file.path(base_dir, "data/isoform_union_exons_annotated.rds"))
+isoform_union_exons_annotated <- readRDS(file.path(base_dir, data_subdir, "isoform_union_exons_annotated.rds"))
 cat(sprintf("    Before: %s rows\n", format(nrow(isoform_union_exons_annotated), big.mark=",")))
 
 isoform_union_exons_annotated_filtered <- isoform_union_exons_annotated %>%
@@ -283,8 +326,8 @@ isoform_union_exons_annotated_filtered <- isoform_union_exons_annotated %>%
          gene_id %in% gene_ids_to_keep)
 
 cat(sprintf("    After: %s rows\n", format(nrow(isoform_union_exons_annotated_filtered), big.mark=",")))
-saveRDS(isoform_union_exons_annotated_filtered, file.path(base_dir, "data/isoform_union_exons_annotated_filtered.rds"))
-cat("    ✓ Saved: data/isoform_union_exons_annotated_filtered.rds\n")
+saveRDS(isoform_union_exons_annotated_filtered, file.path(base_dir, data_subdir, "isoform_union_exons_annotated_filtered.rds"))
+cat(sprintf("    ✓ Saved: %s/isoform_union_exons_annotated_filtered.rds\n", data_subdir))
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 4: Generate Filtering Report
@@ -296,7 +339,7 @@ if (!test_mode) {
   # Calculate statistics
   original_stats <- list(
     isoforms = nrow(dge),
-    genes = length(unique(dge$genes$gene_id_ens115_sqanti))
+    genes = length(unique(dge$genes[[gene_id_col]]))
   )
 
   filtered_stats <- list(
@@ -308,6 +351,7 @@ if (!test_mode) {
   gene_categories_filtered <- tibble(gene_id = gene_ids_to_keep) %>%
     mutate(
       category = case_when(
+        source_type == "isocall" & grepl("^ENSG[0-9]+\\.\\d+$", gene_id) ~ "GENCODE (versioned)",
         grepl("^ENSG[0-9]+$", gene_id) ~ "GENCODE",
         grepl("^novelGene_", gene_id) ~ "PacBio Novel",
         TRUE ~ "Other"
@@ -316,7 +360,8 @@ if (!test_mode) {
     count(category)
 
   # Write report
-  report_file <- file.path(base_dir, "results/filtering_report_script06.txt")
+  report_suffix <- if (source_type == "isocall") "_isocall" else ""
+  report_file <- file.path(base_dir, sprintf("results/filtering_report_script06%s.txt", report_suffix))
   sink(report_file)
 
   cat("═══════════════════════════════════════════════════════════════════\n")
@@ -368,7 +413,7 @@ if (!test_mode) {
 
   sink()
 
-  cat(sprintf("  ✓ Report saved: results/filtering_report_script06.txt\n"))
+  cat(sprintf("  ✓ Report saved: %s\n", report_file))
 }
 
 # ═══════════════════════════════════════════════════════════════════

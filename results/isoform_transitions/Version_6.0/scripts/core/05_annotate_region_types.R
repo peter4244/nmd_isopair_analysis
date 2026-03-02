@@ -21,6 +21,24 @@
 
 library(tidyverse)
 
+# Parse command-line arguments
+args <- commandArgs(trailingOnly = TRUE)
+
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+# Set data directory based on source
+data_dir <- if (source_type == "isocall") "data/isocall" else "data"
+
 # ==============================================================================
 # Input Validation Helpers
 # ==============================================================================
@@ -60,9 +78,9 @@ cat("\n")
 # ==============================================================================
 
 cat("Validating inputs...\n")
-validate_file("data/union_exons.rds")
-validate_file("data/isoform_union_mapping.rds")
-validate_file("data/isoform_cds_metadata.rds")
+validate_file(file.path(data_dir, "union_exons.rds"))
+validate_file(file.path(data_dir, "isoform_union_mapping.rds"))
+validate_file(file.path(data_dir, "isoform_cds_metadata.rds"))
 cat("  All required input files found.\n\n")
 
 # ==============================================================================
@@ -70,9 +88,9 @@ cat("  All required input files found.\n\n")
 # ==============================================================================
 
 cat("Loading data...\n")
-union_exons <- readRDS("data/union_exons.rds")
-isoform_mapping <- readRDS("data/isoform_union_mapping.rds")
-cds_metadata <- readRDS("data/isoform_cds_metadata.rds")
+union_exons <- readRDS(file.path(data_dir, "union_exons.rds"))
+isoform_mapping <- readRDS(file.path(data_dir, "isoform_union_mapping.rds"))
+cds_metadata <- readRDS(file.path(data_dir, "isoform_cds_metadata.rds"))
 
 cat(sprintf("  Union exons: %d\n", nrow(union_exons)))
 cat(sprintf("  Isoform mappings: %d\n", nrow(isoform_mapping)))
@@ -213,8 +231,8 @@ cat(sprintf("  ✓ Annotated %d / %d mappings (%.1f%%)\n",
 # ==============================================================================
 
 cat("\nSaving annotated mappings...\n")
-saveRDS(annotated_mapping, "data/isoform_union_exons_annotated.rds")
-cat("  ✓ data/isoform_union_exons_annotated.rds\n")
+saveRDS(annotated_mapping, file.path(data_dir, "isoform_union_exons_annotated.rds"))
+cat(sprintf("  ✓ %s/isoform_union_exons_annotated.rds\n", data_dir))
 
 cat("\n✓ Step 5 complete\n")
 cat("\n")

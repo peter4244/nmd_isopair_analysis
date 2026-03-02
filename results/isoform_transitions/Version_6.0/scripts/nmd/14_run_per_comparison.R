@@ -84,7 +84,20 @@ if ("--min-profiles" %in% args) {
 skip_existing <- "--skip-existing" %in% args
 dry_run <- "--dry-run" %in% args
 
-comp_dir <- file.path("comparisons", paste0("nonNMD_", threshold))
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+comp_prefix <- if (source_type == "isocall") "isocall_nonNMD_" else "nonNMD_"
+comp_dir <- file.path("comparisons", paste0(comp_prefix, threshold))
 
 cat(sprintf("  Threshold:     %s\n", threshold))
 cat(sprintf("  Comparisons:   %s\n", paste(comparisons, collapse = ", ")))
@@ -238,7 +251,8 @@ for (i in seq_len(nrow(run_matrix))) {
     system2("Rscript",
             c("scripts/nmd/11_analyze_spatial_patterns.R",
               "--input", profiles_out,
-              "--output-dir", output_dir),
+              "--output-dir", output_dir,
+              "--source", source_type),
             stdout = FALSE, stderr = FALSE)
     cat("    Done\n")
   }, error = function(e) {
@@ -250,7 +264,8 @@ for (i in seq_len(nrow(run_matrix))) {
     system2("Rscript",
             c("scripts/nmd/12_analyze_functional_context.R",
               "--input", profiles_out,
-              "--output-dir", output_dir),
+              "--output-dir", output_dir,
+              "--source", source_type),
             stdout = FALSE, stderr = FALSE)
     cat("    Done\n")
   }, error = function(e) {

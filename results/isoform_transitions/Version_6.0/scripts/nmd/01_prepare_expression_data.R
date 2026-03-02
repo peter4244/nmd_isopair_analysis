@@ -9,79 +9,200 @@
 #           based on DMSO mean CPM. Stores condition-specific proportions and expression.
 #
 # Input:
-#   - /Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_2026.2.7.rds
+#   --source oarfish (default): /Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_2026.2.7.rds
+#   --source isocall: count matrix + GTF from isocall pipeline
 #
-# Output:
-#   - data/expression_data.rds (FILTERED to major isoforms only)
-#   - data/dominant_isoforms.rds
-#   - data/sample_metadata.rds
-#   - data/filtering_stats.rds (statistics on filtering process)
+# Output (to data/ or data/isocall/ depending on --source):
+#   - expression_data.rds (FILTERED to major isoforms only)
+#   - dominant_isoforms.rds
+#   - sample_metadata.rds
+#   - filtering_stats.rds (statistics on filtering process)
+#   - dge_isocall_unfiltered.rds (isocall only, for Script 06)
 #
 
 library(tidyverse)
 library(edgeR)
 
+# Parse command-line arguments
+args <- commandArgs(trailingOnly = TRUE)
+
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
 cat("\n╔════════════════════════════════════════════════════════════════╗\n")
-cat("║   STEP 1.1: Prepare DGEList Data (Memory-Optimized v2)       ║\n")
+cat(sprintf("║   STEP 1.1: Prepare Expression Data [source: %s]%s║\n",
+            source_type, strrep(" ", 17 - nchar(source_type))))
 cat("╚════════════════════════════════════════════════════════════════╝\n\n")
 
 # Paths
 base_dir <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0"
-dge_file <- "/Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_2026.2.7.rds"
+data_dir <- if (source_type == "isocall") {
+  file.path(base_dir, "data/isocall")
+} else {
+  file.path(base_dir, "data")
+}
+dir.create(data_dir, showWarnings = FALSE, recursive = TRUE)
 
 # ═══════════════════════════════════════════════════════════════════
-# SECTION 1: Load DGEList
+# SECTIONS 1-3: Load Data, Extract Metadata, Calculate CPM
+# Source-specific loading, then converge on common variables:
+#   cpm_matrix, isoform_gene_map, sample_metadata, dmso_cols, smg1i_cols
 # ═══════════════════════════════════════════════════════════════════
 
-cat("Loading DGEList...\n")
-dge <- readRDS(dge_file)
+if (source_type == "isocall") {
+  # ─── ISOCALL: Build DGEList from count matrix + GTF ───
+  library(rtracklayer)
 
-cat(sprintf("  Loaded DGEList with %d isoforms and %d samples\n",
-            nrow(dge), ncol(dge)))
+  count_matrix_file <- "/Users/petecastaldi/claude_projects/nmd/isocall/nmd_lungcells/results/call/nmd_isocall.count_matrix.txt"
+  gtf_file <- "/Users/petecastaldi/claude_projects/nmd/isocall/nmd_lungcells/results/call/nmd_isocall.isoforms.gtf.gz"
 
-# ═══════════════════════════════════════════════════════════════════
-# SECTION 2: Extract Sample Metadata
-# ═══════════════════════════════════════════════════════════════════
+  # Read count matrix (CSV: id column + 38 sample columns)
+  cat("Loading isocall count matrix...\n")
+  count_df <- read_csv(count_matrix_file, show_col_types = FALSE)
+  isoform_ids <- count_df$id
+  count_mat <- as.matrix(count_df[, -1])
+  rownames(count_mat) <- isoform_ids
+  rm(count_df); gc()
+  cat(sprintf("  Loaded %d isoforms x %d samples\n", nrow(count_mat), ncol(count_mat)))
 
-cat("Extracting sample metadata...\n")
-sample_metadata <- dge$samples %>%
-  as_tibble(rownames = "sample_id") %>%
-  mutate(
-    sample = if (!"sample" %in% names(.)) sample_id else sample,
-    treatment = factor(treatment, levels = c("DMSO", "Smg1i")),
-    ct = factor(ct)
+  # Parse sample metadata from column names
+  # Format: Sample{N}_{CellType}_{DonorID}_{Treatment}
+  # DD_ALI has extra underscore: treatment=last, donor=second-to-last, ct=middle
+  cat("Parsing sample metadata from column names...\n")
+  sample_names <- colnames(count_mat)
+  sample_metadata <- tibble(sample_id = sample_names) %>%
+    mutate(
+      parts = str_split(sample_id, "_"),
+      treatment = map_chr(parts, ~ .x[length(.x)]),
+      id = map_chr(parts, ~ .x[length(.x) - 1]),
+      ct = map_chr(parts, ~ paste(.x[2:(length(.x) - 2)], collapse = "_"))
+    ) %>%
+    select(-parts) %>%
+    mutate(
+      treatment = factor(treatment, levels = c("DMSO", "Smg1i")),
+      ct = factor(ct)
+    )
+
+  cat(sprintf("  Extracted metadata for %d samples\n", nrow(sample_metadata)))
+  cat(sprintf("  Cell types: %s\n", paste(levels(sample_metadata$ct), collapse = ", ")))
+  cat(sprintf("  Treatments: %s\n", paste(levels(sample_metadata$treatment), collapse = ", ")))
+
+  # Parse GTF for transcript → gene mapping
+  cat("\nLoading isocall GTF for gene annotation...\n")
+  gtf <- import(gtf_file)
+  tx_gene_map <- gtf %>%
+    as_tibble() %>%
+    filter(type == "transcript") %>%
+    select(transcript_id, gene_id) %>%
+    distinct()
+  rm(gtf); gc()
+  cat(sprintf("  Parsed %d transcript-gene mappings\n", nrow(tx_gene_map)))
+
+  # Build gene annotation for count matrix rows
+  gdf <- tibble(transcript_id = isoform_ids) %>%
+    left_join(tx_gene_map, by = "transcript_id")
+  rm(tx_gene_map)
+
+  n_unmapped <- sum(is.na(gdf$gene_id))
+  if (n_unmapped > 0) {
+    cat(sprintf("  WARNING: %d isoforms unmapped to gene_id\n", n_unmapped))
+  }
+
+  # Build DGEList
+  cat("Building DGEList...\n")
+  dge <- DGEList(
+    counts = count_mat,
+    samples = data.frame(
+      treatment = sample_metadata$treatment,
+      ct = sample_metadata$ct,
+      id = sample_metadata$id,
+      row.names = sample_metadata$sample_id
+    ),
+    genes = data.frame(
+      transcript_id = gdf$transcript_id,
+      gene_id = gdf$gene_id,
+      row.names = gdf$transcript_id
+    )
   )
+  rm(count_mat, gdf); gc()
 
-cat(sprintf("  Extracted metadata for %d samples\n", nrow(sample_metadata)))
-cat(sprintf("  Cell types: %s\n", paste(unique(sample_metadata$ct), collapse = ", ")))
-cat(sprintf("  Treatments: %s\n", paste(unique(sample_metadata$treatment), collapse = ", ")))
+  # Save unfiltered DGEList (needed by Script 06)
+  saveRDS(dge, file.path(data_dir, "dge_isocall_unfiltered.rds"))
+  cat(sprintf("  Saved unfiltered DGEList: dge_isocall_unfiltered.rds\n"))
+  cat(sprintf("  DGEList: %d isoforms, %d samples\n", nrow(dge), ncol(dge)))
 
-# Pre-compute condition-specific sample column indices (for CPM matrix)
-dmso_cols  <- which(sample_metadata$treatment == "DMSO")
-smg1i_cols <- which(sample_metadata$treatment == "Smg1i")
-cat(sprintf("  DMSO samples: %d, Smg1i samples: %d\n",
-            length(dmso_cols), length(smg1i_cols)))
+  # Pre-compute condition indices
+  dmso_cols  <- which(sample_metadata$treatment == "DMSO")
+  smg1i_cols <- which(sample_metadata$treatment == "Smg1i")
+  cat(sprintf("  DMSO samples: %d, Smg1i samples: %d\n",
+              length(dmso_cols), length(smg1i_cols)))
 
-# ═══════════════════════════════════════════════════════════════════
-# SECTION 3: Calculate CPM (All Isoforms)
-# ═══════════════════════════════════════════════════════════════════
+  # Calculate CPM
+  cat("\nCalculating CPM for all isoforms...\n")
+  cpm_matrix <- cpm(dge, log = FALSE)
 
-cat("\nCalculating CPM for all isoforms...\n")
+  # Create isoform-to-gene mapping (unified column names)
+  isoform_gene_map <- dge$genes %>%
+    as_tibble() %>%
+    select(isoform_id = transcript_id, gene_id)
 
-# Calculate CPM using edgeR
-cpm_matrix <- cpm(dge, log = FALSE)
+  cat(sprintf("  Calculated CPM for %d isoforms\n", nrow(cpm_matrix)))
 
-# Create isoform-to-gene mapping from genes slot
-isoform_gene_map <- dge$genes %>%
-  as_tibble() %>%
-  select(isoform_id = txid, gene_id = gene_id_ens115_sqanti)
+  rm(dge); gc()
+  cat("  (Freed DGEList from memory)\n")
 
-cat(sprintf("  Calculated CPM for %d isoforms\n", nrow(cpm_matrix)))
+} else {
+  # ─── OARFISH: Load pre-built DGEList ───
+  dge_file <- "/Users/petecastaldi/claude_projects/nmd/rds/dge_isoform_nofilter_2026.2.7.rds"
 
-# Free DGEList — we have cpm_matrix and isoform_gene_map now
-rm(dge)
-gc()
-cat("  (Freed DGEList from memory)\n")
+  cat("Loading DGEList...\n")
+  dge <- readRDS(dge_file)
+  cat(sprintf("  Loaded DGEList with %d isoforms and %d samples\n",
+              nrow(dge), ncol(dge)))
+
+  # Extract sample metadata
+  cat("Extracting sample metadata...\n")
+  sample_metadata <- dge$samples %>%
+    as_tibble(rownames = "sample_id") %>%
+    mutate(
+      sample = if (!"sample" %in% names(.)) sample_id else sample,
+      treatment = factor(treatment, levels = c("DMSO", "Smg1i")),
+      ct = factor(ct)
+    )
+
+  cat(sprintf("  Extracted metadata for %d samples\n", nrow(sample_metadata)))
+  cat(sprintf("  Cell types: %s\n", paste(unique(sample_metadata$ct), collapse = ", ")))
+  cat(sprintf("  Treatments: %s\n", paste(unique(sample_metadata$treatment), collapse = ", ")))
+
+  # Pre-compute condition indices
+  dmso_cols  <- which(sample_metadata$treatment == "DMSO")
+  smg1i_cols <- which(sample_metadata$treatment == "Smg1i")
+  cat(sprintf("  DMSO samples: %d, Smg1i samples: %d\n",
+              length(dmso_cols), length(smg1i_cols)))
+
+  # Calculate CPM
+  cat("\nCalculating CPM for all isoforms...\n")
+  cpm_matrix <- cpm(dge, log = FALSE)
+
+  # Create isoform-to-gene mapping
+  isoform_gene_map <- dge$genes %>%
+    as_tibble() %>%
+    select(isoform_id = txid, gene_id = gene_id_ens115_sqanti)
+
+  cat(sprintf("  Calculated CPM for %d isoforms\n", nrow(cpm_matrix)))
+
+  rm(dge); gc()
+  cat("  (Freed DGEList from memory)\n")
+}
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 4: Filter to Major Isoforms (MEMORY-EFFICIENT APPROACH)
@@ -327,10 +448,7 @@ cat(sprintf("  Statistics saved for %d genes\n", nrow(filtering_stats_summary)))
 # ═══════════════════════════════════════════════════════════════════
 
 cat("\nSaving outputs...\n")
-
-# Create data directory
-data_dir <- file.path(base_dir, "data")
-dir.create(data_dir, showWarnings = FALSE, recursive = TRUE)
+cat(sprintf("  Output directory: %s\n", data_dir))
 
 # Save expression data (FILTERED)
 saveRDS(expression_data, file.path(data_dir, "expression_data.rds"))

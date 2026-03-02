@@ -48,8 +48,24 @@ if ("--output-dir" %in% args) {
   output_dir <- args[idx + 1]
 }
 
+# Parse --source (default: oarfish)
+source_type <- "oarfish"
+if ("--source" %in% args) {
+  src_idx <- which(args == "--source")
+  if (src_idx < length(args)) {
+    source_type <- args[src_idx + 1]
+    if (!source_type %in% c("oarfish", "isocall")) {
+      stop("--source must be 'oarfish' or 'isocall'")
+    }
+  }
+}
+
+# Set data directory based on source
+data_dir <- if (source_type == "isocall") "data/isocall" else "data"
+
 cat(sprintf("  Input:      %s\n", input_path))
-cat(sprintf("  Output dir: %s\n\n", output_dir))
+cat(sprintf("  Output dir: %s\n", output_dir))
+cat(sprintf("  Source:     %s\n\n", source_type))
 
 # ═══════════════════════════════════════════════════════════════════
 # SECTION 1: Load Data
@@ -65,11 +81,11 @@ profiles <- readRDS(input_path)
 cat(sprintf("  Loaded %d profiles\n", nrow(profiles)))
 
 # Load annotated union exons (region type is per isoform x union_exon pair)
-annotated_ue <- readRDS("data/isoform_union_exons_annotated_filtered.rds")
+annotated_ue <- readRDS(file.path(data_dir, "isoform_union_exons_annotated_filtered.rds"))
 cat(sprintf("  Loaded %d annotated union exon mappings\n", nrow(annotated_ue)))
 
 # Load union exons (for bp calculations)
-union_exons <- readRDS("data/union_exons_filtered.rds")
+union_exons <- readRDS(file.path(data_dir, "union_exons_filtered.rds"))
 cat(sprintf("  Loaded %d union exons\n", nrow(union_exons)))
 
 # ═══════════════════════════════════════════════════════════════════
