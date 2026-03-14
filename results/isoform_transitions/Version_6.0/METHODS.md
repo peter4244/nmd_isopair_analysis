@@ -14,7 +14,10 @@
 4. [Terminal Boundary Rules](#terminal-boundary-rules)
 5. [Validation Framework](#validation-framework)
 6. [Statistical Methods](#statistical-methods)
-7. [Implementation Details](#implementation-details)
+7. [Reading Frame and PTC Analysis](#reading-frame-and-ptc-analysis)
+8. [Cross-Comparison Statistical Framework](#cross-comparison-statistical-framework)
+9. [Implementation Details](#implementation-details)
+10. [Publication Report Methods (mashr Classification)](#publication-report-methods-mashr-classification)
 
 ---
 
@@ -985,6 +988,112 @@ Model: has_event_B ~ has_event_A + union_exon_composition + complexity
 
 ---
 
+## Reading Frame and PTC Analysis
+
+### Splice Group Assignment
+
+Before evaluating reading frame effects, splicing events are grouped into **splice groups** — sets of events that arise from a single splicing decision (one donor-acceptor choice). Events are grouped using a union-find algorithm based on junction sharing: two events that share at least one splice junction in either `ref_junctions` or `comp_junctions` are assigned to the same group. Events linked transitively (A shares a junction with B, B shares with C) form a single group.
+
+**Rationale**: A multi-exon skip, for example, produces multiple Missing_Internal events (one per skipped exon), but these all reside within a single intron of the comparator and arise from a single splicing decision. Evaluating each skipped exon independently for frameshift potential is misleading — a 4 bp exon and a 2 bp exon skipped together represent a single 6 bp (in-frame) event, not two independent frameshifts that happen to compensate.
+
+**Dual counting**: The analysis tracks both levels of granularity:
+- `n_cds_events`: individual exonic changes (how many distinct regions of coding sequence differ)
+- `n_splice_groups`: independent splice-site decisions (how many donor-acceptor choices produced those changes)
+
+Frameshift and compensatory evaluation operates at the splice-group level. Event frequency and structural complexity analyses can use either level as appropriate.
+
+### Frame Walk Algorithm
+
+The frame walk (`analyzeFrameWalk()`) traces the cumulative effect of splicing events on the reading frame along each isoform pair. For each pair, CDS-overlapping events are sorted in 5'→3' order (ascending genomic coordinate on plus strand, descending on minus strand) and assigned to splice groups via junction sharing (see above).
+
+The walk proceeds event-by-event, updating the cumulative frame offset for each event. However, frameshift and compensatory status are evaluated at **splice group boundaries** — only after all events in a group have been processed. The group's **net signed CDS change** (sum of signed changes of all member events) determines whether the group shifts the reading frame:
+
+- **Frameshift**: Group net CDS change mod 3 ≠ 0, and the cumulative offset transitions from 0 to non-zero
+- **Compensatory**: Group net CDS change restores the cumulative offset to 0
+- **Frame-preserving**: Group net CDS change mod 3 = 0 (no frame effect)
+
+**Resolution**: A pair is "resolved" if the cumulative frame offset returns to 0 by the end of the CDS (all frameshifts are compensated). "Unresolved" pairs carry a persistent reading frame shift through the remainder of the CDS, typically producing a premature termination codon in the new frame.
+
+**Reference frame**: The frame walk uses the **reference (dominant) isoform's** CDS as the coordinate system for determining which events overlap coding sequence. This avoids the circular problem of using each isoform's own CDS annotation.
+
+### PTC Detection
+
+PTCs are identified using the canonical 50-nucleotide rule: a stop codon is classified as premature if it is located >50 nt upstream of the last exon-exon junction (EJC) in mRNA coordinates. Additional features:
+
+- `n_downstream_ejcs`: number of EJCs downstream of the stop codon
+- `stop_in_last_exon`: whether the stop codon resides in the final exon (expected for normal termination)
+
+Single-exon transcripts are classified as non-PTC (no EJCs possible). CDS annotations come from GENCODE (ENST isoforms) and SQANTI ORF predictions (novel PacBio isoforms).
+
+### Frameshift → PTC Funnel
+
+The funnel traces coding pairs through sequential stages to quantify the fate of frameshifts:
+
+1. **n_total**: All analyzed pairs (coding and non-coding)
+2. **n_coding**: Pairs where the reference isoform is coding (`frame_resolved` not NA)
+3. **n_frameshift**: Pairs with ≥1 frameshift splice group (group net CDS change not divisible by 3)
+4. **n_unresolved**: Frameshifts not compensated by a downstream splice group
+5. **PTC breakdown of unresolved pairs**:
+   - **n_ptc**: Comparator has a PTC (stop >50 nt upstream of last EJC)
+   - **n_no_ptc**: Comparator has no PTC (stop in or near last exon)
+   - **n_ptc_unknown**: Comparator lacks CDS annotation (no PTC call possible); excluded from PTC/no-PTC breakdown
+6. **n_stop_last_exon**: Among no-PTC unresolved, stop codon resides in the last exon
+7. **n_res_ptc**: Resolved frameshifts where comparator nevertheless has a PTC
+8. **n_nofs_ptc**: No-frameshift pairs where comparator has a PTC
+
+**Validation**: Funnel arithmetic is verified: `n_ptc + n_no_ptc + n_ptc_unknown = n_unresolved`.
+
+The funnel is computed for both NMD (C2) and Control (C4) comparisons across all cell types. The key biological insight is the asymmetry: NMD unresolved frameshifts are enriched for PTCs (~46%), while Control unresolved frameshifts overwhelmingly lack PTCs (~97% no-PTC) with stop codons in the last exon.
+
+### Novel Protein Sequence Quantification
+
+Control (C4) pairs with unresolved frameshifts and no PTC represent productive alternative splicing: the frameshift rewrites the C-terminal protein sequence without triggering NMD. We quantify how much of the protein is novel (translated in a non-original reading frame).
+
+#### Frameshift Boundary Determination
+
+The first frameshift event per pair determines the boundary between conserved and novel protein sequence. Events are already sorted 5'→3' by `analyzeFrameWalk()`. The boundary position is:
+
+- Plus strand: `genomic_end` of the first frameshift event
+- Minus strand: `genomic_start` of the first frameshift event
+
+This follows the same logic as Isopair's `last_shift_pos` computation. For pairs with multiple frameshifts and partial compensation, the first frameshift boundary is the correct choice — everything downstream is in a non-original reading frame.
+
+#### Conserved CDS Base Pair Counting
+
+The `count_conserved_cds_bp()` function walks the **comparator's** exon structure 5'→3', intersecting each exon with the comparator's CDS range, and accumulates CDS bp upstream of the frameshift boundary:
+
+1. Get the comparator's CDS genomic range (`cds_start`, `cds_stop`) and exon coordinates
+2. Order exons 5'→3' (ascending for plus strand, descending for minus strand)
+3. For each exon, compute the CDS-overlapping segment: `max(exon_start, cds_start)` to `min(exon_end, cds_stop)`
+4. Walk exons, accumulating CDS bp until the frameshift boundary is reached:
+   - If the boundary is past the current exon's CDS segment: add the full segment
+   - If the boundary falls within the segment: add the partial bp and stop
+   - If the boundary is before the segment: stop (all remaining CDS is novel)
+5. Cap conserved bp at `orf_length`
+
+**Note**: The frame walk identifies frameshifts based on the *reference* CDS overlap, but conserved bp are measured using the *comparator's* CDS and exon structure. This is correct because we want the comparator's actual protein product. Comparators in scope are all coding (filtered by merge with PTC table).
+
+#### Novel Protein Metrics
+
+Per pair:
+- `novel_bp = max(0, orf_length - conserved_bp)`
+- `novel_aa = novel_bp / 3`
+- `pct_novel = 100 × novel_aa / total_aa`
+
+Summarized per cell type as median and IQR of `novel_aa` and `pct_novel`.
+
+#### Edge Cases
+
+- Comparator not in CDS table or structures → excluded (NA)
+- Frameshift boundary outside comparator CDS range → `conserved_bp = orf_length`, `novel_bp = 0`
+- Single-exon comparator → works naturally (one exon to walk)
+
+#### Caching
+
+Per-pair exon walking is cached via `cached_compute()` with key `"novel_protein_c4_{ct_label}"` since the computation is moderately expensive.
+
+---
+
 ## Cross-Comparison Statistical Framework
 
 ### Overview
@@ -1260,6 +1369,99 @@ Format: One row per (dominant, non-dominant) comparison
 
 ---
 
+## Publication Report Methods (mashr Classification)
+
+### Sample Exclusion
+
+DO donor 029T was identified as a PCA outlier (distance 252 from DO centroid,
+>3× the next most distant DO sample) and excluded along with its treatment
+partner, reducing the dataset from 38 to 36 samples (4 DO samples from
+donors 001V and 027U).
+
+### NMD Classification (mashr)
+
+Isoforms are classified using mashr (multivariate adaptive shrinkage)
+differential isoform expression results:
+- **NMD-sensitive**: `nmd_responsive == TRUE` (pre-computed by mashr;
+  adj.P.Val < 0.05 & logFC > 0 with mashr-shrunken effect sizes)
+- **Non-NMD**: `adj.P.Val > 0.50`
+- **all_samples**: NMD = union across AT, DD, DO, FB, MV cell types;
+  non-NMD = intersection across the same 5 cell types. DD_ALI excluded
+  from main aggregation.
+
+### Pair Construction and Gene-Matching
+
+- **C4 (Control)**: Top two non-NMD isoforms by DMSO CPM per gene
+  (`generatePairsExpression(..., method = "top_two")`)
+- **C2 (NMD)**: Same C4 reference paired with top NMD isoform by Smg1i CPM
+  (via `identifyDominantIsoforms()` + inner_join on `gene_id`)
+- **Gene-matching**: C2 and C4 restricted to shared
+  `(gene_id, reference_isoform_id)` pairs, ensuring the same genes and
+  reference isoforms appear in both NMD and Control analyses
+
+### PTC-Causing Event Attribution
+
+For each PTC+ comparator, the specific splice event that caused the PTC is
+identified through two mechanisms:
+
+1. **Frameshift PTCs**: The frameshift-causing event identified by
+   `analyzeFrameWalk()` — the splice event that shifted the reading frame,
+   leading to a premature stop codon in the new frame.
+2. **Non-frameshift (in-frame stop) PTCs**: The event whose genomic
+   coordinates contain the comparator's `cds_stop` position (the PTC).
+   Since the isoform is in-frame, the stop codon must reside within the
+   sequence that differs between reference and comparator.
+
+This attribution enables a comprehensive Sankey diagram tracing PTC-causing
+splice events to their mechanism (frameshift vs in-frame stop).
+
+### 3'UTR Length Analysis with PTC Correction
+
+Standard 3'UTR length measurement (`utr3_bp_comp` from
+`quantifyPairDivergence()`) uses each isoform's own `cds_stop`. For PTC+
+isoforms, this is the premature stop, so the measured 3'UTR is inflated
+(includes former CDS sequence downstream of the PTC).
+
+To distinguish genuine 3'UTR length from PTC-induced inflation, PTC+
+comparators are split by stop codon mechanism:
+
+- **Same-stop PTC+**: Comparator and reference share the same `cds_stop`.
+  The PTC arises because a 3'UTR splicing event repositioned the last EJC
+  downstream. The 3'UTR length measurement is correct and unaffected.
+- **Diff-stop PTC+**: Comparator has a premature stop (CDS frameshift or
+  in-frame stop). The measured 3'UTR is inflated. A corrected
+  "reference-based 3'UTR" is computed: exonic bp downstream of the
+  reference's `cds_stop` in the comparator's exon structure. This is only
+  valid when the reference stop position falls within the comparator's exons
+  (~86% of cases).
+
+### 5'UTR uORF Analysis
+
+Upstream open reading frames (uORFs) in the 5'UTR are scanned as a potential
+non-PTC NMD mechanism:
+
+1. **5'UTR extraction**: For each isoform, the 5'UTR length is computed from
+   genomic CDS coordinates + exon structure. Validated by checking for ATG
+   at the computed CDS start position (98.4% pass rate).
+2. **uORF detection**: All AUG positions in the 5'UTR sequence (from SQANTI
+   corrected transcript FASTA) are identified. For each, the reading frame
+   is walked through the full transcript until the first in-frame stop codon
+   (TAA, TAG, TGA). Minimum uORF size: 3 codons (9 nt).
+3. **Overlapping uORFs**: uORFs whose stop codon falls at or beyond the main
+   CDS start are classified as overlapping — a known NMD trigger.
+4. **Groups compared**: PTC-negative NMD comparators, PTC-positive NMD
+   comparators, and Control (C4) comparators, all restricted to coding pairs.
+
+### 3'UTR Splicing Enrichment
+
+For each comparator isoform with CDS annotation, splice events in the 3'UTR
+are identified by checking whether any event's genomic coordinates fall
+downstream of `cds_stop` (+ strand) or upstream of `cds_stop` (- strand).
+The rate of 3'UTR splicing is compared across PTC-negative NMD, PTC-positive
+NMD, and Control groups using Fisher's exact test.
+
+---
+
 ## References
 
 **Splice Site Nomenclature**:
@@ -1275,6 +1477,6 @@ Format: One row per (dominant, non-dominant) comparison
 
 ---
 
-**Document Version**: 2.2
-**Last Updated**: 2026-02-21
-**Status**: Complete and validated
+**Document Version**: 2.4
+**Last Updated**: 2026-03-14
+**Status**: Complete and validated — updated with mashr publication report methods

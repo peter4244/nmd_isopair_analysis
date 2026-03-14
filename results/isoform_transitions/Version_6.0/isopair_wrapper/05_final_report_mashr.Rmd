@@ -1,0 +1,2370 @@
+---
+title: "NMD Isoform Transitions: Publication Report (mashr Classification)"
+subtitle: "Isopair Wrapper — Isocall Pipeline, mashr DIE"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+    fig_width: 8
+    fig_height: 5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 8, fig.height = 5)
+library(Isopair)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(ggalluvial)
+library(DT)
+source("visualization_functions.R")
+
+# Helper: render interactive DT table (sortable, searchable)
+render_dt <- function(df, caption = NULL, pageLength = 15, ...) {
+  datatable(df, caption = caption, rownames = FALSE,
+            options = list(pageLength = pageLength, scrollX = TRUE),
+            ...)
+}
+
+# ---------------------------------------------------------------------------
+# Publication theme and color palette
+# ---------------------------------------------------------------------------
+theme_pub <- theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(size = 10, color = "grey40"),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+theme_set(theme_pub)
+
+pal <- c(NMD = "#ef8a62", Control = "#67a9cf")
+pal3 <- c("NMD PTC+" = "#ef8a62", "NMD PTC-" = "#fddbc7", Control = "#67a9cf")
+
+# Figure output
+fig_dir <- "figures"
+dir.create(fig_dir, showWarnings = FALSE)
+table_dir <- "tables"
+dir.create(table_dir, showWarnings = FALSE)
+
+save_fig <- function(p, name, width = 8, height = 5) {
+  ggsave(file.path(fig_dir, paste0(name, ".pdf")), p, width = width, height = height)
+  ggsave(file.path(fig_dir, paste0(name, ".png")), p, width = width, height = height, dpi = 300)
+  print(p)
+}
+
+# ---------------------------------------------------------------------------
+# Helper functions (adapted from 03_nmd_analysis_mashr.Rmd)
+# ---------------------------------------------------------------------------
+ct_to_label <- function(ct) tolower(gsub("_", "", ct))
+
+comp_label <- function(comp) {
+  switch(toupper(comp), C2 = "NMD", C4 = "Control", toupper(comp))
+}
+
+evt_types <- c("Alt_TSS", "Alt_TES", "A5SS", "A3SS", "SE",
+               "Missing_Internal", "IR", "IR_diff",
+               "Partial_IR_5", "Partial_IR_3")
+
+compute_event_freq <- function(profiles) {
+  n_pairs <- nrow(profiles)
+  n_pir5 <- sum(sapply(profiles$detailed_events, function(de)
+    any(de$event_type == "Partial_IR_5")))
+  n_pir3 <- sum(sapply(profiles$detailed_events, function(de)
+    any(de$event_type == "Partial_IR_3")))
+  counts <- c(sum(profiles$tss_changed), sum(profiles$tes_changed),
+              sum(profiles$n_a5ss > 0), sum(profiles$n_a3ss > 0),
+              sum(profiles$n_se > 0), sum(profiles$n_missing_internal > 0),
+              sum(profiles$n_ir > 0), sum(profiles$n_ir_diff > 0),
+              n_pir5, n_pir3)
+  data.frame(event_type = evt_types,
+             n_pairs_with_event = counts,
+             pct_of_pairs = round(100 * counts / n_pairs, 1))
+}
+
+compute_ptc_rates_row <- function(ct) {
+  ct_label <- ct_to_label(ct)
+  c2_key <- paste0("c2_", ct_label)
+  c4_key <- paste0("c4_", ct_label)
+  if (!c2_key %in% names(set_results) || !c4_key %in% names(set_results)) return(NULL)
+  coding_ids <- cds$isoform_id[cds$coding_status == "coding"]
+  p_c2 <- set_results[[c2_key]]$profiles
+  cod_c2 <- p_c2[p_c2$reference_isoform_id %in% coding_ids &
+                   p_c2$comparator_isoform_id %in% coding_ids, ]
+  p_c4 <- set_results[[c4_key]]$profiles
+  cod_c4 <- p_c4[p_c4$reference_isoform_id %in% coding_ids &
+                   p_c4$comparator_isoform_id %in% coding_ids, ]
+  if (nrow(cod_c2) == 0 || nrow(cod_c4) == 0) return(NULL)
+  ptc_c2 <- sum(cod_c2$comparator_isoform_id %in% ptc$isoform_id[ptc$has_ptc == TRUE])
+  ptc_c4 <- sum(cod_c4$comparator_isoform_id %in% ptc$isoform_id[ptc$has_ptc == TRUE])
+  n_c2 <- nrow(cod_c2); n_c4 <- nrow(cod_c4)
+  ft <- tryCatch({
+    mat <- matrix(c(ptc_c2, n_c2 - ptc_c2, ptc_c4, n_c4 - ptc_c4), nrow = 2)
+    fisher.test(mat)
+  }, error = function(e) NULL)
+  data.frame(
+    cell_type = ct,
+    n_coding_pairs_NMD = n_c2,
+    n_coding_pairs_Ctrl = n_c4,
+    NMD_comp_ptc_n = ptc_c2,
+    NMD_comp_ptc_pct = round(100 * ptc_c2 / n_c2, 1),
+    Ctrl_comp_ptc_n = ptc_c4,
+    Ctrl_comp_ptc_pct = round(100 * ptc_c4 / n_c4, 1),
+    fisher_OR = if (!is.null(ft)) round(ft$estimate, 2) else NA_real_,
+    p_value = if (!is.null(ft)) ft$p.value else NA_real_
+  )
+}
+
+compute_frame_category_rows <- function(ct) {
+  ct_label <- ct_to_label(ct)
+  c2_key <- paste0("c2_", ct_label)
+  c4_key <- paste0("c4_", ct_label)
+  if (!c2_key %in% names(set_results) || !c4_key %in% names(set_results)) return(NULL)
+  fc_c2 <- set_results[[c2_key]]$frame_comp
+  fc_c4 <- set_results[[c4_key]]$frame_comp
+  if (is.null(fc_c2) || is.null(fc_c4)) return(NULL)
+  ps_c2 <- fc_c2$pair_summary
+  ps_c4 <- fc_c4$pair_summary
+  cats <- c("same_start_in_frame", "same_start_frameshift",
+            "diff_start_same_frame", "diff_start_diff_frame",
+            "diff_start_diff_frame_with_frameshift",
+            "non_coding", "no_shared_cds")
+  # Denominator: coding pairs only (exclude non_coding and no_shared_cds)
+  n_coding_c2 <- sum(!ps_c2$frame_category %in% c("non_coding", "no_shared_cds"))
+  n_coding_c4 <- sum(!ps_c4$frame_category %in% c("non_coding", "no_shared_cds"))
+  do.call(rbind, lapply(cats, function(cat) {
+    data.frame(
+      cell_type = ct,
+      frame_category = cat,
+      NMD_n = sum(ps_c2$frame_category == cat),
+      NMD_pct = round(100 * sum(ps_c2$frame_category == cat) / n_coding_c2, 1),
+      Ctrl_n = sum(ps_c4$frame_category == cat),
+      Ctrl_pct = round(100 * sum(ps_c4$frame_category == cat) / n_coding_c4, 1)
+    )
+  }))
+}
+
+compute_divergence_row <- function(ct) {
+  ct_label <- ct_to_label(ct)
+  c2_key <- paste0("c2_", ct_label)
+  c4_key <- paste0("c4_", ct_label)
+  if (!c2_key %in% names(set_results) || !c4_key %in% names(set_results)) return(NULL)
+  div_c2 <- set_results[[c2_key]]$divergence
+  div_c4 <- set_results[[c4_key]]$divergence
+  if (is.null(div_c2) || nrow(div_c2) == 0 || is.null(div_c4) || nrow(div_c4) == 0) return(NULL)
+  data.frame(
+    cell_type = ct,
+    NMD_n = nrow(div_c2),
+    NMD_median_pct_shared = round(median(div_c2$pct_shared, na.rm = TRUE), 1),
+    Ctrl_n = nrow(div_c4),
+    Ctrl_median_pct_shared = round(median(div_c4$pct_shared, na.rm = TRUE), 1)
+  )
+}
+```
+
+# 0. Data Loading and Gene-Matching
+
+## Data Provenance Overview
+
+All analyses in this report begin from **gene-matched isoform pair sets**. The
+data pipeline is:
+
+1. **01_prepare_data_mashr.R**: Loads the isocall count matrix
+   (`nmd_isocall.count_matrix.txt`, 645,273 isoforms x 38 samples), excludes
+   2 outlier samples (DO donor 029T: `Sample25_DO_029T_DMSO` and
+   `Sample26_DO_029T_Smg1i`, identified as PCA outlier), applies TMM
+   normalization and condition-stratified 5% isoform filtering, then classifies
+   isoforms as NMD-sensitive (`nmd_responsive == TRUE` in mashr DIE results) or
+   non-NMD (`adj.P.Val > 0.50`). Final dataset: 36 samples across 6 cell types.
+   Outputs: `expression_data.rds`, `nmd_classification.rds`,
+   `sample_metadata.rds`, `gene_map.rds`.
+
+2. **02_build_profiles_mashr.R**: Generates isoform pairs —
+   **C4 (Control)**: top-two non-NMD isoforms by DMSO CPM per gene
+   (`generatePairsExpression(..., method = "top_two")`);
+   **C2 (NMD)**: same C4 reference paired with top NMD isoform by Smg1i CPM
+   (via `identifyDominantIsoforms()` + `inner_join` on `gene_id`).
+   Builds splicing choice profiles with `Isopair::buildProfiles()`.
+   Outputs: `profiles_c{2,4}_*.rds`, `pairs_c{2,4}_*.rds`.
+
+3. **03_nmd_analysis_mashr.Rmd**: Applies **gene-matching** (restricts C2 and C4
+   to genes with shared `(gene_id, reference_isoform_id)` in both sets), then
+   runs Isopair analysis functions on the matched profiles. Caches results to
+   `analysis_cache/`.
+
+4. **This report (05)**: Loads profiles from step 2, re-applies gene-matching
+   (step 3), loads cached analysis results, and verifies consistency. All
+   downstream analyses use gene-matched profiles exclusively.
+
+```{r flowchart-data, include=FALSE}
+# ── Gather numbers for the flowchart ──
+# These are computed fresh from the loaded data objects to ensure accuracy.
+# Raw count matrix dimensions are hardcoded (not loaded here to save memory).
+n_raw_isoforms <- 645273L
+n_raw_samples  <- 38L
+n_excluded     <- 2L
+```
+
+```{r flowchart, fig.width=10, fig.height=10}
+# ── Data provenance ──
+# All numbers derived from objects loaded in subsequent chunks.
+# Raw count matrix dimensions from isocall pipeline output.
+# Filtered/classified counts from 01_prepare_data_mashr.R outputs.
+# Pair counts from 02_build_profiles_mashr.R outputs.
+# Gene-matched counts computed in load-profiles chunk below.
+#
+# We load the key objects here just for the flowchart numbers, then
+# the full load happens in the subsequent chunks.
+
+fmt <- function(x) format(x, big.mark = ",")
+
+# Load just what we need for counts
+.fc_expr   <- readRDS(file.path("data_mashr", "expression_data.rds"))
+.fc_sm     <- readRDS(file.path("data_mashr", "sample_metadata.rds"))
+.fc_nmd    <- readRDS(file.path("data_mashr", "nmd_classification.rds"))
+.fc_gm     <- readRDS(file.path("data_mashr", "gene_map.rds"))
+
+n_filtered   <- nrow(.fc_expr)
+n_samples    <- ncol(.fc_expr)
+n_dmso       <- sum(.fc_sm$treatment == "DMSO")
+n_smg1i      <- sum(.fc_sm$treatment == "Smg1i")
+n_nmd_as     <- length(.fc_nmd[["all_samples"]]$nmd)
+n_nonnmd_as  <- length(.fc_nmd[["all_samples"]]$non_nmd)
+
+# How many genes have both NMD and non-NMD isoforms?
+nmd_genes <- unique(.fc_gm$gene_id[.fc_gm$isoform_id %in% .fc_nmd[["all_samples"]]$nmd])
+nonnmd_genes <- unique(.fc_gm$gene_id[.fc_gm$isoform_id %in% .fc_nmd[["all_samples"]]$non_nmd])
+# Genes with ≥2 non-NMD (needed for C4)
+nonnmd_per_gene <- table(.fc_gm$gene_id[.fc_gm$isoform_id %in% .fc_nmd[["all_samples"]]$non_nmd])
+genes_2plus_nonnmd <- names(nonnmd_per_gene[nonnmd_per_gene >= 2])
+# Genes eligible for both C2 and C4
+genes_eligible <- intersect(nmd_genes, genes_2plus_nonnmd)
+n_genes_eligible <- length(genes_eligible)
+
+# Pair counts (all_samples, before gene-matching)
+.fc_c2 <- readRDS(file.path("data_mashr", "profiles_c2_allsamples.rds"))
+.fc_c4 <- readRDS(file.path("data_mashr", "profiles_c4_allsamples.rds"))
+n_c2_before <- nrow(.fc_c2)
+n_c4_before <- nrow(.fc_c4)
+
+# Gene-matched counts
+.shared <- dplyr::inner_join(
+  unique(.fc_c2[, c("gene_id", "reference_isoform_id")]),
+  unique(.fc_c4[, c("gene_id", "reference_isoform_id")]),
+  by = c("gene_id", "reference_isoform_id"))
+n_matched_genes <- nrow(.shared)
+n_c2_matched <- nrow(dplyr::semi_join(.fc_c2, .shared, by = c("gene_id", "reference_isoform_id")))
+n_c4_matched <- nrow(dplyr::semi_join(.fc_c4, .shared, by = c("gene_id", "reference_isoform_id")))
+
+rm(.fc_expr, .fc_sm, .fc_nmd, .fc_gm, .fc_c2, .fc_c4, .shared)
+
+dot_spec <- sprintf('
+digraph flowchart {
+  graph [rankdir=TB, fontname="Helvetica", nodesep=1.6, ranksep=1.4, size="13,16"]
+  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=23, margin="0.65,0.5", width=6.5]
+  edge  [color="#666666", penwidth=2.5]
+
+  A [label=<<b>Isocall Count Matrix</b><br/>%s isoforms × %d samples>,
+     fillcolor="#f0f0f0", color="#636363"]
+
+  B [label=<<b>Sample Exclusion</b><br/>Remove DO donor 029T (PCA outlier)<br/>%s isoforms × %d samples>,
+     fillcolor="#fee0d2", color="#de2d26"]
+
+  C [label=<<b>5%% Filter + filterByExpr</b><br/>%s isoforms pass<br/>%d DMSO + %d Smg1i | 6 cell types>,
+     fillcolor="#e8f4f8", color="#2c7fb8"]
+
+  D [label=<<b>NMD Classification (mashr)</b><br/>NMD-sensitive: %s isoforms (union across CTs)<br/>Non-NMD: %s isoforms (intersection across CTs)>,
+     fillcolor="#fff7bc", color="#d95f0e"]
+
+  D2 [label=<<b>Eligible Genes</b><br/>%s genes have ≥1 NMD isoform AND ≥2 non-NMD isoforms<br/>(required for both C2 and C4 pair construction)>,
+      fillcolor="#fff7bc", color="#d95f0e"]
+
+  E [label=<<b>Pair Construction (all_samples)</b><br/>C2 (NMD): %s pairs (1 per gene)<br/>C4 (Control): %s pairs (1 per gene)>,
+     fillcolor="#e8f4f8", color="#2c7fb8"]
+
+  F [label=<<b>Gene-Matching</b><br/>%s genes with shared (gene, reference) in both C2 and C4<br/>C2: %s pairs | C4: %s pairs>,
+     fillcolor="#c7e9c0", color="#31a354"]
+
+  A -> B -> C -> D -> D2 -> E -> F
+}',
+  fmt(n_raw_isoforms), n_raw_samples,
+  fmt(n_raw_isoforms), n_samples,
+  fmt(n_filtered), n_dmso, n_smg1i,
+  fmt(n_nmd_as), fmt(n_nonnmd_as),
+  fmt(n_genes_eligible),
+  fmt(n_c2_before), fmt(n_c4_before),
+  fmt(n_matched_genes), fmt(n_c2_matched), fmt(n_c4_matched)
+)
+
+if (requireNamespace("DiagrammeR", quietly = TRUE)) {
+  DiagrammeR::grViz(dot_spec, width = 1000, height = 700)
+} else {
+  message("DiagrammeR not installed -- flowchart not rendered")
+}
+```
+
+```{r load-data}
+# ==============================================================================
+# STAGE 1: Load raw data objects
+# ==============================================================================
+
+# ── 01_prepare_data_mashr.R outputs ──
+# Source: isocall count matrix → TMM normalization → 5% filter → mashr NMD classification
+data_dir  <- "data_mashr"
+cache_dir <- file.path(data_dir, "analysis_cache")
+
+expr_mat    <- readRDS(file.path(data_dir, "expression_data.rds"))
+sample_meta <- readRDS(file.path(data_dir, "sample_metadata.rds"))
+gene_map    <- readRDS(file.path(data_dir, "gene_map.rds"))
+nmd_class   <- readRDS(file.path(data_dir, "nmd_classification.rds"))
+
+# ── Infrastructure objects (isoform-intrinsic, DE-independent) ──
+# Originally from Isopair pipeline scripts 02-05, copied to data_mashr/ by
+# 02_build_profiles_mashr.R for self-containment.
+# structures.rds: extractIsoformStructures() — exon coordinates per isoform
+# cds.rds: extractCds() — CDS boundaries per isoform
+# ptc.rds: testPtcAssociation() infrastructure — PTC status per isoform
+# union_exons.rds: buildUnionExons() — merged exon models per gene
+# isoform_union_mapping.rds: mapIsoformsToUnion() — isoform-to-union-exon mapping
+# annotated_ue.rds: annotateUnionExons() — union exons with CDS/UTR labels
+# cds_exons.rds: CDS mapped to individual exons
+structures   <- readRDS(file.path(data_dir, "structures.rds"))
+cds          <- readRDS(file.path(data_dir, "cds.rds"))
+ptc          <- readRDS(file.path(data_dir, "ptc.rds"))
+union_exons  <- readRDS(file.path(data_dir, "union_exons.rds"))
+ue_mapping   <- readRDS(file.path(data_dir, "isoform_union_mapping.rds"))
+annotated_ue <- readRDS(file.path(data_dir, "annotated_ue.rds"))
+cds_exons    <- readRDS(file.path(data_dir, "cds_exons.rds"))
+
+# ── Gene symbol lookup from mashr DE files ──
+de_dir_mashr <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
+gene_symbol_lookup <- character(0)
+for (de_f in list.files(de_dir_mashr, pattern = "^nmd_mashr_die_.*\\.csv$", full.names = TRUE)) {
+  de_tmp <- read.csv(de_f, stringsAsFactors = FALSE)[, c("gene_id", "hgnc_symbol")]
+  de_tmp <- de_tmp[!duplicated(de_tmp$gene_id) & !is.na(de_tmp$hgnc_symbol) &
+                    de_tmp$hgnc_symbol != "", ]
+  new_entries <- setdiff(de_tmp$gene_id, names(gene_symbol_lookup))
+  gene_symbol_lookup[de_tmp$gene_id[de_tmp$gene_id %in% new_entries]] <-
+    de_tmp$hgnc_symbol[de_tmp$gene_id %in% new_entries]
+}
+
+get_gene_sym <- function(gid) {
+  sym <- gene_symbol_lookup[gid]
+  if (is.na(sym) || sym == "") gid else sym
+}
+
+# Cell types (mashr: DO included, DD_ALI excluded from main)
+cell_types  <- c("all_samples", "AT", "DD", "DO", "FB", "MV")
+comparisons <- c("c2", "c4")
+main_cts    <- c("AT", "DD", "DO", "FB", "MV")
+```
+
+```{r load-profiles}
+# ==============================================================================
+# STAGE 2: Load profiles and apply gene-matching
+# ==============================================================================
+#
+# profiles_c{2,4}_*.rds are the output of 02_build_profiles_mashr.R. C2 pairs
+# share their reference isoform with C4 (by construction in script 02), but C4
+# may contain genes that have no NMD isoform (i.e., genes with >=2 non-NMD
+# isoforms but no mashr-classified NMD isoform). Gene-matching restricts both
+# sets to the intersection of (gene_id, reference_isoform_id), ensuring fair
+# NMD vs Control comparison on identical gene sets.
+
+profiles_list <- list()
+for (ct in cell_types) {
+  ct_label <- ct_to_label(ct)
+  for (comp in comparisons) {
+    key <- paste(comp, ct_label, sep = "_")
+    prof_file <- file.path(data_dir, sprintf("profiles_%s.rds", key))
+    if (file.exists(prof_file)) profiles_list[[key]] <- readRDS(prof_file)
+  }
+}
+
+# ── Gene-matching ──
+# Replicates the logic from 03_nmd_analysis_mashr.Rmd lines 743-775.
+# For each cell type, restrict C2 and C4 profiles to genes where both have
+# a pair with the same (gene_id, reference_isoform_id).
+gene_match_summary <- list()
+for (ct in cell_types) {
+  ct_label <- ct_to_label(ct)
+  c2_key <- paste0("c2_", ct_label)
+  c4_key <- paste0("c4_", ct_label)
+  if (!c2_key %in% names(profiles_list) || !c4_key %in% names(profiles_list)) next
+
+  n_c2_before <- nrow(profiles_list[[c2_key]])
+  n_c4_before <- nrow(profiles_list[[c4_key]])
+
+  c2_gene_refs <- unique(profiles_list[[c2_key]][, c("gene_id", "reference_isoform_id")])
+  c4_gene_refs <- unique(profiles_list[[c4_key]][, c("gene_id", "reference_isoform_id")])
+  shared_refs  <- dplyr::inner_join(c2_gene_refs, c4_gene_refs,
+                                     by = c("gene_id", "reference_isoform_id"))
+
+  profiles_list[[c2_key]] <- dplyr::semi_join(profiles_list[[c2_key]], shared_refs,
+                                               by = c("gene_id", "reference_isoform_id"))
+  profiles_list[[c4_key]] <- dplyr::semi_join(profiles_list[[c4_key]], shared_refs,
+                                               by = c("gene_id", "reference_isoform_id"))
+
+  gene_match_summary[[ct]] <- data.frame(
+    cell_type      = ct,
+    c2_before      = n_c2_before,
+    c4_before      = n_c4_before,
+    matched_genes  = nrow(shared_refs),
+    c2_after       = nrow(profiles_list[[c2_key]]),
+    c4_after       = nrow(profiles_list[[c4_key]])
+  )
+}
+gene_match_df <- do.call(rbind, gene_match_summary)
+```
+
+```{r build-set-results}
+# ==============================================================================
+# STAGE 3: Build set_results from gene-matched profiles + cached analyses
+# ==============================================================================
+#
+# set_results[[key]] is the primary data structure for all downstream analyses.
+# $profiles: gene-matched splicing choice profiles (from STAGE 2 above)
+# $divergence: quantifyPairDivergence() output (cached by script 03)
+# $frame_comp: compareIsoformFrames() output (cached by script 03)
+# $frame_walk: analyzeFrameWalk() output (cached by script 03)
+# $ptc_assoc: testPtcAssociation() output (cached by script 03)
+# $evt_freq: computed here from gene-matched profiles
+
+set_results <- list()
+for (key in names(profiles_list)) {
+  profiles <- profiles_list[[key]]
+  set_results[[key]] <- list(
+    profiles   = profiles,
+    divergence = tryCatch(readRDS(file.path(cache_dir, paste0("div_", key, ".rds"))), error = function(e) NULL),
+    frame_comp = tryCatch(readRDS(file.path(cache_dir, paste0("fc_",  key, ".rds"))), error = function(e) NULL),
+    frame_walk = tryCatch(readRDS(file.path(cache_dir, paste0("fw_",  key, ".rds"))), error = function(e) NULL),
+    ptc_assoc  = tryCatch(readRDS(file.path(cache_dir, paste0("ptc_", key, ".rds"))), error = function(e) NULL),
+    evt_freq   = compute_event_freq(profiles)
+  )
+}
+```
+
+```{r verify-cache-consistency}
+# ==============================================================================
+# STAGE 4: Verify cached analysis objects match gene-matched profiles
+# ==============================================================================
+#
+# The cached div/fc/fw/ptc objects were computed by script 03 from gene-matched
+# profiles. We verify that the row counts in the cached objects match our
+# gene-matched profiles_list. A mismatch would indicate the cache is stale or
+# was computed from a different pair set.
+
+verification_rows <- list()
+for (key in names(set_results)) {
+  sr <- set_results[[key]]
+  n_profiles <- nrow(sr$profiles)
+
+  # divergence: 1 row per pair (should exactly match profiles)
+  n_div <- if (!is.null(sr$divergence)) nrow(sr$divergence) else NA
+  # frame_comp$pair_summary: 1 row per pair (should exactly match)
+  n_fc <- if (!is.null(sr$frame_comp)) nrow(sr$frame_comp$pair_summary) else NA
+  # frame_walk$profile_summary: 1 row per pair (should exactly match)
+  n_fw <- if (!is.null(sr$frame_walk)) nrow(sr$frame_walk$profile_summary) else NA
+  # ptc_assoc$pair_summary: 1 row per pair where PTC analysis was possible
+  #   (both isoforms coding with EJC data). Expected to be <= n_profiles.
+  n_ptc <- if (!is.null(sr$ptc_assoc)) nrow(sr$ptc_assoc$pair_summary) else NA
+
+  # Exact match expected for div, fc, fw
+  div_ok <- is.na(n_div) || n_div == n_profiles
+  fc_ok  <- is.na(n_fc)  || n_fc  == n_profiles
+  fw_ok  <- is.na(n_fw)  || n_fw  == n_profiles
+  # ptc: subset is OK (non-coding pairs excluded), but should not exceed profiles
+  ptc_ok <- is.na(n_ptc) || n_ptc <= n_profiles
+
+  verification_rows[[key]] <- data.frame(
+    key = key, n_profiles = n_profiles,
+    n_div = n_div, n_fc = n_fc, n_fw = n_fw, n_ptc = n_ptc,
+    exact_match = div_ok & fc_ok & fw_ok,
+    ptc_subset_ok = ptc_ok
+  )
+}
+verification_df <- do.call(rbind, verification_rows)
+
+if (!all(verification_df$exact_match)) {
+  warning("CACHE MISMATCH DETECTED — div/fc/fw row counts do not match ",
+          "gene-matched profiles. Affected keys: ",
+          paste(verification_df$key[!verification_df$exact_match], collapse = ", "))
+}
+if (!all(verification_df$ptc_subset_ok)) {
+  warning("PTC CACHE ANOMALY — ptc_assoc has MORE rows than profiles for: ",
+          paste(verification_df$key[!verification_df$ptc_subset_ok], collapse = ", "))
+}
+```
+
+```{r load-meta-and-precomputes}
+# ==============================================================================
+# STAGE 5: Load mashr meta-analysis logFC and precomputed objects
+# ==============================================================================
+
+# ── mashr meta-analysis logFC ──
+# Source: mashr model fit on isocall DIE (6 conditions).
+# PosteriorMean averaged across 5 main conditions (excluding DD_ALI).
+# Used in Goal 1 to characterize NMD response magnitude.
+mashr_model_path <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/mashr_isoform_model_2026.3.10.rds"
+mashr_model <- readRDS(mashr_model_path)
+post_mean <- ashr::get_pm(mashr_model)
+meta_cols <- c("Smg1i_in_DD", "Smg1i_in_AT", "Smg1i_in_DO_ALI",
+               "Smg1i_in_FB", "Smg1i_in_MV")
+meta_logfc <- data.frame(
+  txid = rownames(post_mean),
+  mean_logFC = rowMeans(post_mean[, meta_cols, drop = FALSE])
+)
+
+# ── C4 protein comparison ──
+# Source: 04b_all_c4_protein_comparison.R
+# Input: fc_c4_allsamples.rds (gene-matched frame comparison from script 03)
+#        + cds.rds + SQANTI protein FASTA
+# Output: pct_novel_protein for all C4 coding pairs
+c4_protein <- readRDS(file.path(cache_dir, "all_c4_protein_comparison_allsamples.rds"))
+
+# ── Productive frameshift precompute ──
+# Source: 04_productive_frameshift_precompute.R
+# Input: fc_c4_allsamples.rds + fw_c4_allsamples.rds (gene-matched, from script 03)
+#        + SQANTI protein FASTA + EBI/biomaRt API queries
+# Output: characterization of same-start frameshift C4 pairs without PTC
+pf_data <- readRDS(file.path(cache_dir, "productive_frameshift_allsamples.rds"))
+```
+
+```{r data-dimensions}
+# ==============================================================================
+# Summary: Gene-matching and data dimensions
+# ==============================================================================
+cat("=== Gene-Matching Summary ===\n")
+render_dt(gene_match_df, caption = "Gene-Matching: Before and After")
+
+cat(sprintf("\n=== Data Dimensions ===\n"))
+cat(sprintf("Gene-matched profile keys: %d\n", length(profiles_list)))
+cat(sprintf("C2 all_samples pairs (gene-matched): %d\n", nrow(profiles_list[["c2_allsamples"]])))
+cat(sprintf("C4 all_samples pairs (gene-matched): %d\n", nrow(profiles_list[["c4_allsamples"]])))
+cat(sprintf("PTC records: %d isoforms\n", nrow(ptc)))
+cat(sprintf("CDS records: %d isoforms\n", nrow(cds)))
+cat(sprintf("Meta-analysis logFC: %d isoforms\n", nrow(meta_logfc)))
+cat(sprintf("C4 protein comparison: %d pairs\n", nrow(c4_protein$comparison)))
+cat(sprintf("Productive frameshifts: %d pairs\n", nrow(pf_data$characterization)))
+
+cat("\n=== Cache Verification ===\n")
+render_dt(verification_df, caption = "Cache Consistency Check")
+```
+
+
+# Event Type Glossary {.tabset}
+
+Isopair detects 12 structural event types organized into 4 categories. Each tab below
+shows a schematic diagram of the event alongside its definition. In all diagrams, the
+**Reference** (top) is the dominant non-NMD isoform and the **Comparator** (bottom) is
+the isoform being compared. Events are always described from the comparator's perspective:
+a **GAIN** means the comparator has additional sequence relative to the reference, and a
+**LOSS** means the comparator is missing sequence present in the reference.
+
+**Corrections from the exploratory report (03):** A5SS and A3SS schematics were swapped;
+IR_diff_5 and IR_diff_3 schematics showed the retaining exon extending beyond the reference
+when the code classifies "diff" when the retaining exon falls short.
+
+```{r glossary, results='asis', fig.width=8, fig.height=3}
+glossary_plot <- function(ref_s, ref_e, comp_s, comp_e, title, subtitle,
+                          ref_cds = NULL, comp_cds = NULL, events = NULL) {
+  plot_ucsc_pair(ref_s, ref_e, comp_s, comp_e, strand = "+",
+                 ref_cds = ref_cds, comp_cds = comp_cds,
+                 ref_label = "Reference", comp_label = "Comparator",
+                 events = events, title = title, subtitle = subtitle)
+}
+
+# ---- Terminal Events ----
+
+cat("## Alt_TSS\n\n")
+cat("**Alternative Transcription Start Site.** The two isoforms begin at different\n")
+cat("genomic positions. Detected when the 5'-most exon of one isoform does not overlap\n")
+cat("the 5'-most exon of the other. Direction: GAIN if the comparator's TSS is further\n")
+cat("upstream (extending the transcript); LOSS if it is further downstream (truncating it).\n\n")
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(250, 400, 700), comp_e = c(350, 550, 850),
+  title = "Alt_TSS: Alternative Transcription Start Site",
+  subtitle = "Comparator starts at a different position (here, downstream = LOSS)")
+print(p); cat("\n\n")
+
+cat("## Alt_TES\n\n")
+cat("**Alternative Transcription End Site.** The two isoforms end at different\n")
+cat("genomic positions. Detected when the 3'-most exon of one isoform does not overlap\n")
+cat("the 3'-most exon of the other. Direction: GAIN if the comparator extends further;\n")
+cat("LOSS if it ends earlier.\n\n")
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 900),
+  comp_s = c(100, 400, 700), comp_e = c(200, 550, 800),
+  title = "Alt_TES: Alternative Transcription End Site",
+  subtitle = "Comparator ends earlier (LOSS)")
+print(p); cat("\n\n")
+
+# ---- Boundary Events ----
+
+cat("## A5SS\n\n")
+cat("**Alternative 5' Splice Site.** An internal exon has a different **donor** (exon_end\n")
+cat("on + strand) boundary while sharing the same **acceptor** (exon_start) boundary.\n")
+cat("The exon is extended or truncated at its downstream/3' end.\n")
+cat("Direction: GAIN if the comparator's exon is longer; LOSS if shorter.\n\n")
+# A5SS: same acceptor (exon_start=400), different donor (exon_end: 550 vs 600)
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(100, 400, 700), comp_e = c(200, 600, 850),
+  title = "A5SS: Alternative 5' Splice Site",
+  subtitle = "Same acceptor (start), different donor (end). Comparator exon extends further (GAIN)")
+print(p); cat("\n\n")
+
+cat("## A3SS\n\n")
+cat("**Alternative 3' Splice Site.** An internal exon has a different **acceptor** (exon_start\n")
+cat("on + strand) boundary while sharing the same **donor** (exon_end) boundary.\n")
+cat("The exon is extended or truncated at its upstream/5' end.\n")
+cat("Direction: GAIN if the comparator's exon is longer; LOSS if shorter.\n\n")
+# A3SS: different acceptor (exon_start: 400 vs 350), same donor (exon_end=550)
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(100, 350, 700), comp_e = c(200, 550, 850),
+  title = "A3SS: Alternative 3' Splice Site",
+  subtitle = "Same donor (end), different acceptor (start). Comparator exon extends further (GAIN)")
+print(p); cat("\n\n")
+
+cat("## Partial_IR_5\n\n")
+cat("**Partial Intron Retention (5' end).** An intron is partially retained: one isoform's\n")
+cat("exon extends into the intron from its 5' side, covering what is intronic sequence in\n")
+cat("the other isoform. The 3' boundary of the retaining exon falls within the intron.\n")
+cat("Direction: GAIN if the comparator retains; LOSS if the reference retains.\n\n")
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(100, 400, 700), comp_e = c(200, 620, 850),
+  title = "Partial_IR_5: Partial Intron Retention (5' side)",
+  subtitle = "Comparator exon extends into the intron from the 5' end (GAIN)")
+print(p); cat("\n\n")
+
+cat("## Partial_IR_3\n\n")
+cat("**Partial Intron Retention (3' end).** An intron is partially retained: one isoform's\n")
+cat("exon extends into the intron from its 3' side, covering what is intronic sequence in\n")
+cat("the other isoform. The 5' boundary of the retaining exon falls within the intron.\n")
+cat("Direction: GAIN if the comparator retains; LOSS if the reference retains.\n\n")
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(100, 400, 640), comp_e = c(200, 550, 850),
+  title = "Partial_IR_3: Partial Intron Retention (3' side)",
+  subtitle = "Comparator exon extends into the intron from the 3' end (GAIN)")
+print(p); cat("\n\n")
+
+# ---- Exon-Level Events ----
+
+cat("## SE (Skipped Exon)\n\n")
+cat("**Skipped Exon.** An exon present in one isoform is completely absent from the\n")
+cat("other. The flanking exons splice directly to each other, skipping over the exon.\n")
+cat("Direction: GAIN if the comparator includes the exon (reference skips it);\n")
+cat("LOSS if the comparator skips it (reference includes it).\n\n")
+p <- glossary_plot(
+  ref_s  = c(100, 400, 600, 800), ref_e  = c(200, 500, 700, 900),
+  comp_s = c(100, 400, 800),       comp_e = c(200, 500, 900),
+  title = "SE: Skipped Exon",
+  subtitle = "Comparator skips an internal exon present in the reference (LOSS)")
+print(p); cat("\n\n")
+
+cat("## Missing_Internal\n\n")
+cat("**Missing Internal Exon.** Similar to SE but arising from a multi-exon skip:\n")
+cat("one isoform is missing one or more internal exons that are present in the other.\n")
+cat("Often co-occurs with other Missing_Internal events from the same splice decision.\n")
+cat("Direction: GAIN if the comparator has the exon; LOSS if the comparator lacks it.\n\n")
+p <- glossary_plot(
+  ref_s  = c(100, 350, 550, 750, 950), ref_e  = c(200, 450, 650, 850, 1050),
+  comp_s = c(100, 950),                 comp_e = c(200, 1050),
+  title = "Missing_Internal: Missing Internal Exon(s)",
+  subtitle = "Comparator skips multiple internal exons (LOSS x 3)")
+print(p); cat("\n\n")
+
+# ---- Intron Retention Events ----
+
+cat("## IR\n\n")
+cat("**Full Intron Retention.** One isoform has a single exon that spans the region\n")
+cat("covered by two or more exons (plus the intervening intron) in the other isoform.\n")
+cat("The retaining exon boundaries match exactly. This is a full retention where the\n")
+cat("entire intron is included in the retaining isoform's exon.\n")
+cat("Direction: GAIN if the comparator retains the intron; LOSS if the reference retains it.\n\n")
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(100, 400),       comp_e = c(200, 850),
+  title = "IR: Full Intron Retention",
+  subtitle = "Comparator retains intron -- single exon spans two exons + intron in ref (GAIN)")
+print(p); cat("\n\n")
+
+cat("## IR_diff_5\n\n")
+cat("**Intron Retention with 5' Boundary Difference.** Like IR, but the retaining\n")
+cat("exon's 5' boundary differs from the first overlapping exon in the other isoform.\n")
+cat("The intron is retained, but the retaining exon starts after the first reference\n")
+cat("overlap exon (falls short at the 5' end).\n\n")
+# IR_diff_5: comp retaining exon starts AFTER first ref overlap exon start
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(100, 430),       comp_e = c(200, 850),
+  title = "IR_diff_5: Intron Retention with 5' Boundary Difference",
+  subtitle = "Retaining exon starts AFTER ref overlap exon (falls short at 5' end)")
+print(p); cat("\n\n")
+
+cat("## IR_diff_3\n\n")
+cat("**Intron Retention with 3' Boundary Difference.** Like IR, but the retaining\n")
+cat("exon's 3' boundary differs from the last overlapping exon in the other isoform.\n")
+cat("The intron is retained, but the retaining exon ends before the last reference\n")
+cat("overlap exon (falls short at the 3' end).\n\n")
+# IR_diff_3: comp retaining exon ends BEFORE last ref overlap exon end
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(100, 400),       comp_e = c(200, 820),
+  title = "IR_diff_3: Intron Retention with 3' Boundary Difference",
+  subtitle = "Retaining exon ends BEFORE ref overlap exon (falls short at 3' end)")
+print(p); cat("\n\n")
+
+cat("## IR_diff_5_3\n\n")
+cat("**Intron Retention with Both Boundary Differences.** Like IR, but both the 5'\n")
+cat("and 3' boundaries of the retaining exon differ from the flanking exons in the\n")
+cat("other isoform. The intron is retained but the retaining exon falls short at\n")
+cat("both ends.\n\n")
+p <- glossary_plot(
+  ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
+  comp_s = c(100, 430),       comp_e = c(200, 820),
+  title = "IR_diff_5_3: Intron Retention with Both Boundary Differences",
+  subtitle = "Retaining exon falls short at both 5' and 3' ends")
+print(p); cat("\n\n")
+```
+
+In the IR section of this report, **IR_diff** refers to the aggregate of IR_diff_5,
+IR_diff_3, and IR_diff_5_3 events.
+
+
+# 1. PTC Enrichment Validates NMD Classification {#goal1}
+
+**Goal 1:** Demonstrate that NMD-responsive comparator isoforms are enriched for premature
+termination codons (PTCs), validating the mashr-based NMD classification.
+
+**Methods:** A PTC is defined as a stop codon >50 nt upstream of the last exon-junction
+complex (EJC). Fisher's exact test compares PTC rates between NMD (C2) and Control (C4)
+comparator isoforms, restricted to pairs where both reference and comparator are coding.
+PTC position metrics (distance to EJC, % CDS, number of downstream EJCs) characterize NMD
+response strength using mashr meta-analysis posterior means averaged across 5 conditions
+(DD, AT, DO_ALI, FB, MV).
+
+## PTC Rates
+
+```{r goal1-ptc-rates-subsetting}
+# ── Data provenance ──
+# Starting data: gene-matched profiles (profiles_list → set_results$profiles)
+#   Pipeline: 01 (mashr NMD classification) → 02 (pair generation + buildProfiles)
+#   → gene-matching (this report, STAGE 2) → set_results (STAGE 3)
+#
+# Subsetting for PTC rate calculation:
+#   1. Start with gene-matched C2 (NMD) and C4 (Control) profiles
+#   2. Restrict to "coding pairs": both reference AND comparator isoform must have
+#      coding_status == "coding" in cds.rds (from Isopair extractCds() on SQANTI CDS)
+#   3. Numerator: comparator isoforms with has_ptc == TRUE in ptc.rds
+#      PTC definition: stop codon >50 nt upstream of the last exon-junction complex (EJC)
+#   4. Denominator: total coding pairs (from step 2)
+#   5. Fisher's exact test: 2×2 table of (PTC+/PTC−) × (NMD/Control)
+
+# Show the subsetting explicitly
+coding_ids <- cds$isoform_id[cds$coding_status == "coding"]
+n_gm_c2 <- nrow(set_results[["c2_allsamples"]]$profiles)
+n_gm_c4 <- nrow(set_results[["c4_allsamples"]]$profiles)
+
+p_c2 <- set_results[["c2_allsamples"]]$profiles
+cod_c2 <- p_c2[p_c2$reference_isoform_id %in% coding_ids &
+                p_c2$comparator_isoform_id %in% coding_ids, ]
+p_c4 <- set_results[["c4_allsamples"]]$profiles
+cod_c4 <- p_c4[p_c4$reference_isoform_id %in% coding_ids &
+                p_c4$comparator_isoform_id %in% coding_ids, ]
+```
+
+Starting from `r fmt(n_gm_c2)` gene-matched NMD (C2) pairs and
+`r fmt(n_gm_c4)` gene-matched Control (C4) pairs, we restrict to **coding
+pairs** where both the reference and comparator isoform are classified as
+protein-coding by SQANTI (`coding_status == "coding"` in `cds.rds`). This
+yields `r fmt(nrow(cod_c2))` coding NMD pairs and `r fmt(nrow(cod_c4))` coding
+Control pairs. The PTC rate is the fraction of these coding comparator isoforms
+whose stop codon falls >50 nt upstream of the last exon-junction complex (EJC),
+as computed by `Isopair::testPtcAssociation()`.
+
+```{r goal1-ptc-rates}
+ptc_rates <- compute_ptc_rates_row("all_samples")
+kable(ptc_rates, caption = "Table 1: PTC Rates — all_samples",
+      digits = c(0, 0, 0, 0, 1, 0, 1, 2, 2))
+write.csv(ptc_rates, file.path(table_dir, "table1_ptc_rates_allsamples.csv"), row.names = FALSE)
+```
+
+Columns: **cell_type** = sample set; **n_coding_pairs_NMD/Ctrl** = number of
+coding pairs (both ref and comp coding) in NMD (C2) / Control (C4);
+**NMD_comp_ptc_n/pct** = count and percentage of NMD comparators with PTC;
+**Ctrl_comp_ptc_n/pct** = same for Control; **fisher_OR** = odds ratio from
+Fisher's exact test; **p_value** = Fisher p-value.
+
+## Figure 1: Stop Codon Distance to Last EJC
+
+```{r goal1-fig1-stop-dist-pop}
+# ── Population derivation ──
+# Start from gene-matched comparators, filter to those with non-NA ptc_distance.
+# This is broader than Table 1 (not restricted to coding pairs).
+fig1_pop <- list()
+for (comp in c("c2", "c4")) {
+  key <- paste0(comp, "_allsamples")
+  comp_ids <- set_results[[key]]$profiles$comparator_isoform_id
+  n_total <- length(comp_ids)
+  ptc_sub <- ptc[ptc$isoform_id %in% comp_ids & !is.na(ptc$ptc_distance), ]
+  fig1_pop[[comp]] <- list(n_total = n_total, n_with_dist = nrow(ptc_sub))
+}
+```
+
+Starting from `r fmt(fig1_pop$c2$n_total)` gene-matched NMD comparators,
+`r fmt(fig1_pop$c2$n_with_dist)` have a non-NA `ptc_distance` in `ptc.rds`
+(i.e., have an annotated CDS with a stop codon and ≥1 exon-junction complex).
+For Control: `r fmt(fig1_pop$c4$n_with_dist)` of `r fmt(fig1_pop$c4$n_total)`.
+This is a broader set than Table 1, which additionally requires **both**
+reference and comparator to be coding (pair-level filter). Here only the
+comparator needs `ptc_distance` (isoform-level filter).
+
+```{r goal1-fig1-stop-dist, fig.width=8, fig.height=5}
+stop_dist_all <- {
+  rows <- list()
+  for (comp in c("c2", "c4")) {
+    key <- paste0(comp, "_allsamples")
+    comp_ids <- set_results[[key]]$profiles$comparator_isoform_id
+    ptc_sub <- ptc[ptc$isoform_id %in% comp_ids & !is.na(ptc$ptc_distance), ]
+    if (nrow(ptc_sub) == 0) next
+    rows[[comp]] <- data.frame(
+      comparison = comp_label(comp),
+      ptc_distance = ptc_sub$ptc_distance,
+      has_ptc = ptc_sub$has_ptc)
+  }
+  do.call(rbind, rows)
+}
+
+fig1 <- ggplot(stop_dist_all, aes(x = ptc_distance, fill = comparison)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = 50, linetype = "dashed", color = "red", linewidth = 0.5) +
+  annotate("text", x = 50, y = Inf, label = "PTC threshold (50 nt)",
+           hjust = -0.05, vjust = 1.5, size = 3, color = "red") +
+  scale_x_continuous(limits = c(
+    quantile(stop_dist_all$ptc_distance, 0.01, na.rm = TRUE),
+    quantile(stop_dist_all$ptc_distance, 0.99, na.rm = TRUE))) +
+  scale_fill_manual(values = pal) +
+  labs(title = "Stop Codon Distance to Last EJC: NMD vs Control Comparators",
+       subtitle = "All comparator isoforms with annotated stop codon + EJC. Dashed red = 50 nt PTC threshold.",
+       x = "Distance from stop codon to last EJC (nt)", y = "Density", fill = "")
+save_fig(fig1, "fig1_stop_codon_distance")
+```
+
+## Figure 2: NMD Response vs Stop Codon Distance
+
+```{r goal1-fig2-logfc-dist, fig.width=8, fig.height=5}
+# ── Data provenance ──
+# Starting data: gene-matched C2 all_samples profiles
+# Step 1: Extract comparator_isoform_id from gene-matched C2 profiles
+# Step 2: Look up ptc features (ptc_distance, has_ptc, orf_length, n_downstream_ejcs)
+#   from ptc.rds for those comparators
+# Step 3: Merge with meta_logfc — mashr PosteriorMean averaged across 5 conditions
+#   (DD, AT, DO_ALI, FB, MV). Source: mashr_isoform_model_2026.3.10.rds
+# Result: scatter of NMD response magnitude vs stop codon position
+
+comp_ids_as <- set_results[["c2_allsamples"]]$profiles$comparator_isoform_id
+ptc_sub <- ptc[ptc$isoform_id %in% comp_ids_as & !is.na(ptc$ptc_distance),
+                c("isoform_id", "ptc_distance", "has_ptc", "orf_length", "n_downstream_ejcs")]
+n_with_logfc <- sum(comp_ids_as %in% meta_logfc$txid)
+nmd_logfc_dist <- merge(meta_logfc[meta_logfc$txid %in% comp_ids_as, ],
+                         ptc_sub, by.x = "txid", by.y = "isoform_id")
+```
+
+Of `r fmt(length(comp_ids_as))` gene-matched NMD comparators,
+`r fmt(nrow(ptc_sub))` have non-NA `ptc_distance` and
+`r fmt(n_with_logfc)` have a mashr posterior mean logFC. After merging
+(requiring both), `r fmt(nrow(nmd_logfc_dist))` comparators remain.
+`r if (length(comp_ids_as) - n_with_logfc > 0) paste0("The ", fmt(length(comp_ids_as) - n_with_logfc), " comparators absent from the mashr model are novel isoforms not tested for differential expression.") else "All comparators have mashr logFC values."`
+
+```{r goal1-fig2-logfc-dist-plot, fig.width=8, fig.height=5}
+fig2 <- ggplot(nmd_logfc_dist, aes(x = ptc_distance, y = mean_logFC)) +
+  geom_point(alpha = 0.15, size = 0.8) +
+  geom_smooth(method = "loess", se = TRUE, color = "steelblue") +
+  geom_vline(xintercept = 50, linetype = "dashed", color = "red", linewidth = 0.5) +
+  scale_x_continuous(limits = c(
+    quantile(nmd_logfc_dist$ptc_distance, 0.01, na.rm = TRUE),
+    quantile(nmd_logfc_dist$ptc_distance, 0.99, na.rm = TRUE))) +
+  labs(title = sprintf("NMD Response vs Stop Codon Distance (n = %d)", nrow(nmd_logfc_dist)),
+       subtitle = "mashr meta-analysis mean logFC (5 conditions). Blue = loess.",
+       x = "Distance from stop codon to last EJC (nt)",
+       y = "Mean logFC (mashr)")
+save_fig(fig2, "fig2_nmd_response_vs_distance")
+
+# Correlation summary
+cor_test <- cor.test(nmd_logfc_dist$ptc_distance, nmd_logfc_dist$mean_logFC,
+                      method = "spearman")
+kable(data.frame(n = nrow(nmd_logfc_dist),
+                 spearman_rho = round(cor_test$estimate, 3),
+                 p_value = cor_test$p.value),
+      caption = "Spearman correlation: Stop-to-EJC distance vs mean logFC")
+```
+
+## Figure 3: NMD Strength by Downstream EJC Count
+
+```{r goal1-fig3-pop}
+as_ptc_pos <- nmd_logfc_dist[nmd_logfc_dist$has_ptc == TRUE, ]
+as_ptc_pos$logFC <- as_ptc_pos$mean_logFC
+```
+
+Restricted to the `r fmt(nrow(as_ptc_pos))` **PTC-positive** comparators from
+Figure 2's population of `r fmt(nrow(nmd_logfc_dist))` (`has_ptc == TRUE`),
+binned by number of downstream EJCs.
+
+```{r goal1-fig3-ejc-boxplot, fig.width=9, fig.height=5}
+# Bin EJC counts >= 7 into "7+"
+as_ptc_pos$ejc_bin <- ifelse(as_ptc_pos$n_downstream_ejcs >= 7,
+                              "7+", as.character(as_ptc_pos$n_downstream_ejcs))
+as_ptc_pos$ejc_bin <- factor(as_ptc_pos$ejc_bin,
+                              levels = c(as.character(1:6), "7+"))
+
+ejc_counts <- as_ptc_pos |>
+  count(ejc_bin) |>
+  mutate(label = paste0("n=", n))
+
+fig3 <- ggplot(as_ptc_pos, aes(x = ejc_bin, y = logFC)) +
+  geom_violin(fill = "lightblue", alpha = 0.5) +
+  geom_boxplot(width = 0.15, outlier.alpha = 0.2) +
+  geom_text(data = ejc_counts,
+            aes(x = ejc_bin,
+                y = max(as_ptc_pos$logFC, na.rm = TRUE) + 0.3, label = label),
+            size = 2.8) +
+  labs(title = "NMD Comparators: Mean logFC by Number of Downstream EJCs",
+       subtitle = "mashr meta-analysis. logFC rises sharply from 1-4 EJCs, then plateaus.",
+       x = "Number of Downstream EJCs", y = "Mean logFC (mashr)")
+save_fig(fig3, "fig3_ejc_vs_nmd_strength", width = 9)
+```
+
+## Table 2: PTC Rates Across Cell Types
+
+```{r goal1-table2-ct-ptc}
+# ── Data provenance ──
+# Same pipeline as Table 1 (compute_ptc_rates_row), iterated across main_cts.
+# Each cell type uses its own gene-matched profiles from set_results.
+ptc_ct <- do.call(rbind, lapply(c("all_samples", main_cts), compute_ptc_rates_row))
+render_dt(ptc_ct, caption = "Table 2: PTC Rates Across Cell Types")
+write.csv(ptc_ct, file.path(table_dir, "table2_ptc_rates_by_ct.csv"), row.names = FALSE)
+```
+
+Same columns as Table 1, one row per cell type. all_samples uses the union
+(NMD) and intersection (non-NMD) across AT, DD, DO, FB, MV.
+
+
+# 2. Splicing Mechanisms Producing PTCs {#goal2}
+
+**Goal 2:** Identify the splicing mechanisms that produce PTCs in NMD-responsive isoforms.
+
+**Methods:** Frame comparison (`compareIsoformFrames()`) classifies each pair by start codon
+and reading frame relationship. Frame walk (`analyzeFrameWalk()`) identifies which splicing
+events cause frameshifts. The Sankey diagram traces flows from splice event type through frame
+category to PTC outcome for NMD comparators.
+
+## Figure 4: Frame Category Distribution
+
+```{r goal2-fig4-pop}
+# Count excluded categories for prose
+fc_c2_ps <- set_results[["c2_allsamples"]]$frame_comp$pair_summary
+fc_c4_ps <- set_results[["c4_allsamples"]]$frame_comp$pair_summary
+n_noncoding_c2 <- sum(fc_c2_ps$frame_category %in% c("non_coding", "no_shared_cds"))
+n_noncoding_c4 <- sum(fc_c4_ps$frame_category %in% c("non_coding", "no_shared_cds"))
+```
+
+`compareIsoformFrames()` assigns each pair a frame category based on start codon
+and reading frame relationship. Of `r fmt(nrow(fc_c2_ps))` NMD pairs,
+`r fmt(n_noncoding_c2)` are classified as `non_coding` or `no_shared_cds` and
+excluded from the figure (Control: `r fmt(n_noncoding_c4)` of
+`r fmt(nrow(fc_c4_ps))` excluded). The denominator (y-axis) is the number of
+**coding pairs** (`r fmt(nrow(fc_c2_ps) - n_noncoding_c2)` NMD,
+`r fmt(nrow(fc_c4_ps) - n_noncoding_c4)` Control), so the 5 categories sum
+to 100%.
+
+```{r goal2-fig4-frame-category, fig.width=10, fig.height=6}
+# ── Data provenance ──
+# Starting data: gene-matched profiles → cached frame comparison
+# set_results[[key]]$frame_comp: compareIsoformFrames() output, cached by script 03
+#   Input to compareIsoformFrames(): gene-matched profiles + cds_exons.rds + cds.rds
+#   $pair_summary contains frame_category per pair (same_start_in_frame, same_start_frameshift, etc.)
+# ptc.rds$has_ptc: PTC status per isoform (isoform-intrinsic, independent of pairing)
+# Denominator (total_pairs): nrow(gene-matched profiles) — ensures consistent
+#   percentages between profiles and frame_comp (verified in STAGE 4)
+
+coding_cats <- c("same_start_in_frame", "same_start_frameshift",
+                 "diff_start_same_frame", "diff_start_diff_frame",
+                 "diff_start_diff_frame_with_frameshift")
+cat_labels <- c(
+  same_start_in_frame = "Same Start\nSame Frame",
+  same_start_frameshift = "Same Start\nFrameshift",
+  diff_start_same_frame = "Diff Start\nSame Frame",
+  diff_start_diff_frame = "Diff Start\nDiff Frame",
+  diff_start_diff_frame_with_frameshift = "Diff Start\nDiff Frame + FS")
+
+ptc_pos_ids <- ptc$isoform_id[ptc$has_ptc == TRUE]
+
+# 4-color palette: NMD/Control × PTC+/No PTC
+pal4 <- c("NMD PTC+"    = "#d6604d",   # dark orange-red
+          "NMD No PTC"  = "#fddbc7",   # light orange
+          "Ctrl PTC+"   = "#4393c3",   # dark blue
+          "Ctrl No PTC" = "#d1e5f0")   # light blue
+
+stacked_df <- do.call(rbind, lapply(c("c2", "c4"), function(comp) {
+  key <- paste0(comp, "_allsamples")
+  fc <- set_results[[key]]$frame_comp
+  if (is.null(fc)) return(NULL)
+  ps <- fc$pair_summary
+  # Denominator: coding pairs only (exclude non_coding and no_shared_cds)
+  coding_pairs_total <- sum(!ps$frame_category %in% c("non_coding", "no_shared_cds"))
+  comp_lbl <- comp_label(comp)
+  comp_short <- ifelse(comp_lbl == "NMD", "NMD", "Ctrl")
+
+  do.call(rbind, lapply(coding_cats, function(cat) {
+    cat_pairs <- ps[ps$frame_category == cat, ]
+    n_cat <- nrow(cat_pairs)
+    n_ptc <- sum(cat_pairs$comparator_isoform_id %in% ptc_pos_ids)
+    n_no_ptc <- n_cat - n_ptc
+    pct_ptc <- 100 * n_ptc / max(coding_pairs_total, 1)
+    pct_no_ptc <- 100 * n_no_ptc / max(coding_pairs_total, 1)
+    rbind(
+      data.frame(frame_category = cat, category_label = cat_labels[cat],
+                 comparison = comp_lbl, ptc_status = "PTC+",
+                 fill_group = paste(comp_short, "PTC+"),
+                 n = n_ptc, pct = pct_ptc),
+      data.frame(frame_category = cat, category_label = cat_labels[cat],
+                 comparison = comp_lbl, ptc_status = "No PTC",
+                 fill_group = paste(comp_short, "No PTC"),
+                 n = n_no_ptc, pct = pct_no_ptc))
+  }))
+}))
+
+stacked_df$category_label <- factor(stacked_df$category_label,
+  levels = cat_labels[coding_cats])
+stacked_df$fill_group <- factor(stacked_df$fill_group,
+  levels = c("NMD PTC+", "NMD No PTC", "Ctrl PTC+", "Ctrl No PTC"))
+
+fig4 <- ggplot(stacked_df, aes(x = category_label, y = pct, fill = fill_group)) +
+  geom_col() +
+  facet_wrap(~comparison) +
+  scale_fill_manual(values = pal4) +
+  labs(title = "Frame Category Distribution: NMD vs Control (all_samples)",
+       subtitle = "% of total pairs. PTC+ = comparator has premature termination codon.",
+       x = "Frame Category", y = "% of Total Pairs", fill = "") +
+  theme(axis.text.x = element_text(size = 8))
+save_fig(fig4, "fig4_frame_category_distribution", width = 10, height = 6)
+```
+
+## Table 3: Frame Category Counts
+
+```{r goal2-table3-frame-cats}
+fc_rows <- compute_frame_category_rows("all_samples")
+render_dt(fc_rows, caption = "Table 3: Frame Category Distribution — all_samples")
+write.csv(fc_rows, file.path(table_dir, "table3_frame_categories.csv"), row.names = FALSE)
+```
+
+Columns: **cell_type**; **frame_category** = reading frame relationship between
+reference and comparator (from `compareIsoformFrames()`); **NMD_n/NMD_pct** =
+count and percentage in NMD (C2) pairs; **Ctrl_n/Ctrl_pct** = same for
+Control (C4). The denominator for percentages is **coding pairs** (excluding
+`non_coding` and `no_shared_cds`), consistent with Figure 4. The `non_coding`
+and `no_shared_cds` rows show counts but their percentages exceed the 100%
+basis since they are outside the denominator.
+
+## How PTCs Arise: Frameshift vs Non-Frameshift Mechanisms
+
+```{r goal2-ptc-mechanisms}
+# ── Data provenance ──
+# Source: computed inline in this report (not a separate script)
+# Methods: METHODS.md § "PTC-Causing Event Attribution"
+#
+# For each PTC+ NMD comparator, identify the PTC-CAUSING splice event:
+#   - Frameshift PTCs: from analyzeFrameWalk() (Isopair::analyzeFrameWalk,
+#     cached as fw_c2_allsamples.rds by 03_nmd_analysis_mashr.Rmd)
+#   - Non-frameshift PTCs: the event whose genomic coordinates (from
+#     buildProfiles() detailed_events) contain the comparator's cds_stop
+#     (= the PTC genomic position, from Isopair::extractCds → cds.rds)
+#
+# cds_stop in cds.rds is the genomic position of the stop codon for each isoform.
+# For PTC isoforms, SQANTI annotates the actual (premature) stop, so cds_stop IS
+# the PTC position.
+
+fc_c2 <- set_results[["c2_allsamples"]]$frame_comp
+fw_c2 <- set_results[["c2_allsamples"]]$frame_walk
+prof_c2 <- set_results[["c2_allsamples"]]$profiles
+
+fc_c2_ps <- fc_c2$pair_summary
+fc_c2_ps$has_ptc <- fc_c2_ps$comparator_isoform_id %in% ptc_pos_ids
+
+frameshift_cats <- c("same_start_frameshift",
+                     "diff_start_diff_frame_with_frameshift")
+fc_c2_ps$is_frameshift_cat <- fc_c2_ps$frame_category %in% frameshift_cats
+
+# PTC+ pairs by mechanism
+ptc_plus <- fc_c2_ps[fc_c2_ps$has_ptc == TRUE, ]
+n_ptc_via_fs    <- sum(ptc_plus$is_frameshift_cat)
+n_ptc_via_nonfs <- sum(!ptc_plus$is_frameshift_cat)
+n_ptc_total     <- nrow(ptc_plus)
+
+# Also count all coding NMD pairs for context
+n_coding_nmd <- sum(!fc_c2_ps$frame_category %in% c("non_coding", "no_shared_cds"))
+
+# ── Attribute PTC-causing event for each PTC+ pair ──
+cds_stop_lookup <- setNames(cds$cds_stop, cds$isoform_id)
+
+# Build lookup: comparator_id → row index in prof_c2
+comp_to_idx <- setNames(seq_len(nrow(prof_c2)), prof_c2$comparator_isoform_id)
+
+# Frameshift PTC-causing events (from frame_walk)
+fw_fs <- fw_c2$events[fw_c2$events$is_frameshift == TRUE, ]
+
+ptc_event_rows <- list()
+for (i in seq_len(nrow(ptc_plus))) {
+  comp_id <- ptc_plus$comparator_isoform_id[i]
+  is_fs <- ptc_plus$is_frameshift_cat[i]
+
+  if (is_fs) {
+    # Frameshift PTC: use the frameshift-causing event(s) from frame_walk
+    fs_match <- fw_fs[fw_fs$comparator_isoform_id == comp_id, ]
+    if (nrow(fs_match) > 0) {
+      # Use the first frameshift event (primary cause)
+      ptc_event_rows[[length(ptc_event_rows) + 1]] <- data.frame(
+        comparator_id = comp_id,
+        mechanism = "Frameshift",
+        ptc_causing_event = fs_match$event_type[1],
+        stringsAsFactors = FALSE)
+    }
+  } else {
+    # Non-frameshift PTC: find the event whose coordinates contain cds_stop
+    prof_idx <- comp_to_idx[comp_id]
+    if (is.na(prof_idx)) next
+    de <- prof_c2$detailed_events[[prof_idx]]
+    if (is.null(de) || nrow(de) == 0) next
+    ptc_pos_genomic <- cds_stop_lookup[comp_id]
+    if (is.na(ptc_pos_genomic)) next
+
+    # Check which event's coordinates span the PTC position
+    de$ev_min <- pmin(de$five_prime, de$three_prime)
+    de$ev_max <- pmax(de$five_prime, de$three_prime)
+    containing <- de[ptc_pos_genomic >= de$ev_min & ptc_pos_genomic <= de$ev_max, ]
+
+    if (nrow(containing) > 0) {
+      ptc_event_rows[[length(ptc_event_rows) + 1]] <- data.frame(
+        comparator_id = comp_id,
+        mechanism = "In-frame stop",
+        ptc_causing_event = containing$event_type[1],
+        stringsAsFactors = FALSE)
+    } else {
+      ptc_event_rows[[length(ptc_event_rows) + 1]] <- data.frame(
+        comparator_id = comp_id,
+        mechanism = "In-frame stop",
+        ptc_causing_event = "Unattributed",
+        stringsAsFactors = FALSE)
+    }
+  }
+}
+
+ptc_events_df <- do.call(rbind, ptc_event_rows)
+n_attributed <- sum(ptc_events_df$ptc_causing_event != "Unattributed")
+n_unattributed <- sum(ptc_events_df$ptc_causing_event == "Unattributed")
+```
+
+Of `r fmt(n_coding_nmd)` coding NMD pairs, `r fmt(n_ptc_total)` have a PTC in
+the comparator. These arise through two mechanisms:
+
+- **Frameshift → PTC**: `r fmt(n_ptc_via_fs)` pairs
+  (`r round(100 * n_ptc_via_fs / n_ptc_total, 1)`%) — a splicing event shifts
+  the reading frame, and the new frame encounters a premature stop codon. The
+  PTC-causing event is identified by `analyzeFrameWalk()`.
+- **In-frame stop → PTC**: `r fmt(n_ptc_via_nonfs)` pairs
+  (`r round(100 * n_ptc_via_nonfs / n_ptc_total, 1)`%) — the comparator is
+  in the same reading frame but a structural change (e.g., a gained exon or
+  retained intron) directly introduces an in-frame stop codon. The PTC-causing
+  event is identified by finding the event whose genomic coordinates contain the
+  comparator's stop codon position (`cds_stop` in `cds.rds`).
+
+Of `r fmt(nrow(ptc_events_df))` PTC+ pairs with attribution attempted,
+`r fmt(n_attributed)` were successfully attributed to a specific splice event
+and `r fmt(n_unattributed)` could not be attributed (PTC position did not fall
+within any event's coordinates).
+
+## Figure 5: PTC-Causing Splice Events (Sankey)
+
+This figure shows the complete mapping from PTC-causing splice event → mechanism
+(Frameshift or In-frame stop) for all attributed PTC+ NMD comparators. For
+frameshift PTCs, the event is the one identified by `analyzeFrameWalk()`. For
+in-frame stop PTCs, it is the event whose coordinates contain the stop codon.
+
+```{r goal2-fig5-sankey}
+# Shorten event type labels
+ptc_events_df$event_short <- ptc_events_df$ptc_causing_event
+ptc_events_df$event_short[ptc_events_df$event_short == "Missing_Internal"] <- "Missing Int."
+ptc_events_df$event_short[ptc_events_df$event_short == "Partial_IR_5"] <- "Partial IR 5'"
+ptc_events_df$event_short[ptc_events_df$event_short == "Partial_IR_3"] <- "Partial IR 3'"
+ptc_events_df$event_short[ptc_events_df$event_short == "Alt_TSS"] <- "Alt TSS"
+ptc_events_df$event_short[ptc_events_df$event_short == "Alt_TES"] <- "Alt TES"
+ptc_events_df$event_short[ptc_events_df$event_short == "IR_diff"] <- "IR diff"
+
+# Exclude unattributed for Sankey
+ptc_attr <- ptc_events_df[ptc_events_df$ptc_causing_event != "Unattributed", ]
+
+# Aggregate: event_type → mechanism
+sankey_agg <- ptc_attr |>
+  group_by(event_short, mechanism) |>
+  summarise(freq = n(), .groups = "drop") |>
+  filter(freq >= 3)
+
+# Build networkD3 data structures
+nodes_vec <- unique(c(sankey_agg$event_short, sankey_agg$mechanism))
+nodes <- data.frame(name = nodes_vec, stringsAsFactors = FALSE)
+
+links <- data.frame(
+  source = match(sankey_agg$event_short, nodes_vec) - 1L,
+  target = match(sankey_agg$mechanism, nodes_vec) - 1L,
+  value  = sankey_agg$freq
+)
+
+# Node colors: Frameshift red, In-frame stop blue, event types grey
+node_colors <- ifelse(nodes$name == "Frameshift", "#d6604d",
+               ifelse(nodes$name == "In-frame stop", "#4393c3", "#bdbdbd"))
+
+color_scale <- paste0(
+  'd3.scaleOrdinal().domain([',
+  paste0('"', nodes$name, '"', collapse = ','), ']).range([',
+  paste0('"', node_colors, '"', collapse = ','), '])')
+
+sankey_widget <- networkD3::sankeyNetwork(
+  Links = links, Nodes = nodes,
+  Source = "source", Target = "target", Value = "value",
+  NodeID = "name", fontSize = 14, nodeWidth = 30, nodePadding = 15,
+  colourScale = color_scale, sinksRight = TRUE)
+
+# Move source node labels to the left of the rectangles
+htmlwidgets::onRender(sankey_widget, '
+  function(el, x) {
+    d3.select(el).selectAll(".node text")
+      .filter(function(d) { return d.sourceLinks.length > 0 && d.targetLinks.length === 0; })
+      .attr("x", -6)
+      .attr("text-anchor", "end");
+  }
+')
+```
+
+```{r goal2-fig5-summary}
+# Summary table of PTC-causing events by mechanism
+ptc_event_summary <- ptc_attr |>
+  group_by(mechanism, ptc_causing_event) |>
+  summarise(n = n(), .groups = "drop") |>
+  arrange(mechanism, desc(n))
+ptc_event_summary$pct <- round(100 * ptc_event_summary$n / nrow(ptc_attr), 1)
+
+render_dt(ptc_event_summary, caption = "Table 4a: PTC-Causing Events by Mechanism (NMD)")
+write.csv(ptc_event_summary, file.path(table_dir, "table4a_ptc_causing_events.csv"),
+          row.names = FALSE)
+```
+
+Columns: **mechanism** = Frameshift or In-frame stop; **ptc_causing_event** =
+splice event type that caused the PTC; **n** = number of pairs; **pct** =
+percentage of all attributed PTCs.
+
+## Table 4b: PTC-Causing Event Proportions vs Control Baseline
+
+```{r goal2-table4b-baseline}
+# ── Data provenance ──
+# NMD: PTC-causing events attributed above (both frameshift and in-frame stop)
+# Control baseline: all splicing events across all C4 pairs
+# Comparison: proportion of each event type among PTC-causing NMD events vs
+#   all Control events (the baseline frequency in normal alternative splicing)
+
+# NMD PTC-causing event frequencies (attributed only)
+ptc_evt_freq <- sort(table(ptc_attr$ptc_causing_event), decreasing = TRUE)
+ptc_evt_df <- data.frame(
+  event_type = names(ptc_evt_freq),
+  n_ptc_events = as.integer(ptc_evt_freq),
+  pct_of_ptc = round(100 * as.integer(ptc_evt_freq) / nrow(ptc_attr), 1),
+  stringsAsFactors = FALSE)
+
+# Control baseline: all events across all C4 pairs
+ctrl_all_events <- do.call(rbind, set_results[["c4_allsamples"]]$profiles$detailed_events)
+ctrl_event_freq <- table(ctrl_all_events$event_type)
+ctrl_total <- sum(ctrl_event_freq)
+
+# Merge
+ptc_evt_df$n_ctrl_events <- as.integer(ctrl_event_freq[ptc_evt_df$event_type])
+ptc_evt_df$n_ctrl_events[is.na(ptc_evt_df$n_ctrl_events)] <- 0L
+ptc_evt_df$pct_ctrl <- round(100 * ptc_evt_df$n_ctrl_events / ctrl_total, 1)
+ptc_evt_df$enrichment <- round(ptc_evt_df$pct_of_ptc / pmax(ptc_evt_df$pct_ctrl, 0.1), 1)
+
+render_dt(ptc_evt_df, caption = "Table 4b: PTC-Causing Events (NMD) vs All Events (Control)")
+write.csv(ptc_evt_df, file.path(table_dir, "table4b_ptc_event_enrichment.csv"),
+          row.names = FALSE)
+```
+
+"N (PTC-Causing)" counts events that caused a PTC in NMD comparators (both
+frameshift and in-frame stop mechanisms). "% of Ctrl" is the proportion of
+that event type among all `r fmt(ctrl_total)` gene-matched Control (C4) splicing
+events. "Fold Enrichment" = % of PTC Events / % of Ctrl.
+
+
+# 3. Non-PTC NMD Triggers {#goal3}
+
+**Goal 3:** Characterize NMD-responsive comparator isoforms that lack a PTC.
+
+**Methods:** Among coding NMD (C2) comparators, a substantial fraction lack a PTC (stop
+codon >50 nt upstream of last EJC). We categorize these PTC-negative NMD isoforms by:
+(a) borderline PTC position (stop codon with 1+ downstream EJCs but within 50 nt),
+(b) 3'UTR exonic length, (c) frame category, and (d) NMD response magnitude.
+
+```{r goal3-identify-ptc-neg}
+# ── Data provenance ──
+# Starting data: gene-matched C2 all_samples profiles → cached PTC association
+# ptc_c2_as = set_results[["c2_allsamples"]]$ptc_assoc
+#   Source: testPtcAssociation(ptc, gene-matched profiles), cached by script 03
+#   $pair_summary: one row per gene-matched pair, with comp_has_ptc flag
+# Step 1: Filter to coding pairs (both ref and comp in cds$coding_status == "coding")
+# Step 2: Split into PTC+ and PTC- NMD comparators
+
+ptc_c2_as <- set_results[["c2_allsamples"]]$ptc_assoc
+pair_summary <- ptc_c2_as$pair_summary
+
+# Restrict to coding pairs (same filter as Table 1)
+coding_ids_g3 <- cds$isoform_id[cds$coding_status == "coding"]
+coding_pairs_c2 <- pair_summary[pair_summary$comparator_isoform_id %in% coding_ids_g3 &
+                                  pair_summary$reference_isoform_id %in% coding_ids_g3, ]
+
+n_ptc_pos <- sum(coding_pairs_c2$comp_has_ptc == TRUE)
+n_ptc_neg <- sum(coding_pairs_c2$comp_has_ptc == FALSE)
+```
+
+Of the `r fmt(nrow(set_results[["c2_allsamples"]]$profiles))` gene-matched NMD
+pairs, `r fmt(nrow(coding_pairs_c2))` are coding pairs (both reference and
+comparator classified as protein-coding). Among these,
+`r fmt(n_ptc_pos)` (`r round(100 * n_ptc_pos / nrow(coding_pairs_c2), 1)`%)
+have a PTC (comparator stop codon >50 nt upstream of last EJC) and
+`r fmt(n_ptc_neg)` (`r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%)
+do not. The remainder of this section characterizes these
+`r fmt(n_ptc_neg)` **PTC-negative NMD comparators**.
+
+## Categorization by Stop Codon Position
+
+```{r goal3-stop-position}
+# ── Data provenance ──
+# Starting data: ptc_neg_ids (PTC-negative NMD comparators identified above)
+# ptc.rds: per-isoform annotations (n_downstream_ejcs, ptc_distance, etc.)
+#   Source: Isopair testPtcAssociation() infrastructure — isoform-intrinsic
+# Step 1: Look up ptc features for PTC-neg comparators
+# Step 2: Categorize by n_downstream_ejcs (borderline vs stop-in-last-exon)
+
+ptc_neg_ids <- coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc == FALSE]
+ptc_neg_info <- ptc[ptc$isoform_id %in% ptc_neg_ids, ]
+
+# Categorize
+n_borderline <- sum(ptc_neg_info$n_downstream_ejcs > 0, na.rm = TRUE)
+n_stop_last_exon <- sum(ptc_neg_info$n_downstream_ejcs == 0, na.rm = TRUE)
+n_na <- sum(is.na(ptc_neg_info$n_downstream_ejcs))
+
+stop_cat <- data.frame(
+  category = c("Borderline (1+ downstream EJCs, distance <= 50 nt)",
+               "Stop in last exon (0 downstream EJCs)",
+               "Missing annotation"),
+  n = c(n_borderline, n_stop_last_exon, n_na),
+  pct = round(100 * c(n_borderline, n_stop_last_exon, n_na) / length(ptc_neg_ids), 1))
+
+kable(stop_cat, caption = "Table 5: Categorization of PTC-Negative NMD Comparators")
+```
+
+## Figure 6: 3'UTR Length by PTC Mechanism
+
+```{r goal3-fig6-pop}
+# ── Data provenance ──
+# Source: computed inline in this report using cached divergence + cds.rds
+# Methods: METHODS.md § "3'UTR Length Analysis with PTC Correction"
+# Key functions:
+#   Isopair::quantifyPairDivergence() → div_c2/div_c4 (utr3_bp_comp column)
+#   Isopair::.computeRegionalBp() → computes 3'UTR as exonic bp after cds_stop
+#   Reference-based 3'UTR: computed inline using ref cds_stop on comp exon structure
+# Starting data: gene-matched C2 and C4 profiles → cached divergence
+# PTC mechanism classification: "same stop" vs "diff stop"
+#   same_stop: comparator and reference share the same cds_stop position.
+#     The PTC arises because a 3'UTR splicing event repositioned the last EJC
+#     downstream, making the existing stop codon >50 nt upstream of the new EJC.
+#     The 3'UTR length measurement (from cds_stop to tx end) is correct and
+#     unaffected by the PTC classification.
+#   diff_stop: comparator has a different cds_stop (= premature stop from
+#     frameshift or in-frame stop in the CDS). The measured 3'UTR is inflated
+#     because it includes the former CDS region between PTC and normal stop.
+#     For these, we also compute a "reference-based 3'UTR": exonic bp downstream
+#     of the REFERENCE's cds_stop in the COMPARATOR's exon structure. This is
+#     only valid when the reference stop position falls within the comparator's
+#     exons (86% of cases).
+
+div_c2 <- set_results[["c2_allsamples"]]$divergence
+div_c4 <- set_results[["c4_allsamples"]]$divergence
+ptc_pos_comp_ids <- coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc == TRUE]
+
+# Classify PTC+ by same vs different stop codon position
+cds_stop_lookup_g3 <- setNames(cds$cds_stop, cds$isoform_id)
+strand_lookup_g3 <- setNames(cds$strand, cds$isoform_id)
+
+ptc_pos_ps <- coding_pairs_c2[coding_pairs_c2$comp_has_ptc == TRUE, ]
+ptc_pos_ps$comp_stop <- cds_stop_lookup_g3[ptc_pos_ps$comparator_isoform_id]
+ptc_pos_ps$ref_stop <- cds_stop_lookup_g3[ptc_pos_ps$reference_isoform_id]
+ptc_pos_ps$same_stop <- ptc_pos_ps$comp_stop == ptc_pos_ps$ref_stop
+
+same_stop_ids <- ptc_pos_ps$comparator_isoform_id[ptc_pos_ps$same_stop == TRUE]
+diff_stop_ids <- ptc_pos_ps$comparator_isoform_id[ptc_pos_ps$same_stop == FALSE]
+
+# For diff-stop pairs, compute reference-based 3'UTR
+diff_stop_ps <- ptc_pos_ps[ptc_pos_ps$same_stop == FALSE, ]
+ref_based_utr3 <- setNames(rep(NA_integer_, nrow(diff_stop_ps)), diff_stop_ps$comparator_isoform_id)
+
+for (i in seq_len(nrow(diff_stop_ps))) {
+  comp_id <- diff_stop_ps$comparator_isoform_id[i]
+  ref_stop_pos <- diff_stop_ps$ref_stop[i]
+  comp_strand <- strand_lookup_g3[comp_id]
+  if (is.na(comp_strand) || is.na(ref_stop_pos)) next
+
+  str_row <- structures[structures$isoform_id == comp_id, ]
+  if (nrow(str_row) == 0) next
+  exon_s <- str_row$exon_starts[[1]]
+  exon_e <- str_row$exon_ends[[1]]
+
+  # Check ref stop is in comparator exons
+  in_exon <- any(ref_stop_pos >= exon_s & ref_stop_pos <= exon_e)
+  if (!in_exon) next
+
+  utr3 <- 0L
+  for (k in seq_along(exon_s)) {
+    if (comp_strand == "+") {
+      if (exon_e[k] > ref_stop_pos) {
+        post_start <- max(exon_s[k], ref_stop_pos + 1L)
+        utr3 <- utr3 + as.integer(exon_e[k] - post_start + 1L)
+      }
+    } else {
+      if (exon_s[k] < ref_stop_pos) {
+        pre_end <- min(exon_e[k], ref_stop_pos - 1L)
+        utr3 <- utr3 + as.integer(pre_end - exon_s[k] + 1L)
+      }
+    }
+  }
+  ref_based_utr3[comp_id] <- utr3
+}
+
+n_eligible <- sum(!is.na(ref_based_utr3))
+n_ineligible <- sum(is.na(ref_based_utr3))
+
+# Lookup for comparator 3'UTR from divergence
+utr3_comp_lk <- setNames(div_c2$utr3_bp_comp, div_c2$comparator_isoform_id)
+
+# Build 5-group data
+utr3_data <- rbind(
+  data.frame(group = "Same-stop PTC+\n(3'UTR splicing)",
+    utr3_bp = utr3_comp_lk[same_stop_ids]),
+  data.frame(group = "Diff-stop PTC+\n(own stop, inflated)",
+    utr3_bp = utr3_comp_lk[diff_stop_ids]),
+  data.frame(group = "Diff-stop PTC+\n(ref stop, corrected)",
+    utr3_bp = ref_based_utr3[!is.na(ref_based_utr3)]),
+  data.frame(group = "NMD PTC-",
+    utr3_bp = utr3_comp_lk[ptc_neg_ids]),
+  data.frame(group = "Control",
+    utr3_bp = div_c4$utr3_bp_comp)
+)
+utr3_data <- utr3_data[!is.na(utr3_data$utr3_bp) & utr3_data$utr3_bp > 0, ]
+utr3_data$group <- factor(utr3_data$group,
+  levels = c("Same-stop PTC+\n(3'UTR splicing)",
+             "Diff-stop PTC+\n(own stop, inflated)",
+             "Diff-stop PTC+\n(ref stop, corrected)",
+             "NMD PTC-", "Control"))
+utr3_n <- table(utr3_data$group)
+```
+
+PTC+ comparators are split by whether the stop codon position is the **same** as
+the reference (`cds_stop` identical) or **different** (premature stop from
+frameshift or in-frame stop in CDS):
+
+- **Same-stop PTC+** (`r fmt(utr3_n[[1]])`): The stop codon is the same as the
+  reference. A 3'UTR splicing event repositioned the last EJC, making the
+  existing stop >50 nt upstream of the new EJC. The 3'UTR length is correctly
+  measured. *Example: TBCCD1 — comp 3'UTR=1,698 bp, ref 3'UTR=910 bp, same stop codon,
+  3 downstream EJCs from 3'UTR splicing.*
+- **Diff-stop PTC+ (own stop)** (`r fmt(utr3_n[[2]])`): The stop codon moved
+  upstream (PTC). The measured 3'UTR is inflated — it includes former CDS.
+  *Example: TRIM41 — comp ORF=1,146 aa vs ref ORF=1,893 aa; comp 3'UTR=1,758 bp
+  but much of this is former CDS.*
+- **Diff-stop PTC+ (ref stop)** (`r fmt(utr3_n[[3]])`): Same pairs as above, but
+  3'UTR is measured from the **reference's** stop codon position projected onto
+  the comparator's exon structure. `r fmt(n_eligible)` of `r fmt(n_eligible + n_ineligible)`
+  pairs were eligible (reference stop falls within comparator exons).
+- **NMD PTC−** (`r fmt(utr3_n[[4]])`): No PTC. 3'UTR is correctly measured.
+  *Example: GPAT3 — comp 3'UTR=1,108 bp, ref 3'UTR=1,108 bp.*
+- **Control** (`r fmt(utr3_n[[5]])`): C4 comparators.
+  *Example: SART1 — comp 3'UTR=1,107 bp, ref 3'UTR=1,107 bp.*
+
+```{r goal3-fig6-utr3-density, fig.width=10, fig.height=6}
+pal5_utr3 <- c("Same-stop PTC+\n(3'UTR splicing)" = "#d6604d",
+               "Diff-stop PTC+\n(own stop, inflated)" = "#fc8d59",
+               "Diff-stop PTC+\n(ref stop, corrected)" = "#fee08b",
+               "NMD PTC-" = "#d9ef8b",
+               "Control" = "#67a9cf")
+
+fig6 <- ggplot(utr3_data, aes(x = utr3_bp, fill = group)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10(labels = scales::comma) +
+  scale_fill_manual(values = pal5_utr3) +
+  labs(title = "3'UTR Length by PTC Mechanism",
+       subtitle = "Correcting for CDS truncation reveals PTC-neg NMD isoforms have normal 3'UTR lengths",
+       x = "3'UTR length (bp, log scale)", y = "Density", fill = "")
+save_fig(fig6, "fig6_utr3_length_density", width = 10, height = 6)
+```
+
+## Table 6: 3'UTR Length Comparisons (Wilcoxon)
+
+```{r goal3-table6-utr3-tests}
+grps <- split(utr3_data$utr3_bp, utr3_data$group)
+
+comparisons_list <- list(
+  c("Same-stop PTC+\n(3'UTR splicing)", "Control"),
+  c("Diff-stop PTC+\n(own stop, inflated)", "Control"),
+  c("Diff-stop PTC+\n(ref stop, corrected)", "Control"),
+  c("NMD PTC-", "Control"),
+  c("Same-stop PTC+\n(3'UTR splicing)", "Diff-stop PTC+\n(ref stop, corrected)")
+)
+
+tests <- do.call(rbind, lapply(comparisons_list, function(pair) {
+  g1 <- grps[[pair[1]]]
+  g2 <- grps[[pair[2]]]
+  wt <- wilcox.test(g1, g2)
+  data.frame(
+    comparison = paste(gsub("\n", " ", pair[1]), "vs", gsub("\n", " ", pair[2])),
+    n_group1 = length(g1), median_group1 = round(median(g1)),
+    n_group2 = length(g2), median_group2 = round(median(g2)),
+    p_value = wt$p.value)
+}))
+
+tests$p_value <- signif(tests$p_value, 3)
+render_dt(tests, caption = "Table 6: 3'UTR Length Comparisons (Wilcoxon rank-sum test)")
+write.csv(tests, file.path(table_dir, "table6_utr3_wilcoxon.csv"), row.names = FALSE)
+```
+
+## Illustrative Example: 3'UTR Measurement Correction (CMAS)
+
+The figure below shows the CMAS gene pair (reference ENST00000229329.7 vs NMD
+comparator ENST00000534981.5) to illustrate the difference between the two
+3'UTR measurements. The comparator has a skipped exon that causes a frameshift,
+creating a PTC at genomic position 22,062,284. The reference stop codon is at
+22,065,311.
+
+```{r goal3-utr3-example, fig.width=10, fig.height=10}
+# CMAS: + strand, ref has 8 exons, comp has 7 (skipped exon 22061281-22061452)
+# Same CDS start (22046304), different stop (ref: 22065311, comp: 22062284)
+
+ref_s <- c(22046218, 22055149, 22055455, 22058567, 22060832, 22061281, 22062281, 22065121)
+ref_e <- c(22046563, 22055291, 22055610, 22058700, 22060926, 22061452, 22062434, 22065668)
+comp_s <- c(22046225, 22055149, 22055455, 22058567, 22060832, 22062281, 22065121)
+comp_e <- c(22046563, 22055291, 22055610, 22058700, 22060926, 22062434, 22065674)
+
+# Skipped exon event (comparator lost exon 22061281-22061452)
+se_event <- data.frame(
+  five_prime = 22061281, three_prime = 22061452,
+  event_type = "SE", direction = "LOSS")
+
+# Annotations: PTC marker on comparator, reference stop marker on both
+ptc_marker <- list(type = "ptc_marker", track = "comp",
+  x = 22062284, label = "PTC", color = "#E74C3C")
+ref_stop_marker <- list(type = "ptc_marker", track = "ref",
+  x = 22065311, label = "Stop", color = "#27AE60")
+
+# Panel A: "Own stop" — comparator CDS ends at PTC (22062284)
+p1 <- plot_ucsc_pair(
+  ref_s, ref_e, comp_s, comp_e, strand = "+",
+  ref_cds = list(cds_start = 22046304, cds_stop = 22065311),
+  comp_cds = list(cds_start = 22046304, cds_stop = 22062284),
+  ref_label = "Reference (ENST00000229329.7)",
+  comp_label = "NMD Comparator (ENST00000534981.5)",
+  events = se_event,
+  annotations = list(ptc_marker, ref_stop_marker),
+  title = "A) 3'UTR at own stop (inflated)",
+  subtitle = "Comparator CDS ends at PTC. Measured 3'UTR (thin) includes former CDS downstream of PTC.")
+
+# Panel B: "Ref stop" — comparator CDS extends to reference stop (22065311)
+ref_stop_comp <- list(type = "ptc_marker", track = "comp",
+  x = 22065311, label = "Ref Stop", color = "#27AE60")
+
+p2 <- plot_ucsc_pair(
+  ref_s, ref_e, comp_s, comp_e, strand = "+",
+  ref_cds = list(cds_start = 22046304, cds_stop = 22065311),
+  comp_cds = list(cds_start = 22046304, cds_stop = 22065311),
+  ref_label = "Reference (ENST00000229329.7)",
+  comp_label = "NMD Comparator (ENST00000534981.5)",
+  events = se_event,
+  annotations = list(ref_stop_marker, ref_stop_comp),
+  title = "B) 3'UTR at reference stop (corrected)",
+  subtitle = "Comparator CDS extended to reference stop. 3'UTR = only true downstream sequence.")
+
+gridExtra::grid.arrange(p1, p2, ncol = 1)
+```
+
+In panel A, the skipped exon (SE LOSS bracket) causes a frameshift that creates
+a PTC (red triangle on comparator). The comparator's CDS (thick) ends at the
+PTC, and everything downstream is measured as 3'UTR (thin) — inflating the
+length. The reference stop codon (green triangle) is further downstream. In
+panel B, the comparator's CDS boundary is set to the reference's stop position
+(green triangle on both tracks), giving the "natural" 3'UTR length.
+
+**Key finding:** PTC-negative NMD comparators have 3'UTR lengths indistinguishable
+from Control (p = `r signif(tests$p_value[tests$comparison == "NMD PTC- vs Control"], 2)`).
+Long 3'UTR length does not appear to be an independent NMD trigger in this
+dataset. The apparently long 3'UTRs in PTC+ isoforms are explained by two
+mechanisms: (1) for same-stop PTC+ isoforms, the 3'UTR is genuinely extended by
+the same splicing event that repositioned the EJC; (2) for diff-stop PTC+
+isoforms, the 3'UTR measurement is inflated by inclusion of former CDS sequence
+downstream of the premature stop.
+
+## 3'UTR Splicing: Enrichment and PTC Production
+
+Two questions: (1) Is 3'UTR splicing enriched in PTC-negative NMD comparators
+relative to Control? (2) Does 3'UTR splicing produce PTCs (by repositioning
+the last EJC)?
+
+```{r goal3-utr3-splicing}
+# ── Data provenance ──
+# Source: computed inline using count_utr3_splicing() defined in this chunk
+# Methods: METHODS.md § "3'UTR Splicing Enrichment"
+# Starting data: gene-matched C2 and C4 profiles (detailed_events from
+#   Isopair::buildProfiles() → compareSplicingChoices) + cds.rds (Isopair::extractCds)
+# For each comparator, check if any splice events have genomic coordinates
+# in the 3'UTR region (downstream of cds_stop on + strand, upstream on - strand).
+# Run on three populations:
+#   1. PTC-neg NMD comparators (the Goal 3 population)
+#   2. PTC-pos NMD comparators (for comparison)
+#   3. All Control (C4) comparators (baseline)
+
+cds_lookup <- setNames(cds$cds_stop, cds$isoform_id)
+strand_lookup <- setNames(cds$strand, cds$isoform_id)
+
+# Generic function: count pairs with 3'UTR splice events
+count_utr3_splicing <- function(profiles, comp_id_subset = NULL) {
+  if (!is.null(comp_id_subset)) {
+    idx <- which(profiles$comparator_isoform_id %in% comp_id_subset)
+  } else {
+    idx <- seq_len(nrow(profiles))
+  }
+  n_with <- 0L
+  n_total <- 0L
+  for (i in idx) {
+    comp_id <- profiles$comparator_isoform_id[i]
+    de <- profiles$detailed_events[[i]]
+    comp_stop <- cds_lookup[comp_id]
+    comp_strand <- strand_lookup[comp_id]
+    if (is.na(comp_stop) || is.na(comp_strand)) next
+    n_total <- n_total + 1L
+    if (is.null(de) || nrow(de) == 0) next
+    if (comp_strand == "+") {
+      utr3_ev <- de[de$five_prime >= comp_stop | de$three_prime >= comp_stop, ]
+    } else {
+      utr3_ev <- de[de$five_prime <= comp_stop | de$three_prime <= comp_stop, ]
+    }
+    if (nrow(utr3_ev) > 0) n_with <- n_with + 1L
+  }
+  list(n_with = n_with, n_total = n_total,
+       pct = round(100 * n_with / max(n_total, 1), 1))
+}
+
+prof_c4_as <- set_results[["c4_allsamples"]]$profiles
+
+utr3_ptcneg <- count_utr3_splicing(prof_c2, ptc_neg_ids)
+utr3_ptcpos <- count_utr3_splicing(prof_c2, ptc_pos_comp_ids)
+utr3_ctrl   <- count_utr3_splicing(prof_c4_as)
+
+# Fisher's exact test: PTC-neg NMD vs Control
+ft_utr3 <- fisher.test(matrix(c(
+  utr3_ptcneg$n_with, utr3_ptcneg$n_total - utr3_ptcneg$n_with,
+  utr3_ctrl$n_with, utr3_ctrl$n_total - utr3_ctrl$n_with), nrow = 2))
+
+utr3_summary <- data.frame(
+  group = c("NMD PTC-", "NMD PTC+", "Control"),
+  n_with_utr3_event = c(utr3_ptcneg$n_with, utr3_ptcpos$n_with, utr3_ctrl$n_with),
+  n_total = c(utr3_ptcneg$n_total, utr3_ptcpos$n_total, utr3_ctrl$n_total),
+  pct = c(utr3_ptcneg$pct, utr3_ptcpos$pct, utr3_ctrl$pct))
+
+kable(utr3_summary,
+      caption = "3'UTR Splicing Prevalence by Group",
+      col.names = c("Group", "Pairs with 3'UTR Event", "Total Pairs", "%"))
+```
+
+**Enrichment (Q1):** `r utr3_ptcneg$pct`% of PTC-negative NMD pairs have 3'UTR
+splice events vs `r utr3_ctrl$pct`% of Control pairs (Fisher OR =
+`r round(ft_utr3$estimate, 2)`, p = `r format(ft_utr3$p.value, digits = 2)`).
+
+```{r goal3-utr3-ptc-production}
+# Q2: Does 3'UTR splicing produce PTCs?
+# A 3'UTR splice event could reposition the last EJC, making a previously
+# non-PTC isoform into a PTC isoform. We check: among PTC+ NMD comparators,
+# how many have 3'UTR splice events? If 3'UTR splicing causes PTCs, we'd
+# expect a higher rate than in PTC-neg.
+```
+
+**PTC production (Q2):** Among PTC-positive NMD comparators,
+`r utr3_ptcpos$pct`% have 3'UTR splice events (vs `r utr3_ptcneg$pct`% in
+PTC-negative). 3'UTR splicing could produce PTCs by repositioning the last EJC
+(moving it downstream of the stop codon), but distinguishing this mechanism from
+coincidental 3'UTR variation requires EJC position analysis beyond current scope.
+
+## 5'UTR uORF Analysis
+
+Upstream open reading frames (uORFs) in the 5'UTR are a known mechanism that
+can trigger NMD independently of PTCs in the main CDS. We scanned the 5'UTR
+sequence of each comparator isoform for uORFs (AUG followed by an in-frame stop
+codon, minimum 3 codons / 9 nt). uORFs whose stop codon falls at or beyond the
+main CDS start are classified as **overlapping** — a particularly potent NMD
+trigger.
+
+```{r goal3-uorf}
+# ── Data provenance ──
+# Source script: 05b_uorf_analysis.R → analysis_cache/uorf_analysis.rds
+# Methods: METHODS.md § "5'UTR uORF Analysis"
+#
+# Pipeline:
+#   1. 5'UTR boundaries computed by compute_utr5_length() in 05b_uorf_analysis.R
+#      Input: genomic CDS coordinates (cds.rds) + exon structure (structures.rds)
+#      + strand: CDS start = cds_start (plus) or cds_stop (minus)
+#      Validation: 98.4% of isoforms have ATG at computed CDS start position
+#   2. 5'UTR sequences extracted from SQANTI corrected transcript FASTA
+#      (nmd_lungcells_corrected.fasta) via awk-based subset extraction
+#   3. uORF detection by find_uorfs() in 05b_uorf_analysis.R:
+#      gregexpr("ATG") finds all AUG positions in 5'UTR; for each, walks in-frame
+#      through full transcript to first stop codon (TAA/TAG/TGA). Min 3 codons.
+#      Overlapping uORFs: stop codon at or past main CDS start.
+#   4. Groups: PTC_neg, PTC_pos, Control (same coding pair definitions as Goal 3)
+
+uorf_data <- readRDS(file.path(cache_dir, "uorf_analysis.rds"))
+uorf <- uorf_data$per_isoform
+uorf$group <- factor(uorf$group, levels = c("PTC_neg", "PTC_pos", "Control"))
+```
+
+```{r goal3-uorf-summary}
+uorf_summary <- uorf |>
+  group_by(group) |>
+  summarise(
+    n = n(),
+    median_utr5_bp = median(utr5_length),
+    pct_with_uorf = round(100 * mean(n_uorfs > 0), 1),
+    median_n_uorfs = median(n_uorfs),
+    mean_n_uorfs = round(mean(n_uorfs), 1),
+    pct_overlapping = round(100 * mean(n_overlapping_uorfs > 0), 1),
+    .groups = "drop")
+
+render_dt(uorf_summary, caption = "Table 7a: uORF Prevalence by Group")
+```
+
+Columns: **group** = PTC_neg (NMD without PTC), PTC_pos (NMD with PTC), or
+Control (C4); **n** = number of isoforms; **median_utr5_bp** = median 5'UTR
+length; **pct_with_uorf** = % with ≥1 uORF (≥3 codons); **median/mean_n_uorfs** =
+uORFs per isoform; **pct_overlapping** = % with ≥1 overlapping uORF (stop
+codon at or past CDS start).
+
+```{r goal3-uorf-tests}
+# ── Data provenance ──
+# Source: uorf_data$per_isoform (from 05b_uorf_analysis.R)
+# Methods: METHODS.md § "5'UTR uORF Analysis"
+# Test: Fisher's exact test on 2x2 table (group × has_uorf) for each pair of groups
+# "any uORF": isoform has ≥1 uORF (≥3 codons) in the 5'UTR
+# "overlapping uORF": isoform has ≥1 uORF whose stop codon falls at or past CDS start
+# n per group: PTC_neg=1,860, PTC_pos=1,458, Control=3,238
+
+uorf_tests <- list()
+test_pairs <- list(
+  c("PTC_neg", "Control", "any uORF"),
+  c("PTC_pos", "Control", "any uORF"),
+  c("PTC_neg", "PTC_pos", "any uORF"),
+  c("PTC_neg", "Control", "overlapping uORF")
+)
+
+for (tp in test_pairs) {
+  sub <- uorf[uorf$group %in% tp[1:2], ]
+  sub$group <- droplevels(factor(sub$group))
+  if (tp[3] == "any uORF") {
+    tbl <- table(sub$group, sub$n_uorfs > 0)
+  } else {
+    tbl <- table(sub$group, sub$n_overlapping_uorfs > 0)
+  }
+  ft <- tryCatch(fisher.test(tbl), error = function(e) NULL)
+  if (!is.null(ft)) {
+    n1 <- sum(sub$group == tp[1])
+    n2 <- sum(sub$group == tp[2])
+    uorf_tests[[length(uorf_tests) + 1]] <- data.frame(
+      comparison = paste(tp[1], "vs", tp[2]),
+      test = tp[3],
+      n_group1 = n1, n_group2 = n2,
+      OR = round(as.numeric(ft$estimate), 2),
+      p_value = signif(as.numeric(ft$p.value), 3),
+      stringsAsFactors = FALSE)
+  }
+}
+uorf_test_df <- do.call(rbind, uorf_tests)
+render_dt(uorf_test_df, caption = "Table 7b: uORF Enrichment Tests (Fisher's exact)")
+```
+
+Columns: **comparison** = group pair tested; **test** = "any uORF" (≥1 uORF) or
+"overlapping uORF" (≥1 uORF with stop at/past CDS start); **n_group1/n_group2** =
+group sizes; **OR** = Fisher's exact test odds ratio; **p_value** = Fisher p-value.
+
+```{r goal3-uorf-density, fig.width=10, fig.height=6}
+# Density plot (better than dodged histogram for different group sizes)
+uorf_plot <- uorf[uorf$utr5_length > 0, ]
+uorf_plot$group_label <- factor(uorf_plot$group,
+  levels = c("PTC_neg", "PTC_pos", "Control"),
+  labels = c("NMD PTC-", "NMD PTC+", "Control"))
+
+fig_uorf <- ggplot(uorf_plot, aes(x = n_uorfs + 0.5, fill = group_label)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10(breaks = c(1, 2, 5, 10, 20, 50)) +
+  scale_fill_manual(values = c("NMD PTC-" = "#fddbc7", "NMD PTC+" = "#ef8a62",
+                                "Control" = "#67a9cf")) +
+  labs(title = "uORF Count Distribution by Group",
+       subtitle = "PTC-negative NMD isoforms have dramatically more uORFs (median 8 vs 1 in Control)",
+       x = "Number of uORFs (+0.5, log scale)", y = "Density", fill = "")
+save_fig(fig_uorf, "fig_uorf_count_distribution", width = 10, height = 6)
+```
+
+**Key finding:** PTC-negative NMD comparators have dramatically more uORFs than
+Control (96.2% vs 63.3% with any uORF, OR =
+`r uorf_test_df$OR[uorf_test_df$comparison == "PTC_neg vs Control" & uorf_test_df$test == "any uORF"]`,
+p < 10^-180^). They also have longer 5'UTRs (median
+`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"]` bp vs
+`r uorf_summary$median_utr5_bp[uorf_summary$group == "Control"]` bp in Control),
+which provides more sequence for uORFs. Overlapping uORFs (stop codon at or past
+main CDS start) are also enriched (61.5% vs 27.9%, OR =
+`r uorf_test_df$OR[uorf_test_df$comparison == "PTC_neg vs Control" & uorf_test_df$test == "overlapping uORF"]`).
+
+Combined with the 3'UTR length finding (PTC-neg NMD isoforms have normal 3'UTR
+lengths), this points to **5'UTR uORFs as the dominant non-PTC NMD mechanism**
+in this dataset, rather than long 3'UTR-mediated NMD.
+
+**Caveat:** The high uORF count is partly driven by longer 5'UTRs (more sequence =
+more chance of ATG + in-frame stop). The enrichment should be interpreted in
+conjunction with the 5'UTR length difference.
+
+**Limitations:** uORF detection is sequence-based and does not confirm
+translation. Not all sequence-predicted uORFs are functional NMD triggers.
+Other non-PTC NMD mechanisms (3'UTR secondary structure, EJC-independent UPF1
+recruitment) cannot be ruled out from structural data alone.
+
+
+# 4. Baseline Splicing and NMD-Enriched Events {#goal4}
+
+**Goal 4:** Characterize baseline alternative splicing (Control C4 pairs) and identify which
+splicing event types are enriched in NMD vs Control.
+
+**Methods:** Structural profiles quantify splicing event types for each pair. Sequence
+divergence (`quantifyPairDivergence()`) measures exonic sequence shared between isoforms.
+NMD vs Control enrichment is tested by Fisher's exact test per event type.
+
+## Figure 7: Sequence Shared — NMD vs Control
+
+```{r goal4-fig7-pct-shared, fig.width=8, fig.height=5}
+# ── Data provenance ──
+# Starting data: gene-matched profiles → cached divergence
+# div_c2 = set_results[["c2_allsamples"]]$divergence
+#   Source: quantifyPairDivergence(gene-matched profiles, structures, cds),
+#   cached by script 03
+#   $pct_shared: percentage of exonic sequence shared between ref and comp
+# div_c4: same for Control
+# Result: density comparison of sequence similarity between NMD and Control pairs
+
+pct_shared_data <- rbind(
+  data.frame(comparison = "NMD",     pct_shared = div_c2$pct_shared),
+  data.frame(comparison = "Control", pct_shared = div_c4$pct_shared))
+pct_shared_data <- pct_shared_data[!is.na(pct_shared_data$pct_shared), ]
+
+fig7 <- ggplot(pct_shared_data, aes(x = pct_shared, fill = comparison)) +
+  geom_density(alpha = 0.5) +
+  scale_fill_manual(values = pal) +
+  labs(title = "Exonic Sequence Shared (%): NMD vs Control",
+       subtitle = "NMD pairs shifted right = more similar (targeted splicing changes)",
+       x = "Sequence Shared (%)", y = "Density", fill = "")
+save_fig(fig7, "fig7_pct_shared_density")
+
+# Summary stats
+shared_summary <- pct_shared_data |>
+  group_by(comparison) |>
+  summarise(n = n(), median = round(median(pct_shared), 1),
+            mean = round(mean(pct_shared), 1), .groups = "drop")
+render_dt(shared_summary, caption = "Table 7c: Sequence Shared Summary")
+```
+
+Columns: **comparison** = NMD or Control; **n** = number of pairs; **median/mean** =
+median and mean percentage of exonic sequence shared between reference and
+comparator (from `quantifyPairDivergence()`).
+
+## Table 8a: Splicing Event Enrichment — NMD vs Control
+
+For each event type, the denominator is all gene-matched pairs (not restricted
+to coding) — a pair is counted if it has ≥1 event of that type. Fisher's exact
+test compares the proportion of pairs with each event type between NMD (C2) and
+Control (C4), both on the same gene-matched set.
+
+```{r goal4-table8a-event-enrichment}
+# ── Data provenance ──
+# Starting data: gene-matched profiles (set_results[[key]]$profiles)
+# compute_event_freq(profiles) counts pairs with each event type using:
+#   - Boolean columns (tss_changed, tes_changed, n_a5ss > 0, etc.) from profiles
+#   - Partial_IR_5/3 from detailed_events list-column
+#   These are computed by buildProfiles → compareSplicingChoices
+# Fisher's exact test: event prevalence in NMD vs Control on gene-matched sets
+
+ef_c2 <- compute_event_freq(set_results[["c2_allsamples"]]$profiles)
+ef_c4 <- compute_event_freq(set_results[["c4_allsamples"]]$profiles)
+n_c2 <- nrow(set_results[["c2_allsamples"]]$profiles)
+n_c4 <- nrow(set_results[["c4_allsamples"]]$profiles)
+
+enrichment <- merge(ef_c2, ef_c4, by = "event_type", suffixes = c("_NMD", "_Ctrl"))
+
+# Fisher's exact test per event type
+enrichment$fisher_OR <- NA_real_
+enrichment$fisher_p <- NA_real_
+for (i in seq_len(nrow(enrichment))) {
+  a <- enrichment$n_pairs_with_event_NMD[i]
+  b <- n_c2 - a
+  c <- enrichment$n_pairs_with_event_Ctrl[i]
+  d <- n_c4 - c
+  ft <- tryCatch(fisher.test(matrix(c(a, b, c, d), nrow = 2)), error = function(e) NULL)
+  if (!is.null(ft)) {
+    enrichment$fisher_OR[i] <- round(ft$estimate, 2)
+    enrichment$fisher_p[i] <- ft$p.value
+  }
+}
+
+enrichment$direction <- ifelse(enrichment$fisher_p > 0.05, "Non-significant",
+  ifelse(enrichment$fisher_OR > 1, "Enriched in NMD", "Enriched in Control"))
+enrichment <- enrichment[order(enrichment$fisher_p), ]
+
+enrich_display <- enrichment[, c("event_type", "n_pairs_with_event_NMD", "pct_of_pairs_NMD",
+                                 "n_pairs_with_event_Ctrl", "pct_of_pairs_Ctrl",
+                                 "fisher_OR", "fisher_p", "direction")]
+enrich_display$fisher_p <- signif(enrich_display$fisher_p, 3)
+render_dt(enrich_display,
+          caption = "Table 8a: Splicing Event Type Enrichment — NMD vs Control")
+write.csv(enrichment, file.path(table_dir, "table8a_event_enrichment.csv"), row.names = FALSE)
+```
+
+Columns: **event_type** = splicing event type (see Event Type Glossary);
+**n_pairs_with_event_NMD** = number of gene-matched NMD (C2) pairs with ≥1
+event of this type; **pct_of_pairs_NMD** = percentage of all
+`r fmt(n_c2)` NMD pairs; **n_pairs_with_event_Ctrl/pct_of_pairs_Ctrl** =
+same for Control (C4, `r fmt(n_c4)` pairs); **fisher_OR** = Fisher's exact
+test odds ratio (>1 = NMD-enriched); **fisher_p** = p-value; **direction** =
+NMD-enriched or Control-enriched.
+
+## Table 8b: Gain/Loss Direction by Event Type
+
+For each event type, the comparator can GAIN sequence (comparator has additional
+sequence relative to reference) or LOSE sequence (comparator is missing sequence
+present in reference). The table below shows event counts and the percentage of
+events in each direction, separately for NMD and Control pairs.
+
+```{r goal4-table8b-gain-loss}
+# ── Data provenance ──
+# Starting data: gene-matched profiles (set_results[[key]]$profiles)
+# $detailed_events: list-column, one data.frame per pair from buildProfiles
+#   Each event row has event_type and direction (GAIN or LOSS)
+#   Direction is from comparator's perspective (see Event Type Glossary)
+# For each comparison (NMD, Control): count events by type × direction,
+#   compute % GAIN and % LOSS within each event type
+
+get_gain_loss_pct <- function(profiles, label) {
+  all_events <- do.call(rbind, profiles$detailed_events)
+  if (is.null(all_events) || nrow(all_events) == 0) return(NULL)
+  gl <- all_events |>
+    group_by(event_type, direction) |>
+    summarise(n = n(), .groups = "drop")
+  # Compute total per event type for percentages
+  totals <- gl |> group_by(event_type) |> summarise(total = sum(n), .groups = "drop")
+  gl <- merge(gl, totals, by = "event_type")
+  gl$pct <- round(100 * gl$n / gl$total, 1)
+  gl$comparison <- label
+  gl
+}
+
+gl_c2 <- get_gain_loss_pct(set_results[["c2_allsamples"]]$profiles, "NMD")
+gl_c4 <- get_gain_loss_pct(set_results[["c4_allsamples"]]$profiles, "Control")
+gl_all <- rbind(gl_c2, gl_c4)
+
+# Create a readable wide format: event_type | NMD_GAIN | NMD_GAIN_% | NMD_LOSS | NMD_LOSS_% | ...
+gl_wide <- gl_all |>
+  tidyr::pivot_wider(
+    id_cols = event_type,
+    names_from = c(comparison, direction),
+    values_from = c(n, pct),
+    values_fill = 0) |>
+  arrange(event_type)
+
+# Select columns and add Fisher test: NMD vs Control gain/loss proportions
+col_order <- c("event_type",
+  "n_NMD_GAIN", "n_NMD_LOSS", "pct_NMD_GAIN",
+  "n_Control_GAIN", "n_Control_LOSS", "pct_Control_GAIN")
+existing_cols <- intersect(col_order, names(gl_wide))
+gl_display <- gl_wide[, existing_cols, drop = FALSE]
+
+# Fisher's exact test per event type: is the GAIN/LOSS ratio different in NMD vs Control?
+gl_display$fisher_p <- NA_real_
+gl_display$direction_diff <- NA_character_
+for (i in seq_len(nrow(gl_display))) {
+  ng <- gl_display$n_NMD_GAIN[i]
+  nl <- gl_display$n_NMD_LOSS[i]
+  cg <- gl_display$n_Control_GAIN[i]
+  cl <- gl_display$n_Control_LOSS[i]
+  if (ng + nl > 0 && cg + cl > 0) {
+    ft <- tryCatch(fisher.test(matrix(c(ng, nl, cg, cl), nrow = 2)), error = function(e) NULL)
+    if (!is.null(ft)) {
+      gl_display$fisher_p[i] <- signif(ft$p.value, 3)
+      pct_nmd <- 100 * ng / (ng + nl)
+      pct_ctrl <- 100 * cg / (cg + cl)
+      gl_display$direction_diff[i] <- if (ft$p.value > 0.05) "Non-significant"
+        else if (pct_nmd > pct_ctrl) "More GAIN in NMD"
+        else "More LOSS in NMD"
+    }
+  }
+}
+
+render_dt(gl_display, caption = "Table 8b: Gain/Loss Events by Type — NMD vs Control")
+write.csv(gl_display, file.path(table_dir, "table8b_gain_loss_events.csv"), row.names = FALSE)
+```
+
+Columns: **event_type** = splicing event type; **n_NMD_GAIN/n_NMD_LOSS** =
+count of NMD events with GAIN/LOSS direction (from comparator's perspective);
+**pct_NMD_GAIN** = percentage of NMD events of that type with GAIN direction;
+**n_Control_GAIN/n_Control_LOSS/pct_Control_GAIN** = same for Control;
+**fisher_p** = Fisher's exact test p-value comparing GAIN/LOSS ratio between
+NMD and Control; **direction_diff** = "More GAIN in NMD", "More LOSS in NMD",
+or "Non-significant" (p > 0.05).
+
+
+# 5. Protein-Level Consequences of Normal Alternative Splicing {#goal5}
+
+**Goal 5:** Characterize how normal (non-NMD) alternative splicing affects
+protein sequence content and function. The C4 Control pairs — dominant vs
+next-best non-NMD isoforms per gene — represent the most common alternative
+splicing in these cell types. When a cell uses the alternative isoform, how
+different is the protein? Are functional domains affected? Is there mass-spec
+evidence that the predicted novel peptides exist?
+
+**Methods:** For all C4 coding pairs (both reference and comparator
+protein-coding), we compare protein sequences from the SQANTI corrected protein
+FASTA via character-by-character prefix comparison to quantify novel protein
+content. Domain analysis maps Pfam/InterPro domain positions (from biomaRt) to
+the splice divergence point to identify disrupted domains. Mass-spec validation
+queries novel-region peptides against EBI proteomics databases.
+
+## Figure 8: Novel Protein Content — All C4 Comparators
+
+```{r goal5-fig8-pop}
+n_c4_total <- nrow(set_results[["c4_allsamples"]]$profiles)
+n_c4_protein <- nrow(c4_protein$comparison)
+```
+
+Of `r fmt(n_c4_total)` gene-matched C4 pairs, `r fmt(n_c4_protein)` are coding
+pairs where both reference and comparator are protein-coding
+(`coding_status == "coding"` in `cds.rds`) and both have protein sequences in
+the SQANTI FASTA. Frame category comes from `compareIsoformFrames()`. Pairs
+classified as `non_coding` or `no_shared_cds` are excluded from the frame
+category facets below.
+
+```{r goal5-fig8-novel-protein, fig.width=10, fig.height=6}
+comp_data <- c4_protein$comparison
+
+# Simplify frame category labels for plot
+comp_data$frame_label <- factor(
+  comp_data$frame_category,
+  levels = c("same_start_in_frame", "same_start_frameshift",
+             "diff_start_same_frame", "diff_start_diff_frame",
+             "diff_start_diff_frame_with_frameshift"),
+  labels = c("Same Start\nSame Frame", "Same Start\nFrameshift",
+             "Diff Start\nSame Frame", "Diff Start\nDiff Frame",
+             "Diff Start\nDiff Frame + FS"))
+comp_data <- comp_data[!is.na(comp_data$frame_label), ]
+
+fig8 <- ggplot(comp_data, aes(x = pct_novel_protein, fill = frame_label)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~frame_label, scales = "free_y", ncol = 3) +
+  labs(title = "Novel Protein Content: All C4 (Control) Coding Comparators",
+       subtitle = sprintf("n = %d pairs. Protein comparison via prefix divergence.", nrow(comp_data)),
+       x = "Novel Protein (%)", y = "Density") +
+  theme(legend.position = "none")
+save_fig(fig8, "fig8_novel_protein_all_c4", width = 10, height = 6)
+
+# Summary table
+novel_summary <- comp_data |>
+  group_by(frame_category) |>
+  summarise(
+    n = n(),
+    median_novel_pct = round(median(pct_novel_protein, na.rm = TRUE), 1),
+    mean_novel_pct = round(mean(pct_novel_protein, na.rm = TRUE), 1),
+    pct_with_any_novel = round(100 * mean(pct_novel_protein > 0, na.rm = TRUE), 1),
+    .groups = "drop")
+```
+
+## Table 9: Novel Protein Summary by Frame Category
+
+```{r goal5-table9-novel-summary}
+render_dt(novel_summary, caption = "Table 9: Novel Protein Content by Frame Category (All C4 Pairs)")
+write.csv(novel_summary, file.path(table_dir, "table9_novel_protein_summary.csv"), row.names = FALSE)
+```
+
+Columns: **frame_category** = reading frame relationship (from
+`compareIsoformFrames()`); **n** = number of coding C4 pairs in this category;
+**median/mean_novel_pct** = median and mean percentage of novel protein
+(from character-by-character prefix comparison of SQANTI protein sequences);
+**pct_with_any_novel** = percentage of pairs with any novel protein content.
+
+## Table 10: Domain Disruption by Normal Alternative Splicing
+
+```{r goal5-domain-load}
+# ── Data provenance ──
+# Source script: 05c_c4_domain_analysis.R → analysis_cache/c4_domain_analysis.rds
+# Methods: METHODS.md should be updated to include this analysis
+#
+# Pipeline:
+#   1. All coding C4 pairs (excl no_shared_cds) from fc_c4_allsamples.rds
+#   2. Pfam/InterPro domains queried from biomaRt (batch query by gene ID)
+#   3. Each domain classified by position relative to splice divergence point
+#      (actual_shared_aa from protein comparison):
+#      - conserved: entire domain before divergence point
+#      - disrupted: domain spans the divergence point
+#      - novel_region: entire domain after divergence point
+#   4. Per-cell-type analysis: C4 pairs from each CT matched to domain results
+
+domain_data <- readRDS(file.path(cache_dir, "c4_domain_analysis.rds"))
+dom_ann <- domain_data$domain_annotations
+ct_dom_summary <- domain_data$per_ct_summary
+dom_meta <- domain_data$metadata
+```
+
+```{r goal5-domain-summary}
+# Overall domain disruption summary
+dom_disposition <- data.frame(
+  category = c("At least one domain disrupted",
+               "All domains conserved",
+               "No annotated domains"),
+  n_pairs = c(dom_meta$n_pairs_disrupted,
+              dom_meta$n_pairs_with_domains - dom_meta$n_pairs_disrupted,
+              dom_meta$n_pairs_analyzed - dom_meta$n_pairs_with_domains),
+  pct = round(100 * c(dom_meta$n_pairs_disrupted,
+              dom_meta$n_pairs_with_domains - dom_meta$n_pairs_disrupted,
+              dom_meta$n_pairs_analyzed - dom_meta$n_pairs_with_domains) /
+              dom_meta$n_pairs_analyzed, 1))
+
+kable(dom_disposition, caption = "Table 10: Domain Disruption — All Coding C4 Pairs")
+```
+
+Of `r fmt(dom_meta$n_pairs_analyzed)` coding C4 pairs,
+`r fmt(dom_meta$n_pairs_with_domains)` (`r round(100 * dom_meta$n_pairs_with_domains / dom_meta$n_pairs_analyzed, 1)`%)
+have at least one Pfam or InterPro domain annotation.
+**`r fmt(dom_meta$n_pairs_disrupted)` pairs
+(`r round(100 * dom_meta$n_pairs_disrupted / dom_meta$n_pairs_with_domains, 1)`%
+of those with domains) have at least one domain disrupted** by the splice
+divergence between the dominant and alternative isoform.
+
+Columns: **category** = domain disruption status; **n_pairs** = number of
+coding C4 pairs; **pct** = percentage of all coding C4 pairs analyzed.
+
+## Table 10b: Domain Disruption by Cell Type
+
+```{r goal5-domain-ct}
+render_dt(ct_dom_summary, caption = "Table 10b: Domain Disruption Rates by Cell Type")
+```
+
+Columns: **cell_type**; **n_coding_pairs** = coding C4 pairs in this cell type;
+**n_with_domains** = pairs with ≥1 annotated domain; **n_disrupted** = pairs
+with ≥1 disrupted domain; **pct_disrupted** = % of domain-annotated pairs with
+disruption.
+
+Domain disruption rates are consistent across cell types
+(`r paste(sprintf("%s=%.1f%%", ct_dom_summary$cell_type, ct_dom_summary$pct_disrupted), collapse = ", ")`),
+suggesting that the protein-level impact of normal alternative splicing is not
+cell-type-specific.
+
+## Table 10c: Most Frequently Disrupted Domains
+
+```{r goal5-domain-top}
+# Get domain descriptions from InterPro annotations
+disrupted_doms <- dom_ann[dom_ann$position_class == "disrupted", ]
+top_disrupted <- as.data.frame(sort(table(disrupted_doms$domain_id), decreasing = TRUE))
+names(top_disrupted) <- c("domain_id", "n_pairs_disrupted")
+top_disrupted <- head(top_disrupted, 20)
+top_disrupted$pct_of_disrupted <- round(100 * top_disrupted$n_pairs_disrupted /
+  dom_meta$n_pairs_disrupted, 1)
+
+render_dt(top_disrupted, caption = "Table 10c: Most Frequently Disrupted Domains (Top 20)")
+```
+
+Columns: **domain_id** = Pfam or InterPro accession; **n_pairs_disrupted** =
+number of C4 pairs where this domain spans the splice divergence point;
+**pct_of_disrupted** = percentage of all pairs with any domain disruption.
+
+## Figure 9: Productive Frameshifts
+
+```{r goal5-fig9-pop}
+pf_char <- pf_data$characterization
+n_ss_fs <- sum(novel_summary$frame_category == "same_start_frameshift")
+n_ss_fs_count <- if (n_ss_fs > 0) novel_summary$n[novel_summary$frame_category == "same_start_frameshift"] else NA
+```
+
+A special case of protein-level impact: `r fmt(n_ss_fs_count)` coding C4 pairs
+are `same_start_frameshift` (same start codon, frameshift in CDS). Of those,
+`r fmt(nrow(pf_char))` lack a PTC in the comparator — these are **productive
+frameshifts** that produce a shared N-terminal domain followed by a completely
+novel C-terminal protein sequence.
+
+```{r goal5-fig9-pf-mechanisms, fig.width=8, fig.height=5}
+# ── Data provenance ──
+# Source: 04_productive_frameshift_precompute.R → productive_frameshift_allsamples.rds
+# Methods: METHODS.md § productive frameshifts section (to be added)
+
+event_types_raw <- pf_char$frameshift_event_types[!is.na(pf_char$frameshift_event_types)]
+all_event_types <- unlist(strsplit(event_types_raw, ","))
+event_freq <- sort(table(all_event_types), decreasing = TRUE)
+
+event_df <- data.frame(
+  event_type = names(event_freq),
+  count = as.integer(event_freq),
+  stringsAsFactors = FALSE)
+event_df$pct <- round(100 * event_df$count / length(event_types_raw), 1)
+
+fig9 <- ggplot(event_df, aes(x = reorder(event_type, -count), y = count)) +
+  geom_col(fill = "steelblue", alpha = 0.8) +
+  geom_text(aes(label = count), vjust = -0.3, size = 3.5) +
+  labs(title = sprintf("Frameshift-Causing Event Types in Productive Frameshifts (n = %d)",
+                       nrow(pf_char)),
+       x = "Splicing Event Type", y = "Number of Pairs")
+save_fig(fig9, "fig9_productive_frameshift_events")
+```
+
+Columns: **event_type** = splice event type that caused the frameshift;
+**count** = number of productive frameshift pairs with this event; **pct** =
+percentage of productive frameshifts (one pair may contribute multiple events).
+
+## Table 11: Mass Spectrometry Peptide Evidence
+
+For the `r fmt(nrow(pf_char))` productive frameshifts, novel-region peptides
+were generated by in silico tryptic digestion of the SQANTI protein sequence
+downstream of the frameshift point, then queried against the EBI Proteins API
+for evidence of prior mass-spec detection.
+
+```{r goal5-table11-massspec}
+# ── Data provenance ──
+# Source: 04_productive_frameshift_precompute.R Section 2
+# Peptides from novel C-terminal region queried against EBI Proteins API.
+
+massspec <- pf_data$massspec
+ms_table <- NULL
+
+if (!is.null(massspec) && nrow(massspec) > 0) {
+  ms_summary <- massspec |>
+    group_by(gene_id, comparator_isoform_id) |>
+    summarise(
+      n_unique_peptides = n(),
+      n_with_hits = sum(ebi_hit),
+      n_gene_matched = sum(ebi_gene_match),
+      .groups = "drop")
+
+  ms_summary$gene_symbol <- gene_symbol_lookup[ms_summary$gene_id]
+  ms_with_hits <- ms_summary[ms_summary$n_with_hits > 0, ]
+
+  cat(sprintf("Productive frameshifts queried: %d genes, %d unique peptides\n",
+              length(unique(massspec$gene_id)), nrow(massspec)))
+  cat(sprintf("Peptides with EBI hits: %d / %d\n", sum(massspec$ebi_hit), nrow(massspec)))
+  cat(sprintf("Gene-matched hits: %d\n", sum(massspec$ebi_gene_match)))
+
+  if (nrow(ms_with_hits) > 0) {
+    ms_table <- ms_with_hits[, c("gene_symbol", "comparator_isoform_id",
+                                  "n_unique_peptides", "n_with_hits", "n_gene_matched")]
+    write.csv(ms_with_hits, file.path(table_dir, "table11_massspec_evidence.csv"), row.names = FALSE)
+  } else {
+    cat("No gene-matched mass-spec hits found for novel-region peptides.\n")
+  }
+} else {
+  cat("Mass-spec data not available.\n")
+}
+```
+
+```{r goal5-table11-render, eval=!is.null(ms_table)}
+render_dt(ms_table, caption = "Table 11: Mass Spectrometry Evidence for Productive Frameshifts")
+```
+
+Columns: **gene_symbol**; **comparator_isoform_id**; **n_unique_peptides** =
+tryptic peptides from the novel C-terminal region; **n_with_hits** = peptides
+with any EBI proteomics database match; **n_gene_matched** = matches to the same
+gene (strongest validation).
+
+
+# 6. Cross-Cell-Type Consistency Summary {#summary}
+
+```{r sec6-summary-table}
+# ── Data provenance ──
+# Starting data: gene-matched profiles and cached analyses across all cell types
+# Each row computed via helper functions that access set_results[[key]]:
+#   - Pair counts: nrow(gene-matched profiles)
+#   - PTC rates: compute_ptc_rates_row() — coding pairs from gene-matched profiles + ptc.rds
+#   - Divergence: compute_divergence_row() — from cached quantifyPairDivergence()
+#   - Productive frameshifts: from pf_data precompute (all_samples only)
+# All helpers operate on gene-matched data (profiles_list was matched in STAGE 2)
+
+summary_rows <- lapply(c("all_samples", main_cts), function(ct) {
+  ct_label <- ct_to_label(ct)
+
+  # NMD and Control pair counts
+  c2_key <- paste0("c2_", ct_label)
+  c4_key <- paste0("c4_", ct_label)
+  n_nmd  <- if (c2_key %in% names(set_results)) nrow(set_results[[c2_key]]$profiles) else NA
+  n_ctrl <- if (c4_key %in% names(set_results)) nrow(set_results[[c4_key]]$profiles) else NA
+
+  # PTC rates
+  ptc_row <- compute_ptc_rates_row(ct)
+  ptc_rate_nmd  <- if (!is.null(ptc_row)) ptc_row$NMD_comp_ptc_pct else NA
+  ptc_rate_ctrl <- if (!is.null(ptc_row)) ptc_row$Ctrl_comp_ptc_pct else NA
+  ptc_or        <- if (!is.null(ptc_row)) ptc_row$fisher_OR else NA
+
+  # PTC-neg %
+  ptc_neg_pct <- if (!is.null(ptc_row)) round(100 - ptc_row$NMD_comp_ptc_pct, 1) else NA
+
+  # Median pct_shared for C4
+  div_row <- compute_divergence_row(ct)
+  med_shared <- if (!is.null(div_row)) div_row$Ctrl_median_pct_shared else NA
+
+  # Productive frameshifts (only available for all_samples)
+  n_pf <- if (ct == "all_samples") nrow(pf_data$characterization) else NA
+
+  data.frame(
+    cell_type = ct,
+    N_NMD_pairs = n_nmd,
+    N_Ctrl_pairs = n_ctrl,
+    PTC_rate_NMD_pct = ptc_rate_nmd,
+    PTC_rate_Ctrl_pct = ptc_rate_ctrl,
+    PTC_OR = ptc_or,
+    PTC_neg_pct = ptc_neg_pct,
+    Median_pct_shared_C4 = med_shared,
+    N_productive_FS = n_pf)
+})
+
+summary_table <- do.call(rbind, summary_rows)
+render_dt(summary_table, caption = "Table 13: Cross-Cell-Type Summary")
+write.csv(summary_table, file.path(table_dir, "table13_cross_ct_summary.csv"), row.names = FALSE)
+```
+
+Columns: **cell_type** = sample set; **N_NMD/N_Ctrl_pairs** = gene-matched pair
+counts; **PTC_rate_NMD/Ctrl_pct** = PTC rate among coding comparators;
+**PTC_OR** = Fisher OR for PTC enrichment; **PTC_neg_pct** = percentage of
+coding NMD comparators without PTC; **Median_pct_shared_C4** = median exonic
+sequence shared in Control pairs (from `quantifyPairDivergence()`);
+**N_productive_FS** = productive frameshifts (all_samples only).
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
