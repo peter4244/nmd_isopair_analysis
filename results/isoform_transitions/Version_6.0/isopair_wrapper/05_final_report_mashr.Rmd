@@ -19,7 +19,6 @@ library(Isopair)
 library(dplyr)
 library(ggplot2)
 library(knitr)
-library(ggalluvial)
 library(DT)
 source("visualization_functions.R")
 
@@ -43,7 +42,7 @@ theme_pub <- theme_minimal(base_size = 12) +
 theme_set(theme_pub)
 
 pal <- c(NMD = "#ef8a62", Control = "#67a9cf")
-pal3 <- c("NMD PTC+" = "#ef8a62", "NMD PTC-" = "#fddbc7", Control = "#67a9cf")
+
 
 # Figure output
 fig_dir <- "figures"
@@ -137,13 +136,14 @@ compute_frame_category_rows <- function(ct) {
   n_coding_c2 <- sum(!ps_c2$frame_category %in% c("non_coding", "no_shared_cds"))
   n_coding_c4 <- sum(!ps_c4$frame_category %in% c("non_coding", "no_shared_cds"))
   do.call(rbind, lapply(cats, function(cat) {
+    is_coding_cat <- !cat %in% c("non_coding", "no_shared_cds")
     data.frame(
       cell_type = ct,
       frame_category = cat,
       NMD_n = sum(ps_c2$frame_category == cat),
-      NMD_pct = round(100 * sum(ps_c2$frame_category == cat) / n_coding_c2, 1),
+      NMD_pct = if (is_coding_cat) round(100 * sum(ps_c2$frame_category == cat) / n_coding_c2, 1) else NA_real_,
       Ctrl_n = sum(ps_c4$frame_category == cat),
-      Ctrl_pct = round(100 * sum(ps_c4$frame_category == cat) / n_coding_c4, 1)
+      Ctrl_pct = if (is_coding_cat) round(100 * sum(ps_c4$frame_category == cat) / n_coding_c4, 1) else NA_real_
     )
   }))
 }
@@ -519,11 +519,9 @@ meta_logfc <- data.frame(
   mean_logFC = rowMeans(post_mean[, meta_cols, drop = FALSE])
 )
 
-# ── C4 protein comparison ──
+# ── C4 protein comparison (gene-matched, used in productive frameshifts) ──
 # Source: 04b_all_c4_protein_comparison.R
-# Input: fc_c4_allsamples.rds (gene-matched frame comparison from script 03)
-#        + cds.rds + SQANTI protein FASTA
-# Output: pct_novel_protein for all C4 coding pairs
+# Note: Goal 5 now uses unmatched data from 05d_protein_domain_analysis.R
 c4_protein <- readRDS(file.path(cache_dir, "all_c4_protein_comparison_allsamples.rds"))
 
 # ── Productive frameshift precompute ──
@@ -548,7 +546,7 @@ cat(sprintf("C4 all_samples pairs (gene-matched): %d\n", nrow(profiles_list[["c4
 cat(sprintf("PTC records: %d isoforms\n", nrow(ptc)))
 cat(sprintf("CDS records: %d isoforms\n", nrow(cds)))
 cat(sprintf("Meta-analysis logFC: %d isoforms\n", nrow(meta_logfc)))
-cat(sprintf("C4 protein comparison: %d pairs\n", nrow(c4_protein$comparison)))
+cat(sprintf("C4 protein comparison (gene-matched): %d pairs\n", nrow(c4_protein$comparison)))
 cat(sprintf("Productive frameshifts: %d pairs\n", nrow(pf_data$characterization)))
 
 cat("\n=== Cache Verification ===\n")
@@ -1068,12 +1066,17 @@ write.csv(fc_rows, file.path(table_dir, "table3_frame_categories.csv"), row.name
 ```
 
 Columns: **cell_type**; **frame_category** = reading frame relationship between
-reference and comparator (from `compareIsoformFrames()`); **NMD_n/NMD_pct** =
-count and percentage in NMD (C2) pairs; **Ctrl_n/Ctrl_pct** = same for
-Control (C4). The denominator for percentages is **coding pairs** (excluding
-`non_coding` and `no_shared_cds`), consistent with Figure 4. The `non_coding`
-and `no_shared_cds` rows show counts but their percentages exceed the 100%
-basis since they are outside the denominator.
+reference and comparator (from `Isopair::compareIsoformFrames()`);
+**NMD_n/NMD_pct** = count and percentage in NMD (C2) pairs;
+**Ctrl_n/Ctrl_pct** = same for Control (C4). The denominator for percentages is
+**coding pairs** (excluding `non_coding` and `no_shared_cds`), consistent with
+Figure 4 — the 5 coding categories sum to 100%. The `non_coding` and
+`no_shared_cds` rows show counts only (no percentage).
+
+Note: the coding pair count here differs from Table 1 because `compareIsoformFrames()`
+classifies some individually-coding pairs as `no_shared_cds` (both isoforms are
+coding but their CDS regions don't overlap). Table 1's "coding pairs" filter
+requires only that both isoforms have `coding_status == "coding"` in `cds.rds`.
 
 ## How PTCs Arise: Frameshift vs Non-Frameshift Mechanisms
 
@@ -2055,29 +2058,44 @@ splicing in these cell types. When a cell uses the alternative isoform, how
 different is the protein? Are functional domains affected? Is there mass-spec
 evidence that the predicted novel peptides exist?
 
+**Scope:** Unlike Goals 1-4 which use gene-matched NMD vs Control pairs, this
+section analyzes **all non-NMD C4 pairs** (not gene-matched) — every gene with
+≥2 non-NMD isoforms passing the 5%/filterByExpr filters. This provides the
+broadest view of normal isoform-level protein diversity.
+
 **Methods:** For all C4 coding pairs (both reference and comparator
 protein-coding), we compare protein sequences from the SQANTI corrected protein
 FASTA via character-by-character prefix comparison to quantify novel protein
 content. Domain analysis maps Pfam/InterPro domain positions (from biomaRt) to
 the splice divergence point to identify disrupted domains. Mass-spec validation
-queries novel-region peptides against EBI proteomics databases.
+queries novel-region tryptic peptides against PeptideAtlas (2.53M human
+peptides, local lookup).
 
 ## Figure 8: Novel Protein Content — All C4 Comparators
 
 ```{r goal5-fig8-pop}
-n_c4_total <- nrow(set_results[["c4_allsamples"]]$profiles)
-n_c4_protein <- nrow(c4_protein$comparison)
+# ── Data provenance ──
+# Source: 05d_protein_domain_analysis.R → protein_domain_full_analysis.rds
+# Uses UNMATCHED C4 pairs (all genes with ≥2 non-NMD isoforms), deduplicated
+# across cell types. all_samples subset shown here.
+# Protein comparison: character-by-character prefix comparison of SQANTI protein
+#   sequences. actual_shared_aa = position where ref and comp first diverge.
+#   pct_novel_protein = % of comparator protein after divergence point.
+
+prot_full <- readRDS(file.path(cache_dir, "protein_domain_full_analysis.rds"))
+prot_as <- prot_full$protein_comparisons[prot_full$protein_comparisons$cell_type == "allsamples", ]
+prot_as <- prot_as[!is.na(prot_as$actual_shared_aa), ]
+n_c4_total_unmatched <- nrow(prot_as)
 ```
 
-Of `r fmt(n_c4_total)` gene-matched C4 pairs, `r fmt(n_c4_protein)` are coding
-pairs where both reference and comparator are protein-coding
-(`coding_status == "coding"` in `cds.rds`) and both have protein sequences in
-the SQANTI FASTA. Frame category comes from `compareIsoformFrames()`. Pairs
+Of `r fmt(n_c4_total_unmatched)` coding C4 pairs (all_samples, unmatched — all
+genes with ≥2 non-NMD isoforms), protein sequences were compared by prefix
+divergence. Frame category comes from `Isopair::compareIsoformFrames()`. Pairs
 classified as `non_coding` or `no_shared_cds` are excluded from the frame
 category facets below.
 
 ```{r goal5-fig8-novel-protein, fig.width=10, fig.height=6}
-comp_data <- c4_protein$comparison
+comp_data <- prot_as
 
 # Simplify frame category labels for plot
 comp_data$frame_label <- factor(
@@ -2127,49 +2145,64 @@ Columns: **frame_category** = reading frame relationship (from
 
 ```{r goal5-domain-load}
 # ── Data provenance ──
-# Source script: 05c_c4_domain_analysis.R → analysis_cache/c4_domain_analysis.rds
-# Methods: METHODS.md should be updated to include this analysis
+# Source script: 05d_protein_domain_analysis.R → protein_domain_full_analysis.rds
+# Methods: METHODS.md § "Publication Report Methods" (to be updated with domain analysis)
 #
 # Pipeline:
-#   1. All coding C4 pairs (excl no_shared_cds) from fc_c4_allsamples.rds
+#   1. All coding C4 pairs (unmatched, all genes with ≥2 non-NMD isoforms)
 #   2. Pfam/InterPro domains queried from biomaRt (batch query by gene ID)
+#      Note: these are gene-level domain positions, not isoform-specific.
+#      Isoform-specific analysis (via hmmscan) is in progress.
 #   3. Each domain classified by position relative to splice divergence point
 #      (actual_shared_aa from protein comparison):
 #      - conserved: entire domain before divergence point
-#      - disrupted: domain spans the divergence point
-#      - novel_region: entire domain after divergence point
-#   4. Per-cell-type analysis: C4 pairs from each CT matched to domain results
+#      - disrupted_lost: domain spans divergence or in lost region
+#      - gained_intact: domain entirely after divergence in gained sequence
+#   4. Per-cell-type analysis using cell type membership of each pair
 
-domain_data <- readRDS(file.path(cache_dir, "c4_domain_analysis.rds"))
-dom_ann <- domain_data$domain_annotations
-ct_dom_summary <- domain_data$per_ct_summary
-dom_meta <- domain_data$metadata
+dom_ann <- prot_full$domain_effects
+ct_dom_summary <- prot_full$per_ct_summary
+dom_meta <- prot_full$metadata
 ```
 
 ```{r goal5-domain-summary}
-# Overall domain disruption summary
+# Compute domain summary from 05d domain_effects (all_samples only)
+dom_as <- dom_ann[dom_ann$cell_type == "allsamples", ]
+n_pairs_analyzed <- n_c4_total_unmatched
+n_pairs_with_domains <- length(unique(paste(dom_as$comparator_isoform_id, dom_as$reference_isoform_id)))
+n_pairs_disrupted <- length(unique(paste(
+  dom_as$comparator_isoform_id[dom_as$effect == "disrupted_lost"],
+  dom_as$reference_isoform_id[dom_as$effect == "disrupted_lost"])))
+n_pairs_gained <- length(unique(paste(
+  dom_as$comparator_isoform_id[dom_as$effect == "gained_intact"],
+  dom_as$reference_isoform_id[dom_as$effect == "gained_intact"])))
+
 dom_disposition <- data.frame(
-  category = c("At least one domain disrupted",
+  category = c("At least one domain disrupted/lost",
+               "At least one domain gained intact",
                "All domains conserved",
                "No annotated domains"),
-  n_pairs = c(dom_meta$n_pairs_disrupted,
-              dom_meta$n_pairs_with_domains - dom_meta$n_pairs_disrupted,
-              dom_meta$n_pairs_analyzed - dom_meta$n_pairs_with_domains),
-  pct = round(100 * c(dom_meta$n_pairs_disrupted,
-              dom_meta$n_pairs_with_domains - dom_meta$n_pairs_disrupted,
-              dom_meta$n_pairs_analyzed - dom_meta$n_pairs_with_domains) /
-              dom_meta$n_pairs_analyzed, 1))
+  n_pairs = c(n_pairs_disrupted,
+              n_pairs_gained,
+              n_pairs_with_domains - n_pairs_disrupted,
+              n_pairs_analyzed - n_pairs_with_domains),
+  pct = round(100 * c(n_pairs_disrupted,
+              n_pairs_gained,
+              n_pairs_with_domains - n_pairs_disrupted,
+              n_pairs_analyzed - n_pairs_with_domains) /
+              n_pairs_analyzed, 1))
 
-kable(dom_disposition, caption = "Table 10: Domain Disruption — All Coding C4 Pairs")
+kable(dom_disposition, caption = "Table 10: Domain Effects — All Coding C4 Pairs (all_samples)")
 ```
 
-Of `r fmt(dom_meta$n_pairs_analyzed)` coding C4 pairs,
-`r fmt(dom_meta$n_pairs_with_domains)` (`r round(100 * dom_meta$n_pairs_with_domains / dom_meta$n_pairs_analyzed, 1)`%)
+Of `r fmt(n_pairs_analyzed)` coding C4 pairs (all_samples, unmatched),
+`r fmt(n_pairs_with_domains)` (`r round(100 * n_pairs_with_domains / n_pairs_analyzed, 1)`%)
 have at least one Pfam or InterPro domain annotation.
-**`r fmt(dom_meta$n_pairs_disrupted)` pairs
-(`r round(100 * dom_meta$n_pairs_disrupted / dom_meta$n_pairs_with_domains, 1)`%
-of those with domains) have at least one domain disrupted** by the splice
-divergence between the dominant and alternative isoform.
+**`r fmt(n_pairs_disrupted)` pairs
+(`r round(100 * n_pairs_disrupted / n_pairs_with_domains, 1)`%
+of those with domains) have at least one domain disrupted or lost**, and
+`r fmt(n_pairs_gained)` have at least one domain gained intact in the
+comparator.
 
 Columns: **category** = domain disruption status; **n_pairs** = number of
 coding C4 pairs; **pct** = percentage of all coding C4 pairs analyzed.
@@ -2177,36 +2210,55 @@ coding C4 pairs; **pct** = percentage of all coding C4 pairs analyzed.
 ## Table 10b: Domain Disruption by Cell Type
 
 ```{r goal5-domain-ct}
+# Compute per-CT domain disruption from 05d domain_effects
+ct_dom_rows <- list()
+for (ct in c("allsamples", "at", "dd", "do", "fb", "mv")) {
+  ct_eff <- dom_ann[dom_ann$cell_type == ct, ]
+  if (nrow(ct_eff) == 0) next
+  ct_prot <- prot_full$protein_comparisons[prot_full$protein_comparisons$cell_type == ct &
+    !is.na(prot_full$protein_comparisons$actual_shared_aa), ]
+  n_coding <- nrow(ct_prot)
+  n_with_dom <- length(unique(paste(ct_eff$comparator_isoform_id, ct_eff$reference_isoform_id)))
+  n_disrupted <- length(unique(paste(
+    ct_eff$comparator_isoform_id[ct_eff$effect == "disrupted_lost"],
+    ct_eff$reference_isoform_id[ct_eff$effect == "disrupted_lost"])))
+  ct_dom_rows[[ct]] <- data.frame(
+    cell_type = toupper(ct), n_coding_pairs = n_coding,
+    n_with_domains = n_with_dom, n_disrupted = n_disrupted,
+    pct_disrupted = round(100 * n_disrupted / max(n_with_dom, 1), 1))
+}
+ct_dom_summary <- do.call(rbind, ct_dom_rows)
+
 render_dt(ct_dom_summary, caption = "Table 10b: Domain Disruption Rates by Cell Type")
 ```
 
-Columns: **cell_type**; **n_coding_pairs** = coding C4 pairs in this cell type;
-**n_with_domains** = pairs with ≥1 annotated domain; **n_disrupted** = pairs
-with ≥1 disrupted domain; **pct_disrupted** = % of domain-annotated pairs with
-disruption.
-
-Domain disruption rates are consistent across cell types
-(`r paste(sprintf("%s=%.1f%%", ct_dom_summary$cell_type, ct_dom_summary$pct_disrupted), collapse = ", ")`),
-suggesting that the protein-level impact of normal alternative splicing is not
-cell-type-specific.
+Columns: **cell_type**; **n_coding_pairs** = coding C4 pairs (unmatched) in this
+cell type; **n_with_domains** = pairs with ≥1 annotated domain;
+**n_disrupted** = pairs with ≥1 disrupted/lost domain; **pct_disrupted** = % of
+domain-annotated pairs with disruption.
 
 ## Table 10c: Most Frequently Disrupted Domains
 
 ```{r goal5-domain-top}
-# Get domain descriptions from InterPro annotations
-disrupted_doms <- dom_ann[dom_ann$position_class == "disrupted", ]
-top_disrupted <- as.data.frame(sort(table(disrupted_doms$domain_id), decreasing = TRUE))
-names(top_disrupted) <- c("domain_id", "n_pairs_disrupted")
-top_disrupted <- head(top_disrupted, 20)
+# Top disrupted domains (all_samples)
+disrupted_as <- dom_as[dom_as$effect == "disrupted_lost", ]
+top_disrupted <- disrupted_as |>
+  dplyr::group_by(domain_id, domain_name) |>
+  dplyr::summarise(n_pairs_disrupted = dplyr::n_distinct(
+    paste(comparator_isoform_id, reference_isoform_id)), .groups = "drop") |>
+  dplyr::arrange(desc(n_pairs_disrupted)) |>
+  head(20)
 top_disrupted$pct_of_disrupted <- round(100 * top_disrupted$n_pairs_disrupted /
-  dom_meta$n_pairs_disrupted, 1)
+  n_pairs_disrupted, 1)
 
 render_dt(top_disrupted, caption = "Table 10c: Most Frequently Disrupted Domains (Top 20)")
 ```
 
-Columns: **domain_id** = Pfam or InterPro accession; **n_pairs_disrupted** =
-number of C4 pairs where this domain spans the splice divergence point;
-**pct_of_disrupted** = percentage of all pairs with any domain disruption.
+Columns: **domain_id** = Pfam or InterPro accession; **domain_name** = domain
+description; **n_pairs_disrupted** = number of C4 pairs (all_samples) where this
+domain spans the splice divergence point or is in a lost region;
+**pct_of_disrupted** = percentage of all `r fmt(n_pairs_disrupted)` pairs with
+any domain disruption.
 
 ## Figure 9: Productive Frameshifts
 
