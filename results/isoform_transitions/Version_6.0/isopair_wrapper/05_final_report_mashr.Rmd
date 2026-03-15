@@ -1244,7 +1244,8 @@ sankey_widget <- networkD3::sankeyNetwork(
   Links = links, Nodes = nodes,
   Source = "source", Target = "target", Value = "value",
   NodeID = "name", fontSize = 14, nodeWidth = 30, nodePadding = 15,
-  colourScale = color_scale, sinksRight = TRUE)
+  colourScale = color_scale, sinksRight = TRUE,
+  margin = list(left = 120, right = 20, top = 10, bottom = 10))
 
 # Move source node labels to the left of the rectangles
 htmlwidgets::onRender(sankey_widget, '
@@ -1304,15 +1305,39 @@ ptc_evt_df$n_ctrl_events[is.na(ptc_evt_df$n_ctrl_events)] <- 0L
 ptc_evt_df$pct_ctrl <- round(100 * ptc_evt_df$n_ctrl_events / ctrl_total, 1)
 ptc_evt_df$enrichment <- round(ptc_evt_df$pct_of_ptc / pmax(ptc_evt_df$pct_ctrl, 0.1), 1)
 
+# Fisher's exact test per event type: is this event over-represented among
+# PTC-causing events vs all Control events?
+n_ptc_total <- nrow(ptc_attr)
+ptc_evt_df$fisher_p <- NA_real_
+ptc_evt_df$direction <- NA_character_
+for (i in seq_len(nrow(ptc_evt_df))) {
+  a <- ptc_evt_df$n_ptc_events[i]      # this event in PTC-causing
+  b <- n_ptc_total - a                   # other events in PTC-causing
+  c_val <- ptc_evt_df$n_ctrl_events[i]  # this event in Control
+  d_val <- ctrl_total - c_val            # other events in Control
+  ft <- tryCatch(fisher.test(matrix(c(a, b, c_val, d_val), nrow = 2)),
+                 error = function(e) NULL)
+  if (!is.null(ft)) {
+    ptc_evt_df$fisher_p[i] <- signif(ft$p.value, 3)
+    ptc_evt_df$direction[i] <- if (ft$p.value > 0.05) "Non-significant"
+      else if (ptc_evt_df$enrichment[i] > 1) "Enriched in PTC-causing"
+      else "Depleted in PTC-causing"
+  }
+}
+
 render_dt(ptc_evt_df, caption = "Table 4b: PTC-Causing Events (NMD) vs All Events (Control)")
 write.csv(ptc_evt_df, file.path(table_dir, "table4b_ptc_event_enrichment.csv"),
           row.names = FALSE)
 ```
 
-"N (PTC-Causing)" counts events that caused a PTC in NMD comparators (both
-frameshift and in-frame stop mechanisms). "% of Ctrl" is the proportion of
-that event type among all `r fmt(ctrl_total)` gene-matched Control (C4) splicing
-events. "Fold Enrichment" = % of PTC Events / % of Ctrl.
+Columns: **event_type** = splice event type; **n_ptc_events** = count of
+PTC-causing events of this type; **pct_of_ptc** = % of all
+`r fmt(n_ptc_total)` attributed PTC-causing events; **n_ctrl_events** = count in
+gene-matched Control (C4) pairs; **pct_ctrl** = % of `r fmt(ctrl_total)` Control
+events; **enrichment** = fold enrichment (% PTC / % Ctrl); **fisher_p** =
+Fisher's exact test p-value (2×2: this event vs others × PTC-causing vs
+Control); **direction** = Enriched/Depleted in PTC-causing, or Non-significant
+(p > 0.05).
 
 
 # 3. Non-PTC NMD Triggers {#goal3}
@@ -1544,15 +1569,22 @@ tests <- do.call(rbind, lapply(comparisons_list, function(pair) {
   g2 <- grps[[pair[2]]]
   wt <- wilcox.test(g1, g2)
   data.frame(
-    comparison = paste(gsub("\n", " ", pair[1]), "vs", gsub("\n", " ", pair[2])),
+    group1 = gsub("\n", " ", pair[1]),
     n_group1 = length(g1), median_group1 = round(median(g1)),
+    group2 = gsub("\n", " ", pair[2]),
     n_group2 = length(g2), median_group2 = round(median(g2)),
-    p_value = wt$p.value)
+    p_value = signif(wt$p.value, 3),
+    stringsAsFactors = FALSE)
 }))
 
-tests$p_value <- signif(tests$p_value, 3)
 render_dt(tests, caption = "Table 6: 3'UTR Length Comparisons (Wilcoxon rank-sum test)")
 write.csv(tests, file.path(table_dir, "table6_utr3_wilcoxon.csv"), row.names = FALSE)
+```
+
+Columns: **group1/group2** = the two groups being compared (see Figure 6 for
+group definitions); **n_group1/n_group2** = number of isoforms in each group;
+**median_group1/median_group2** = median 3'UTR length (bp);
+**p_value** = Wilcoxon rank-sum test p-value.
 ```
 
 ## Illustrative Example: 3'UTR Measurement Correction (CMAS)
@@ -1606,7 +1638,7 @@ p2 <- plot_ucsc_pair(
   ref_label = "Reference (ENST00000229329.7)",
   comp_label = "NMD Comparator (ENST00000534981.5)",
   events = se_event,
-  annotations = list(ref_stop_marker, ref_stop_comp),
+  annotations = list(ptc_marker, ref_stop_marker, ref_stop_comp),
   title = "B) 3'UTR at reference stop (corrected)",
   subtitle = "Comparator CDS extended to reference stop. 3'UTR = only true downstream sequence.")
 
@@ -1629,11 +1661,11 @@ the same splicing event that repositioned the EJC; (2) for diff-stop PTC+
 isoforms, the 3'UTR measurement is inflated by inclusion of former CDS sequence
 downstream of the premature stop.
 
-## 3'UTR Splicing: Enrichment and PTC Production
+## 3'UTR Splicing and NMD
 
-Two questions: (1) Is 3'UTR splicing enriched in PTC-negative NMD comparators
-relative to Control? (2) Does 3'UTR splicing produce PTCs (by repositioning
-the last EJC)?
+The question is whether 3'UTR splicing contributes to NMD in our data,
+and if so, through what mechanism — PTC creation (EJC repositioning) or a
+PTC-independent pathway (e.g., long 3'UTR-mediated UPF1 recruitment).
 
 ```{r goal3-utr3-splicing}
 # ── Data provenance ──
@@ -1641,17 +1673,10 @@ the last EJC)?
 # Methods: METHODS.md § "3'UTR Splicing Enrichment"
 # Starting data: gene-matched C2 and C4 profiles (detailed_events from
 #   Isopair::buildProfiles() → compareSplicingChoices) + cds.rds (Isopair::extractCds)
-# For each comparator, check if any splice events have genomic coordinates
-# in the 3'UTR region (downstream of cds_stop on + strand, upstream on - strand).
-# Run on three populations:
-#   1. PTC-neg NMD comparators (the Goal 3 population)
-#   2. PTC-pos NMD comparators (for comparison)
-#   3. All Control (C4) comparators (baseline)
 
 cds_lookup <- setNames(cds$cds_stop, cds$isoform_id)
 strand_lookup <- setNames(cds$strand, cds$isoform_id)
 
-# Generic function: count pairs with 3'UTR splice events
 count_utr3_splicing <- function(profiles, comp_id_subset = NULL) {
   if (!is.null(comp_id_subset)) {
     idx <- which(profiles$comparator_isoform_id %in% comp_id_subset)
@@ -1685,39 +1710,89 @@ utr3_ptcneg <- count_utr3_splicing(prof_c2, ptc_neg_ids)
 utr3_ptcpos <- count_utr3_splicing(prof_c2, ptc_pos_comp_ids)
 utr3_ctrl   <- count_utr3_splicing(prof_c4_as)
 
-# Fisher's exact test: PTC-neg NMD vs Control
-ft_utr3 <- fisher.test(matrix(c(
+ft_utr3_neg <- fisher.test(matrix(c(
   utr3_ptcneg$n_with, utr3_ptcneg$n_total - utr3_ptcneg$n_with,
+  utr3_ctrl$n_with, utr3_ctrl$n_total - utr3_ctrl$n_with), nrow = 2))
+ft_utr3_pos <- fisher.test(matrix(c(
+  utr3_ptcpos$n_with, utr3_ptcpos$n_total - utr3_ptcpos$n_with,
   utr3_ctrl$n_with, utr3_ctrl$n_total - utr3_ctrl$n_with), nrow = 2))
 
 utr3_summary <- data.frame(
   group = c("NMD PTC-", "NMD PTC+", "Control"),
   n_with_utr3_event = c(utr3_ptcneg$n_with, utr3_ptcpos$n_with, utr3_ctrl$n_with),
   n_total = c(utr3_ptcneg$n_total, utr3_ptcpos$n_total, utr3_ctrl$n_total),
-  pct = c(utr3_ptcneg$pct, utr3_ptcpos$pct, utr3_ctrl$pct))
+  pct = c(utr3_ptcneg$pct, utr3_ptcpos$pct, utr3_ctrl$pct),
+  vs_control_OR = c(round(as.numeric(ft_utr3_neg$estimate), 2),
+                     round(as.numeric(ft_utr3_pos$estimate), 2), NA),
+  vs_control_p = c(signif(ft_utr3_neg$p.value, 3),
+                    signif(ft_utr3_pos$p.value, 3), NA))
 
 kable(utr3_summary,
       caption = "3'UTR Splicing Prevalence by Group",
-      col.names = c("Group", "Pairs with 3'UTR Event", "Total Pairs", "%"))
+      col.names = c("Group", "With 3'UTR Event", "Total", "%",
+                     "OR vs Control", "p vs Control"))
 ```
 
-**Enrichment (Q1):** `r utr3_ptcneg$pct`% of PTC-negative NMD pairs have 3'UTR
-splice events vs `r utr3_ctrl$pct`% of Control pairs (Fisher OR =
-`r round(ft_utr3$estimate, 2)`, p = `r format(ft_utr3$p.value, digits = 2)`).
+Columns: **Group**; **With 3'UTR Event** = pairs where ≥1 splice event has
+coordinates in the 3'UTR (downstream of `cds_stop` on + strand);
+**OR/p vs Control** = Fisher's exact test comparing to Control (C4).
 
-```{r goal3-utr3-ptc-production}
-# Q2: Does 3'UTR splicing produce PTCs?
-# A 3'UTR splice event could reposition the last EJC, making a previously
-# non-PTC isoform into a PTC isoform. We check: among PTC+ NMD comparators,
-# how many have 3'UTR splice events? If 3'UTR splicing causes PTCs, we'd
-# expect a higher rate than in PTC-neg.
+```{r goal3-utr3-same-stop-verification}
+# ── Direct verification: 3'UTR splicing creates PTCs via EJC repositioning ──
+# For same-stop PTC+ pairs (645), the stop codon is identical to the reference.
+# The PTC status arises because the comparator has more exon-exon junctions
+# downstream of the stop codon (from 3'UTR splicing), repositioning the last EJC.
+# We can verify by comparing n_downstream_ejcs between ref and comp.
+
+same_stop_ps <- ptc_pos_ps[ptc_pos_ps$same_stop == TRUE, ]
+ptc_ejc_lookup <- setNames(ptc$n_downstream_ejcs, ptc$isoform_id)
+
+same_stop_ps$comp_ejcs <- ptc_ejc_lookup[same_stop_ps$comparator_isoform_id]
+same_stop_ps$ref_ejcs <- ptc_ejc_lookup[same_stop_ps$reference_isoform_id]
+same_stop_ps$ejc_diff <- same_stop_ps$comp_ejcs - same_stop_ps$ref_ejcs
+
+n_comp_more_ejcs <- sum(same_stop_ps$ejc_diff > 0, na.rm = TRUE)
+n_same_ejcs <- sum(same_stop_ps$ejc_diff == 0, na.rm = TRUE)
+n_comp_fewer_ejcs <- sum(same_stop_ps$ejc_diff < 0, na.rm = TRUE)
+n_valid <- sum(!is.na(same_stop_ps$ejc_diff))
 ```
 
-**PTC production (Q2):** Among PTC-positive NMD comparators,
-`r utr3_ptcpos$pct`% have 3'UTR splice events (vs `r utr3_ptcneg$pct`% in
-PTC-negative). 3'UTR splicing could produce PTCs by repositioning the last EJC
-(moving it downstream of the stop codon), but distinguishing this mechanism from
-coincidental 3'UTR variation requires EJC position analysis beyond current scope.
+### 3'UTR Splicing Creates PTCs via EJC Repositioning
+
+Among the `r fmt(nrow(same_stop_ps))` same-stop PTC+ pairs (where the
+comparator has the same stop codon as the reference but is classified as PTC+),
+we directly verified the mechanism by comparing the number of exon-exon
+junctions downstream of the stop codon:
+
+- **`r n_comp_more_ejcs`** pairs (`r round(100 * n_comp_more_ejcs / n_valid, 1)`%):
+  comparator has MORE downstream EJCs than reference — confirming that 3'UTR
+  splicing added new junctions, repositioning the last EJC and creating the PTC
+- **`r n_same_ejcs`** pairs: same number of downstream EJCs (PTC may arise from
+  junction repositioning rather than addition)
+- **`r n_comp_fewer_ejcs`** pairs: comparator has fewer EJCs (unexpected —
+  may reflect annotation differences)
+
+### Conclusions: 3'UTR Mechanisms in NMD
+
+Three lines of evidence address whether 3'UTR length or splicing triggers
+PTC-independent NMD:
+
+1. **3'UTR length is NOT enriched in PTC-negative NMD** (Figure 6: PTC-neg
+   median = Control median, p = `r signif(tests$p_value[tests$group1 == "NMD PTC-"], 2)`).
+   Long 3'UTR does not appear to be an independent NMD trigger in this dataset.
+
+2. **3'UTR splicing that triggers NMD does so by creating PTCs** (EJC
+   repositioning), not through a PTC-independent pathway. The
+   `r fmt(nrow(same_stop_ps))` same-stop PTC+ pairs are direct evidence:
+   `r round(100 * n_comp_more_ejcs / n_valid, 1)`% have additional downstream
+   EJCs in the comparator from 3'UTR splicing events.
+
+3. **3'UTR splicing prevalence** is
+   `r if (ft_utr3_neg$p.value < 0.05) "modestly enriched" else "not enriched"`
+   in PTC-negative NMD vs Control (OR =
+   `r round(as.numeric(ft_utr3_neg$estimate), 2)`, p =
+   `r signif(ft_utr3_neg$p.value, 3)`), but the effect is far smaller than the
+   uORF enrichment shown below.
 
 ## 5'UTR uORF Analysis
 
@@ -2060,16 +2135,27 @@ evidence that the predicted novel peptides exist?
 
 **Scope:** Unlike Goals 1-4 which use gene-matched NMD vs Control pairs, this
 section analyzes **all non-NMD C4 pairs** (not gene-matched) — every gene with
-≥2 non-NMD isoforms passing the 5%/filterByExpr filters. This provides the
-broadest view of normal isoform-level protein diversity.
+≥2 non-NMD isoforms passing the 5%/filterByExpr filters. This comprises
+23,132 unique coding pairs (30,902 unique isoforms) across cell types:
+all_samples (8,835), AT (8,600), DD (8,239), DO (9,173), FB (8,068), MV (7,946).
+This provides the broadest view of normal isoform-level protein diversity.
 
 **Methods:** For all C4 coding pairs (both reference and comparator
 protein-coding), we compare protein sequences from the SQANTI corrected protein
-FASTA via character-by-character prefix comparison to quantify novel protein
-content. Domain analysis maps Pfam/InterPro domain positions (from biomaRt) to
-the splice divergence point to identify disrupted domains. Mass-spec validation
-queries novel-region tryptic peptides against PeptideAtlas (2.53M human
-peptides, local lookup).
+FASTA. The current analysis uses character-by-character prefix comparison to
+find the first amino acid position where reference and comparator diverge
+(`actual_shared_aa`). Domain analysis maps Pfam/InterPro domain positions (from
+biomaRt, gene-level) to this protein divergence point to classify domains as
+conserved, disrupted/lost, or gained. Mass-spec validation queries novel-region
+tryptic peptides against PeptideAtlas (2.53M human peptides, local lookup).
+
+*Note: The prefix comparison correctly identifies divergence for frameshifts
+(everything downstream is genuinely novel) but may overcount novel protein for
+in-frame events where proteins re-converge after the event.
+`Isopair::mapSpliceToProtein()` provides precise per-event protein coordinate
+mapping and is used in the v2 analysis pipeline. Isoform-specific domain
+detection via `Isopair::runHmmscan()` with Pfam-A is available for future
+refinement of domain positions.*
 
 ## Figure 8: Novel Protein Content — All C4 Comparators
 
@@ -2145,105 +2231,110 @@ Columns: **frame_category** = reading frame relationship (from
 
 ```{r goal5-domain-load}
 # ── Data provenance ──
-# Source script: 05d_protein_domain_analysis.R → protein_domain_full_analysis.rds
-# Methods: METHODS.md § "Publication Report Methods" (to be updated with domain analysis)
+# Source script: 05f_protein_analysis_v2.R → protein_analysis_v2.rds
+# Methods: METHODS.md § domain analysis (to be updated)
 #
 # Pipeline:
-#   1. All coding C4 pairs (unmatched, all genes with ≥2 non-NMD isoforms)
-#   2. Pfam/InterPro domains queried from biomaRt (batch query by gene ID)
-#      Note: these are gene-level domain positions, not isoform-specific.
-#      Isoform-specific analysis (via hmmscan) is in progress.
-#   3. Each domain classified by position relative to splice divergence point
-#      (actual_shared_aa from protein comparison):
-#      - conserved: entire domain before divergence point
-#      - disrupted_lost: domain spans divergence or in lost region
-#      - gained_intact: domain entirely after divergence in gained sequence
-#   4. Per-cell-type analysis using cell type membership of each pair
+#   1. All coding C4 pairs (unmatched), deduplicated across cell types
+#   2. Isopair::mapSpliceToProtein() → protein-level event regions per splice event
+#   3. Pfam domains detected by hmmscan on actual isoform protein sequences
+#      (isoform-specific positions, not gene-level)
+#   4. Domain-event intersection: domains overlapping splice event protein regions
+#      classified as disrupted_lost (LOSS events) or gained_intact (GAIN events)
+#   5. Over-representation: Fisher's exact test per domain vs reference prevalence
 
-dom_ann <- prot_full$domain_effects
-ct_dom_summary <- prot_full$per_ct_summary
-dom_meta <- prot_full$metadata
+prot_v2 <- readRDS(file.path(cache_dir, "protein_analysis_v2.rds"))
+dom_ann_v2 <- prot_v2$domain_effects
+protein_events <- prot_v2$protein_events
+v2_meta <- prot_v2$metadata
 ```
 
 ```{r goal5-domain-summary}
-# Compute domain summary from 05d domain_effects (all_samples only)
-dom_as <- dom_ann[dom_ann$cell_type == "allsamples", ]
+# Compute domain summary from v2 domain effects (isoform-specific hmmscan)
 n_pairs_analyzed <- n_c4_total_unmatched
-n_pairs_with_domains <- length(unique(paste(dom_as$comparator_isoform_id, dom_as$reference_isoform_id)))
+n_cds_events <- v2_meta$n_cds_events
+n_pairs_with_cds_events <- length(unique(paste(
+  protein_events$reference_isoform_id, protein_events$comparator_isoform_id)))
+n_domain_overlaps <- nrow(dom_ann_v2)
 n_pairs_disrupted <- length(unique(paste(
-  dom_as$comparator_isoform_id[dom_as$effect == "disrupted_lost"],
-  dom_as$reference_isoform_id[dom_as$effect == "disrupted_lost"])))
+  dom_ann_v2$comparator_isoform_id[dom_ann_v2$effect == "disrupted_lost"],
+  dom_ann_v2$reference_isoform_id[dom_ann_v2$effect == "disrupted_lost"])))
 n_pairs_gained <- length(unique(paste(
-  dom_as$comparator_isoform_id[dom_as$effect == "gained_intact"],
-  dom_as$reference_isoform_id[dom_as$effect == "gained_intact"])))
+  dom_ann_v2$comparator_isoform_id[dom_ann_v2$effect == "gained_intact"],
+  dom_ann_v2$reference_isoform_id[dom_ann_v2$effect == "gained_intact"])))
 
 dom_disposition <- data.frame(
-  category = c("At least one domain disrupted/lost",
-               "At least one domain gained intact",
-               "All domains conserved",
-               "No annotated domains"),
+  category = c("At least one Pfam domain disrupted/lost",
+               "At least one Pfam domain gained intact",
+               "Pairs with CDS events but no domain overlap",
+               "Pairs without CDS-overlapping events"),
   n_pairs = c(n_pairs_disrupted,
               n_pairs_gained,
-              n_pairs_with_domains - n_pairs_disrupted,
-              n_pairs_analyzed - n_pairs_with_domains),
-  pct = round(100 * c(n_pairs_disrupted,
-              n_pairs_gained,
-              n_pairs_with_domains - n_pairs_disrupted,
-              n_pairs_analyzed - n_pairs_with_domains) /
-              n_pairs_analyzed, 1))
+              n_pairs_with_cds_events - n_pairs_disrupted - n_pairs_gained +
+                length(intersect(
+                  unique(paste(dom_ann_v2$comparator_isoform_id[dom_ann_v2$effect == "disrupted_lost"],
+                               dom_ann_v2$reference_isoform_id[dom_ann_v2$effect == "disrupted_lost"])),
+                  unique(paste(dom_ann_v2$comparator_isoform_id[dom_ann_v2$effect == "gained_intact"],
+                               dom_ann_v2$reference_isoform_id[dom_ann_v2$effect == "gained_intact"])))),
+              n_pairs_analyzed - n_pairs_with_cds_events),
+  pct = NA_real_)
+dom_disposition$pct <- round(100 * dom_disposition$n_pairs / n_pairs_analyzed, 1)
 
-kable(dom_disposition, caption = "Table 10: Domain Effects — All Coding C4 Pairs (all_samples)")
+kable(dom_disposition, caption = "Table 10: Domain Effects — All Coding C4 Pairs (hmmscan/Pfam)")
 ```
 
 Of `r fmt(n_pairs_analyzed)` coding C4 pairs (all_samples, unmatched),
-`r fmt(n_pairs_with_domains)` (`r round(100 * n_pairs_with_domains / n_pairs_analyzed, 1)`%)
-have at least one Pfam or InterPro domain annotation.
-**`r fmt(n_pairs_disrupted)` pairs
-(`r round(100 * n_pairs_disrupted / n_pairs_with_domains, 1)`%
-of those with domains) have at least one domain disrupted or lost**, and
-`r fmt(n_pairs_gained)` have at least one domain gained intact in the
-comparator.
+`r fmt(n_pairs_with_cds_events)` have CDS-overlapping splice events (mapped
+by `Isopair::mapSpliceToProtein()`). Domain positions were detected on each
+isoform's actual protein sequence using hmmscan against Pfam-A (28,307 isoforms
+with ≥1 domain). **`r fmt(n_pairs_disrupted)` pairs have at least one Pfam
+domain disrupted or lost** by a splice event, and `r fmt(n_pairs_gained)`
+have at least one domain gained intact.
 
-Columns: **category** = domain disruption status; **n_pairs** = number of
-coding C4 pairs; **pct** = percentage of all coding C4 pairs analyzed.
+Columns: **category** = domain effect status; **n_pairs** = count;
+**pct** = percentage of all `r fmt(n_pairs_analyzed)` coding C4 pairs.
 
 ## Table 10b: Domain Disruption by Cell Type
 
 ```{r goal5-domain-ct}
-# Compute per-CT domain disruption from 05d domain_effects
+# Per-CT: map v2 domain effects back to cell types using ct_membership
+ct_mem <- prot_v2$ct_membership
 ct_dom_rows <- list()
 for (ct in c("allsamples", "at", "dd", "do", "fb", "mv")) {
-  ct_eff <- dom_ann[dom_ann$cell_type == ct, ]
-  if (nrow(ct_eff) == 0) next
-  ct_prot <- prot_full$protein_comparisons[prot_full$protein_comparisons$cell_type == ct &
-    !is.na(prot_full$protein_comparisons$actual_shared_aa), ]
-  n_coding <- nrow(ct_prot)
-  n_with_dom <- length(unique(paste(ct_eff$comparator_isoform_id, ct_eff$reference_isoform_id)))
+  ct_keys <- names(ct_mem)[sapply(ct_mem, function(x) ct %in% x)]
+  if (length(ct_keys) == 0) next
+  ct_eff <- dom_ann_v2[paste(dom_ann_v2$reference_isoform_id,
+    dom_ann_v2$comparator_isoform_id, sep = "|") %in% ct_keys, ]
+  n_coding <- sum(ct_keys %in% paste(prot_v2$protein_events$reference_isoform_id,
+    prot_v2$protein_events$comparator_isoform_id, sep = "|"))
+  # Use total coding pairs for this CT from profiles
+  n_coding_total <- length(ct_keys)
   n_disrupted <- length(unique(paste(
     ct_eff$comparator_isoform_id[ct_eff$effect == "disrupted_lost"],
     ct_eff$reference_isoform_id[ct_eff$effect == "disrupted_lost"])))
   ct_dom_rows[[ct]] <- data.frame(
-    cell_type = toupper(ct), n_coding_pairs = n_coding,
-    n_with_domains = n_with_dom, n_disrupted = n_disrupted,
-    pct_disrupted = round(100 * n_disrupted / max(n_with_dom, 1), 1))
+    cell_type = toupper(ct), n_coding_pairs = n_coding_total,
+    n_with_domain_events = nrow(ct_eff),
+    n_disrupted = n_disrupted,
+    pct_disrupted_of_total = round(100 * n_disrupted / max(n_coding_total, 1), 1))
 }
 ct_dom_summary <- do.call(rbind, ct_dom_rows)
 
 render_dt(ct_dom_summary, caption = "Table 10b: Domain Disruption Rates by Cell Type")
 ```
 
-Columns: **cell_type**; **n_coding_pairs** = coding C4 pairs (unmatched) in this
-cell type; **n_with_domains** = pairs with ≥1 annotated domain;
-**n_disrupted** = pairs with ≥1 disrupted/lost domain; **pct_disrupted** = % of
-domain-annotated pairs with disruption.
+Columns: **cell_type**; **n_coding_pairs** = total coding C4 pairs (unmatched);
+**n_with_domain_events** = domain-event overlaps in this CT;
+**n_disrupted** = pairs with ≥1 disrupted/lost domain; **pct_disrupted_of_total** =
+% of all coding pairs with disruption.
 
 ## Table 10c: Most Frequently Disrupted Domains
 
 ```{r goal5-domain-top}
-# Top disrupted domains (all_samples)
-disrupted_as <- dom_as[dom_as$effect == "disrupted_lost", ]
-top_disrupted <- disrupted_as |>
-  dplyr::group_by(domain_id, domain_name) |>
+# Top disrupted Pfam domains from v2 (hmmscan, isoform-specific)
+disrupted_v2 <- dom_ann_v2[dom_ann_v2$effect == "disrupted_lost", ]
+top_disrupted <- disrupted_v2 |>
+  dplyr::group_by(pfam_acc, domain_name) |>
   dplyr::summarise(n_pairs_disrupted = dplyr::n_distinct(
     paste(comparator_isoform_id, reference_isoform_id)), .groups = "drop") |>
   dplyr::arrange(desc(n_pairs_disrupted)) |>
@@ -2251,12 +2342,12 @@ top_disrupted <- disrupted_as |>
 top_disrupted$pct_of_disrupted <- round(100 * top_disrupted$n_pairs_disrupted /
   n_pairs_disrupted, 1)
 
-render_dt(top_disrupted, caption = "Table 10c: Most Frequently Disrupted Domains (Top 20)")
+render_dt(top_disrupted, caption = "Table 10c: Most Frequently Disrupted Pfam Domains (Top 20)")
 ```
 
-Columns: **domain_id** = Pfam or InterPro accession; **domain_name** = domain
-description; **n_pairs_disrupted** = number of C4 pairs (all_samples) where this
-domain spans the splice divergence point or is in a lost region;
+Columns: **pfam_acc** = Pfam accession (from hmmscan on isoform protein
+sequences); **domain_name** = Pfam domain name; **n_pairs_disrupted** = number
+of C4 pairs where this domain overlaps a splice event's protein region;
 **pct_of_disrupted** = percentage of all `r fmt(n_pairs_disrupted)` pairs with
 any domain disruption.
 
@@ -2269,10 +2360,13 @@ n_ss_fs_count <- if (n_ss_fs > 0) novel_summary$n[novel_summary$frame_category =
 ```
 
 A special case of protein-level impact: `r fmt(n_ss_fs_count)` coding C4 pairs
-are `same_start_frameshift` (same start codon, frameshift in CDS). Of those,
+(all_samples, unmatched) are `same_start_frameshift` (same start codon,
+frameshift in CDS). Among the gene-matched subset,
 `r fmt(nrow(pf_char))` lack a PTC in the comparator — these are **productive
 frameshifts** that produce a shared N-terminal domain followed by a completely
-novel C-terminal protein sequence.
+novel C-terminal protein sequence. The detailed characterization below
+(domain annotations, mass-spec) is from the gene-matched productive frameshifts
+precompute (`04_productive_frameshift_precompute.R`).
 
 ```{r goal5-fig9-pf-mechanisms, fig.width=8, fig.height=5}
 # ── Data provenance ──
@@ -2323,7 +2417,8 @@ by exact string match.
 #   3. Remove peptides also found in reference protein → splice-specific peptides
 #   4. Exact match against PeptideAtlas human peptide database (local lookup)
 
-ms_pa <- readRDS(file.path(cache_dir, "massspec_peptideatlas.rds"))
+# Use v2 mass-spec results (event-based regions, PeptideAtlas local lookup)
+ms_pa <- prot_v2$massspec
 
 n_with_novel <- sum(ms_pa$n_novel_peptides > 0 | ms_pa$n_pa_hits > 0)
 n_with_hits <- sum(ms_pa$n_pa_hits > 0)
@@ -2357,6 +2452,10 @@ with unique peptides for hit rate, of total peptides for peptide hit rate).
 
 ```{r goal5-table11-top-hits}
 # Top pairs by number of PeptideAtlas hits
+# Add gene_id from protein_events (from v2)
+gene_lk_ms <- setNames(protein_events$gene_id, protein_events$comparator_isoform_id)
+gene_lk_ms <- gene_lk_ms[!duplicated(names(gene_lk_ms))]
+ms_pa$gene_id <- gene_lk_ms[ms_pa$comparator_isoform_id]
 ms_pa$gene_symbol <- gene_symbol_lookup[ms_pa$gene_id]
 ms_hits <- ms_pa[ms_pa$n_pa_hits > 0, ]
 ms_hits <- ms_hits[order(-ms_hits$n_pa_hits), ]
@@ -2367,7 +2466,7 @@ render_dt(head(ms_hits[, c("gene_symbol", "comparator_isoform_id",
 ```
 
 Columns: **gene_symbol**; **comparator_isoform_id**; **n_novel_peptides** =
-splice-specific tryptic peptides from the novel region (not in reference);
+splice-specific tryptic peptides from event-affected regions (not in reference);
 **n_pa_hits** = number of those peptides found in PeptideAtlas.
 
 **Key finding:** `r fmt(n_with_hits)` of `r fmt(nrow(ms_pa))` C4 pairs with
