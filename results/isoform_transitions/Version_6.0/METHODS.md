@@ -1408,9 +1408,24 @@ identified through two mechanisms:
    `analyzeFrameWalk()` — the splice event that shifted the reading frame,
    leading to a premature stop codon in the new frame.
 2. **Non-frameshift (in-frame stop) PTCs**: The event whose genomic
-   coordinates contain the comparator's `cds_stop` position (the PTC).
-   Since the isoform is in-frame, the stop codon must reside within the
-   sequence that differs between reference and comparator.
+   coordinates contain the strand-aware PTC position. Since the isoform is
+   in-frame, the stop codon must reside within the sequence that differs
+   between reference and comparator.
+
+**Strand-aware PTC position**: The genomic coordinate of the stop codon
+depends on the gene's strand. For + strand genes, the stop codon is at
+`cds_stop` (the larger genomic coordinate). For - strand genes, the stop
+codon is at `cds_start` (the smaller genomic coordinate, which corresponds
+to the 3' end in transcription direction). This mirrors the strand handling
+in `Isopair::computePtcStatus`.
+
+Pairs where the PTC position does not fall within any event's coordinates
+are labeled "unresolved" and excluded from the Sankey diagram and enrichment
+analyses. Similarly, pairs classified as frameshift by `compareIsoformFrames()`
+but lacking an `is_frameshift` event in `analyzeFrameWalk()` are labeled
+unresolved (classification disagreement). A diagnostic table characterizes
+all unresolved cases by mechanism type and distance to the nearest event
+boundary.
 
 This attribution enables a comprehensive Sankey diagram tracing PTC-causing
 splice events to their mechanism (frameshift vs in-frame stop).
@@ -1456,9 +1471,183 @@ non-PTC NMD mechanism:
 
 For each comparator isoform with CDS annotation, splice events in the 3'UTR
 are identified by checking whether any event's genomic coordinates fall
-downstream of `cds_stop` (+ strand) or upstream of `cds_stop` (- strand).
+downstream of the strand-aware stop codon position (`cds_stop` on + strand,
+`cds_start` on - strand) in the transcription direction.
 The rate of 3'UTR splicing is compared across PTC-negative NMD, PTC-positive
 NMD, and Control groups using Fisher's exact test.
+
+### Cumulative NMD Mechanism Attribution
+
+A three-tier framework summarizes the evidence for NMD mechanisms across all
+coding gene-matched NMD pairs:
+
+1. **Tier 1 — PTC-mediated (mechanistic):** Pairs where the comparator has a
+   PTC (stop >50 nt upstream of last EJC). The specific causal splice event
+   is identified as described in "PTC-Causing Event Attribution" above.
+   Subdivided by stop codon origin:
+   - *Diff-stop frameshift*: Splice event shifts reading frame → new stop codon
+   - *Diff-stop in-frame stop*: Splice event introduces in-frame stop codon
+   - *Same-stop / 3'UTR splice*: Comparator and reference share the same stop
+     codon. A 3'UTR splicing event repositions an EJC >50 nt downstream of the
+     shared stop, triggering NMD via the canonical EJC model.
+
+2. **Tier 2 — uORF-associated (associative):** PTC-negative NMD comparators
+   with detectable 5'UTR uORFs. Group-level enrichment is significant
+   (Fisher's exact test), but individual causal attribution is not possible
+   from sequence data alone. Overlapping uORFs (stop codon at or past main
+   CDS start) are distinguished as a stronger NMD trigger.
+
+3. **Tier 3 — Unexplained:** PTC-negative pairs without detectable uORFs.
+   Possible mechanisms include long 3'UTR-mediated NMD, EJC-independent UPF1
+   recruitment, or structural features not captured by this analysis.
+
+### Protein-Level Consequence Analysis (Goal 5)
+
+Goal 5 uses **all non-NMD C4 isoform comparisons** (unmatched — every gene with
+≥2 non-NMD isoforms), deduplicated across cell types. This broader scope maximizes
+statistical power for domain and mass-spec analyses, unlike Goals 1-4 which use
+gene-matched NMD vs Control pairs.
+
+#### Splice-to-Protein Mapping
+
+`Isopair::mapSpliceToProtein(profiles, cds, structures, buffer_aa = 5)` maps
+each genomic splice event to protein coordinates:
+
+1. For each CDS-overlapping event, the genomic coordinates (`five_prime`,
+   `three_prime`) are intersected with the isoform's CDS boundaries.
+2. The overlapping genomic region is converted to CDS-relative nucleotide
+   positions, then to amino acid positions (`protein_start_aa`,
+   `protein_end_aa`).
+3. A ±5 aa buffer (`buffer_aa`) is added to capture junction-spanning
+   peptides, stored as `protein_start_aa_buffered` / `protein_end_aa_buffered`.
+4. Events entirely in UTR regions are excluded.
+
+Output: one row per CDS-overlapping event, with protein coordinates and a
+flag (`event_affects_frame`) indicating whether the event causes a frameshift.
+
+#### Domain Detection (hmmscan)
+
+Protein domains are annotated using HMMER hmmscan against Pfam-A:
+
+1. Protein sequences for all coding C4 isoforms are extracted from SQANTI
+   corrected protein FASTA and written to `c4_coding_proteins.faa`.
+2. hmmscan is run against the Pfam-A HMM database with default thresholds.
+3. The domtblout output is parsed, extracting: domain name, Pfam accession,
+   isoform ID, envelope coordinates (`env_from`, `env_to` in amino acid
+   positions), and per-domain E-value.
+4. Domains are mapped per-isoform (not per-gene), enabling isoform-specific
+   domain annotation. This replaces the earlier biomaRt approach which only
+   provided gene-level canonical domain positions.
+
+#### Domain Effect Classification
+
+For each CDS-overlapping splice event, domain overlap is assessed:
+
+1. **Reference domains**: All Pfam domains on the reference isoform are
+   checked for overlap with the event's protein region. Overlapping domains
+   are classified as `disrupted_lost` — the splice event disrupts or removes
+   this domain in the comparator.
+2. **Comparator domains (GAIN events only)**: For GAIN-direction events,
+   domains on the comparator isoform overlapping the gained region are
+   classified as `gained_intact` — the comparator has a domain in a region
+   absent from the reference.
+
+#### Domain Enrichment Testing
+
+Over-representation of specific Pfam domains among disrupted domains is
+tested using Fisher's exact test (`Isopair::testDomainEnrichment()`):
+
+- **Numerator**: Number of comparisons where this domain is disrupted.
+- **Denominator**: Number of reference isoforms carrying this domain
+  (the baseline prevalence).
+- **2×2 table**: (disrupted / not-disrupted) × (this domain / all other domains).
+- **Multiple testing**: Benjamini-Hochberg FDR correction across all
+  tested domains. Significance threshold: FDR < 0.05.
+
+#### Directional Domain Enrichment
+
+Domain effects are further stratified by splice event direction (GAIN vs LOSS):
+
+1. **Event-level gating**: Each CDS-overlapping event is classified as
+   overlapping ≥1 Pfam domain or not. A Fisher's exact test compares domain
+   overlap rates between GAIN and LOSS events (2×2: direction × domain overlap).
+
+2. **Gained domain enrichment** (Table 9b): Analogous to the disruption
+   enrichment test above, but using `gained_intact` effects as the numerator.
+   The denominator uses comparator isoform domain prevalence (`n_comp`),
+   computed directly from `parsed_doms` (per-isoform hmmscan annotations).
+   This is the correct baseline: gained domains are carried by comparator
+   isoforms, so the prevalence should reflect how many comparators have each
+   domain.
+
+3. **Disrupted vs gained comparison** (Table 9c): For each domain with ≥5
+   affected pairs (disrupted + gained), a one-sided binomial test assesses
+   whether the gained fraction exceeds the overall baseline gained rate.
+   The baseline is computed as the fraction of all domain-affected pairs
+   with any gained-intact effect. BH correction is applied across all tested
+   domains. Domains with significantly elevated gained fractions represent
+   protein functions that alternative splicing preferentially introduces
+   rather than ablates.
+
+#### Cell-Type Domain Analysis
+
+Domain overlap rates are stratified by cell type using `ct_membership`,
+which maps each deduplicated isoform pair to the cell types in which it
+was observed. Because pairs are not exclusive to a single cell type (a pair
+present in 3 CTs contributes to all 3), per-CT counts are not independent.
+
+For each cell type, we report: number of coding pairs, pairs with CDS events,
+pairs with ≥1 domain affected, and the disrupted/gained breakdown. A
+Cochran-Mantel-Haenszel (CMH) test assesses the direction × domain overlap
+association stratified by cell type. The CMH assumes independent strata; the
+shared-pair non-independence means the p-value should be interpreted
+conservatively.
+
+Per-domain cell-type heterogeneity is tested using chi-squared tests with
+Monte Carlo simulation (B = 10,000). For each Pfam domain with ≥10 total
+affected pairs across ≥2 cell types, a 2×5 contingency table is constructed:
+rows = (domain affected / not affected), columns = 5 cell types. The
+denominator per cell type is all pairs with CDS-overlapping events. The null
+hypothesis is that the rate of domain X being affected is the same across all
+cell types. Standardized residuals identify which cell types drive
+heterogeneity (positive = enriched, negative = depleted). BH correction is
+applied across all tested domains. The non-independence caveat from shared
+pairs applies; anti-conservative p-values should be interpreted as hypothesis-
+generating.
+
+#### Mass-Spectrometry Integration with Domain Results
+
+Domain enrichment tables (Tables 9, 9b) are annotated with mass-spectrometry
+support columns: for each domain, `n_ms_supported` counts how many
+disrupted/gained pairs also have ≥1 PeptideAtlas-confirmed splice-specific
+peptide, and `pct_ms` gives the percentage.
+
+A domain × mass-spec cross-tabulation (Table 10) tests whether
+domain-affecting splice events are more or less likely to have mass-spec
+support than non-domain-affecting events, using a 2×2 Fisher's exact test
+at the pair level (universe = pairs with CDS-overlapping events).
+
+#### PeptideAtlas Mass Spectrometry Validation
+
+Splice-specific peptides are validated against the Human PeptideAtlas
+(2024-01 build, ~1.5M peptides):
+
+1. **Peptide generation**: For each comparison with CDS-overlapping events,
+   the event-affected protein region (with ±5 aa buffer) is extracted from
+   the comparator's protein sequence. Tryptic digestion (cleave after K/R,
+   not before P) produces peptides of 7-30 amino acids.
+2. **Splice-specific filtering**: Only peptides unique to the comparator
+   (not present in tryptic digest of the reference protein) are retained.
+3. **Proteotypic filtering**: Each peptide is checked against a pre-computed
+   lookup of how many isoforms in the full proteome contain it. Proteotypic
+   peptides (found in exactly 1 isoform) are flagged — these unambiguously
+   identify the alternative isoform.
+4. **PeptideAtlas matching**: Exact sequence match against PeptideAtlas.
+   Quality metrics retained: `n_observations` (spectral count),
+   `n_samples` (independent samples), `best_probability` (identification
+   confidence).
+5. **Summary**: Per-comparison metrics include total splice-specific
+   peptides, PeptideAtlas hits, proteotypic hits, and best quality scores.
 
 ---
 
@@ -1477,6 +1666,6 @@ NMD, and Control groups using Fisher's exact test.
 
 ---
 
-**Document Version**: 2.4
-**Last Updated**: 2026-03-14
-**Status**: Complete and validated — updated with mashr publication report methods
+**Document Version**: 2.7
+**Last Updated**: 2026-03-15
+**Status**: Complete and validated — restructured Section 5 with CT analysis and MS integration
