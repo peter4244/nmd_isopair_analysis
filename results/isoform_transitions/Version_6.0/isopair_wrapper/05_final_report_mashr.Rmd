@@ -516,7 +516,7 @@ if (!all(verification_df$ptc_subset_ok)) {
 # ── mashr meta-analysis logFC ──
 # Source: mashr model fit on isocall DIE (6 conditions).
 # PosteriorMean averaged across 5 main conditions (excluding DD_ALI).
-# Used in Goal 1 to characterize NMD response magnitude.
+# Used in Section 2b to characterize NMD response magnitude.
 mashr_model_path <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/mashr_isoform_model_2026.3.10.rds"
 mashr_model <- readRDS(mashr_model_path)
 post_mean <- ashr::get_pm(mashr_model)
@@ -529,7 +529,7 @@ meta_logfc <- data.frame(
 
 # ── C4 protein comparison (gene-matched, used in productive frameshifts) ──
 # Source: 04b_all_c4_protein_comparison.R
-# Note: Goal 5 now uses unmatched data from 05d_protein_domain_analysis.R
+# Note: Section 4 (protein analysis) now uses unmatched data from 05d_protein_domain_analysis.R
 c4_protein <- readRDS(file.path(cache_dir, "all_c4_protein_comparison_allsamples.rds"))
 
 # ── Productive frameshift precompute ──
@@ -544,22 +544,12 @@ pf_data <- readRDS(file.path(cache_dir, "productive_frameshift_allsamples.rds"))
 # ==============================================================================
 # Summary: Gene-matching and data dimensions
 # ==============================================================================
-cat("=== Gene-Matching Summary ===\n")
 render_dt(gene_match_df, caption = "Gene-Matching: Before and After")
-
-cat(sprintf("\n=== Data Dimensions ===\n"))
-cat(sprintf("Gene-matched profile keys: %d\n", length(profiles_list)))
-cat(sprintf("C2 all_samples pairs (gene-matched): %d\n", nrow(profiles_list[["c2_allsamples"]])))
-cat(sprintf("C4 all_samples pairs (gene-matched): %d\n", nrow(profiles_list[["c4_allsamples"]])))
-cat(sprintf("PTC records: %d isoforms\n", nrow(ptc)))
-cat(sprintf("CDS records: %d isoforms\n", nrow(cds)))
-cat(sprintf("Meta-analysis logFC: %d isoforms\n", nrow(meta_logfc)))
-cat(sprintf("C4 protein comparison (gene-matched): %d pairs\n", nrow(c4_protein$comparison)))
-cat(sprintf("Productive frameshifts: %d pairs\n", nrow(pf_data$characterization)))
-
-cat("\n=== Cache Verification ===\n")
 render_dt(verification_df, caption = "Cache Consistency Check")
 ```
+
+**Data dimensions:**
+`r sprintf("Gene-matched profile keys: %d | C2 all_samples: %s pairs | C4 all_samples: %s pairs | PTC: %s isoforms | CDS: %s isoforms | Meta-analysis logFC: %s isoforms | C4 protein comparison: %s pairs | Productive frameshifts: %s pairs", length(profiles_list), fmt(nrow(profiles_list[["c2_allsamples"]])), fmt(nrow(profiles_list[["c4_allsamples"]])), fmt(nrow(ptc)), fmt(nrow(cds)), fmt(nrow(meta_logfc)), fmt(nrow(c4_protein$comparison)), fmt(nrow(pf_data$characterization)))`
 
 
 # Event Type Glossary {.tabset}
@@ -806,7 +796,7 @@ fig_iso_count <- ggplot(iso_per_gene, aes(x = n_isoforms)) +
   labs(title = "Expressed Isoform Count per Gene",
        subtitle = sprintf("Gene-matched pair set | Median: %d isoforms | %s genes with ≥2",
                           median(iso_per_gene$n_isoforms),
-                          format(sum(iso_per_gene$n_isoforms >= 2), big.mark = ",")),
+                          fmt(sum(iso_per_gene$n_isoforms >= 2))),
        x = "Number of expressed isoforms", y = "Number of genes")
 save_fig(fig_iso_count, "fig0a_isoform_count_distribution")
 ```
@@ -901,7 +891,7 @@ p_diversity <- ggplot(tss_tes_long, aes(x = count, fill = feature)) +
   scale_fill_manual(values = c(TSS = "#ef8a62", TES = "#67a9cf")) +
   labs(title = "A. TSS and TES Diversity per Gene",
        subtitle = sprintf("Multi-isoform coding genes (n = %s)",
-                          format(nrow(tss_tes), big.mark = ",")),
+                          fmt(nrow(tss_tes))),
        x = "Number of distinct positions", y = "Number of genes", fill = "")
 
 # Panel B: Within-gene TSS-TES correlation distribution
@@ -914,7 +904,7 @@ p_within <- ggplot(within_gene_cor, aes(x = rho_tss_tes)) +
            color = "#e6550d", size = 3.5, hjust = 0) +
   labs(title = "B. Within-Gene TSS-TES Coupling",
        subtitle = sprintf("Per-gene Spearman rho (n = %s genes with ≥3 isoforms)",
-                          format(nrow(within_gene_cor), big.mark = ",")),
+                          fmt(nrow(within_gene_cor))),
        x = "Spearman rho (TSS position vs TES position)", y = "Number of genes")
 
 # Panel C: Combination usage
@@ -1086,7 +1076,7 @@ each producing a different reading frame context. Most genes concentrate
 expression on a dominant isoform, but devote substantial transcriptional
 output to alternatives — including paths that produce NMD substrates.
 
-# 1b. Baseline Splicing and NMD-Enriched Events {#goal1b-baseline}
+# 1b. Baseline Splicing and NMD-Enriched Events {#sec1b-baseline}
 
 Characterize baseline alternative splicing (Control C4 pairs) and identify which
 splicing event types are enriched in NMD vs Control.
@@ -1381,7 +1371,7 @@ question, not a pair-level question.
 
 unified <- readRDS(file.path(cache_dir, "unified_model.rds"))
 
-cat("Population:", format(unified$metadata$population, big.mark = ","),
+cat("Population:", fmt(unified$metadata$population),
     "isoforms with complete features\n")
 cat("NMD:", sum(unified$df$is_nmd),
     "| Non-NMD:", sum(!unified$df$is_nmd), "\n")
@@ -1431,7 +1421,7 @@ fig_roc <- ggplot(roc_all, aes(x = fpr, y = tpr, color = model)) +
   coord_equal() +
   labs(title = "Holdout ROC — Progressive Model Building",
        subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s)",
-                          format(unified$elastic_net$step3$n_test, big.mark = ",")),
+                          fmt(unified$elastic_net$step3$n_test)),
        x = "False Positive Rate", y = "True Positive Rate",
        color = "") +
   theme(legend.position = c(0.62, 0.18),
@@ -1513,16 +1503,11 @@ mechanisms operate through different structural pathways to trigger NMD.
 
 # 2b. Stop Codons: Where Translation Terminates {#sec2b-stop-codons}
 
-The strongest single feature category is the downstream EJC count. Here we
-examine stop codon position in detail using gene-matched C2 (NMD) vs C4
-(Control) isoform pairs.
-
-**Methods:** A PTC is defined as a stop codon >50 nt upstream of the last exon-junction
-complex (EJC). Fisher's exact test compares PTC rates between NMD (C2) and Control (C4)
-comparator isoforms, restricted to pairs where both reference and comparator are coding.
-PTC position metrics (distance to EJC, % CDS, number of downstream EJCs) characterize NMD
-response strength using mashr meta-analysis posterior means averaged across 5 conditions
-(DD, AT, DO_ALI, FB, MV).
+The unified model (Section 2a) identifies downstream EJC count as the strongest
+single predictor of NMD status. Here we examine stop codon position in detail
+using gene-matched C2 (NMD) vs C4 (Control) isoform pairs, quantify PTC
+enrichment with a dose-response relationship, and trace how PTCs arise through
+three distinct splicing mechanisms.
 
 ## PTC Rates
 
@@ -1554,14 +1539,12 @@ cod_c4 <- p_c4[p_c4$reference_isoform_id %in% coding_ids &
                 p_c4$comparator_isoform_id %in% coding_ids, ]
 ```
 
-Starting from `r fmt(n_gm_c2)` gene-matched NMD (C2) pairs and
-`r fmt(n_gm_c4)` gene-matched Control (C4) pairs, we restrict to **coding
-pairs** where both the reference and comparator isoform are classified as
-protein-coding by SQANTI (`coding_status == "coding"` in `cds.rds`). This
-yields `r fmt(nrow(cod_c2))` coding NMD pairs and `r fmt(nrow(cod_c4))` coding
-Control pairs. The PTC rate is the fraction of these coding comparator isoforms
-whose stop codon falls >50 nt upstream of the last exon-junction complex (EJC),
-as computed by `Isopair::testPtcAssociation()`.
+From `r fmt(n_gm_c2)` gene-matched NMD pairs and `r fmt(n_gm_c4)` Control
+pairs, we restrict to **coding pairs** (both reference and comparator classified
+as protein-coding by SQANTI). This yields `r fmt(nrow(cod_c2))` coding NMD
+pairs and `r fmt(nrow(cod_c4))` coding Control pairs. The PTC rate is the
+fraction of coding comparators whose stop codon falls >50 nt upstream of the
+last EJC.
 
 ```{r goal1-ptc-rates}
 ptc_rates <- compute_ptc_rates_row("all_samples")
@@ -1730,129 +1713,24 @@ Same columns as Table 2, one row per cell type. all_samples uses the union
 (NMD) and intersection (non-NMD) across AT, DD, DO, FB, MV.
 
 
-## How PTCs Arise: Splicing Mechanisms {#sec2b-ptc-mechanisms}
+## Three Mechanisms of PTC Creation {#sec2b-ptc-mechanisms}
 
-**Goal 3:** Identify the splicing mechanisms that produce PTCs in NMD-responsive isoforms.
+PTCs in NMD-responsive isoforms arise through three distinct splicing mechanisms:
 
-**Methods:** Frame comparison (`compareIsoformFrames()`) classifies each pair by start codon
-and reading frame relationship. Frame walk (`analyzeFrameWalk()`) identifies which splicing
-events cause frameshifts. The Sankey diagram traces flows from splice event type through frame
-category to PTC outcome for NMD comparators.
+- **Frameshift → PTC**: A splice event (e.g., skipped exon, retained intron)
+  shifts the reading frame, and the new frame encounters a stop codon upstream
+  of the last EJC. Identified by `analyzeFrameWalk()`.
+- **In-frame stop → PTC**: A splice event changes the exon path such that the
+  comparator's stop codon is in a different position from the reference, falling
+  upstream of the last EJC. The PTC-causing event is identified by finding the
+  event whose genomic coordinates contain the comparator's stop codon.
+- **3'UTR splicing → PTC**: The comparator and reference share the **same stop
+  codon**, but the comparator has additional exon-exon junctions downstream of
+  the stop — from 3'UTR splicing events — that reposition the last EJC, making
+  the shared stop codon "premature" under the >50 nt rule. We refer to these as
+  **same-stop PTC+** pairs.
 
-## Figure 5: Frame Category Distribution
-
-```{r goal2-fig4-pop}
-# Count excluded categories for prose
-fc_c2_ps <- set_results[["c2_allsamples"]]$frame_comp$pair_summary
-fc_c4_ps <- set_results[["c4_allsamples"]]$frame_comp$pair_summary
-n_noncoding_c2 <- sum(fc_c2_ps$frame_category %in% c("non_coding", "no_shared_cds"))
-n_noncoding_c4 <- sum(fc_c4_ps$frame_category %in% c("non_coding", "no_shared_cds"))
-```
-
-`compareIsoformFrames()` assigns each pair a frame category based on start codon
-and reading frame relationship. Of `r fmt(nrow(fc_c2_ps))` NMD pairs,
-`r fmt(n_noncoding_c2)` are classified as `non_coding` or `no_shared_cds` and
-excluded from the figure (Control: `r fmt(n_noncoding_c4)` of
-`r fmt(nrow(fc_c4_ps))` excluded). The denominator (y-axis) is the number of
-**coding pairs** (`r fmt(nrow(fc_c2_ps) - n_noncoding_c2)` NMD,
-`r fmt(nrow(fc_c4_ps) - n_noncoding_c4)` Control), so the 5 categories sum
-to 100%.
-
-```{r goal2-fig4-frame-category, fig.width=10, fig.height=6}
-# ── Data provenance ──
-# Starting data: gene-matched profiles → cached frame comparison
-# set_results[[key]]$frame_comp: compareIsoformFrames() output, cached by script 03
-#   Input to compareIsoformFrames(): gene-matched profiles + cds_exons.rds + cds.rds
-#   $pair_summary contains frame_category per pair (same_start_in_frame, same_start_frameshift, etc.)
-# ptc.rds$has_ptc: PTC status per isoform (isoform-intrinsic, independent of pairing)
-# Denominator (total_pairs): nrow(gene-matched profiles) — ensures consistent
-#   percentages between profiles and frame_comp (verified in STAGE 4)
-
-coding_cats <- c("same_start_in_frame", "same_start_frameshift",
-                 "diff_start_same_frame", "diff_start_diff_frame",
-                 "diff_start_diff_frame_with_frameshift")
-cat_labels <- c(
-  same_start_in_frame = "Same Start\nSame Frame",
-  same_start_frameshift = "Same Start\nFrameshift",
-  diff_start_same_frame = "Diff Start\nSame Frame",
-  diff_start_diff_frame = "Diff Start\nDiff Frame",
-  diff_start_diff_frame_with_frameshift = "Diff Start\nDiff Frame + FS")
-
-ptc_pos_ids <- ptc$isoform_id[ptc$has_ptc == TRUE]
-
-# 4-color palette: NMD/Control × PTC+/No PTC
-pal4 <- c("NMD PTC+"    = "#d6604d",   # dark orange-red
-          "NMD No PTC"  = "#fddbc7",   # light orange
-          "Ctrl PTC+"   = "#4393c3",   # dark blue
-          "Ctrl No PTC" = "#d1e5f0")   # light blue
-
-stacked_df <- do.call(rbind, lapply(c("c2", "c4"), function(comp) {
-  key <- paste0(comp, "_allsamples")
-  fc <- set_results[[key]]$frame_comp
-  if (is.null(fc)) return(NULL)
-  ps <- fc$pair_summary
-  # Denominator: coding pairs only (exclude non_coding and no_shared_cds)
-  coding_pairs_total <- sum(!ps$frame_category %in% c("non_coding", "no_shared_cds"))
-  comp_lbl <- comp_label(comp)
-  comp_short <- ifelse(comp_lbl == "NMD", "NMD", "Ctrl")
-
-  do.call(rbind, lapply(coding_cats, function(cat) {
-    cat_pairs <- ps[ps$frame_category == cat, ]
-    n_cat <- nrow(cat_pairs)
-    n_ptc <- sum(cat_pairs$comparator_isoform_id %in% ptc_pos_ids)
-    n_no_ptc <- n_cat - n_ptc
-    pct_ptc <- 100 * n_ptc / max(coding_pairs_total, 1)
-    pct_no_ptc <- 100 * n_no_ptc / max(coding_pairs_total, 1)
-    rbind(
-      data.frame(frame_category = cat, category_label = cat_labels[cat],
-                 comparison = comp_lbl, ptc_status = "PTC+",
-                 fill_group = paste(comp_short, "PTC+"),
-                 n = n_ptc, pct = pct_ptc),
-      data.frame(frame_category = cat, category_label = cat_labels[cat],
-                 comparison = comp_lbl, ptc_status = "No PTC",
-                 fill_group = paste(comp_short, "No PTC"),
-                 n = n_no_ptc, pct = pct_no_ptc))
-  }))
-}))
-
-stacked_df$category_label <- factor(stacked_df$category_label,
-  levels = cat_labels[coding_cats])
-stacked_df$fill_group <- factor(stacked_df$fill_group,
-  levels = c("NMD PTC+", "NMD No PTC", "Ctrl PTC+", "Ctrl No PTC"))
-
-fig4 <- ggplot(stacked_df, aes(x = category_label, y = pct, fill = fill_group)) +
-  geom_col() +
-  facet_wrap(~comparison) +
-  scale_fill_manual(values = pal4) +
-  labs(title = "Frame Category Distribution: NMD vs Control (all_samples)",
-       subtitle = "% of total pairs. PTC+ = comparator has premature termination codon.",
-       x = "Frame Category", y = "% of Total Pairs", fill = "") +
-  theme(axis.text.x = element_text(size = 8))
-save_fig(fig4, "fig5_frame_category_distribution", width = 10, height = 6)
-```
-
-## Table 4: Frame Category Counts
-
-```{r goal2-table3-frame-cats}
-fc_rows <- compute_frame_category_rows("all_samples")
-render_dt(fc_rows, caption = "Table 4: Frame Category Distribution — all_samples")
-write.csv(fc_rows, file.path(table_dir, "table4_frame_categories.csv"), row.names = FALSE)
-```
-
-Columns: **cell_type**; **frame_category** = reading frame relationship between
-reference and comparator (from `Isopair::compareIsoformFrames()`);
-**NMD_n/NMD_pct** = count and percentage in NMD (C2) pairs;
-**Ctrl_n/Ctrl_pct** = same for Control (C4). The denominator for percentages is
-**coding pairs** (excluding `non_coding` and `no_shared_cds`), consistent with
-Figure 5 — the 5 coding categories sum to 100%. The `non_coding` and
-`no_shared_cds` rows show counts only (no percentage).
-
-Note: the coding pair count here differs from Table 2 because `compareIsoformFrames()`
-classifies some individually-coding pairs as `no_shared_cds` (both isoforms are
-coding but their CDS regions don't overlap). Table 2's "coding pairs" filter
-requires only that both isoforms have `coding_status == "coding"` in `cds.rds`.
-
-## How PTCs Arise: Frameshift vs Non-Frameshift Mechanisms
+## How PTCs Arise: Frameshift vs In-Frame Stop
 
 ```{r goal2-ptc-mechanisms}
 # ── Data provenance ──
@@ -1875,6 +1753,8 @@ requires only that both isoforms have `coding_status == "coding"` in `cds.rds`.
 fc_c2 <- set_results[["c2_allsamples"]]$frame_comp
 fw_c2 <- set_results[["c2_allsamples"]]$frame_walk
 prof_c2 <- set_results[["c2_allsamples"]]$profiles
+
+ptc_pos_ids <- ptc$isoform_id[ptc$has_ptc == TRUE]
 
 fc_c2_ps <- fc_c2$pair_summary
 fc_c2_ps$has_ptc <- fc_c2_ps$comparator_isoform_id %in% ptc_pos_ids
@@ -1982,120 +1862,16 @@ n_unresolved <- sum(ptc_events_df$attribution == "unresolved")
 ```
 
 Of `r fmt(n_coding_nmd)` coding NMD pairs, `r fmt(n_ptc_total)` have a PTC in
-the comparator. These arise through two mechanisms:
+the comparator: `r fmt(n_ptc_via_fs)` via frameshift
+(`r round(100 * n_ptc_via_fs / n_ptc_total, 1)`%) and `r fmt(n_ptc_via_nonfs)`
+via in-frame stop (`r round(100 * n_ptc_via_nonfs / n_ptc_total, 1)`%). Of
+`r fmt(nrow(ptc_events_df))` PTC+ pairs, `r fmt(n_attributed)` were directly
+attributed to a specific splice event`r if (n_unresolved > 0) paste0(", with ", fmt(n_unresolved), " unresolved")`.
 
-- **Frameshift → PTC**: `r fmt(n_ptc_via_fs)` pairs
-  (`r round(100 * n_ptc_via_fs / n_ptc_total, 1)`%) — a splicing event shifts
-  the reading frame, and the new frame encounters a premature stop codon. The
-  PTC-causing event is identified by `analyzeFrameWalk()`.
-- **In-frame stop → PTC**: `r fmt(n_ptc_via_nonfs)` pairs
-  (`r round(100 * n_ptc_via_nonfs / n_ptc_total, 1)`%) — the comparator is
-  in the same reading frame but a structural change (e.g., a gained exon or
-  retained intron) directly introduces an in-frame stop codon. The PTC-causing
-  event is identified by finding the event whose genomic coordinates contain the
-  comparator's stop codon position.
+The Sankey diagram below adds a third category — same-stop PTC+ pairs arising
+from 3'UTR splicing — to give a complete picture of PTC-causing mechanisms.
 
-### PTC position and strand awareness
-
-The PTC genomic position depends on strand: for + strand genes, the stop codon
-is at `cds_stop` (the larger genomic coordinate); for - strand genes, it is at
-`cds_start` (the smaller genomic coordinate, which is the 3' end in
-transcription direction). This mirrors the logic in `Isopair::computePtcStatus`.
-
-### Attribution results
-
-Of `r fmt(nrow(ptc_events_df))` PTC+ pairs, `r fmt(n_attributed)` were
-directly attributed (PTC position inside event coordinates or frameshift event
-from `analyzeFrameWalk`)`r if (n_unresolved > 0) paste0(", and ", fmt(n_unresolved), " remain unresolved")``r if (n_unresolved == 0) ""`.
-`r if (n_unresolved > 0) "Unresolved cases include both in-frame stop pairs where the PTC falls outside all event coordinates and frameshift-category pairs where analyzeFrameWalk() found no frameshift event (indicating a classification disagreement between compareIsoformFrames() and analyzeFrameWalk())."`
-
-```{r goal2-ptc-diagnostic, eval = n_unresolved > 0}
-# ── Diagnostic: characterize all unresolved PTC attributions ──
-# Two types of unresolved:
-#   1. In-frame stop: PTC position outside all event coordinates
-#   2. Frameshift: frame_category says frameshift but analyzeFrameWalk() found
-#      no is_frameshift event (classification disagreement)
-# For each, report mechanism, strand, frame_category, and distance to nearest event.
-
-unresolved <- ptc_events_df[ptc_events_df$attribution == "unresolved", ]
-
-diag_rows <- list()
-for (i in seq_len(nrow(unresolved))) {
-  uid <- unresolved$comparator_id[i]
-  mech <- unresolved$mechanism[i]
-
-  prof_idx <- comp_to_idx[uid]
-  fc_row <- fc_c2_ps[fc_c2_ps$comparator_isoform_id == uid, ]
-  gene_id <- if (nrow(fc_row) > 0) fc_row$gene_id[1] else NA_character_
-  frame_cat <- if (nrow(fc_row) > 0) fc_row$frame_category[1] else NA_character_
-  comp_strand <- strand_lookup[uid]
-
-  # PTC position and distance to nearest event (if events exist)
-  ptc_pos <- if (!is.na(comp_strand) && comp_strand == "-") {
-    cds_start_lookup[uid]
-  } else {
-    cds_stop_lookup[uid]
-  }
-
-  nearest_evt <- NA_character_; min_dist <- NA_real_; n_ev <- 0L
-  if (!is.na(prof_idx)) {
-    de <- prof_c2$detailed_events[[prof_idx]]
-    if (!is.null(de) && nrow(de) > 0) {
-      n_ev <- nrow(de)
-      if (!is.na(ptc_pos)) {
-        de$ev_min <- pmin(de$five_prime, de$three_prime)
-        de$ev_max <- pmax(de$five_prime, de$three_prime)
-        nearest_idx <- which.min(pmin(abs(ptc_pos - de$ev_min),
-                                      abs(ptc_pos - de$ev_max)))
-        min_dist <- min(abs(ptc_pos - c(de$ev_min, de$ev_max)))
-        nearest_evt <- de$event_type[nearest_idx]
-      }
-    }
-  }
-
-  diag_rows[[length(diag_rows) + 1]] <- data.frame(
-    comparator_id = uid, gene_id = gene_id, mechanism = mech,
-    strand = comp_strand, frame_category = frame_cat,
-    ptc_pos = if (is.na(ptc_pos)) NA_real_ else ptc_pos,
-    nearest_event_type = nearest_evt,
-    dist_to_nearest_boundary = min_dist,
-    n_events = n_ev,
-    stringsAsFactors = FALSE)
-}
-diag_df <- do.call(rbind, diag_rows)
-diag_df <- diag_df[order(diag_df$mechanism, diag_df$dist_to_nearest_boundary), ]
-
-render_dt(diag_df,
-  caption = paste0("Diagnostic: ", nrow(diag_df),
-    " Unresolved PTC Attributions"))
-```
-
-`r if (n_unresolved > 0) paste0("The diagnostic table shows ", fmt(n_unresolved), " unresolved cases. **Mechanism** distinguishes the two types: *In-frame stop* pairs have a PTC outside all event coordinates (dist_to_nearest_boundary shows how far); *Frameshift* pairs have a frameshift frame_category but analyzeFrameWalk() found no is_frameshift event, indicating a classification disagreement between the two Isopair functions.")`
-
-```{r goal2-ptc-fs-test}
-# ── Data provenance ──
-# n_ptc_via_fs, n_ptc_total: from goal2-ptc-mechanisms chunk
-# Baseline: frameshift rate among ALL coding NMD pairs (not just PTC+)
-# fc_c2_ps$is_frameshift_cat: TRUE for frameshift frame categories
-# Binomial test: is the frameshift proportion among PTC+ pairs different
-#   from the frameshift proportion among all coding NMD pairs?
-
-n_fs_all_nmd <- sum(fc_c2_coding$is_frameshift_cat)
-baseline_fs_rate <- n_fs_all_nmd / n_coding_nmd
-
-bt_fs <- binom.test(n_ptc_via_fs, n_ptc_total, p = baseline_fs_rate)
-```
-
-Frameshifts account for **`r fmt(n_ptc_via_fs)`** of **`r fmt(n_ptc_total)`**
-PTC events in NMD pairs (**`r round(100 * n_ptc_via_fs / n_ptc_total, 1)`%**),
-with in-frame stops accounting for the remaining
-**`r round(100 * n_ptc_via_nonfs / n_ptc_total, 1)`%** — the two mechanisms
-contribute roughly equally. However, frameshifts are significantly enriched
-among PTC+ pairs relative to the overall frameshift rate among all coding NMD
-pairs (`r round(100 * baseline_fs_rate, 1)`%; binomial test p =
-`r signif(bt_fs$p.value, 3)`).
-
-## Figure 6: PTC-Causing Splice Events (Sankey)
+## Figure 5: PTC-Causing Splice Events (Sankey)
 
 ```{r goal2-fig5-sankey}
 # ── Data provenance ──
@@ -2221,16 +1997,12 @@ networkD3::sankeyNetwork(
   colourScale = color_scale, sinksRight = TRUE)
 ```
 
-This figure maps each PTC-causing splice event to one of three mechanisms:
-**Frameshift** (red; `r fmt(sum(all_attr$mechanism == "Frameshift"))` pairs) —
-a splice event shifts the reading frame, introducing a new stop codon;
-**In-frame stop** (blue; `r fmt(sum(all_attr$mechanism == "In-frame stop"))`) —
-a splice event introduces an in-frame stop codon directly;
-**3'UTR splice** (green; `r fmt(n_same_stop_attributed)`) —
-the comparator shares the reference's stop codon, but a downstream splice event
-repositions an EJC, making the normal stop "premature." For 3'UTR splice pairs,
-the attributed event is the nearest downstream event to the stop codon.
-`r { n_same_stop_unresolved_in_goal2 <- sum(ptc_events_df$attribution == "unresolved" & ptc_events_df$comparator_id %in% same_stop_comp_ids); n_diffstop_unresolved <- n_unresolved - n_same_stop_unresolved_in_goal2; n_same_no_event <- nrow(same_stop_sankey) - n_same_stop_attributed; paste0(fmt(n_diffstop_unresolved), " unresolved diff-stop pairs and ", fmt(n_same_no_event), " same-stop pairs without identifiable 3'UTR events are excluded (", fmt(nrow(all_attr)), " of ", fmt(nrow(ptc_plus)), " PTC+ pairs shown).") }`
+**Frameshift** (red; `r fmt(sum(all_attr$mechanism == "Frameshift"))` pairs),
+**In-frame stop** (blue; `r fmt(sum(all_attr$mechanism == "In-frame stop"))`),
+and **3'UTR splice** (green; `r fmt(n_same_stop_attributed)` same-stop PTC+
+pairs where a downstream splice event repositions an EJC, making the shared
+stop codon premature).
+`r { n_same_stop_unresolved_in_goal2 <- sum(ptc_events_df$attribution == "unresolved" & ptc_events_df$comparator_id %in% same_stop_comp_ids); n_diffstop_unresolved <- n_unresolved - n_same_stop_unresolved_in_goal2; n_same_no_event <- nrow(same_stop_sankey) - n_same_stop_attributed; paste0(fmt(nrow(all_attr)), " of ", fmt(nrow(ptc_plus)), " PTC+ pairs shown (", fmt(n_diffstop_unresolved), " unresolved diff-stop and ", fmt(n_same_no_event), " same-stop pairs without identifiable events excluded).") }`
 
 ## Table 5a: PTC-Causing Events by Mechanism
 
@@ -2317,9 +2089,9 @@ Control); **direction** = Enriched/Depleted in PTC-causing, or Non-significant
 
 ## 3'UTR Length and Splicing {#sec2b-3utr}
 
-The unified model (Section 2a) showed that 3'UTR features do not add predictive
-power beyond stop codon position. Here we test the long-3'UTR hypothesis directly
-and show that 3'UTR splicing operates through the PTC pathway (EJC repositioning),
+The unified model (Section 2a) showed that 3'UTR features do not improve
+prediction beyond stop codon position. Here we test the long-3'UTR hypothesis
+and show that 3'UTR splicing operates through PTC creation (EJC repositioning),
 not independently.
 
 ```{r goal3-identify-ptc-neg}
@@ -2341,58 +2113,22 @@ coding_pairs_c2 <- pair_summary[pair_summary$comparator_isoform_id %in% coding_i
 
 n_ptc_pos <- sum(coding_pairs_c2$comp_has_ptc == TRUE)
 n_ptc_neg <- sum(coding_pairs_c2$comp_has_ptc == FALSE)
+ptc_neg_ids <- coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc == FALSE]
 ```
 
-Of the `r fmt(nrow(coding_pairs_c2))` coding NMD pairs,
+Of `r fmt(nrow(coding_pairs_c2))` coding NMD pairs,
 `r fmt(n_ptc_pos)` (`r round(100 * n_ptc_pos / nrow(coding_pairs_c2), 1)`%)
 have a PTC and `r fmt(n_ptc_neg)` (`r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%)
-do not. The table below categorizes these PTC-negative comparators by their stop
-codon position relative to exon-exon junctions.
+do not.
 
-```{r goal3-stop-position}
-# ── Data provenance ──
-# Starting data: ptc_neg_ids (PTC-negative NMD comparators identified above)
-# ptc.rds: per-isoform annotations (n_downstream_ejcs, ptc_distance, etc.)
-#   Source: Isopair testPtcAssociation() infrastructure — isoform-intrinsic
-# Step 1: Look up ptc features for PTC-neg comparators
-# Step 2: Categorize by n_downstream_ejcs (borderline vs stop-in-last-exon)
+If the "long 3'UTR" hypothesis explains PTC-negative NMD, these comparators
+should have longer 3'UTRs than Controls. However, measuring 3'UTR length in
+PTC+ isoforms requires care: when a frameshift creates a premature stop, the
+sequence between the PTC and the normal stop is counted as "3'UTR," inflating
+the measurement. We address this by computing a corrected measurement using the
+reference's stop position projected onto the comparator's exon structure.
 
-ptc_neg_ids <- coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc == FALSE]
-ptc_neg_info <- ptc[ptc$isoform_id %in% ptc_neg_ids, ]
-
-# Categorize
-n_borderline <- sum(ptc_neg_info$n_downstream_ejcs > 0, na.rm = TRUE)
-n_stop_last_exon <- sum(ptc_neg_info$n_downstream_ejcs == 0, na.rm = TRUE)
-n_na <- sum(is.na(ptc_neg_info$n_downstream_ejcs))
-
-stop_cat <- data.frame(
-  category = c("Borderline (1+ downstream EJCs, distance <= 50 nt)",
-               "Stop in last exon (0 downstream EJCs)",
-               "Missing annotation"),
-  n = c(n_borderline, n_stop_last_exon, n_na),
-  pct = round(100 * c(n_borderline, n_stop_last_exon, n_na) / length(ptc_neg_ids), 1))
-
-kable(stop_cat, caption = "Table 6: Categorization of PTC-Negative NMD Comparators")
-```
-
-### 3'UTR Length: Testing the Long-3'UTR Hypothesis
-
-The "long 3'UTR" hypothesis proposes that NMD can be triggered when the distance
-between the stop codon and the poly(A) tail is abnormally large, even without a
-classical PTC. The idea is that UPF1 — normally displaced by translating ribosomes —
-accumulates on long 3'UTRs and triggers degradation (Hogg & Goff 2010; Kurosaki &
-Maquat 2016). If this mechanism operates in our data, PTC-negative NMD comparators
-should have longer 3'UTRs than Controls.
-
-However, measuring 3'UTR length in PTC+ isoforms requires care. When a frameshift
-creates a premature stop codon, the sequence between the PTC and the normal stop
-is measured as "3'UTR" even though it was originally coding sequence. This inflates
-the apparent 3'UTR length. We address this by computing two measurements for PTC+
-isoforms with a different stop codon: the naive measurement (from the comparator's
-own stop) and a corrected measurement (from the reference's stop position projected
-onto the comparator's exon structure).
-
-## Figure 7: 3'UTR Length by PTC Mechanism
+## Figure 6: 3'UTR Length by PTC Mechanism
 
 ```{r goal3-fig6-pop}
 # ── Data provenance ──
@@ -2504,25 +2240,13 @@ utr3_data$group <- factor(utr3_data$group,
 utr3_n <- table(utr3_data$group)
 ```
 
-PTC+ comparators are split by whether the strand-aware stop codon position is
-the **same** as the reference or **different** (premature stop from frameshift
-or in-frame stop in CDS). Stop codon position: `cds_stop` on + strand,
-`cds_start` on - strand.
-
-- **Same-stop PTC+** (`r fmt(utr3_n[[1]])`): The stop codon is the same as the
-  reference. A 3'UTR splicing event repositioned the last EJC, making the
-  existing stop >50 nt upstream of the new EJC. The 3'UTR length is correctly
-  measured.
-- **Diff-stop PTC+ (own stop)** (`r fmt(utr3_n[[2]])`): The stop codon moved
-  upstream (PTC). The measured 3'UTR is inflated — it includes former CDS.
-- **Diff-stop PTC+ (ref stop)** (`r fmt(utr3_n[[3]])`): Same pairs as above, but
-  3'UTR is measured from the **reference's** stop codon position projected onto
-  the comparator's exon structure. `r fmt(n_eligible)` of `r fmt(n_eligible + n_ineligible)`
-  pairs were eligible (reference stop falls within comparator exons).
-- **NMD PTC−** (`r fmt(utr3_n[[4]])`): No PTC. 3'UTR is correctly measured.
-  *Example: GPAT3 — comp 3'UTR=1,108 bp, ref 3'UTR=1,108 bp.*
-- **Control** (`r fmt(utr3_n[[5]])`): C4 comparators.
-  *Example: SART1 — comp 3'UTR=1,107 bp, ref 3'UTR=1,107 bp.*
+PTC+ comparators are split by whether the stop codon is the **same** as the
+reference (same-stop PTC+, n=`r fmt(utr3_n[[1]])`) or **different** (diff-stop
+PTC+, n=`r fmt(utr3_n[[2]])`). For diff-stop pairs, 3'UTR is shown both at the
+comparator's own stop (inflated) and corrected using the reference's stop
+(`r fmt(n_eligible)` of `r fmt(n_eligible + n_ineligible)` eligible). NMD PTC-
+(n=`r fmt(utr3_n[[4]])`) and Control (n=`r fmt(utr3_n[[5]])`) are measured at
+their own stop codons.
 
 ```{r goal3-fig6-utr3-density, fig.width=10, fig.height=6}
 pal5_utr3 <- c("Same-stop PTC+\n(3'UTR splicing)" = "#d6604d",
@@ -2575,7 +2299,7 @@ render_dt(tests, caption = "Table 7: 3'UTR Length Comparisons (Wilcoxon rank-sum
 write.csv(tests, file.path(table_dir, "table7_utr3_wilcoxon.csv"), row.names = FALSE)
 ```
 
-Columns: **group1/group2** = the two groups being compared (see Figure 7 for
+Columns: **group1/group2** = the two groups being compared (see Figure 6 for
 group definitions); **n_group1/n_group2** = number of isoforms in each group;
 **median_group1/median_group2** = median 3'UTR length (bp);
 **median_diff_bp** = difference in medians (group1 − group2);
@@ -2642,32 +2366,18 @@ p <- plot_ucsc_pair(
 print(p)
 ```
 
-The skipped exon (SE LOSS bracket) causes a frameshift that creates a PTC (red
-triangle). Measuring 3'UTR from this PTC includes the red-shaded region — former
-coding sequence that inflates the measurement. The green triangle marks the
-reference stop codon position; measuring from there gives the true 3'UTR
-(green-shaded region). This correction is applied to all diff-stop PTC+ pairs
-in Figure 7 and Table 7 above.
-
-**Key finding:** PTC-negative NMD comparators have 3'UTR lengths
-indistinguishable from Control (p = `r signif(tests$p_value[tests$group1 == "NMD PTC-"], 2)`).
-This is strong evidence against the long-3'UTR hypothesis as an explanation for
-PTC-negative NMD in this dataset.
-
-The apparently long 3'UTRs in some PTC+ groups are methodological artifacts:
-for diff-stop PTC+ isoforms, the "3'UTR" includes former coding sequence
-downstream of the premature stop codon. When corrected using the reference stop
-position, even these isoforms show only a modest difference from Control. The
-CMAS gene example below illustrates this measurement issue.
+The skipped exon causes a frameshift that creates a PTC (red triangle).
+Measuring 3'UTR from the PTC includes the red-shaded former coding sequence.
+The corrected measurement (from the reference stop, green triangle) gives the
+true 3'UTR. PTC-negative NMD comparators have 3'UTR lengths indistinguishable
+from Control (p = `r signif(tests$p_value[tests$group1 == "NMD PTC-"], 2)`),
+providing strong evidence against the long-3'UTR hypothesis.
 
 ## 3'UTR Splicing: PTC-Creating, Not PTC-Independent
 
-A separate question is whether 3'UTR splicing contributes to NMD — and if so,
-whether it operates through a PTC-dependent or PTC-independent pathway. If 3'UTR
-splicing triggers NMD independently of PTCs, we would expect enrichment of 3'UTR
-splicing events in PTC-negative NMD comparators. If instead it triggers NMD by
-repositioning exon-exon junctions (creating a PTC under the 50-nt rule), we
-would expect enrichment only in PTC-positive comparators.
+If 3'UTR splicing triggers NMD independently, we would expect enrichment in
+PTC-negative comparators. If instead it creates PTCs via EJC repositioning,
+enrichment should appear only in PTC-positive comparators.
 
 ```{r goal3-utr3-splicing}
 # ── Data provenance ──
@@ -2766,69 +2476,33 @@ n_comp_fewer_ejcs <- sum(same_stop_ps$ejc_diff < 0, na.rm = TRUE)
 n_valid <- sum(!is.na(same_stop_ps$ejc_diff))
 ```
 
-### 3'UTR Splicing Creates PTCs via EJC Repositioning
+### Verification: Same-Stop PTC+ Pairs Have More Downstream EJCs
 
-Among the `r fmt(nrow(same_stop_ps))` same-stop PTC+ pairs (where the
-comparator has the same stop codon as the reference but is classified as PTC+),
-we directly verified the mechanism by comparing the number of exon-exon
-junctions downstream of the stop codon:
+Among `r fmt(nrow(same_stop_ps))` same-stop PTC+ pairs,
+`r n_comp_more_ejcs` (`r round(100 * n_comp_more_ejcs / n_valid, 1)`%) have
+more downstream EJCs in the comparator than the reference, confirming that
+3'UTR splicing added junctions that repositioned the last EJC and created the
+PTC. Only `r n_comp_fewer_ejcs` pairs show the opposite pattern.
 
-- **`r n_comp_more_ejcs`** pairs (`r round(100 * n_comp_more_ejcs / n_valid, 1)`%):
-  comparator has MORE downstream EJCs than reference — confirming that 3'UTR
-  splicing added new junctions, repositioning the last EJC and creating the PTC
-- **`r n_same_ejcs`** pairs: same number of downstream EJCs (PTC may arise from
-  junction repositioning rather than addition)
-- **`r n_comp_fewer_ejcs`** pairs: comparator has fewer EJCs (unexpected —
-  may reflect annotation differences)
+### Summary: 3'UTR Mechanisms Operate Through PTC Creation
 
-### Conclusion: 3'UTR Mechanisms Operate Through PTC Creation
-
-Three lines of evidence converge on the same conclusion — 3'UTR features do
-not independently trigger NMD in this dataset, but 3'UTR splicing does
-contribute to NMD by creating PTCs via EJC repositioning:
-
-1. **No NMD subgroup has substantially longer 3'UTRs than Control when measured
-   from the appropriate stop codon** (Table 7). PTC-negative NMD comparators
-   have the same median 3'UTR as Control (p =
-   `r signif(tests$p_value[tests$group1 == "NMD PTC-"], 2)`). Same-stop PTC+
-   comparators are also indistinguishable from Control (p =
-   `r signif(tests$p_value[tests$group1 == "Same-stop PTC+ (3'UTR splicing)" & tests$group2 == "Control"], 2)`).
-   The diff-stop PTC+ group measured at own stop has longer 3'UTRs (p < 10^-54^),
-   but this is an artifact of measuring from the PTC rather than the true stop.
-   When corrected using the reference stop position, the effect is small (median
-   difference `r tests$median_diff_bp[tests$group1 == "Diff-stop PTC+ (ref stop, corrected)" & tests$group2 == "Control"]`
-   bp, r = `r tests$rank_biserial_r[tests$group1 == "Diff-stop PTC+ (ref stop, corrected)" & tests$group2 == "Control"]`,
-   p = `r signif(tests$p_value[tests$group1 == "Diff-stop PTC+ (ref stop, corrected)" & tests$group2 == "Control"], 2)`).
-
-2. **3'UTR splicing that triggers NMD does so by creating PTCs** (EJC
-   repositioning), not through a PTC-independent pathway. The
-   `r fmt(nrow(same_stop_ps))` same-stop PTC+ pairs are direct evidence:
-   `r round(100 * n_comp_more_ejcs / n_valid, 1)`% have additional downstream
-   EJCs in the comparator from 3'UTR splicing events.
-
-3. **3'UTR splicing prevalence** is actually **depleted** in PTC-negative NMD
-   vs Control (OR =
-   `r round(as.numeric(ft_utr3_neg$estimate), 2)`, p =
-   `r signif(ft_utr3_neg$p.value, 3)`). This is consistent with our finding
-   that 3'UTR splicing creates PTCs — isoforms that trigger NMD without a PTC
-   would be expected to have *less* 3'UTR splicing, not more.
+Three findings converge: (1) PTC-negative NMD comparators have 3'UTR lengths
+indistinguishable from Control (Table 7); (2) same-stop PTC+ pairs confirm
+3'UTR splicing creates PTCs via EJC repositioning; (3) 3'UTR splicing is
+depleted in PTC-negative NMD vs Control (OR =
+`r round(as.numeric(ft_utr3_neg$estimate), 2)`, p =
+`r signif(ft_utr3_neg$p.value, 3)`), consistent with 3'UTR splicing being a
+PTC-creating mechanism rather than an independent NMD trigger.
 
 # 2c. Start Codons and ORFs: The 5'UTR Landscape {#sec2c-start-codons}
 
-The unified model's second-largest gain comes from 5'UTR features (Section 2a:
-AUC `r round(unified$elastic_net$step2$auc_test, 3)` →
-`r round(unified$elastic_net$step3$auc_test, 3)` when adding ORF features).
-What about the 5'UTR predicts NMD, and why do overlapping uORFs matter?
-
-**Data source:** Gene-matched C2 vs C4 coding pairs (paired framework). 5'UTR
-features from utr5_features.rds. uORF set operations from uorf_comparison.rds.
-Splice event co-occurrence from paired profiles.
-
-Upstream open reading frames (uORFs) in the 5'UTR can trigger NMD when
-translation of the uORF terminates and the ribosome encounters downstream
-exon-exon junctions from the main CDS. Rather than testing a single feature,
-we scan 28 5'UTR sequence features and ask which best distinguish
-PTC-negative NMD comparators from Controls.
+The unified model's second-largest AUC gain comes from 5'UTR ORF features
+(Section 2a: AUC `r round(unified$elastic_net$step2$auc_test, 3)` →
+`r round(unified$elastic_net$step3$auc_test, 3)`). Upstream open reading frames
+(uORFs) in the 5'UTR can trigger NMD when translation of the uORF terminates
+and the ribosome encounters downstream EJCs from the main CDS. Here we
+characterize the 5'UTR landscape in the paired framework to identify what
+specifically distinguishes PTC-negative NMD comparators from Controls.
 
 ```{r goal4b-utr5-load}
 # ── Data provenance ──
@@ -2841,7 +2515,7 @@ PTC-negative NMD comparators from Controls.
 #   2. 5'UTR boundaries: strand-aware from genomic CDS + exon structure
 #      Validation: 98.6% of isoforms have ATG at computed CDS start position
 #   3. 5'UTR sequences extracted from SQANTI corrected transcript FASTA
-#   4. Groups: PTC_neg, PTC_pos, Control (same coding pair definitions as §4)
+#   4. Groups: PTC_neg, PTC_pos, Control (same coding pair definitions as §2b)
 #   5. Univariate Wilcoxon tests (3 comparisons × 28 features)
 #   6. Multivariate elastic net (3 models)
 #   7. Pair-level delta analysis (comp - ref feature differences)
@@ -2854,15 +2528,12 @@ utr5_feat$group <- factor(utr5_feat$group, levels = c("PTC_neg", "PTC_pos", "Con
 uorf_data <- readRDS(file.path(cache_dir, "uorf_analysis.rds"))
 uorf <- uorf_data$per_isoform
 uorf$group <- factor(uorf$group, levels = c("PTC_neg", "PTC_pos", "Control"))
+
+# Load uORF comparison data (set operations, event enrichment)
+uorf_comp <- readRDS(file.path(cache_dir, "uorf_comparison.rds"))
 ```
 
 ## Table 8a: 5'UTR Feature Summary by Group
-
-The table below provides an overview of 5'UTR characteristics across the three
-groups. If uORFs are a mechanism for PTC-negative NMD, we expect PTC-negative
-comparators to have longer 5'UTRs, more uORFs, and specifically more
-*overlapping* uORFs (whose stop codon extends into the main CDS, forcing the
-ribosome to encounter downstream exon-exon junctions).
 
 ```{r goal4b-feature-summary}
 # ── Data provenance ──
@@ -2904,56 +2575,7 @@ to CDS); **median_n_overlap** = median overlapping uORFs (stop at/past CDS start
 **median_strong_kozak** = median count of ATGs with strong Kozak context
 (A/G at -3 AND G at +4).
 
-The contrast is striking: PTC-negative NMD comparators have a median of 8 uORFs
-compared to 1 in Controls, with nearly all (96.8%) containing at least one uORF.
-The `median_pct_in_orfs` column shows that a median of 67.7% of the 5'UTR
-sequence is covered by at least one uORF (computed as the union of all
-uORF intervals, with no double-counting of overlapping regions), compared to
-27.2% in Controls. Overlapping uORFs — those whose stop codon falls at or past
-the main CDS start — are found in 61.9% of PTC-negative comparators vs 28.7%
-of Controls.
-
-## Table 8a-stop: Stop Codon Distribution in 5'UTR
-
-Stop codons in the 5'UTR determine where uORFs terminate. Higher stop density
-means more opportunities for ATG-initiated reading frames to encounter an
-in-frame stop, producing complete uORFs. The three stop codons (TAA, TAG, TGA)
-may also differ in read-through efficiency, potentially affecting whether a
-uORF triggers NMD or is read through by the ribosome.
-
-```{r goal4b-stop-summary}
-stop_summary <- comp_feat |>
-  group_by(group) |>
-  summarise(
-    n = n(),
-    median_stops = median(n_stop_total),
-    mean_stops = round(mean(n_stop_total), 1),
-    median_taa = median(n_taa),
-    median_tag = median(n_tag),
-    median_tga = median(n_tga),
-    median_stop_density = round(median(stop_density), 2),
-    .groups = "drop")
-
-render_dt(stop_summary, caption = "Table 8a-stop: 5'UTR Stop Codon Distribution by Group")
-```
-
-Columns: **median_stops/mean_stops** = total stop codons (TAA+TAG+TGA) in 5'UTR;
-**median_taa/tag/tga** = individual stop codon counts; **median_stop_density** =
-stops per 100 bp.
-
-Stop codon composition matters for uORF biology because each uORF requires an
-in-frame stop to terminate. TGA is the most abundant stop codon in 5'UTRs across
-all groups (~55% of all stops), consistent with known nucleotide composition biases
-in non-coding sequence. PTC-negative comparators have higher stop density per 100 bp
-(2.86 vs 2.48 in Control) — more uORF termination opportunities per unit sequence,
-not just more stops from having longer 5'UTRs.
-
 ## Table 8b: uORF Enrichment Tests
-
-The features above describe group-level medians. The table below tests whether
-the *prevalence* of uORFs — the fraction of isoforms with at least one uORF —
-differs between groups. This answers a simpler question than the elastic net:
-not which features predict NMD, but whether having any uORF at all is enriched.
 
 ```{r goal4b-uorf-tests}
 # ── Data provenance ──
@@ -3049,8 +2671,11 @@ save_fig(fig_utr5, "fig8a_utr5_length_distribution", width = 10, height = 6)
 ```
 
 **Figure 8a** shows that PTC-negative NMD comparators have dramatically longer
-5'UTRs than either PTC-positive or Control isoforms (median 724 bp vs 243 and
-265 bp). This length difference is a necessary precondition for the uORF
+5'UTRs than either PTC-positive or Control isoforms (median
+`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"]` bp vs
+`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_pos"]` and
+`r uorf_summary$median_utr5_bp[uorf_summary$group == "Control"]` bp).
+This length difference is a necessary precondition for the uORF
 enrichment — longer 5'UTRs provide more sequence in which ATGs and in-frame stops
 can occur. However, as we show below, the enrichment goes beyond what length alone
 would predict: the *density* of uORF-related features is also elevated.
@@ -3102,146 +2727,24 @@ save_fig(fig_prev, "fig8b_uorf_prevalence_barplot", width = 10, height = 6)
 ```
 
 **Figure 8b** shows uORF prevalence. Nearly all PTC-negative NMD comparators
-(96.2%) have at least one uORF, compared to 63.3% of Controls (OR = 14.6,
-p < 10^-180^). Notably, PTC-positive comparators are *less* likely to have uORFs
-than Controls (57.2% vs 63.3%, OR = 0.8) — suggesting that the uORF mechanism
-is specific to the PTC-negative group, not a general property of NMD-responsive
-isoforms.
-
-## Figure 8c: uORF Count Distribution
-
-```{r goal4b-uorf-density, fig.width=10, fig.height=6}
-uorf_plot <- uorf[uorf$utr5_length > 0, ]
-uorf_plot$group_label <- factor(uorf_plot$group,
-  levels = c("PTC_neg", "PTC_pos", "Control"),
-  labels = c("NMD PTC-", "NMD PTC+", "Control"))
-
-fig_uorf <- ggplot(uorf_plot, aes(x = n_uorfs, fill = group_label)) +
-  geom_histogram(aes(y = after_stat(density)), binwidth = 1, alpha = 0.5,
-                 position = "identity") +
-  scale_x_continuous(breaks = c(0, 5, 10, 15, 20, 25, 30), limits = c(-0.5, 35)) +
-  scale_fill_manual(values = c("NMD PTC-" = "#fddbc7", "NMD PTC+" = "#ef8a62",
-                                "Control" = "#67a9cf")) +
-  labs(title = "uORF Count Distribution by Group",
-       subtitle = "PTC-negative NMD isoforms have dramatically more uORFs (median 8 vs 1 in Control)",
-       x = "Number of uORFs", y = "Density", fill = "")
-save_fig(fig_uorf, "fig8c_uorf_count_distribution", width = 10, height = 6)
-```
-
-## Which 5'UTR Features Best Predict NMD Status?
-
-The univariate analyses above show that virtually every 5'UTR feature is elevated
-in PTC-negative NMD comparators — but many of these features are correlated with
-each other (longer 5'UTR = more ATGs = more ORFs). To identify which features
-carry *independent* predictive information, we fit an elastic net logistic
-regression (alpha=0.5, 10-fold cross-validation) with 21 features, including
-frame-stratified counts and individual stop codon types.
-The model achieves a 10-fold cross-validated AUC of `r round(utr5_data$multivariate$cv_auc_a$cvm[which(utr5_data$multivariate$cv_auc_a$lambda == utr5_data$multivariate$cv_auc_a$lambda.min)], 3)` for distinguishing PTC-negative from Control comparators based on 5'UTR features alone — strong predictive power from sequence features. By contrast, the same features achieve AUC = `r round(utr5_data$multivariate$cv_auc_b$cvm[which(utr5_data$multivariate$cv_auc_b$lambda == utr5_data$multivariate$cv_auc_b$lambda.min)], 3)` for PTC-positive vs Control (barely above chance), confirming that 5'UTR features are specific to the PTC-negative NMD mechanism.
-
-```{r goal4b-feature-importance, fig.width=10, fig.height=7}
-# ── Data provenance ──
-# Source: utr5_data$multivariate$coefs_a (elastic net coefficients)
-# Model A: PTC_neg vs Control, elastic net (alpha=0.5), 10-fold CV
-# Features: frame-stratified ATG/stop counts, individual stop codon types,
-#   ORF counts, density, Kozak, longest/total ORF, orphan ATGs
-# Excludes totals (n_atg, n_stop_total) to avoid multicollinearity with components
-
-coefs_a <- utr5_data$multivariate$coefs_a
-coefs_a <- coefs_a[order(coefs_a$coefficient), ]
-coefs_a$feature <- factor(coefs_a$feature, levels = coefs_a$feature)
-coefs_a$direction <- ifelse(coefs_a$coefficient > 0, "Positive", "Negative")
-
-fig_coefs <- ggplot(coefs_a, aes(x = coefficient, y = feature, fill = direction)) +
-  geom_col() +
-  scale_fill_manual(values = c("Positive" = "#ef8a62", "Negative" = "#67a9cf")) +
-  labs(title = "Elastic Net Feature Importance: PTC-neg vs Control",
-       subtitle = paste0("Model A: ", nrow(coefs_a), " non-zero features at lambda.min; ",
-                          "positive = enriched in PTC-neg"),
-       x = "Coefficient", y = "", fill = "") +
-  theme(legend.position = "bottom")
-save_fig(fig_coefs, "fig8d_feature_importance", width = 10, height = 7)
-```
-
-The figure reveals several important patterns:
-
-1. **`n_orfs_overlapping`** (uORFs whose stop codon falls at or past the main
-   CDS start) is the strongest predictor. Overlapping uORFs are particularly
-   potent NMD triggers because the ribosome translating them necessarily
-   encounters downstream exon-exon junctions from the main CDS — exactly the
-   configuration that activates the NMD pathway.
-
-2. **`atg_density`** (ATGs per 100 bp) is the second-strongest feature. This
-   captures how densely packed the 5'UTR is with potential translation start
-   sites, independent of total 5'UTR length.
-
-3. **`pct_utr5_in_orfs`** (fraction of 5'UTR covered by uORFs, computed as
-   the union of all uORF intervals without double-counting) ranks third. A
-   median 67.7% of the 5'UTR in PTC-negative comparators is covered by at
-   least one uORF, vs 27.2% in Controls.
-
-4. **`n_strong_kozak_atg`** (ATGs with strong initiation context: A/G at -3 and
-   G at +4) is independently predictive. This suggests that translational
-   *efficiency* of uORFs matters — not just their presence but whether ribosomes
-   actually initiate at them.
-
-5. **`stop_density`** (stop codons per 100 bp) has a positive coefficient.
-   More stops per unit sequence means more opportunities for uORFs to terminate,
-   creating more complete ORFs that can trigger NMD.
-
-6. **Frame-specific signals:** In-frame ATGs (`n_atg_frame0`) have a *negative*
-   coefficient — consistent with the biology that in-frame uORFs may represent
-   N-terminal extensions that do not independently terminate. Out-of-frame
-   uORFs must terminate in a different frame from the main CDS, making them
-   bona fide NMD triggers.
-
-7. **Stop codon identity:** TAG has a negative coefficient while TGA is positive.
-   The biological significance of this is unclear but may relate to differences
-   in read-through efficiency between stop codons.
-
-## uORF Detection Validation Against ORFik
-
-```{r goal4b-orfik-validation}
-# ── Data provenance ──
-# Source: uorf_comparison.rds (05i_uorf_orfik_analysis.R)
-# Our method: detectUorfs(method="simple") walks stop codons through full transcript
-# ORFik: findORFs(startCodon="ATG", longestORF=FALSE, minimumLength=0) on 5'UTR-only
-
-uorf_comp <- readRDS(file.path(cache_dir, "uorf_comparison.rds"))
-ov <- uorf_comp$orfik_validation
-```
-
-Our uORF detection method walks the reading frame through the **full transcript
-sequence**, not just the 5'UTR. This is necessary to detect **overlapping uORFs**
-— those whose ATG is in the 5'UTR but whose stop codon falls in or past the
-main CDS. Overlapping uORFs are the top elastic net predictor of PTC-negative
-NMD status, so detecting them is essential.
-
-To validate our method, we compared non-overlapping uORF counts (where both
-methods should agree) against ORFik's `findORFs()` applied to 5'UTR-only
-sequences. Across `r fmt(ov$n_compared)` isoforms, the per-isoform uORF counts
-show a Spearman correlation of **`r round(ov$spearman_r, 3)`**, with
-`r fmt(ov$n_agree)` isoforms (`r round(100 * ov$n_agree / ov$n_compared, 1)`%)
-having identical counts between methods. For the remaining
-`r fmt(ov$n_orfik_more)` isoforms, ORFik detected additional short uORFs near
-the 3' end of the 5'UTR where our method's stop-codon walk extends past the
-5'UTR boundary into the CDS. Our method found zero isoforms with more
-non-overlapping uORFs than ORFik.
-
-Beyond this concordance, our method uniquely detected
-**`r fmt(ov$n_overlapping_ours)` overlapping uORFs** (ATG in 5'UTR, stop codon
-in or past the main CDS) that ORFik cannot find from 5'UTR-only input. These
-overlapping uORFs are the most biologically important category: they are the
-top elastic net predictor and show the strongest enrichment in PTC-negative
-NMD comparators.
+(`r uorf_prev$pct[uorf_prev$group == "PTC_neg"]`%) have at least one uORF,
+compared to `r uorf_prev$pct[uorf_prev$group == "Control"]`% of Controls
+(OR = `r any_uorf_tests$OR[any_uorf_tests$comparison == "PTC_neg vs Control"]`,
+p = `r p_neg_ctrl`). Notably, PTC-positive comparators are *less* likely to have
+uORFs than Controls
+(`r uorf_prev$pct[uorf_prev$group == "PTC_pos"]`% vs
+`r uorf_prev$pct[uorf_prev$group == "Control"]`%,
+OR = `r any_uorf_tests$OR[any_uorf_tests$comparison == "PTC_pos vs Control"]`)
+— suggesting that the uORF mechanism is specific to the PTC-negative group, not
+a general property of NMD-responsive isoforms.
 
 ## uORF Set Operations: Gained, Lost, and Shared uORFs
 
-The feature analysis above counts uORFs per comparator isoform. Here we go
-further by matching individual uORFs between the reference and comparator
-within each gene-matched pair, using their shared ATG genomic position. This
-identifies which uORFs are *gained* by the comparator (present in comparator
-but absent from the reference), *lost*, or *shared*. Critically, we stratify
-gained uORFs by overlapping status — the category most associated with NMD.
+Within each gene-matched pair, individual uORFs are matched between reference
+and comparator by ATG genomic position. uORFs present only in the comparator
+are "gained"; those only in the reference are "lost." Gained uORFs are further
+stratified by overlapping status — the category the unified model identifies as
+most predictive (Section 2a).
 
 ```{r goal4b-uorf-setops}
 # ── Data provenance ──
@@ -3269,10 +2772,10 @@ counts; **pct_any_lost/pct_shared** = % with lost or shared uORFs.
 The key finding: **`r gs$pct_gained_overlapping[gs$group == "PTC_neg"]`% of
 PTC-negative NMD pairs gain at least one overlapping uORF**, compared to
 `r gs$pct_gained_overlapping[gs$group == "Control"]`% of Control pairs (Fisher's
-exact OR = `r round(uorf_comp$event_enrichment$OR[1], 1)` — see below). This is
-a 5.4-fold enrichment. PTC-positive pairs are actually *depleted* for gained
-overlapping uORFs (9.7%), consistent with their NMD being driven by the PTC
-rather than 5'UTR features.
+exact OR = `r round(uorf_comp$event_enrichment$OR[1], 1)` — see below).
+PTC-positive pairs are actually *depleted* for gained
+overlapping uORFs (`r gs$pct_gained_overlapping[gs$group == "PTC_pos"]`%),
+consistent with their NMD being driven by the PTC rather than 5'UTR features.
 
 ## Splice Event Co-Occurrence
 
@@ -3302,111 +2805,27 @@ pairs with gained overlapping uORFs that also have this event type;
 **pct_without** = prevalence in non-gained pairs; **OR** = Fisher's exact odds
 ratio (OR > 1 = enriched in gained-overlap pairs); **p_value** = Fisher p-value.
 
-**Skipped exon events are the most significantly enriched** event type in pairs
-that gain overlapping uORFs (59.1% vs 43.7%, OR = 1.87, p = 4.3e-11). This
-suggests that exon skipping contributes to overlapping uORF creation — possibly
-by shifting the reading frame or altering the stop codon landscape in the 5'UTR.
-
-Notably, alternative TSS events are **not** enriched (83.3% vs 82.8%,
-OR = 1.03, p = 0.80) — they are ubiquitous across PTC-negative NMD pairs
-regardless of overlapping uORF status. Alt_TSS events are likely important for
-PTC-negative NMD more broadly (by extending the 5'UTR and increasing uORF count
-overall), but this analysis specifically asks which events distinguish pairs
-that gain *overlapping* uORFs from those that do not.
-
-## 5'UTR Features Predict NMD Response Magnitude
-
-```{r goal4b-logfc-correlation, fig.width=10, fig.height=5}
-# ── Data provenance ──
-# Source: uorf_comparison.rds → logfc_correlation
-# Mixed-effects model: logFC ~ pred_nmd_prob + (1 | isoform_id)
-# Accounts for 6 repeated cell-type measurements per isoform
-# pred_nmd_prob from elastic net Model A (5'UTR features)
-
-lfc <- uorf_comp$logfc_correlation
-me <- lfc$mixed_effects
-iso_means <- lfc$iso_means
-
-# Scatter plot: isoform-level mean logFC vs predicted NMD probability
-plot_data <- iso_means[iso_means$group %in% c("PTC_neg", "PTC_pos"), ]
-plot_data$group_label <- factor(plot_data$group,
-  levels = c("PTC_neg", "PTC_pos"),
-  labels = c("NMD PTC-", "NMD PTC+"))
-
-fig_lfc <- ggplot(plot_data, aes(x = pred_nmd_prob, y = mean_logFC)) +
-  geom_point(alpha = 0.15, size = 0.8) +
-  geom_smooth(method = "lm", color = "#ef8a62", se = TRUE) +
-  facet_wrap(~group_label, scales = "free_y") +
-  labs(
-    title = "5'UTR Feature Score Predicts NMD Response Magnitude",
-    subtitle = paste0(
-      "PTC-neg: mixed-effects coef = ",
-      round(me$PTC_neg$coefficient, 3), ", p = ",
-      signif(me$PTC_neg$p_value, 3),
-      "  |  PTC-pos: coef = ",
-      round(me$PTC_pos$coefficient, 3), ", p = ",
-      signif(me$PTC_pos$p_value, 3)),
-    x = "Predicted NMD Probability (from 5'UTR features)",
-    y = "Mean mashr logFC (across cell types)")
-save_fig(fig_lfc, "fig8e_logfc_correlation", width = 10, height = 5)
-```
-
-If uORF-mediated NMD were a binary switch — either triggered or not — we would
-expect no relationship between 5'UTR features and the *magnitude* of NMD
-response among PTC-negative comparators (they are all NMD-responsive by
-definition). Instead, we find a significant positive relationship.
-
-A linear mixed-effects model (`logFC ~ pred_nmd_prob + (1 | isoform_id)`)
-accounts for the 6 repeated cell-type measurements per isoform (mashr posterior
-means). Within PTC-negative comparators, isoforms with higher predicted NMD
-probability (based on 5'UTR features alone) show significantly stronger NMD
-response (coefficient = `r round(me$PTC_neg$coefficient, 3)`, t =
-`r round(me$PTC_neg$t_value, 1)`, p = `r signif(me$PTC_neg$p_value, 3)`,
-n = `r fmt(me$PTC_neg$n_isoforms)` isoforms).
-
-The same model applied to PTC-positive comparators shows **no relationship**
-(coefficient = `r round(me$PTC_pos$coefficient, 3)`, p =
-`r signif(me$PTC_pos$p_value, 3)`). This confirms that 5'UTR features
-specifically modulate NMD in the PTC-negative group — they have no bearing on
-NMD response when a PTC is already present.
-
-**This suggests uORF-mediated NMD is a continuous, dose-dependent phenomenon**:
-the more the 5'UTR is loaded with overlapping uORFs and strong initiation
-contexts, the stronger the NMD response. This is consistent with a model where
-multiple uORFs each contribute a small probability of ribosome engagement and
-premature termination, with the cumulative effect determining overall NMD
-sensitivity.
+Skipped exon events are the most enriched event type among pairs gaining
+overlapping uORFs, while Alt_TSS events are ubiquitous regardless of
+overlapping uORF status.
 
 ### Conclusion: 5'UTR uORFs as the Primary Non-PTC NMD Mechanism
 
-The analyses in this section converge on a clear picture:
-
-1. **Overlapping uORFs and ATG density are the strongest predictors** of
-   PTC-negative NMD status (elastic net AUC = 0.875). These features are
-   specific to PTC-negative comparators (AUC = 0.628 for PTC-positive,
-   near chance).
-
-2. **58% of PTC-negative pairs gain overlapping uORFs** compared to 20% of
-   Controls (OR = 5.4). Skipped exon events are specifically enriched among
-   pairs gaining overlapping uORFs (OR = 1.87, p = 4.3e-11), suggesting exon
-   skipping contributes to overlapping uORF creation beyond the general
-   structural differences between NMD and Control isoforms.
-
-3. **5'UTR features predict NMD response *magnitude***, not just binary NMD
-   status. The mixed-effects coefficient is highly significant in PTC-negative
-   comparators (p = `r signif(me$PTC_neg$p_value, 3)`) and null in PTC-positive
-   (p = `r signif(me$PTC_pos$p_value, 3)`), suggesting uORF-mediated NMD is a
-   continuous, dose-dependent phenomenon.
-
-4. **Our detection method is validated** against ORFik (Spearman r =
-   `r round(ov$spearman_r, 3)` for non-overlapping uORFs) while uniquely
-   capturing the `r fmt(ov$n_overlapping_ours)` overlapping uORFs that are
-   the most biologically important category.
+The unified model (Section 2a) identifies overlapping uORFs and longest uORF
+length as the most important 5'UTR features for predicting NMD status. The
+paired analysis here confirms these features are specifically enriched in
+PTC-negative NMD comparators:
+`r gs$pct_gained_overlapping[gs$group == "PTC_neg"]`% of PTC-negative pairs
+gain at least one overlapping uORF vs
+`r gs$pct_gained_overlapping[gs$group == "Control"]`% of Controls. PTC-positive
+pairs are depleted for gained overlapping uORFs, consistent with their NMD
+being driven by the PTC rather than 5'UTR features. Our uORF detection method
+(validated against ORFik for non-overlapping uORFs) uniquely captures
+overlapping uORFs that are invisible to 5'UTR-only analyses.
 
 **Limitations:** uORF detection is sequence-based and does not confirm
-translation. The correlation with NMD magnitude is observational and does not
-establish that specific uORFs cause the observed NMD response. Other non-PTC
-NMD mechanisms cannot be ruled out from structural data alone.
+translation. Other non-PTC NMD mechanisms cannot be ruled out from structural
+data alone.
 
 # 2d. NMD Response is Continuous {#sec2d-continuous}
 
@@ -3620,7 +3039,7 @@ transcripts where the selected path produces a reading frame that
 terminates upstream of EJCs.
 
 
-# 4. Protein-Level Consequences of Normal Alternative Splicing {#goal5}
+# 4. Protein-Level Consequences of Normal Alternative Splicing {#sec4-protein}
 
 This analysis has been moved to a separate report:
 **`05g_protein_report_mashr.Rmd`** / **`05g_protein_report_mashr.html`**

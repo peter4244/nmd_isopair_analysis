@@ -1399,6 +1399,70 @@ differential isoform expression results:
   `(gene_id, reference_isoform_id)` pairs, ensuring the same genes and
   reference isoforms appear in both NMD and Control analyses
 
+### Transcriptional Diversity Analysis (Section 1)
+
+For genes in the gene-matched pair set, isoform diversity is characterized
+using all expressed isoforms (coding and non-coding) from `structures.rds`
+and `expression_data.rds`. Metrics include:
+
+- **Isoform count distribution**: Number of expressed isoforms per gene.
+- **TSS/TES diversity**: Number of distinct strand-aware TSS and TES
+  positions per gene (multi-isoform genes only).
+- **TSS-TES independence**: Within-gene Spearman correlation between TSS
+  and TES positions across isoforms (genes with ≥3 isoforms). Combination
+  usage: percentage of possible TSS×TES pairs actually observed.
+- **TSS-CDS and TES-CDS coupling**: Per-gene Spearman correlation between
+  TSS and CDS 5' boundary (strand-aware), and TES vs CDS 3' boundary
+  (coding isoforms only, genes with ≥3 coding isoforms).
+- **CDS start diversity**: Number of distinct CDS start positions per gene,
+  and whether starts fall in different reading frames (positions differing
+  by a non-multiple of 3).
+- **Expression concentration**: Fraction of gene-level DMSO CPM contributed
+  by the dominant isoform (highest mean CPM across DMSO samples).
+
+### Unified Predictive Model (Section 2a)
+
+An elastic net logistic regression model predicts NMD status from structural
+features. The population is all mashr-classified NMD and non-NMD coding
+isoforms with complete structural features (broader than the paired
+framework). Holdout chromosomes 1, 3, 5, 7 (~26% of data) are never used
+for feature selection or model tuning.
+
+**Progressive model building:**
+
+1. **Step 1 — Stop codon position**: 4-level categorical predictor from PTC
+   status and downstream EJC count.
+2. **Step 2 — + Start codon context**: Adds 5'UTR features from
+   `scan5UtrFeatures()` (uORF counts, overlapping ORFs, Kozak context).
+3. **Step 3 — + ORF features (unified)**: Adds ORF length, CDS percentage,
+   and frame features.
+
+Each step uses elastic net (glmnet, alpha = 0.5) with 10-fold
+cross-validation on the training set. AUC is evaluated on both training and
+holdout sets. Complementarity analysis compares stop-codon-only, 5'UTR-only,
+and combined models.
+
+Source script: `05l_unified_model.R` → `analysis_cache/unified_model.rds`.
+
+### Dose-Response Analysis (Section 2d)
+
+The unified model's predicted NMD probability is tested for correlation with
+actual NMD response magnitude. Raw limma logFC values (per-cell-type
+unshrunk estimates from 6 cell types: AT, DD, DD_ALI, DO, FB, MV) are
+averaged per isoform to produce a mean logFC. Spearman correlation between
+predicted probability and mean logFC is computed for all NMD isoforms, and
+separately for PTC-positive and PTC-negative subsets.
+
+### Shared ATG Analysis (Section 3)
+
+For genes with PTC-negative NMD comparators that have overlapping uORFs,
+all expressed coding isoforms of those genes are examined to determine
+whether the uORF ATG position also serves as a CDS start in other isoforms.
+CDS start positions are extracted from `cds.rds` (strand-aware: `cds_start`
+on + strand, `cds_stop` on - strand). ATG positions shared between NMD and
+non-NMD isoforms are identified by matching CDS 5' boundaries across all
+coding isoforms of the gene.
+
 ### PTC-Causing Event Attribution
 
 For each PTC+ comparator, the specific splice event that caused the PTC is
@@ -1450,22 +1514,72 @@ comparators are split by stop codon mechanism:
   valid when the reference stop position falls within the comparator's exons
   (~86% of cases).
 
-### 5'UTR uORF Analysis
+### 5'UTR Feature Analysis and uORF Detection
 
-Upstream open reading frames (uORFs) in the 5'UTR are scanned as a potential
-non-PTC NMD mechanism:
+#### Phase 0: Data-Driven Feature Scan
 
-1. **5'UTR extraction**: For each isoform, the 5'UTR length is computed from
-   genomic CDS coordinates + exon structure. Validated by checking for ATG
-   at the computed CDS start position (98.4% pass rate).
+A comprehensive scan of 28 5'UTR sequence features is performed for all coding
+comparator and reference isoforms using `Isopair::scan5UtrFeatures()`. Features
+include ATG and stop codon counts (total and stratified by reading frame relative
+to the main CDS ATG), ORF counts (in-frame, out-of-frame, overlapping), density
+measures (per 100 bp), Kozak initiation context, and spatial features. The
+fraction of 5'UTR occupied by uORFs (`pct_utr5_in_orfs`) is computed as the
+union of all uORF intervals within the 5'UTR, with no double-counting of
+overlapping ORF regions.
+
+Feature importance is assessed by elastic net logistic regression (glmnet,
+alpha=0.5, 10-fold cross-validation) predicting PTC-negative NMD status vs
+Control. Three models are fit: Model A (PTC_neg vs Control, primary), Model B
+(PTC_pos vs Control, specificity control), Model C (PTC_neg vs PTC_pos).
+Cross-validated AUC is computed with `type.measure="auc"`.
+
+#### uORF Detection
+
+1. **5'UTR extraction**: For each isoform, the 5'UTR boundaries are computed
+   from genomic CDS coordinates + exon structure (strand-aware). Validated by
+   checking for ATG at the computed CDS start position (98.6% pass rate).
 2. **uORF detection**: All AUG positions in the 5'UTR sequence (from SQANTI
-   corrected transcript FASTA) are identified. For each, the reading frame
-   is walked through the full transcript until the first in-frame stop codon
-   (TAA, TAG, TGA). Minimum uORF size: 3 codons (9 nt).
+   corrected transcript FASTA) are identified via `Isopair::detectUorfs()`.
+   For each ATG, the reading frame is walked through the **full transcript
+   sequence** until the first in-frame stop codon (TAA, TAG, TGA). Minimum
+   uORF size: 3 codons (9 nt). Walking through the full transcript (not just
+   the 5'UTR) is necessary to detect overlapping uORFs whose stop codon falls
+   in or past the main CDS.
 3. **Overlapping uORFs**: uORFs whose stop codon falls at or beyond the main
    CDS start are classified as overlapping — a known NMD trigger.
-4. **Groups compared**: PTC-negative NMD comparators, PTC-positive NMD
+4. **Validation against ORFik**: Non-overlapping uORF counts are compared to
+   ORFik `findORFs(startCodon="ATG", longestORF=FALSE, minimumLength=0)`
+   applied to 5'UTR-only sequences. ORFik's `minimumLength` counts body
+   codons excluding start and stop; `minimumLength=0` matches our 3-codon
+   total minimum. ORFik cannot detect overlapping uORFs from 5'UTR-only
+   input because their stop codons fall outside the provided sequence.
+5. **Groups compared**: PTC-negative NMD comparators, PTC-positive NMD
    comparators, and Control (C4) comparators, all restricted to coding pairs.
+
+#### uORF Set Operations
+
+For each isoform pair, uORFs in the reference and comparator are compared by
+genomic ATG position (`Isopair::compareUorfs()`). uORFs sharing the same ATG
+position are classified as "shared"; those present only in the comparator are
+"gained"; those only in the reference are "lost". Gained and lost uORFs are
+stratified by overlapping status.
+
+#### Splice Event Co-Occurrence
+
+For pairs where the comparator gains overlapping uORFs, the prevalence of each
+splice event type (from `Isopair::buildProfiles()`) is tabulated and compared to
+pairs without gained overlapping uORFs using Fisher's exact test. This describes
+the structural context of overlapping uORF gain without claiming individual
+causal attribution.
+
+#### NMD Response Correlation
+
+The elastic net Model A predicted probability (from 5'UTR features) is tested
+for correlation with NMD response magnitude (mashr posterior mean logFC). Each
+isoform has 6 cell-type-specific logFC values (from `ashr::get_pm()` on the
+mashr model). A linear mixed-effects model (`lme4::lmer()`) is fit within each
+group: `logFC ~ pred_nmd_prob + (1 | isoform_id)`, with the isoform random
+intercept accounting for repeated cell-type measurements.
 
 ### 3'UTR Splicing Enrichment
 
@@ -1666,6 +1780,6 @@ Splice-specific peptides are validated against the Human PeptideAtlas
 
 ---
 
-**Document Version**: 2.7
-**Last Updated**: 2026-03-15
-**Status**: Complete and validated — restructured Section 5 with CT analysis and MS integration
+**Document Version**: 2.8
+**Last Updated**: 2026-03-19
+**Status**: Complete and validated — added methods for transcriptional diversity (Section 1), unified model (Section 2a), dose-response (Section 2d), shared ATG analysis (Section 3)
