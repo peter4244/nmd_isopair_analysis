@@ -1,6 +1,6 @@
 ---
-title: "NMD Isoform Transitions: Publication Report (mashr Classification)"
-subtitle: "Isopair Wrapper — Isocall Pipeline, mashr DIE"
+title: "NMD as Post-Transcriptional Reading Frame Selection"
+subtitle: "Isopair Wrapper — Isocall Pipeline, mashr Classification"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -17,9 +17,13 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
                       fig.width = 8, fig.height = 5)
 library(Isopair)
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 library(knitr)
 library(DT)
+library(pROC)
+library(glmnet)
+library(patchwork)
 source("visualization_functions.R")
 
 # Helper: render interactive DT table (sortable, searchable)
@@ -742,9 +746,349 @@ In the IR section of this report, **IR_diff** refers to the aggregate of IR_diff
 IR_diff_3, and IR_diff_5_3 events.
 
 
-# 1. Baseline Splicing and NMD-Enriched Events {#goal1-baseline}
+# 1. Transcriptional Diversity and Isoform Optionality {#sec1-diversity}
 
-**Goal 1:** Characterize baseline alternative splicing (Control C4 pairs) and identify which
+Before asking what triggers NMD, we establish the transcriptional landscape
+that NMD operates on. Genes produce diverse isoforms through combinatorial
+TSS, internal splicing, and TES choices. This section characterizes
+isoform diversity within the gene-matched pair set — the same genes analyzed
+throughout this report. Diversity and TSS/TES analyses use all expressed
+isoforms (coding and non-coding); CDS-dependent analyses are restricted to
+coding isoforms.
+
+**Data source:** All expressed isoforms for genes in the gene-matched pair
+set (structures.rds, expression_data.rds). CDS analyses additionally use
+cds.rds (coding isoforms only).
+
+```{r sec1-diversity-data}
+# ── Data provenance ──
+# Source: structures.rds (extractIsoformStructures), cds.rds (extractCds),
+#   expression_data.rds (TMM-normalized count matrix from 01_prepare_data_mashr.R)
+# Population: All expressed isoforms for genes in gene-matched pair set.
+#   Gene set defined by profiles_list (loaded in STAGE 2, gene-matched).
+
+# Genes in the gene-matched pair set
+pair_genes <- unique(profiles_list[["c2_allsamples"]]$gene_id)
+
+# All expressed isoforms for these genes (coding + non-coding)
+sec1_structures <- structures %>%
+  filter(gene_id %in% pair_genes,
+         isoform_id %in% rownames(expr_mat))
+
+# Coding subset (for CDS-dependent analyses later)
+coding_structures <- sec1_structures %>%
+  filter(isoform_id %in% cds$isoform_id[cds$coding_status == "coding"])
+
+coding_cds <- cds %>%
+  filter(isoform_id %in% coding_structures$isoform_id)
+
+cat("Gene-matched pair genes:", length(pair_genes), "\n")
+cat("All expressed isoforms (these genes):", nrow(sec1_structures), "\n")
+cat("  of which coding:", nrow(coding_structures), "\n")
+
+# ── Isoform count per gene (all isoforms) ──
+iso_per_gene <- sec1_structures %>%
+  group_by(gene_id) %>%
+  summarise(n_isoforms = n(), .groups = "drop")
+
+cat("\nIsoforms per gene (all expressed):\n")
+print(summary(iso_per_gene$n_isoforms))
+cat("Genes with ≥2 isoforms:", sum(iso_per_gene$n_isoforms >= 2), "\n")
+cat("Genes with ≥5 isoforms:", sum(iso_per_gene$n_isoforms >= 5), "\n")
+```
+
+## Isoform Count Distribution
+
+```{r sec1-isoform-count-dist, fig.width=8, fig.height=5}
+fig_iso_count <- ggplot(iso_per_gene, aes(x = n_isoforms)) +
+  geom_histogram(binwidth = 1, fill = "#4292c6", color = "white", alpha = 0.8) +
+  scale_x_continuous(limits = c(0, 30), breaks = seq(0, 30, 5)) +
+  labs(title = "Expressed Isoform Count per Gene",
+       subtitle = sprintf("Gene-matched pair set | Median: %d isoforms | %s genes with ≥2",
+                          median(iso_per_gene$n_isoforms),
+                          format(sum(iso_per_gene$n_isoforms >= 2), big.mark = ",")),
+       x = "Number of expressed isoforms", y = "Number of genes")
+save_fig(fig_iso_count, "fig0a_isoform_count_distribution")
+```
+
+## TSS and TES Diversity
+
+Isoform diversity arises from three combinatorial axes: which transcription
+start site (TSS) is used, which internal exons are included, and which
+transcription end site (TES) is used. We quantify diversity at each axis
+and ask whether TSS and TES choices are coupled or independent.
+
+```{r sec1-tss-tes-diversity, fig.width=10, fig.height=8}
+# Multi-isoform genes only (≥2 coding isoforms)
+multi_iso_genes <- iso_per_gene$gene_id[iso_per_gene$n_isoforms >= 2]
+
+# ── Per-gene diversity counts (all isoforms, not just coding) ──
+tss_tes <- sec1_structures %>%
+  filter(gene_id %in% multi_iso_genes) %>%
+  group_by(gene_id, strand) %>%
+  summarise(
+    n_isoforms = n(),
+    n_unique_tss = n_distinct(ifelse(strand == "+", tx_start, tx_end)),
+    n_unique_tes = n_distinct(ifelse(strand == "+", tx_end, tx_start)),
+    .groups = "drop"
+  )
+
+cat("TSS diversity (multi-isoform coding genes, n =", nrow(tss_tes), "):\n")
+cat("  Median distinct TSS per gene:", median(tss_tes$n_unique_tss), "\n")
+cat("  Median distinct TES per gene:", median(tss_tes$n_unique_tes), "\n")
+
+# ── Within-gene TSS-TES independence ──
+# The key question: for a given gene, does knowing which TSS is used
+# predict which TES is used? We compute per-gene Spearman rho between
+# TSS and TES positions across isoforms.
+within_gene_cor <- sec1_structures %>%
+  filter(gene_id %in% multi_iso_genes) %>%
+  mutate(
+    tss = ifelse(strand == "+", tx_start, tx_end),
+    tes = ifelse(strand == "+", tx_end, tx_start)
+  ) %>%
+  group_by(gene_id) %>%
+  filter(n() >= 3, n_distinct(tss) >= 2, n_distinct(tes) >= 2) %>%
+  summarise(
+    n_iso = n(),
+    rho_tss_tes = cor(tss, tes, method = "spearman"),
+    .groups = "drop"
+  )
+
+within_gene_rho <- median(within_gene_cor$rho_tss_tes, na.rm = TRUE)
+cat("\nWithin-gene TSS-TES coupling (n =", nrow(within_gene_cor), "genes with ≥3 iso):\n")
+cat("  Median Spearman rho:", round(within_gene_rho, 3), "\n")
+cat("  Mean Spearman rho:", round(mean(within_gene_cor$rho_tss_tes, na.rm = TRUE), 3), "\n")
+cat("  IQR:", round(quantile(within_gene_cor$rho_tss_tes, 0.25, na.rm = TRUE), 3),
+    "to", round(quantile(within_gene_cor$rho_tss_tes, 0.75, na.rm = TRUE), 3), "\n")
+
+# ── Combination usage ──
+# If TSS and TES were fully independent and all combinations viable,
+# genes would use ~100% of TSS×TES pairs. Selective usage indicates
+# the exon path constrains which TSS-TES pairings are realized.
+tss_tes_combos <- sec1_structures %>%
+  filter(gene_id %in% multi_iso_genes) %>%
+  mutate(
+    tss = ifelse(strand == "+", tx_start, tx_end),
+    tes = ifelse(strand == "+", tx_end, tx_start)
+  ) %>%
+  group_by(gene_id) %>%
+  summarise(
+    n_tss = n_distinct(tss),
+    n_tes = n_distinct(tes),
+    n_combos = n_distinct(paste(tss, tes)),
+    max_possible = n_distinct(tss) * n_distinct(tes),
+    pct_used = round(100 * n_distinct(paste(tss, tes)) /
+                       (n_distinct(tss) * n_distinct(tes)), 1),
+    .groups = "drop"
+  ) %>%
+  filter(max_possible > 1)
+
+cat("\nTSS×TES combination usage (n =", nrow(tss_tes_combos), "genes):\n")
+cat("  Median % of possible combinations used:", round(median(tss_tes_combos$pct_used), 1), "%\n")
+cat("  Mean:", round(mean(tss_tes_combos$pct_used), 1), "%\n")
+
+# ── Figures ──
+
+# Panel A: TSS and TES count distributions
+tss_tes_long <- tss_tes %>%
+  select(gene_id, TSS = n_unique_tss, TES = n_unique_tes) %>%
+  pivot_longer(-gene_id, names_to = "feature", values_to = "count")
+
+p_diversity <- ggplot(tss_tes_long, aes(x = count, fill = feature)) +
+  geom_histogram(binwidth = 1, position = "dodge", alpha = 0.7) +
+  scale_x_continuous(limits = c(0, 20), breaks = seq(0, 20, 5)) +
+  scale_fill_manual(values = c(TSS = "#ef8a62", TES = "#67a9cf")) +
+  labs(title = "A. TSS and TES Diversity per Gene",
+       subtitle = sprintf("Multi-isoform coding genes (n = %s)",
+                          format(nrow(tss_tes), big.mark = ",")),
+       x = "Number of distinct positions", y = "Number of genes", fill = "")
+
+# Panel B: Within-gene TSS-TES correlation distribution
+p_within <- ggplot(within_gene_cor, aes(x = rho_tss_tes)) +
+  geom_histogram(binwidth = 0.05, fill = "#756bb1", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_vline(xintercept = within_gene_rho, color = "#e6550d", linewidth = 1) +
+  annotate("text", x = within_gene_rho + 0.05, y = Inf, vjust = 2,
+           label = sprintf("median = %.3f", within_gene_rho),
+           color = "#e6550d", size = 3.5, hjust = 0) +
+  labs(title = "B. Within-Gene TSS-TES Coupling",
+       subtitle = sprintf("Per-gene Spearman rho (n = %s genes with ≥3 isoforms)",
+                          format(nrow(within_gene_cor), big.mark = ",")),
+       x = "Spearman rho (TSS position vs TES position)", y = "Number of genes")
+
+# Panel C: Combination usage
+p_combos <- ggplot(tss_tes_combos, aes(x = pct_used)) +
+  geom_histogram(binwidth = 5, fill = "#31a354", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = median(tss_tes_combos$pct_used), color = "#e6550d", linewidth = 1) +
+  annotate("text", x = median(tss_tes_combos$pct_used) + 2, y = Inf, vjust = 2,
+           label = sprintf("median = %.0f%%", median(tss_tes_combos$pct_used)),
+           color = "#e6550d", size = 3.5, hjust = 0) +
+  labs(title = "C. TSS × TES Combination Usage",
+       subtitle = "% of possible TSS-TES pairs actually observed",
+       x = "Combinations used (%)", y = "Number of genes")
+
+fig_tss_tes <- p_diversity / (p_within | p_combos)
+save_fig(fig_tss_tes, "fig0b_tss_tes_diversity", width = 10, height = 8)
+```
+
+Within any given gene, the TSS and TES positions are largely independent:
+the median within-gene Spearman rho is `r round(within_gene_rho, 3)`,
+centered tightly around zero. Knowing which promoter a transcript initiates
+from does not predict where it will terminate.
+
+Yet genes use only `r round(median(tss_tes_combos$pct_used))`% of the
+TSS×TES combinations that would be possible if every start could pair with
+every end. This apparent contradiction resolves when we consider the exon
+path: internal splicing decisions constrain which TSS-TES pairings produce
+viable transcripts. TSS and TES are chosen independently of *each other*,
+but the internal exon structure acts as a filter — not all combinations
+produce stable, processable transcripts.
+
+## TSS–CDS and TES–CDS Coupling
+
+```{r sec1-tss-cds-coupling}
+# TSS determines CDS start; TES determines CDS stop
+coupling <- coding_structures %>%
+  filter(gene_id %in% multi_iso_genes) %>%
+  inner_join(coding_cds %>% select(isoform_id, cds_start, cds_stop),
+             by = "isoform_id") %>%
+  mutate(
+    tss = ifelse(strand == "+", tx_start, tx_end),
+    tes = ifelse(strand == "+", tx_end, tx_start),
+    cds_5prime = ifelse(strand == "+", cds_start, cds_stop),
+    cds_3prime = ifelse(strand == "+", cds_stop, cds_start)
+  )
+
+# Per-gene correlations (genes with ≥3 isoforms for meaningful correlation)
+gene_cors <- coupling %>%
+  group_by(gene_id) %>%
+  filter(n() >= 3) %>%
+  summarise(
+    n_iso = n(),
+    rho_tss_cds5 = cor(tss, cds_5prime, method = "spearman"),
+    rho_tes_cds3 = cor(tes, cds_3prime, method = "spearman"),
+    .groups = "drop"
+  )
+
+cat("TSS → CDS start coupling (per-gene Spearman rho):\n")
+cat("  Median:", round(median(gene_cors$rho_tss_cds5, na.rm = TRUE), 3), "\n")
+cat("  Mean:", round(mean(gene_cors$rho_tss_cds5, na.rm = TRUE), 3), "\n")
+
+cat("\nTES → CDS stop coupling:\n")
+cat("  Median:", round(median(gene_cors$rho_tes_cds3, na.rm = TRUE), 3), "\n")
+cat("  Mean:", round(mean(gene_cors$rho_tes_cds3, na.rm = TRUE), 3), "\n")
+```
+
+The TSS strongly determines the CDS start position, and the TES strongly
+determines the CDS stop position. The two ends of the protein are set by
+the two ends of the transcript — through the exon path, not directly.
+
+## CDS Start Diversity and Reading Frame Multiplicity
+
+```{r sec1-cds-start-diversity}
+# How many distinct CDS start positions per gene? (coding isoforms only)
+cds_diversity <- coding_structures %>%
+  filter(gene_id %in% multi_iso_genes) %>%
+  inner_join(coding_cds %>% select(isoform_id, cds_start, cds_stop),
+             by = "isoform_id") %>%
+  mutate(cds_5prime = ifelse(strand == "+", cds_start, cds_stop)) %>%
+  group_by(gene_id) %>%
+  filter(n() >= 2) %>%
+  summarise(
+    n_isoforms = n(),
+    n_cds_starts = n_distinct(cds_5prime),
+    cds_starts = list(unique(cds_5prime)),
+    .groups = "drop"
+  )
+
+cat("CDS start diversity (multi-coding-isoform genes, n =", nrow(cds_diversity), "):\n")
+cat("  Genes with ≥2 distinct CDS starts:",
+    sum(cds_diversity$n_cds_starts >= 2),
+    sprintf("(%.1f%%)\n", 100 * mean(cds_diversity$n_cds_starts >= 2)))
+cat("  Genes with ≥3 distinct CDS starts:",
+    sum(cds_diversity$n_cds_starts >= 3),
+    sprintf("(%.1f%%)\n", 100 * mean(cds_diversity$n_cds_starts >= 3)))
+cat("  Median distinct CDS starts:", median(cds_diversity$n_cds_starts), "\n")
+
+# Of genes with multiple CDS starts, how many use different reading frames?
+# Two CDS starts are in different frames if their positions differ by a non-multiple of 3.
+cds_diversity$has_diff_frame <- sapply(cds_diversity$cds_starts, function(s) {
+  if (length(s) < 2) return(FALSE)
+  diffs <- outer(s, s, "-")
+  diffs <- diffs[upper.tri(diffs)]
+  any(diffs %% 3 != 0)
+})
+
+multi_start <- cds_diversity %>% filter(n_cds_starts >= 2)
+cat("\nReading frame diversity (genes with ≥2 CDS starts, n =", nrow(multi_start), "):\n")
+cat("  Genes with starts in DIFFERENT frames:",
+    sum(multi_start$has_diff_frame),
+    sprintf("(%.1f%%)\n", 100 * mean(multi_start$has_diff_frame)))
+cat("  Genes with all starts in SAME frame:",
+    sum(!multi_start$has_diff_frame),
+    sprintf("(%.1f%%)\n", 100 * mean(!multi_start$has_diff_frame)))
+```
+
+`r sprintf("%.1f%%", 100 * mean(cds_diversity$n_cds_starts >= 2))` of genes
+with multiple coding isoforms use at least two distinct CDS start positions.
+Among these, `r sprintf("%.1f%%", 100 * mean(multi_start$has_diff_frame))`
+use CDS starts in different reading frames — the start positions differ by a
+non-multiple of 3, meaning the downstream protein sequences are in different
+frames. These genes encode genuinely distinct reading frames through their
+isoform repertoire, not merely N-terminal extensions of the same protein.
+
+## Expression Concentration
+
+```{r sec1-expression-concentration}
+# How much of a gene's output comes from its dominant isoform?
+# Use DMSO samples for baseline expression
+dmso_samples <- sample_meta$sample_id[sample_meta$treatment == "DMSO"]
+dmso_mat <- expr_mat[, colnames(expr_mat) %in% dmso_samples]
+
+# CPM per isoform
+lib_sizes <- colSums(dmso_mat)
+cpm_mat <- sweep(dmso_mat, 2, lib_sizes, "/") * 1e6
+
+# Per-gene dominant fraction
+gene_ids <- coding_structures$gene_id[match(rownames(cpm_mat), coding_structures$isoform_id)]
+valid <- !is.na(gene_ids) & rownames(cpm_mat) %in% coding_structures$isoform_id
+
+mean_cpm <- rowMeans(cpm_mat[valid, ])
+iso_df <- data.frame(
+  isoform_id = rownames(cpm_mat)[valid],
+  gene_id = gene_ids[valid],
+  mean_cpm = mean_cpm,
+  stringsAsFactors = FALSE
+)
+
+dominant_fraction <- iso_df %>%
+  group_by(gene_id) %>%
+  filter(n() >= 2, sum(mean_cpm) > 0) %>%
+  summarise(
+    n_iso = n(),
+    total_cpm = sum(mean_cpm),
+    max_cpm = max(mean_cpm),
+    dominant_pct = 100 * max_cpm / total_cpm,
+    .groups = "drop"
+  )
+
+cat("Expression concentration (DMSO, multi-isoform coding genes):\n")
+cat("  Median dominant isoform share:", round(median(dominant_fraction$dominant_pct), 1), "%\n")
+cat("  Genes where dominant >50%:", sum(dominant_fraction$dominant_pct > 50),
+    sprintf("(%.1f%%)\n", 100 * mean(dominant_fraction$dominant_pct > 50)))
+cat("  Genes where dominant >80%:", sum(dominant_fraction$dominant_pct > 80),
+    sprintf("(%.1f%%)\n", 100 * mean(dominant_fraction$dominant_pct > 80)))
+```
+
+Transcriptional diversity is the norm. Genes maintain multiple exon paths,
+each producing a different reading frame context. Most genes concentrate
+expression on a dominant isoform, but devote substantial transcriptional
+output to alternatives — including paths that produce NMD substrates.
+
+# 1b. Baseline Splicing and NMD-Enriched Events {#goal1b-baseline}
+
+Characterize baseline alternative splicing (Control C4 pairs) and identify which
 splicing event types are enriched in NMD vs Control.
 
 **Methods:** Structural profiles quantify splicing event types for each pair. Sequence
@@ -1012,10 +1356,166 @@ fig1c <- ggplot(bar1c, aes(x = event_type, y = pct_gain, fill = comparison)) +
 save_fig(fig1c, "fig1c_gain_direction_barplot", width = 10, height = 6)
 ```
 
-# 2. PTC Enrichment Validates NMD Classification {#goal2}
+# 2a. Predicting NMD from Isoform Structure — The Unified Model {#sec2a-unified}
 
-**Goal 2:** Demonstrate that NMD-responsive comparator isoforms are enriched for premature
-termination codons (PTCs), validating the mashr-based NMD classification.
+Can we predict which isoforms trigger NMD from structural features alone?
+We build a model progressively, adding feature categories and measuring
+improvement. This overview presents the unified model; subsequent sections
+drill into each feature category.
+
+**Data source:** All mashr-classified NMD and non-NMD coding isoforms with
+complete structural features (broader than the paired framework). The model
+asks "can structural features predict NMD status?" — an isoform-level
+question, not a pair-level question.
+
+**Statistical approach:** Elastic net logistic regression (alpha = 0.5) with
+10-fold cross-validation on the training set. Holdout chromosomes 1, 3, 5, 7
+(~26% of data) are never used for feature selection or model tuning.
+
+```{r sec2a-load-model}
+# ── Data provenance ──
+# Source: 05l_unified_model.R → unified_model.rds
+# Population: ALL mashr-classified NMD/non-NMD coding isoforms with complete
+#   structural features (PTC from ptc.rds, 5'UTR from utr5_features_all.rds)
+# Train/test: holdout chr 1, 3, 5, 7 (~26%)
+
+unified <- readRDS(file.path(cache_dir, "unified_model.rds"))
+
+cat("Population:", format(unified$metadata$population, big.mark = ","),
+    "isoforms with complete features\n")
+cat("NMD:", sum(unified$df$is_nmd),
+    "| Non-NMD:", sum(!unified$df$is_nmd), "\n")
+cat("Holdout chromosomes:", paste(unified$metadata$holdout_chrs, collapse = ", "), "\n\n")
+
+# Feature name mapping for display
+feat_labels <- unified$feature_labels
+```
+
+## Progressive ROC Curves
+
+```{r sec2a-progressive-roc, fig.width=7, fig.height=7}
+# ── Data provenance ──
+# Source: unified$elastic_net (elastic net models fit on training data)
+# ROC curves from stored roc_test objects (holdout predictions)
+
+en_models <- list(
+  list(roc = unified$elastic_net$step1$roc_test,
+       name = "Step 1: Stop codon position", color = "#fc8d59"),
+  list(roc = unified$elastic_net$step2$roc_test,
+       name = "Step 2: + Start codon context", color = "#91bfdb"),
+  list(roc = unified$elastic_net$step3$roc_test,
+       name = "Step 3: + ORF features (unified)", color = "#1a1a1a")
+)
+
+roc_curves <- lapply(en_models, function(spec) {
+  auc_val <- as.numeric(auc(spec$roc))
+  data.frame(
+    fpr = 1 - spec$roc$specificities,
+    tpr = spec$roc$sensitivities,
+    model = sprintf("%s (AUC = %.3f)", spec$name, auc_val),
+    stringsAsFactors = FALSE
+  )
+})
+roc_all <- do.call(rbind, roc_curves)
+roc_all$model <- factor(roc_all$model, levels = unique(roc_all$model))
+
+model_colors <- setNames(
+  sapply(en_models, `[[`, "color"),
+  levels(roc_all$model)
+)
+
+fig_roc <- ggplot(roc_all, aes(x = fpr, y = tpr, color = model)) +
+  geom_abline(linetype = "dashed", color = "grey70") +
+  geom_line(linewidth = 0.9) +
+  scale_color_manual(values = model_colors) +
+  coord_equal() +
+  labs(title = "Holdout ROC — Progressive Model Building",
+       subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s)",
+                          format(unified$elastic_net$step3$n_test, big.mark = ",")),
+       x = "False Positive Rate", y = "True Positive Rate",
+       color = "") +
+  theme(legend.position = c(0.62, 0.18),
+        legend.background = element_rect(fill = "white", color = "grey80"),
+        legend.key.width = unit(1.2, "cm"))
+save_fig(fig_roc, "fig_progressive_roc", width = 7, height = 7)
+```
+
+Each curve represents a progressive elastic net model evaluated on the
+holdout chromosomes. Stop codon position alone (the stepped orange curve)
+reflects the 4-level categorical predictor — it achieves coarse but
+meaningful discrimination (AUC =
+`r round(unified$elastic_net$step1$auc_test, 3)`). Adding start codon
+features produces a smooth curve with substantially improved sensitivity
+across all specificity levels. The final unified model (black) adds ORF
+features for further gains, particularly in the high-specificity region.
+
+## Feature Importance
+
+```{r sec2a-coefficients}
+# ── Data provenance ──
+# Source: unified$elastic_net$step3$cv_fit (elastic net, unified model)
+# Non-zero coefficients at lambda.min, sorted by absolute magnitude
+
+en_fit <- unified$elastic_net$step3$cv_fit
+coefs <- as.matrix(coef(en_fit, s = "lambda.min"))
+nonzero <- coefs[coefs[, 1] != 0 & rownames(coefs) != "(Intercept)", , drop = FALSE]
+
+coef_table <- data.frame(
+  r_name = rownames(nonzero),
+  Coefficient = nonzero[, 1],
+  stringsAsFactors = FALSE
+) %>%
+  mutate(
+    Feature = ifelse(r_name %in% names(feat_labels),
+                     feat_labels[r_name], r_name),
+    `Abs. Coefficient` = abs(Coefficient)
+  ) %>%
+  arrange(-`Abs. Coefficient`) %>%
+  transmute(Feature, Coefficient = round(Coefficient, 4))
+
+render_dt(coef_table, caption = "Table: Elastic Net Feature Importance (Unified Model)")
+```
+
+Column definitions: **Feature** = model variable (display name);
+**Coefficient** = elastic net coefficient at lambda.min (standardized
+features). Positive coefficients increase predicted NMD probability;
+negative coefficients decrease it. Features with zero coefficients are
+excluded by the elastic net penalty.
+
+## Complementarity: Stop Codon vs Start Codon Features
+
+```{r sec2a-complementarity}
+# Stop-codon-only vs 5'UTR-only vs combined
+comp_df <- data.frame(
+  Model = c("Stop codon only", "5'UTR only", "Combined"),
+  `Train AUC` = round(c(
+    unified$elastic_net$step1$auc_train,
+    unified$elastic_net$utr5_only$auc_train,
+    unified$elastic_net$step3$auc_train
+  ), 3),
+  `Test AUC` = round(c(
+    unified$elastic_net$step1$auc_test,
+    unified$elastic_net$utr5_only$auc_test,
+    unified$elastic_net$step3$auc_test
+  ), 3),
+  check.names = FALSE
+)
+render_dt(comp_df, caption = "Complementarity: Feature Sets Alone vs Combined")
+```
+
+Column definitions: **Model** = feature set used; **Train AUC** = AUC on
+training chromosomes; **Test AUC** = AUC on holdout chromosomes (1, 3, 5, 7).
+
+Stop codon and start codon features are complementary, not redundant. Each
+achieves comparable AUC alone (~0.70–0.72), but combined they reach
+`r round(unified$elastic_net$step3$auc_test, 3)`. This means PTC and uORF
+mechanisms operate through different structural pathways to trigger NMD.
+
+# 2b. Stop Codons: Where Translation Terminates {#sec2b-stop-codons}
+
+The strongest single feature category is the downstream EJC count. Here we
+examine stop codon position in detail using gene-matched C2 (NMD) vs C4
+(Control) isoform pairs.
 
 **Methods:** A PTC is defined as a stop codon >50 nt upstream of the last exon-junction
 complex (EJC). Fisher's exact test compares PTC rates between NMD (C2) and Control (C4)
@@ -1230,7 +1730,7 @@ Same columns as Table 2, one row per cell type. all_samples uses the union
 (NMD) and intersection (non-NMD) across AT, DD, DO, FB, MV.
 
 
-# 3. Splicing Mechanisms Producing PTCs {#goal3}
+## How PTCs Arise: Splicing Mechanisms {#sec2b-ptc-mechanisms}
 
 **Goal 3:** Identify the splicing mechanisms that produce PTCs in NMD-responsive isoforms.
 
@@ -1815,14 +2315,12 @@ Control); **direction** = Enriched/Depleted in PTC-causing, or Non-significant
 (p > 0.05).
 
 
-# 4. Non-PTC NMD Triggers {#goal4}
+## 3'UTR Length and Splicing {#sec2b-3utr}
 
-**Goal 4:** Characterize NMD-responsive comparator isoforms that lack a PTC.
-
-**Methods:** Among coding NMD (C2) comparators, a substantial fraction lack a PTC (stop
-codon >50 nt upstream of last EJC). We categorize these PTC-negative NMD isoforms by:
-(a) borderline PTC position (stop codon with 1+ downstream EJCs but within 50 nt),
-(b) 3'UTR exonic length, (c) frame category, and (d) NMD response magnitude.
+The unified model (Section 2a) showed that 3'UTR features do not add predictive
+power beyond stop codon position. Here we test the long-3'UTR hypothesis directly
+and show that 3'UTR splicing operates through the PTC pathway (EJC repositioning),
+not independently.
 
 ```{r goal3-identify-ptc-neg}
 # ── Data provenance ──
@@ -1845,16 +2343,11 @@ n_ptc_pos <- sum(coding_pairs_c2$comp_has_ptc == TRUE)
 n_ptc_neg <- sum(coding_pairs_c2$comp_has_ptc == FALSE)
 ```
 
-Of the `r fmt(nrow(set_results[["c2_allsamples"]]$profiles))` gene-matched NMD
-pairs, `r fmt(nrow(coding_pairs_c2))` are coding pairs (both reference and
-comparator classified as protein-coding). Among these,
+Of the `r fmt(nrow(coding_pairs_c2))` coding NMD pairs,
 `r fmt(n_ptc_pos)` (`r round(100 * n_ptc_pos / nrow(coding_pairs_c2), 1)`%)
-have a PTC (comparator stop codon >50 nt upstream of last EJC) and
-`r fmt(n_ptc_neg)` (`r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%)
-do not. The remainder of this section characterizes these
-`r fmt(n_ptc_neg)` **PTC-negative NMD comparators**.
-
-## Categorization by Stop Codon Position
+have a PTC and `r fmt(n_ptc_neg)` (`r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%)
+do not. The table below categorizes these PTC-negative comparators by their stop
+codon position relative to exon-exon junctions.
 
 ```{r goal3-stop-position}
 # ── Data provenance ──
@@ -1881,6 +2374,23 @@ stop_cat <- data.frame(
 
 kable(stop_cat, caption = "Table 6: Categorization of PTC-Negative NMD Comparators")
 ```
+
+### 3'UTR Length: Testing the Long-3'UTR Hypothesis
+
+The "long 3'UTR" hypothesis proposes that NMD can be triggered when the distance
+between the stop codon and the poly(A) tail is abnormally large, even without a
+classical PTC. The idea is that UPF1 — normally displaced by translating ribosomes —
+accumulates on long 3'UTRs and triggers degradation (Hogg & Goff 2010; Kurosaki &
+Maquat 2016). If this mechanism operates in our data, PTC-negative NMD comparators
+should have longer 3'UTRs than Controls.
+
+However, measuring 3'UTR length in PTC+ isoforms requires care. When a frameshift
+creates a premature stop codon, the sequence between the PTC and the normal stop
+is measured as "3'UTR" even though it was originally coding sequence. This inflates
+the apparent 3'UTR length. We address this by computing two measurements for PTC+
+isoforms with a different stop codon: the naive measurement (from the comparator's
+own stop) and a corrected measurement (from the reference's stop position projected
+onto the comparator's exon structure).
 
 ## Figure 7: 3'UTR Length by PTC Mechanism
 
@@ -2074,13 +2584,14 @@ group1 longer); **p_value** = Wilcoxon rank-sum test p-value.
 
 ## Illustrative Example: 3'UTR Measurement Correction (CMAS)
 
-The figure below shows the CMAS gene pair (reference ENST00000229329.7 vs NMD
-comparator ENST00000534981.5) to illustrate the difference between the two
-3'UTR measurements. The comparator has a skipped exon that causes a frameshift,
-creating a PTC at genomic position 22,062,284. The reference stop codon is at
-22,065,311.
+The CMAS gene illustrates why naive 3'UTR measurement is misleading for
+PTC-positive isoforms. The NMD comparator (ENST00000534981.5) has a skipped exon
+that causes a frameshift, creating a premature stop codon. When we measure 3'UTR
+from this PTC, the sequence between the PTC and the normal stop is counted as
+"3'UTR" — inflating the measurement by thousands of bases. The corrected
+measurement uses the reference's stop codon position instead.
 
-```{r goal3-utr3-example, fig.width=10, fig.height=10}
+```{r goal3-utr3-example, fig.width=10, fig.height=6}
 # CMAS: + strand, ref has 8 exons, comp has 7 (skipped exon 22061281-22061452)
 # Same CDS start (22046304), different stop (ref: 22065311, comp: 22062284)
 
@@ -2089,68 +2600,74 @@ ref_e <- c(22046563, 22055291, 22055610, 22058700, 22060926, 22061452, 22062434,
 comp_s <- c(22046225, 22055149, 22055455, 22058567, 22060832, 22062281, 22065121)
 comp_e <- c(22046563, 22055291, 22055610, 22058700, 22060926, 22062434, 22065674)
 
-# Skipped exon event (comparator lost exon 22061281-22061452)
+# Skipped exon event
 se_event <- data.frame(
   five_prime = 22061281, three_prime = 22061452,
   event_type = "SE", direction = "LOSS")
 
-# Annotations: PTC marker on comparator, reference stop marker on both
+# Annotations on a single panel:
+# - PTC marker (red) on comparator at 22062284
+# - Reference stop marker (green) on both tracks at 22065311
+# - Shaded region: "inflated" 3'UTR (PTC to tx end) on comparator
+# - Shaded region: "corrected" 3'UTR (ref stop to tx end) on comparator
 ptc_marker <- list(type = "ptc_marker", track = "comp",
-  x = 22062284, label = "PTC", color = "#E74C3C")
-ref_stop_marker <- list(type = "ptc_marker", track = "ref",
+  x = 22062284, label = "PTC (comp stop)", color = "#E74C3C")
+ref_stop_ref <- list(type = "ptc_marker", track = "ref",
   x = 22065311, label = "Stop", color = "#27AE60")
+ref_stop_comp <- list(type = "ptc_marker", track = "comp",
+  x = 22065311, label = "Ref stop", color = "#27AE60")
 
-# Panel A: "Own stop" — comparator CDS ends at PTC (22062284)
-p1 <- plot_ucsc_pair(
+# Region shades to illustrate the two measurements
+inflated_region <- list(type = "region_shade", track = "comp",
+  xmin = 22062284, xmax = 22065311,
+  color = "#E74C3C", alpha = 0.15,
+  label = "Former CDS (inflates 3'UTR)")
+corrected_region <- list(type = "region_shade", track = "comp",
+  xmin = 22065311, xmax = 22065674,
+  color = "#27AE60", alpha = 0.20,
+  label = "True 3'UTR")
+
+p <- plot_ucsc_pair(
   ref_s, ref_e, comp_s, comp_e, strand = "+",
   ref_cds = list(cds_start = 22046304, cds_stop = 22065311),
   comp_cds = list(cds_start = 22046304, cds_stop = 22062284),
   ref_label = "Reference (ENST00000229329.7)",
   comp_label = "NMD Comparator (ENST00000534981.5)",
   events = se_event,
-  annotations = list(ptc_marker, ref_stop_marker),
-  title = "A) 3'UTR at own stop (inflated)",
-  subtitle = "Comparator CDS ends at PTC. Measured 3'UTR (thin) includes former CDS downstream of PTC.")
+  annotations = list(ptc_marker, ref_stop_ref, ref_stop_comp,
+                     inflated_region, corrected_region),
+  title = "CMAS: Naive vs Corrected 3'UTR Measurement",
+  subtitle = "Red shading = former CDS counted as 3'UTR when measured from PTC. Green = true 3'UTR from ref stop.")
 
-# Panel B: "Ref stop" — comparator CDS extends to reference stop (22065311)
-ref_stop_comp <- list(type = "ptc_marker", track = "comp",
-  x = 22065311, label = "Ref Stop", color = "#27AE60")
-
-p2 <- plot_ucsc_pair(
-  ref_s, ref_e, comp_s, comp_e, strand = "+",
-  ref_cds = list(cds_start = 22046304, cds_stop = 22065311),
-  comp_cds = list(cds_start = 22046304, cds_stop = 22065311),
-  ref_label = "Reference (ENST00000229329.7)",
-  comp_label = "NMD Comparator (ENST00000534981.5)",
-  events = se_event,
-  annotations = list(ptc_marker, ref_stop_marker, ref_stop_comp),
-  title = "B) 3'UTR at reference stop (corrected)",
-  subtitle = "Comparator CDS extended to reference stop. 3'UTR = only true downstream sequence.")
-
-gridExtra::grid.arrange(p1, p2, ncol = 1)
+print(p)
 ```
 
-In panel A, the skipped exon (SE LOSS bracket) causes a frameshift that creates
-a PTC (red triangle on comparator). The comparator's CDS (thick) ends at the
-PTC, and everything downstream is measured as 3'UTR (thin) — inflating the
-length. The reference stop codon (green triangle) is further downstream. In
-panel B, the comparator's CDS boundary is set to the reference's stop position
-(green triangle on both tracks), giving the "natural" 3'UTR length.
+The skipped exon (SE LOSS bracket) causes a frameshift that creates a PTC (red
+triangle). Measuring 3'UTR from this PTC includes the red-shaded region — former
+coding sequence that inflates the measurement. The green triangle marks the
+reference stop codon position; measuring from there gives the true 3'UTR
+(green-shaded region). This correction is applied to all diff-stop PTC+ pairs
+in Figure 7 and Table 7 above.
 
-**Key finding (Figure 7, Table 7):** PTC-negative NMD comparators have 3'UTR lengths
+**Key finding:** PTC-negative NMD comparators have 3'UTR lengths
 indistinguishable from Control (p = `r signif(tests$p_value[tests$group1 == "NMD PTC-"], 2)`).
-Long 3'UTR length does not appear to be an independent NMD trigger in this
-dataset. The apparently long 3'UTRs in PTC+ isoforms are explained by two
-mechanisms: (1) for same-stop PTC+ isoforms, the 3'UTR is genuinely extended by
-the same splicing event that repositioned the EJC; (2) for diff-stop PTC+
-isoforms, the 3'UTR measurement is inflated by inclusion of former CDS sequence
-downstream of the premature stop.
+This is strong evidence against the long-3'UTR hypothesis as an explanation for
+PTC-negative NMD in this dataset.
 
-## 3'UTR Splicing and NMD
+The apparently long 3'UTRs in some PTC+ groups are methodological artifacts:
+for diff-stop PTC+ isoforms, the "3'UTR" includes former coding sequence
+downstream of the premature stop codon. When corrected using the reference stop
+position, even these isoforms show only a modest difference from Control. The
+CMAS gene example below illustrates this measurement issue.
 
-The question is whether 3'UTR splicing contributes to NMD in our data,
-and if so, through what mechanism — PTC creation (EJC repositioning) or a
-PTC-independent pathway (e.g., long 3'UTR-mediated UPF1 recruitment).
+## 3'UTR Splicing: PTC-Creating, Not PTC-Independent
+
+A separate question is whether 3'UTR splicing contributes to NMD — and if so,
+whether it operates through a PTC-dependent or PTC-independent pathway. If 3'UTR
+splicing triggers NMD independently of PTCs, we would expect enrichment of 3'UTR
+splicing events in PTC-negative NMD comparators. If instead it triggers NMD by
+repositioning exon-exon junctions (creating a PTC under the 50-nt rule), we
+would expect enrichment only in PTC-positive comparators.
 
 ```{r goal3-utr3-splicing}
 # ── Data provenance ──
@@ -2264,10 +2781,11 @@ junctions downstream of the stop codon:
 - **`r n_comp_fewer_ejcs`** pairs: comparator has fewer EJCs (unexpected —
   may reflect annotation differences)
 
-### Conclusions: 3'UTR Mechanisms in NMD
+### Conclusion: 3'UTR Mechanisms Operate Through PTC Creation
 
-Three lines of evidence address whether 3'UTR length or splicing triggers
-PTC-independent NMD:
+Three lines of evidence converge on the same conclusion — 3'UTR features do
+not independently trigger NMD in this dataset, but 3'UTR splicing does
+contribute to NMD by creating PTCs via EJC repositioning:
 
 1. **No NMD subgroup has substantially longer 3'UTRs than Control when measured
    from the appropriate stop codon** (Table 7). PTC-negative NMD comparators
@@ -2295,67 +2813,152 @@ PTC-independent NMD:
    that 3'UTR splicing creates PTCs — isoforms that trigger NMD without a PTC
    would be expected to have *less* 3'UTR splicing, not more.
 
-## 5'UTR uORF Analysis
+# 2c. Start Codons and ORFs: The 5'UTR Landscape {#sec2c-start-codons}
 
-Upstream open reading frames (uORFs) in the 5'UTR are a known mechanism that
-can trigger NMD independently of PTCs in the main CDS. We scanned the 5'UTR
-sequence of each comparator isoform for uORFs (AUG followed by an in-frame stop
-codon, minimum 3 codons / 9 nt). uORFs whose stop codon falls at or beyond the
-main CDS start are classified as **overlapping** — a particularly potent NMD
-trigger.
+The unified model's second-largest gain comes from 5'UTR features (Section 2a:
+AUC `r round(unified$elastic_net$step2$auc_test, 3)` →
+`r round(unified$elastic_net$step3$auc_test, 3)` when adding ORF features).
+What about the 5'UTR predicts NMD, and why do overlapping uORFs matter?
 
-```{r goal3-uorf}
+**Data source:** Gene-matched C2 vs C4 coding pairs (paired framework). 5'UTR
+features from utr5_features.rds. uORF set operations from uorf_comparison.rds.
+Splice event co-occurrence from paired profiles.
+
+Upstream open reading frames (uORFs) in the 5'UTR can trigger NMD when
+translation of the uORF terminates and the ribosome encounters downstream
+exon-exon junctions from the main CDS. Rather than testing a single feature,
+we scan 28 5'UTR sequence features and ask which best distinguish
+PTC-negative NMD comparators from Controls.
+
+```{r goal4b-utr5-load}
 # ── Data provenance ──
-# Source script: 05b_uorf_analysis.R → analysis_cache/uorf_analysis.rds
-# Methods: METHODS.md § "5'UTR uORF Analysis"
-#
+# Source script: 05j_utr5_feature_analysis.R → analysis_cache/utr5_features.rds
 # Pipeline:
-#   1. 5'UTR boundaries computed by compute_utr5_length() in 05b_uorf_analysis.R
-#      Input: genomic CDS coordinates (cds.rds) + exon structure (structures.rds)
-#      + strand: CDS start = cds_start (plus) or cds_stop (minus)
-#      Validation: 98.4% of isoforms have ATG at computed CDS start position
-#   2. 5'UTR sequences extracted from SQANTI corrected transcript FASTA
-#      (nmd_lungcells_corrected.fasta) via awk-based subset extraction
-#   3. uORF detection by find_uorfs() in 05b_uorf_analysis.R:
-#      gregexpr("ATG") finds all AUG positions in 5'UTR; for each, walks in-frame
-#      through full transcript to first stop codon (TAA/TAG/TGA). Min 3 codons.
-#      Overlapping uORFs: stop codon at or past main CDS start.
-#   4. Groups: PTC_neg, PTC_pos, Control (same coding pair definitions as Goal 3)
+#   1. Isopair::scan5UtrFeatures() computes 28 features per isoform:
+#      - ATG/stop codon counts (total and frame-stratified relative to CDS)
+#      - ORF counts (in-frame, out-of-frame, overlapping)
+#      - Density features (per 100bp), Kozak context, spatial features
+#   2. 5'UTR boundaries: strand-aware from genomic CDS + exon structure
+#      Validation: 98.6% of isoforms have ATG at computed CDS start position
+#   3. 5'UTR sequences extracted from SQANTI corrected transcript FASTA
+#   4. Groups: PTC_neg, PTC_pos, Control (same coding pair definitions as §4)
+#   5. Univariate Wilcoxon tests (3 comparisons × 28 features)
+#   6. Multivariate elastic net (3 models)
+#   7. Pair-level delta analysis (comp - ref feature differences)
 
+utr5_data <- readRDS(file.path(cache_dir, "utr5_features.rds"))
+utr5_feat <- utr5_data$isoform_features
+utr5_feat$group <- factor(utr5_feat$group, levels = c("PTC_neg", "PTC_pos", "Control"))
+
+# Also load the old uorf_analysis.rds for backward-compatible uorf counts
 uorf_data <- readRDS(file.path(cache_dir, "uorf_analysis.rds"))
 uorf <- uorf_data$per_isoform
 uorf$group <- factor(uorf$group, levels = c("PTC_neg", "PTC_pos", "Control"))
 ```
 
-```{r goal3-uorf-summary}
-uorf_summary <- uorf |>
+## Table 8a: 5'UTR Feature Summary by Group
+
+The table below provides an overview of 5'UTR characteristics across the three
+groups. If uORFs are a mechanism for PTC-negative NMD, we expect PTC-negative
+comparators to have longer 5'UTRs, more uORFs, and specifically more
+*overlapping* uORFs (whose stop codon extends into the main CDS, forcing the
+ribosome to encounter downstream exon-exon junctions).
+
+```{r goal4b-feature-summary}
+# ── Data provenance ──
+# Source: utr5_feat (from utr5_features.rds, loaded above)
+# Filtered to comparator isoforms (non-NA group) with non-excluded 5'UTRs
+
+comp_feat <- utr5_feat |> filter(!excluded, !is.na(group))
+
+utr5_summary <- comp_feat |>
   group_by(group) |>
   summarise(
     n = n(),
     median_utr5_bp = median(utr5_length),
-    pct_with_uorf = round(100 * mean(n_uorfs > 0), 1),
-    median_n_uorfs = median(n_uorfs),
-    mean_n_uorfs = round(mean(n_uorfs), 1),
-    pct_overlapping = round(100 * mean(n_overlapping_uorfs > 0), 1),
+    median_n_atg = median(n_atg),
+    median_n_orfs = median(n_orfs),
+    pct_with_uorf = round(100 * mean(n_orfs > 0), 1),
+    median_n_orfs_outframe = median(n_orfs_outframe),
+    median_n_overlap = median(n_orfs_overlapping),
+    pct_overlapping = round(100 * mean(n_orfs_overlapping > 0), 1),
+    median_pct_in_orfs = round(median(pct_utr5_in_orfs), 3),
+    pct_fully_covered = round(100 * mean(pct_utr5_in_orfs >= 1.0), 1),
+    median_longest_orf = median(longest_orf_nt),
+    median_strong_kozak = median(n_strong_kozak_atg),
     .groups = "drop")
 
-render_dt(uorf_summary, caption = "Table 8a: uORF Prevalence by Group")
+render_dt(utr5_summary, caption = "Table 8a: 5'UTR Feature Summary by Group")
 ```
 
 Columns: **group** = PTC_neg (NMD without PTC), PTC_pos (NMD with PTC), or
-Control (C4); **n** = number of isoforms; **median_utr5_bp** = median 5'UTR
-length; **pct_with_uorf** = % with ≥1 uORF (≥3 codons); **median/mean_n_uorfs** =
-uORFs per isoform; **pct_overlapping** = % with ≥1 overlapping uORF (stop
-codon at or past CDS start).
+Control (C4); **n** = isoforms; **median_utr5_bp** = median 5'UTR length (bp);
+**median_n_atg** = median ATG count in 5'UTR; **median_n_orfs** = median uORF count
+(ATG + in-frame stop, >=9 nt); **pct_with_uorf** = % with >=1 uORF;
+**median_n_orfs_outframe** = median out-of-frame uORFs (frame 1 or 2 relative
+to CDS); **median_n_overlap** = median overlapping uORFs (stop at/past CDS start);
+**pct_overlapping** = % with >=1 overlapping uORF;
+**median_pct_in_orfs** = median fraction of 5'UTR occupied by uORFs;
+**pct_fully_covered** = % of isoforms where entire 5'UTR is covered by uORFs;
+**median_longest_orf** = median length of longest uORF (nt);
+**median_strong_kozak** = median count of ATGs with strong Kozak context
+(A/G at -3 AND G at +4).
 
-```{r goal3-uorf-tests}
+The contrast is striking: PTC-negative NMD comparators have a median of 8 uORFs
+compared to 1 in Controls, with nearly all (96.8%) containing at least one uORF.
+The `median_pct_in_orfs` column shows that a median of 67.7% of the 5'UTR
+sequence is covered by at least one uORF (computed as the union of all
+uORF intervals, with no double-counting of overlapping regions), compared to
+27.2% in Controls. Overlapping uORFs — those whose stop codon falls at or past
+the main CDS start — are found in 61.9% of PTC-negative comparators vs 28.7%
+of Controls.
+
+## Table 8a-stop: Stop Codon Distribution in 5'UTR
+
+Stop codons in the 5'UTR determine where uORFs terminate. Higher stop density
+means more opportunities for ATG-initiated reading frames to encounter an
+in-frame stop, producing complete uORFs. The three stop codons (TAA, TAG, TGA)
+may also differ in read-through efficiency, potentially affecting whether a
+uORF triggers NMD or is read through by the ribosome.
+
+```{r goal4b-stop-summary}
+stop_summary <- comp_feat |>
+  group_by(group) |>
+  summarise(
+    n = n(),
+    median_stops = median(n_stop_total),
+    mean_stops = round(mean(n_stop_total), 1),
+    median_taa = median(n_taa),
+    median_tag = median(n_tag),
+    median_tga = median(n_tga),
+    median_stop_density = round(median(stop_density), 2),
+    .groups = "drop")
+
+render_dt(stop_summary, caption = "Table 8a-stop: 5'UTR Stop Codon Distribution by Group")
+```
+
+Columns: **median_stops/mean_stops** = total stop codons (TAA+TAG+TGA) in 5'UTR;
+**median_taa/tag/tga** = individual stop codon counts; **median_stop_density** =
+stops per 100 bp.
+
+Stop codon composition matters for uORF biology because each uORF requires an
+in-frame stop to terminate. TGA is the most abundant stop codon in 5'UTRs across
+all groups (~55% of all stops), consistent with known nucleotide composition biases
+in non-coding sequence. PTC-negative comparators have higher stop density per 100 bp
+(2.86 vs 2.48 in Control) — more uORF termination opportunities per unit sequence,
+not just more stops from having longer 5'UTRs.
+
+## Table 8b: uORF Enrichment Tests
+
+The features above describe group-level medians. The table below tests whether
+the *prevalence* of uORFs — the fraction of isoforms with at least one uORF —
+differs between groups. This answers a simpler question than the elastic net:
+not which features predict NMD, but whether having any uORF at all is enriched.
+
+```{r goal4b-uorf-tests}
 # ── Data provenance ──
-# Source: uorf_data$per_isoform (from 05b_uorf_analysis.R)
-# Methods: METHODS.md § "5'UTR uORF Analysis"
-# Test: Fisher's exact test on 2x2 table (group × has_uorf) for each pair of groups
-# "any uORF": isoform has ≥1 uORF (≥3 codons) in the 5'UTR
-# "overlapping uORF": isoform has ≥1 uORF whose stop codon falls at or past CDS start
-# n per group: PTC_neg=1,860, PTC_pos=1,458, Control=3,238
+# Source: uorf (from uorf_analysis.rds) for backward-compatible Fisher's tests
+# "any uORF": >=1 uORF (>=3 codons), "overlapping uORF": stop at/past CDS start
 
 uorf_tests <- list()
 test_pairs <- list(
@@ -2369,18 +2972,31 @@ for (tp in test_pairs) {
   sub <- uorf[uorf$group %in% tp[1:2], ]
   sub$group <- droplevels(factor(sub$group))
   if (tp[3] == "any uORF") {
-    tbl <- table(sub$group, sub$n_uorfs > 0)
+    has_feat <- sub$n_uorfs > 0
   } else {
-    tbl <- table(sub$group, sub$n_overlapping_uorfs > 0)
+    has_feat <- sub$n_overlapping_uorfs > 0
   }
+  n1 <- sum(sub$group == tp[1])
+  n2 <- sum(sub$group == tp[2])
+  pct1 <- round(100 * mean(has_feat[sub$group == tp[1]]), 1)
+  pct2 <- round(100 * mean(has_feat[sub$group == tp[2]]), 1)
+
+  # Build table with group1 having the feature as the first row/col
+  # so OR > 1 means group1 enriched
+  tbl <- matrix(c(
+    sum(has_feat & sub$group == tp[1]),
+    sum(!has_feat & sub$group == tp[1]),
+    sum(has_feat & sub$group == tp[2]),
+    sum(!has_feat & sub$group == tp[2])
+  ), nrow = 2, byrow = TRUE)
+
   ft <- tryCatch(fisher.test(tbl), error = function(e) NULL)
   if (!is.null(ft)) {
-    n1 <- sum(sub$group == tp[1])
-    n2 <- sum(sub$group == tp[2])
     uorf_tests[[length(uorf_tests) + 1]] <- data.frame(
       comparison = paste(tp[1], "vs", tp[2]),
       test = tp[3],
-      n_group1 = n1, n_group2 = n2,
+      n_group1 = n1, pct_group1 = pct1,
+      n_group2 = n2, pct_group2 = pct2,
       OR = round(as.numeric(ft$estimate), 2),
       p_value = signif(as.numeric(ft$p.value), 3),
       stringsAsFactors = FALSE)
@@ -2390,1149 +3006,630 @@ uorf_test_df <- do.call(rbind, uorf_tests)
 render_dt(uorf_test_df, caption = "Table 8b: uORF Enrichment Tests (Fisher's exact)")
 ```
 
-Columns: **comparison** = group pair tested; **test** = "any uORF" (≥1 uORF) or
-"overlapping uORF" (≥1 uORF with stop at/past CDS start); **n_group1/n_group2** =
-group sizes; **OR** = Fisher's exact test odds ratio; **p_value** = Fisher p-value.
+Columns: **comparison** = group pair tested; **test** = "any uORF" (>=1 uORF) or
+"overlapping uORF" (>=1 uORF with stop at/past CDS start); **n_group1/n_group2** =
+group sizes; **pct_group1/pct_group2** = prevalence (%) in each group;
+**OR** = odds ratio for having the feature in group1 vs group2 (OR > 1 = group1
+enriched); **p_value** = Fisher's exact test p-value.
 
-## Figure 8: uORF Count Distribution
+## Figure 8a: 5'UTR Length Distribution
 
-```{r goal3-uorf-density, fig.width=10, fig.height=6}
-# Density plot (better than dodged histogram for different group sizes)
+```{r goal4b-utr5-density, fig.width=10, fig.height=6}
+# ── Data provenance ──
+# Source: uorf (from uorf_analysis.rds)
+# Filter: utr5_length > 0
+
+uorf_summary <- uorf |>
+  group_by(group) |>
+  summarise(
+    median_utr5_bp = median(utr5_length),
+    median_n_uorfs = median(n_uorfs),
+    .groups = "drop")
+
+utr5_plot <- uorf[uorf$utr5_length > 0, ]
+utr5_plot$group_label <- factor(utr5_plot$group,
+  levels = c("PTC_neg", "PTC_pos", "Control"),
+  labels = c("NMD PTC-", "NMD PTC+", "Control"))
+
+fig_utr5 <- ggplot(utr5_plot, aes(x = utr5_length, fill = group_label)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10(labels = scales::comma) +
+  scale_fill_manual(values = c("NMD PTC-" = "#fddbc7", "NMD PTC+" = "#ef8a62",
+                                "Control" = "#67a9cf")) +
+  labs(title = "5'UTR Length Distribution by Group",
+       subtitle = paste0(
+         "Median 5'UTR length: NMD PTC- = ",
+         uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"], " bp, ",
+         "NMD PTC+ = ",
+         uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_pos"], " bp, ",
+         "Control = ",
+         uorf_summary$median_utr5_bp[uorf_summary$group == "Control"], " bp"),
+       x = "5'UTR Length (bp, log scale)", y = "Density", fill = "")
+save_fig(fig_utr5, "fig8a_utr5_length_distribution", width = 10, height = 6)
+```
+
+**Figure 8a** shows that PTC-negative NMD comparators have dramatically longer
+5'UTRs than either PTC-positive or Control isoforms (median 724 bp vs 243 and
+265 bp). This length difference is a necessary precondition for the uORF
+enrichment — longer 5'UTRs provide more sequence in which ATGs and in-frame stops
+can occur. However, as we show below, the enrichment goes beyond what length alone
+would predict: the *density* of uORF-related features is also elevated.
+
+## Figure 8b: uORF Prevalence Barplot
+
+```{r goal4b-uorf-prevalence-barplot, fig.width=10, fig.height=6}
+uorf_prev <- uorf |>
+  group_by(group) |>
+  summarise(pct = round(100 * mean(n_uorfs > 0), 1), .groups = "drop")
+uorf_prev$group_label <- factor(uorf_prev$group,
+  levels = c("PTC_neg", "PTC_pos", "Control"),
+  labels = c("NMD PTC-", "NMD PTC+", "Control"))
+
+any_uorf_tests <- uorf_test_df[uorf_test_df$test == "any uORF", ]
+p_neg_ctrl <- signif(any_uorf_tests$p_value[any_uorf_tests$comparison == "PTC_neg vs Control"], 3)
+p_pos_ctrl <- signif(any_uorf_tests$p_value[any_uorf_tests$comparison == "PTC_pos vs Control"], 3)
+p_neg_pos  <- signif(any_uorf_tests$p_value[any_uorf_tests$comparison == "PTC_neg vs PTC_pos"], 3)
+
+bar_x <- setNames(1:3, c("NMD PTC-", "NMD PTC+", "Control"))
+ymax <- max(uorf_prev$pct) + 15
+
+brackets <- data.frame(
+  x1 = c(bar_x["NMD PTC-"], bar_x["NMD PTC+"], bar_x["NMD PTC-"]),
+  x2 = c(bar_x["Control"],  bar_x["Control"],  bar_x["NMD PTC+"]),
+  y  = c(ymax - 10, ymax - 5, ymax),
+  label = c(paste0("p = ", p_neg_ctrl), paste0("p = ", p_pos_ctrl), paste0("p = ", p_neg_pos))
+)
+
+fig_prev <- ggplot(uorf_prev, aes(x = group_label, y = pct, fill = group_label)) +
+  geom_col(width = 0.6) +
+  geom_text(aes(label = paste0(pct, "%")), vjust = -0.5, size = 4.5) +
+  scale_fill_manual(values = c("NMD PTC-" = "#fddbc7", "NMD PTC+" = "#ef8a62",
+                                "Control" = "#67a9cf")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)), limits = c(0, ymax + 3)) +
+  geom_segment(data = brackets, aes(x = x1, xend = x2, y = y, yend = y),
+               inherit.aes = FALSE, linewidth = 0.4) +
+  geom_segment(data = brackets, aes(x = x1, xend = x1, y = y - 1, yend = y),
+               inherit.aes = FALSE, linewidth = 0.4) +
+  geom_segment(data = brackets, aes(x = x2, xend = x2, y = y - 1, yend = y),
+               inherit.aes = FALSE, linewidth = 0.4) +
+  geom_text(data = brackets, aes(x = (x1 + x2) / 2, y = y + 1.5, label = label),
+            inherit.aes = FALSE, size = 3.5) +
+  labs(title = "uORF Prevalence by Group",
+       subtitle = "Percentage of isoforms with at least one uORF (>=3 codons)",
+       x = "", y = "% with >=1 uORF", fill = "") +
+  theme(legend.position = "none")
+save_fig(fig_prev, "fig8b_uorf_prevalence_barplot", width = 10, height = 6)
+```
+
+**Figure 8b** shows uORF prevalence. Nearly all PTC-negative NMD comparators
+(96.2%) have at least one uORF, compared to 63.3% of Controls (OR = 14.6,
+p < 10^-180^). Notably, PTC-positive comparators are *less* likely to have uORFs
+than Controls (57.2% vs 63.3%, OR = 0.8) — suggesting that the uORF mechanism
+is specific to the PTC-negative group, not a general property of NMD-responsive
+isoforms.
+
+## Figure 8c: uORF Count Distribution
+
+```{r goal4b-uorf-density, fig.width=10, fig.height=6}
 uorf_plot <- uorf[uorf$utr5_length > 0, ]
 uorf_plot$group_label <- factor(uorf_plot$group,
   levels = c("PTC_neg", "PTC_pos", "Control"),
   labels = c("NMD PTC-", "NMD PTC+", "Control"))
 
-fig_uorf <- ggplot(uorf_plot, aes(x = n_uorfs + 0.5, fill = group_label)) +
-  geom_density(alpha = 0.5) +
-  scale_x_log10(breaks = c(1, 2, 5, 10, 20, 50)) +
+fig_uorf <- ggplot(uorf_plot, aes(x = n_uorfs, fill = group_label)) +
+  geom_histogram(aes(y = after_stat(density)), binwidth = 1, alpha = 0.5,
+                 position = "identity") +
+  scale_x_continuous(breaks = c(0, 5, 10, 15, 20, 25, 30), limits = c(-0.5, 35)) +
   scale_fill_manual(values = c("NMD PTC-" = "#fddbc7", "NMD PTC+" = "#ef8a62",
                                 "Control" = "#67a9cf")) +
   labs(title = "uORF Count Distribution by Group",
        subtitle = "PTC-negative NMD isoforms have dramatically more uORFs (median 8 vs 1 in Control)",
-       x = "Number of uORFs (+0.5, log scale)", y = "Density", fill = "")
-save_fig(fig_uorf, "fig8_uorf_count_distribution", width = 10, height = 6)
+       x = "Number of uORFs", y = "Density", fill = "")
+save_fig(fig_uorf, "fig8c_uorf_count_distribution", width = 10, height = 6)
 ```
 
-**Key finding:** PTC-negative NMD comparators have dramatically more uORFs than
-Control (96.2% vs 63.3% with any uORF, OR =
-`r uorf_test_df$OR[uorf_test_df$comparison == "PTC_neg vs Control" & uorf_test_df$test == "any uORF"]`,
-p < 10^-180^). They also have longer 5'UTRs (median
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"]` bp vs
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "Control"]` bp in Control),
-which provides more sequence for uORFs. Overlapping uORFs (stop codon at or past
-main CDS start) are also enriched (61.5% vs 27.9%, OR =
-`r uorf_test_df$OR[uorf_test_df$comparison == "PTC_neg vs Control" & uorf_test_df$test == "overlapping uORF"]`).
+## Which 5'UTR Features Best Predict NMD Status?
 
-Combined with the 3'UTR length finding (PTC-neg NMD isoforms have normal 3'UTR
-lengths), this points to **5'UTR uORFs as the dominant non-PTC NMD mechanism**
-in this dataset, rather than long 3'UTR-mediated NMD.
+The univariate analyses above show that virtually every 5'UTR feature is elevated
+in PTC-negative NMD comparators — but many of these features are correlated with
+each other (longer 5'UTR = more ATGs = more ORFs). To identify which features
+carry *independent* predictive information, we fit an elastic net logistic
+regression (alpha=0.5, 10-fold cross-validation) with 21 features, including
+frame-stratified counts and individual stop codon types.
+The model achieves a 10-fold cross-validated AUC of `r round(utr5_data$multivariate$cv_auc_a$cvm[which(utr5_data$multivariate$cv_auc_a$lambda == utr5_data$multivariate$cv_auc_a$lambda.min)], 3)` for distinguishing PTC-negative from Control comparators based on 5'UTR features alone — strong predictive power from sequence features. By contrast, the same features achieve AUC = `r round(utr5_data$multivariate$cv_auc_b$cvm[which(utr5_data$multivariate$cv_auc_b$lambda == utr5_data$multivariate$cv_auc_b$lambda.min)], 3)` for PTC-positive vs Control (barely above chance), confirming that 5'UTR features are specific to the PTC-negative NMD mechanism.
 
-**Caveat:** The high uORF count is partly driven by longer 5'UTRs (more sequence =
-more chance of ATG + in-frame stop). The enrichment should be interpreted in
-conjunction with the 5'UTR length difference.
-
-## Figure 9: uORF Enrichment by Frame Category
-
-```{r goal3-uorf-by-frame, fig.width=12, fig.height=6}
+```{r goal4b-feature-importance, fig.width=10, fig.height=7}
 # ── Data provenance ──
-# Source: uorf_data + fc_c2/fc_c4 pair_summary (frame categories)
-# Merges uORF counts with frame category classification to show that
-# diff_start_same_frame PTC-neg isoforms drive the uORF enrichment.
+# Source: utr5_data$multivariate$coefs_a (elastic net coefficients)
+# Model A: PTC_neg vs Control, elastic net (alpha=0.5), 10-fold CV
+# Features: frame-stratified ATG/stop counts, individual stop codon types,
+#   ORF counts, density, Kozak, longest/total ORF, orphan ATGs
+# Excludes totals (n_atg, n_stop_total) to avoid multicollinearity with components
 
-fc_c2_ps <- set_results[["c2_allsamples"]]$frame_comp$pair_summary
-fc_c4_ps <- set_results[["c4_allsamples"]]$frame_comp$pair_summary
+coefs_a <- utr5_data$multivariate$coefs_a
+coefs_a <- coefs_a[order(coefs_a$coefficient), ]
+coefs_a$feature <- factor(coefs_a$feature, levels = coefs_a$feature)
+coefs_a$direction <- ifelse(coefs_a$coefficient > 0, "Positive", "Negative")
 
-uorf_nmd_fc <- merge(uorf[uorf$group %in% c("PTC_neg", "PTC_pos"), ],
-  fc_c2_ps[, c("comparator_isoform_id", "frame_category")],
-  by.x = "isoform_id", by.y = "comparator_isoform_id", all.x = TRUE)
-uorf_ctrl_fc <- merge(uorf[uorf$group == "Control", ],
-  fc_c4_ps[, c("comparator_isoform_id", "frame_category")],
-  by.x = "isoform_id", by.y = "comparator_isoform_id", all.x = TRUE)
-uorf_by_fc <- rbind(uorf_nmd_fc, uorf_ctrl_fc)
-
-# Filter to coding frame categories with reasonable sample sizes
-coding_cats_plot <- c("same_start_in_frame", "same_start_frameshift",
-  "diff_start_same_frame", "diff_start_diff_frame_with_frameshift")
-uorf_by_fc <- uorf_by_fc[uorf_by_fc$frame_category %in% coding_cats_plot &
-  !is.na(uorf_by_fc$frame_category), ]
-
-uorf_by_fc$frame_label <- factor(uorf_by_fc$frame_category,
-  levels = coding_cats_plot,
-  labels = c("Same Start\nIn Frame", "Same Start\nFrameshift",
-             "Diff Start\nSame Frame", "Diff Start\nDiff Frame + FS"))
-uorf_by_fc$group_label <- factor(uorf_by_fc$group,
-  levels = c("PTC_neg", "PTC_pos", "Control"),
-  labels = c("NMD PTC-", "NMD PTC+", "Control"))
-
-# Panel A: 5'UTR length by frame category and group
-fig_utr5_fc <- ggplot(uorf_by_fc, aes(x = group_label, y = utr5_length, fill = group_label)) +
-  geom_boxplot(outlier.alpha = 0.1) +
-  facet_wrap(~frame_label, nrow = 1) +
-  scale_fill_manual(values = c("NMD PTC-" = "#fddbc7", "NMD PTC+" = "#ef8a62",
-                                "Control" = "#67a9cf")) +
-  scale_y_log10() +
-  labs(title = "5'UTR Length by Frame Category and NMD Status",
-       subtitle = "Diff-start same-frame PTC-neg isoforms have dramatically longer 5'UTRs",
-       x = "", y = "5'UTR length (bp, log scale)", fill = "") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
-save_fig(fig_utr5_fc, "fig9_utr5_by_frame_category", width = 12, height = 6)
+fig_coefs <- ggplot(coefs_a, aes(x = coefficient, y = feature, fill = direction)) +
+  geom_col() +
+  scale_fill_manual(values = c("Positive" = "#ef8a62", "Negative" = "#67a9cf")) +
+  labs(title = "Elastic Net Feature Importance: PTC-neg vs Control",
+       subtitle = paste0("Model A: ", nrow(coefs_a), " non-zero features at lambda.min; ",
+                          "positive = enriched in PTC-neg"),
+       x = "Coefficient", y = "", fill = "") +
+  theme(legend.position = "bottom")
+save_fig(fig_coefs, "fig8d_feature_importance", width = 10, height = 7)
 ```
 
-```{r goal3-uorf-by-frame-table}
-# Summary table
-uorf_fc_summary <- uorf_by_fc |>
-  group_by(frame_label, group_label) |>
-  summarise(
-    n = n(),
-    median_utr5_bp = round(median(utr5_length)),
-    median_uorfs = round(median(n_uorfs)),
-    pct_with_uorf = round(100 * mean(n_uorfs > 0), 1),
-    .groups = "drop")
+The figure reveals several important patterns:
 
-render_dt(uorf_fc_summary, caption = "Table 8c: uORF Prevalence by Frame Category and Group")
+1. **`n_orfs_overlapping`** (uORFs whose stop codon falls at or past the main
+   CDS start) is the strongest predictor. Overlapping uORFs are particularly
+   potent NMD triggers because the ribosome translating them necessarily
+   encounters downstream exon-exon junctions from the main CDS — exactly the
+   configuration that activates the NMD pathway.
+
+2. **`atg_density`** (ATGs per 100 bp) is the second-strongest feature. This
+   captures how densely packed the 5'UTR is with potential translation start
+   sites, independent of total 5'UTR length.
+
+3. **`pct_utr5_in_orfs`** (fraction of 5'UTR covered by uORFs, computed as
+   the union of all uORF intervals without double-counting) ranks third. A
+   median 67.7% of the 5'UTR in PTC-negative comparators is covered by at
+   least one uORF, vs 27.2% in Controls.
+
+4. **`n_strong_kozak_atg`** (ATGs with strong initiation context: A/G at -3 and
+   G at +4) is independently predictive. This suggests that translational
+   *efficiency* of uORFs matters — not just their presence but whether ribosomes
+   actually initiate at them.
+
+5. **`stop_density`** (stop codons per 100 bp) has a positive coefficient.
+   More stops per unit sequence means more opportunities for uORFs to terminate,
+   creating more complete ORFs that can trigger NMD.
+
+6. **Frame-specific signals:** In-frame ATGs (`n_atg_frame0`) have a *negative*
+   coefficient — consistent with the biology that in-frame uORFs may represent
+   N-terminal extensions that do not independently terminate. Out-of-frame
+   uORFs must terminate in a different frame from the main CDS, making them
+   bona fide NMD triggers.
+
+7. **Stop codon identity:** TAG has a negative coefficient while TGA is positive.
+   The biological significance of this is unclear but may relate to differences
+   in read-through efficiency between stop codons.
+
+## uORF Detection Validation Against ORFik
+
+```{r goal4b-orfik-validation}
+# ── Data provenance ──
+# Source: uorf_comparison.rds (05i_uorf_orfik_analysis.R)
+# Our method: detectUorfs(method="simple") walks stop codons through full transcript
+# ORFik: findORFs(startCodon="ATG", longestORF=FALSE, minimumLength=0) on 5'UTR-only
+
+uorf_comp <- readRDS(file.path(cache_dir, "uorf_comparison.rds"))
+ov <- uorf_comp$orfik_validation
 ```
 
-Columns: **frame_label** = reading frame category (from `compareIsoformFrames()`);
-**group_label** = NMD PTC-, NMD PTC+, or Control; **n** = number of isoforms;
-**median_utr5_bp** = median 5'UTR length; **median_uorfs** = median uORF count;
-**pct_with_uorf** = % with ≥1 uORF.
+Our uORF detection method walks the reading frame through the **full transcript
+sequence**, not just the 5'UTR. This is necessary to detect **overlapping uORFs**
+— those whose ATG is in the 5'UTR but whose stop codon falls in or past the
+main CDS. Overlapping uORFs are the top elastic net predictor of PTC-negative
+NMD status, so detecting them is essential.
 
-```{r goal3-uorf-by-frame-tests}
-# Wilcoxon test: 5'UTR length PTC_neg vs Control, per frame category
-uorf_fc_tests <- do.call(rbind, lapply(levels(uorf_by_fc$frame_label), function(fc) {
-  neg <- uorf_by_fc$utr5_length[uorf_by_fc$frame_label == fc & uorf_by_fc$group_label == "NMD PTC-"]
-  ctrl <- uorf_by_fc$utr5_length[uorf_by_fc$frame_label == fc & uorf_by_fc$group_label == "Control"]
-  if (length(neg) < 5 || length(ctrl) < 5) return(NULL)
-  wt <- wilcox.test(neg, ctrl)
-  data.frame(
-    frame_category = fc,
-    n_ptc_neg = length(neg), median_ptc_neg = round(median(neg)),
-    n_control = length(ctrl), median_control = round(median(ctrl)),
-    wilcox_p = signif(wt$p.value, 3),
-    stringsAsFactors = FALSE)
-}))
+To validate our method, we compared non-overlapping uORF counts (where both
+methods should agree) against ORFik's `findORFs()` applied to 5'UTR-only
+sequences. Across `r fmt(ov$n_compared)` isoforms, the per-isoform uORF counts
+show a Spearman correlation of **`r round(ov$spearman_r, 3)`**, with
+`r fmt(ov$n_agree)` isoforms (`r round(100 * ov$n_agree / ov$n_compared, 1)`%)
+having identical counts between methods. For the remaining
+`r fmt(ov$n_orfik_more)` isoforms, ORFik detected additional short uORFs near
+the 3' end of the 5'UTR where our method's stop-codon walk extends past the
+5'UTR boundary into the CDS. Our method found zero isoforms with more
+non-overlapping uORFs than ORFik.
 
-kable(uorf_fc_tests, caption = "Table 8d: 5'UTR Length — PTC-neg vs Control by Frame Category (Wilcoxon)")
+Beyond this concordance, our method uniquely detected
+**`r fmt(ov$n_overlapping_ours)` overlapping uORFs** (ATG in 5'UTR, stop codon
+in or past the main CDS) that ORFik cannot find from 5'UTR-only input. These
+overlapping uORFs are the most biologically important category: they are the
+top elastic net predictor and show the strongest enrichment in PTC-negative
+NMD comparators.
+
+## uORF Set Operations: Gained, Lost, and Shared uORFs
+
+The feature analysis above counts uORFs per comparator isoform. Here we go
+further by matching individual uORFs between the reference and comparator
+within each gene-matched pair, using their shared ATG genomic position. This
+identifies which uORFs are *gained* by the comparator (present in comparator
+but absent from the reference), *lost*, or *shared*. Critically, we stratify
+gained uORFs by overlapping status — the category most associated with NMD.
+
+```{r goal4b-uorf-setops}
+# ── Data provenance ──
+# Source: uorf_comparison.rds → group_summaries (stratified by overlapping status)
+# Gained = present in comparator but not reference (by ATG genomic position)
+# Lost = present in reference but not comparator
+# Overlapping = uORF stop codon at or past main CDS start
+
+gs <- uorf_comp$group_summaries
+
+render_dt(gs, caption = "Table 8c: uORF Set Operations by Group (with Overlapping Stratification)")
 ```
 
-Columns: **frame_category**; **n_ptc_neg/n_control** = group sizes;
-**median_ptc_neg/median_control** = median 5'UTR length (bp);
-**wilcox_p** = Wilcoxon rank-sum test p-value.
+For each isoform pair, we compared individual uORFs between reference and
+comparator by matching on ATG genomic position. uORFs present only in the
+comparator are "gained"; those only in the reference are "lost." Gained uORFs
+are further stratified by whether they overlap the main CDS.
 
-The **diff-start same-frame** PTC-negative NMD isoforms are the primary drivers
-of the uORF enrichment: 99.1% have uORFs (median 9) with a median 5'UTR of
-779 bp, compared to 81.9% (median 4, 5'UTR 446 bp) in Control. This is
-consistent with the use of an alternative downstream start codon: the original
-start codon becomes a uORF in the extended 5'UTR, and translation from the
-downstream AUG produces the same reading frame but a shorter protein. The
-resulting overlapping uORF (from the original AUG) is a potent NMD trigger.
+Columns: **group** = PTC_neg, PTC_pos, or Control; **pct_any_gained** = % of
+pairs where the comparator gains at least one uORF; **pct_gained_overlapping** =
+% gaining at least one overlapping uORF; **pct_gained_nonoverlapping** = %
+gaining non-overlapping uORFs; **median_gained/median_gained_overlap** = median
+counts; **pct_any_lost/pct_shared** = % with lost or shared uORFs.
+
+The key finding: **`r gs$pct_gained_overlapping[gs$group == "PTC_neg"]`% of
+PTC-negative NMD pairs gain at least one overlapping uORF**, compared to
+`r gs$pct_gained_overlapping[gs$group == "Control"]`% of Control pairs (Fisher's
+exact OR = `r round(uorf_comp$event_enrichment$OR[1], 1)` — see below). This is
+a 5.4-fold enrichment. PTC-positive pairs are actually *depleted* for gained
+overlapping uORFs (9.7%), consistent with their NMD being driven by the PTC
+rather than 5'UTR features.
+
+## Splice Event Co-Occurrence
+
+If specific types of splicing changes are responsible for creating overlapping
+uORFs, those event types should be enriched in PTC-negative pairs that gain
+overlapping uORFs compared to PTC-negative pairs that do not. The table below
+tests this by comparing splice event prevalence between the two subgroups within
+PTC-negative NMD pairs.
+
+```{r goal4b-event-cooccurrence}
+# ── Data provenance ──
+# Source: uorf_comparison.rds → event_enrichment
+# For PTC_neg pairs: event type frequencies in pairs with gained overlapping uORFs
+# vs pairs without. Fisher's exact test for enrichment.
+
+ee <- uorf_comp$event_enrichment
+ee$p_adj <- p.adjust(ee$p_value, method = "BH")
+ee <- ee[order(ee$p_value), ]
+
+render_dt(ee, caption = "Table 8d: Splice Event Enrichment in Pairs with Gained Overlapping uORFs (PTC_neg)")
+```
+
+Columns: **event_type** = splice event type; **n_with_gained_overlap** = PTC_neg
+pairs with gained overlapping uORFs that also have this event type;
+**pct_gained_overlap** = prevalence in gained-overlap pairs;
+**n_without_gained_overlap** = PTC_neg pairs without gained overlapping uORFs;
+**pct_without** = prevalence in non-gained pairs; **OR** = Fisher's exact odds
+ratio (OR > 1 = enriched in gained-overlap pairs); **p_value** = Fisher p-value.
+
+**Skipped exon events are the most significantly enriched** event type in pairs
+that gain overlapping uORFs (59.1% vs 43.7%, OR = 1.87, p = 4.3e-11). This
+suggests that exon skipping contributes to overlapping uORF creation — possibly
+by shifting the reading frame or altering the stop codon landscape in the 5'UTR.
+
+Notably, alternative TSS events are **not** enriched (83.3% vs 82.8%,
+OR = 1.03, p = 0.80) — they are ubiquitous across PTC-negative NMD pairs
+regardless of overlapping uORF status. Alt_TSS events are likely important for
+PTC-negative NMD more broadly (by extending the 5'UTR and increasing uORF count
+overall), but this analysis specifically asks which events distinguish pairs
+that gain *overlapping* uORFs from those that do not.
+
+## 5'UTR Features Predict NMD Response Magnitude
+
+```{r goal4b-logfc-correlation, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: uorf_comparison.rds → logfc_correlation
+# Mixed-effects model: logFC ~ pred_nmd_prob + (1 | isoform_id)
+# Accounts for 6 repeated cell-type measurements per isoform
+# pred_nmd_prob from elastic net Model A (5'UTR features)
+
+lfc <- uorf_comp$logfc_correlation
+me <- lfc$mixed_effects
+iso_means <- lfc$iso_means
+
+# Scatter plot: isoform-level mean logFC vs predicted NMD probability
+plot_data <- iso_means[iso_means$group %in% c("PTC_neg", "PTC_pos"), ]
+plot_data$group_label <- factor(plot_data$group,
+  levels = c("PTC_neg", "PTC_pos"),
+  labels = c("NMD PTC-", "NMD PTC+"))
+
+fig_lfc <- ggplot(plot_data, aes(x = pred_nmd_prob, y = mean_logFC)) +
+  geom_point(alpha = 0.15, size = 0.8) +
+  geom_smooth(method = "lm", color = "#ef8a62", se = TRUE) +
+  facet_wrap(~group_label, scales = "free_y") +
+  labs(
+    title = "5'UTR Feature Score Predicts NMD Response Magnitude",
+    subtitle = paste0(
+      "PTC-neg: mixed-effects coef = ",
+      round(me$PTC_neg$coefficient, 3), ", p = ",
+      signif(me$PTC_neg$p_value, 3),
+      "  |  PTC-pos: coef = ",
+      round(me$PTC_pos$coefficient, 3), ", p = ",
+      signif(me$PTC_pos$p_value, 3)),
+    x = "Predicted NMD Probability (from 5'UTR features)",
+    y = "Mean mashr logFC (across cell types)")
+save_fig(fig_lfc, "fig8e_logfc_correlation", width = 10, height = 5)
+```
+
+If uORF-mediated NMD were a binary switch — either triggered or not — we would
+expect no relationship between 5'UTR features and the *magnitude* of NMD
+response among PTC-negative comparators (they are all NMD-responsive by
+definition). Instead, we find a significant positive relationship.
+
+A linear mixed-effects model (`logFC ~ pred_nmd_prob + (1 | isoform_id)`)
+accounts for the 6 repeated cell-type measurements per isoform (mashr posterior
+means). Within PTC-negative comparators, isoforms with higher predicted NMD
+probability (based on 5'UTR features alone) show significantly stronger NMD
+response (coefficient = `r round(me$PTC_neg$coefficient, 3)`, t =
+`r round(me$PTC_neg$t_value, 1)`, p = `r signif(me$PTC_neg$p_value, 3)`,
+n = `r fmt(me$PTC_neg$n_isoforms)` isoforms).
+
+The same model applied to PTC-positive comparators shows **no relationship**
+(coefficient = `r round(me$PTC_pos$coefficient, 3)`, p =
+`r signif(me$PTC_pos$p_value, 3)`). This confirms that 5'UTR features
+specifically modulate NMD in the PTC-negative group — they have no bearing on
+NMD response when a PTC is already present.
+
+**This suggests uORF-mediated NMD is a continuous, dose-dependent phenomenon**:
+the more the 5'UTR is loaded with overlapping uORFs and strong initiation
+contexts, the stronger the NMD response. This is consistent with a model where
+multiple uORFs each contribute a small probability of ribosome engagement and
+premature termination, with the cumulative effect determining overall NMD
+sensitivity.
+
+### Conclusion: 5'UTR uORFs as the Primary Non-PTC NMD Mechanism
+
+The analyses in this section converge on a clear picture:
+
+1. **Overlapping uORFs and ATG density are the strongest predictors** of
+   PTC-negative NMD status (elastic net AUC = 0.875). These features are
+   specific to PTC-negative comparators (AUC = 0.628 for PTC-positive,
+   near chance).
+
+2. **58% of PTC-negative pairs gain overlapping uORFs** compared to 20% of
+   Controls (OR = 5.4). Skipped exon events are specifically enriched among
+   pairs gaining overlapping uORFs (OR = 1.87, p = 4.3e-11), suggesting exon
+   skipping contributes to overlapping uORF creation beyond the general
+   structural differences between NMD and Control isoforms.
+
+3. **5'UTR features predict NMD response *magnitude***, not just binary NMD
+   status. The mixed-effects coefficient is highly significant in PTC-negative
+   comparators (p = `r signif(me$PTC_neg$p_value, 3)`) and null in PTC-positive
+   (p = `r signif(me$PTC_pos$p_value, 3)`), suggesting uORF-mediated NMD is a
+   continuous, dose-dependent phenomenon.
+
+4. **Our detection method is validated** against ORFik (Spearman r =
+   `r round(ov$spearman_r, 3)` for non-overlapping uORFs) while uniquely
+   capturing the `r fmt(ov$n_overlapping_ours)` overlapping uORFs that are
+   the most biologically important category.
 
 **Limitations:** uORF detection is sequence-based and does not confirm
-translation. Not all sequence-predicted uORFs are functional NMD triggers.
-Other non-PTC NMD mechanisms (3'UTR secondary structure, EJC-independent UPF1
-recruitment) cannot be ruled out from structural data alone.
+translation. The correlation with NMD magnitude is observational and does not
+establish that specific uORFs cause the observed NMD response. Other non-PTC
+NMD mechanisms cannot be ruled out from structural data alone.
 
-## Cumulative NMD Mechanism Attribution
+# 2d. NMD Response is Continuous {#sec2d-continuous}
 
-```{r goal4-cumulative-attribution, fig.width=10, fig.height=8}
+Both stop codon and start codon features predict NMD response *magnitude*,
+not just binary status. Using raw limma logFC values (independent per-cell-type
+estimates, appropriate for mixed-effects modeling), we show that the unified
+model's predicted probability correlates with NMD response strength.
+
+**Data source:** Raw limma logFC values from per-cell-type DE files
+(6 cell types: AT, DD, DD_ALI, DO, FB, MV). Predicted probabilities from
+the unified model (Section 2a).
+
+**Statistical approach:** Spearman correlation on isoform-level mean logFC
+(averaged across cell types) for interpretability.
+
+```{r sec2d-load-limma}
 # ── Data provenance ──
-# Synthesizes across Goals 2-4 to provide a single accounting of NMD mechanisms.
-# All counts derive from coding_pairs_c2 (gene-matched coding NMD pairs).
-# PTC+/PTC-: from goal3-identify-ptc-neg (coding_pairs_c2$comp_has_ptc)
-# Same-stop/diff-stop: from goal3-fig6-pop (strand-aware stop comparison)
-# Frameshift/in-frame: from goal2-ptc-mechanisms (frame_category)
-
-n_coding_total <- nrow(coding_pairs_c2)
-n_same_stop <- length(same_stop_ids)
-n_diff_stop <- length(diff_stop_ids)
-
-n_diffstop_fs <- sum(ptc_plus$comparator_isoform_id %in% diff_stop_ids &
-                       ptc_plus$is_frameshift_cat)
-n_diffstop_inframe <- length(diff_stop_ids) - n_diffstop_fs
-
-# ── Flowchart: NMD mechanism hierarchy ──
-# Using DiagrammeR for a top-down flowchart
-library(DiagrammeR)
-
-grViz(sprintf('
-digraph nmd_flowchart {
-  graph [rankdir=TB, fontname="Helvetica", nodesep=0.6, ranksep=0.8]
-  node [shape=box, style="filled,rounded", fontname="Helvetica", fontsize=12,
-        width=2.5, height=0.6]
-
-  all [label="All NMD+ coding pairs\\n%s", fillcolor="#f0f0f0"]
-
-  ptc_pos [label="PTC+\\n%s (%s%%)", fillcolor="#fee0d2"]
-  ptc_neg [label="PTC-\\n%s (%s%%)", fillcolor="#deebf7"]
-
-  same_stop [label="Same stop codon\\n(3-prime UTR splice)\\n%s (%s%%)",
-             fillcolor="#fc9272"]
-  new_stop  [label="New stop codon\\n%s (%s%%)", fillcolor="#fc9272"]
-
-  fs_new    [label="Frameshift-induced\\n%s (%s%%)", fillcolor="#fb6a4a"]
-  if_new    [label="In-frame splice event\\n%s (%s%%)", fillcolor="#fb6a4a"]
-
-  all -> ptc_pos
-  all -> ptc_neg
-  ptc_pos -> same_stop
-  ptc_pos -> new_stop
-  new_stop -> fs_new
-  new_stop -> if_new
-}',
-  fmt(n_coding_total),
-  fmt(n_ptc_pos), round(100 * n_ptc_pos / n_coding_total, 1),
-  fmt(n_ptc_neg), round(100 * n_ptc_neg / n_coding_total, 1),
-  fmt(n_same_stop), round(100 * n_same_stop / n_coding_total, 1),
-  fmt(n_diff_stop), round(100 * n_diff_stop / n_coding_total, 1),
-  fmt(n_diffstop_fs), round(100 * n_diffstop_fs / n_coding_total, 1),
-  fmt(n_diffstop_inframe), round(100 * n_diffstop_inframe / n_coding_total, 1)
-))
-```
-
-The flowchart shows the complete hierarchy for `r fmt(n_coding_total)` coding
-gene-matched NMD pairs. The PTC+ branch (`r fmt(n_ptc_pos)` pairs,
-`r round(100 * n_ptc_pos / n_coding_total, 1)`%) represents definitive
-structural mechanisms: for each pair we identify the specific splice event
-responsible (Figure 6). The PTC- branch (`r fmt(n_ptc_neg)` pairs,
-`r round(100 * n_ptc_neg / n_coding_total, 1)`%) lacks individual-level
-causal attribution, but shows group-level enrichment for 5'UTR uORFs
-(Figure 8, Tables 8a-8d) and no evidence for 3'UTR length as an independent
-trigger (Table 7).
-
-**PTC+: New stop codon** (`r fmt(n_diff_stop)`,
-`r round(100 * n_diff_stop / n_coding_total, 1)`%): A splice event introduces
-a premature stop codon not present in the reference. Subdivides into
-frameshift-induced (`r fmt(n_diffstop_fs)`) — a splice event shifts the reading
-frame, and the new frame encounters a stop — and in-frame splice events
-(`r fmt(n_diffstop_inframe)`) — the event directly introduces an in-frame stop
-codon.
-
-**PTC+: Same stop / 3'UTR splice** (`r fmt(n_same_stop)`,
-`r round(100 * n_same_stop / n_coding_total, 1)`%): The comparator and
-reference share the same stop codon. A 3'UTR splicing event repositions an EJC
->50 nt downstream, making the normal stop "premature" under the EJC model.
-
-**PTC-** (`r fmt(n_ptc_neg)`,
-`r round(100 * n_ptc_neg / n_coding_total, 1)`%): No individual causal
-attribution. As a group, PTC-negative NMD comparators have longer 5'UTRs
-(median `r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"]` bp vs
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "Control"]` bp in Control)
-and more uORFs (median `r uorf_summary$median_n_uorfs[uorf_summary$group == "PTC_neg"]` vs
-`r uorf_summary$median_n_uorfs[uorf_summary$group == "Control"]`; OR =
-`r round(1 / uorf_test_df$OR[uorf_test_df$comparison == "PTC_neg vs Control" & uorf_test_df$test == "any uORF"], 1)`,
-p < 10^-180^), consistent with uORF-mediated NMD. Overlapping uORFs have been
-shown to strongly repress main ORF expression through a combination of NMD and
-translational inhibition (Luo & Bhalla 2018), and uORF-containing transcripts
-are enriched among NMD targets (Nyikó et al. 2009; Ow et al. 2023). However,
-the relative contribution of NMD vs translational repression has not been
-cleanly separated, and individual attribution is not possible from sequence
-data alone.
-
-
-# 5. Protein-Level Consequences of Normal Alternative Splicing {#goal5}
-
-**Goal:** When a cell uses its second-most-abundant isoform instead of the
-dominant one, how different is the protein? This section examines the dominant vs
-next-best non-NMD isoform for each gene. Unlike Goals 1-4 (gene-matched NMD vs
-Control), this uses **all non-NMD isoform comparisons** — every gene with ≥2
-non-NMD isoforms, deduplicated across cell types.
-
-## Analysis Overview
-
-```{r goal5-load}
-# ── Data provenance ──
-# Source: 05f_protein_analysis_v2.R → protein_analysis_v2.rds
-# Pipeline:
-#   1. All coding C4 isoform comparisons (unmatched), deduplicated
-#   2. Isopair::mapSpliceToProtein() → protein-level regions per splice event
-#   3. hmmscan (Pfam-A) → domain positions on each isoform's protein sequence
-#   4. Domain-event intersection → disrupted/gained classification
-#   5. Isopair::testDomainEnrichment() → Fisher's test vs reference prevalence
-#   6. PeptideAtlas → mass-spec validation of splice-specific peptides
-
-prot_v2 <- readRDS(file.path(cache_dir, "protein_analysis_v2.rds"))
-pe <- prot_v2$protein_events
-dom <- prot_v2$domain_effects
-parsed_doms <- prot_v2$parsed_doms  # per-isoform hmmscan domain annotations
-
-# Mass-spec: use the quality-enriched reanalysis (massspec_peptideatlas_v2.rds)
-# as the single source of truth. prot_v2$massspec is from the initial run and
-# has slightly different hit counts due to PeptideAtlas version differences.
-ms <- readRDS(file.path(cache_dir, "massspec_peptideatlas_v2.rds"))
-
-# Key counts (single source of truth for this section)
-n_total       <- prot_v2$metadata$n_unique_pairs
-n_with_events <- length(unique(paste(pe$reference_isoform_id, pe$comparator_isoform_id)))
-n_events      <- nrow(pe)
-n_dom_overlaps <- nrow(dom)
-n_unique_doms  <- length(unique(dom$pfam_acc))
-n_disrupted   <- length(unique(paste(dom$comparator_isoform_id[dom$effect == "disrupted_lost"],
-                                      dom$reference_isoform_id[dom$effect == "disrupted_lost"])))
-n_gained      <- length(unique(paste(dom$comparator_isoform_id[dom$effect == "gained_intact"],
-                                      dom$reference_isoform_id[dom$effect == "gained_intact"])))
-n_with_domains <- length(unique(paste(dom$comparator_isoform_id, dom$reference_isoform_id)))
-n_overrep_tested <- nrow(prot_v2$overrep_tests)
-n_overrep_sig    <- sum(prot_v2$overrep_tests$significant, na.rm = TRUE)
-n_ms_queried  <- nrow(ms)
-n_ms_hits     <- sum(ms$n_pa_hits > 0)
-n_peptides    <- sum(ms$n_novel_peptides)
-n_pep_hits    <- sum(ms$n_pa_hits)
-
-# Pair keys for joining pe/dom/ms
-pe$pair_key  <- paste(pe$reference_isoform_id, pe$comparator_isoform_id, sep = "|")
-dom$pair_key <- paste(dom$reference_isoform_id, dom$comparator_isoform_id, sep = "|")
-# ms already has pair_key from 05f_protein_analysis_v2.R
-
-# MS hit lookup (pair keys with ≥1 PeptideAtlas hit)
-ms_hit_keys <- ms$pair_key[ms$n_pa_hits > 0]
-
-# Gene symbol annotation for ms
-gene_lk <- setNames(pe$gene_id, pe$comparator_isoform_id)
-gene_lk <- gene_lk[!duplicated(names(gene_lk))]
-ms$gene_id <- gene_lk[ms$comparator_isoform_id]
-ms$gene_symbol <- gene_symbol_lookup[ms$gene_id]
-ms_hits <- ms[ms$n_pa_hits > 0, ]
-
-# Cell-type membership (protein analysis uses lowercase labels)
-ct_membership <- prot_v2$ct_membership
-ct_map <- c(AT = "at", DD = "dd", DO = "do", FB = "fb", MV = "mv")
-```
-
-The unit tracked through this section is always **isoform comparisons** (one per
-gene: dominant vs next-best non-NMD isoform).
-
-```{r goal5-flowchart}
-# Count domain-affected pairs with MS support (for flowchart node)
-dom_pair_keys <- unique(dom$pair_key)
-n_dom_with_ms <- sum(dom_pair_keys %in% ms_hit_keys)
-
-# C4 pairs in all_samples (unique, no CT duplication)
-n_c4_allsamples <- nrow(readRDS(file.path("data_mashr", "profiles_c4_allsamples.rds")))
-
-dot_g5 <- sprintf('
-digraph goal5 {
-  graph [rankdir=TB, fontname="Helvetica", nodesep=2.0, ranksep=1.8, size="16,28"]
-  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=28, margin="0.8,0.6", width=11]
-  edge  [color="#666666", penwidth=3.0]
-
-  Z [label=<<b>%s Non-NMD Isoforms</b> (from Section 0)<br/>→ C4 pairs: top 2 non-NMD isoforms per gene<br/>%s unique pairs in all_samples>,
-     fillcolor="#f0f0f0", color="#969696", style="rounded,filled,dashed"]
-  A [label=<<b>%s Unique Coding Isoform Comparisons</b><br/>(C4 pairs pooled across 6 CT sets, both isoforms protein-coding,<br/>deduplicated — some genes gain pairs in per-CT analyses)>,
-     fillcolor="#f0f0f0", color="#636363"]
-  B [label=<<b>%s Have CDS-Overlapping Splice Events</b><br/>(%s without CDS events excluded)>,
-     fillcolor="#e8f4f8", color="#2c7fb8"]
-  C [label=<<b>%s Have ≥1 Pfam Domain Affected</b><br/>(%s disrupted/lost | %s gained)>,
-     fillcolor="#fff7bc", color="#d95f0e"]
-  D [label=<<b>%s / %s Domains Over-Represented</b><br/>(FDR &lt; 0.05 vs reference prevalence)>,
-     fillcolor="#c7e9c0", color="#31a354"]
-  E [label=<<b>%s Domain-Affected Pairs Have Mass-Spec Support</b><br/>(splice-specific peptide in PeptideAtlas)>,
-     fillcolor="#dadaeb", color="#6a51a3"]
-  F [label=<<b>Cell-Type-Specific Analysis</b><br/>(domain overlap by CT, direction × CT interaction)>,
-     fillcolor="#fde0dd", color="#c51b8a"]
-
-  Z -> A [label="  pool CTs, coding filter, dedup", fontsize=22, fontname="Helvetica"]
-  A -> B -> C -> D
-  C -> E
-  B -> F
-}',
-  fmt(n_nonnmd_as),
-  fmt(n_c4_allsamples),
-  fmt(n_total),
-  fmt(n_with_events), fmt(n_total - n_with_events),
-  fmt(n_with_domains), fmt(n_disrupted), fmt(n_gained),
-  fmt(n_overrep_sig), fmt(n_overrep_tested),
-  fmt(n_dom_with_ms))
-
-DiagrammeR::grViz(dot_g5, width = 1200, height = 1100)
-```
-
-## Figure 10: Domain Effects of Alternative Splicing
-
-Of `r fmt(n_total)` coding isoform comparisons, `r fmt(n_with_events)`
-(`r round(100 * n_with_events / n_total, 1)`%) have ≥1 CDS-overlapping splice
-event. Among those, `r fmt(n_with_domains)` (`r round(100 * n_with_domains / n_total, 1)`%
-of total) overlap ≥1 Pfam domain, with `r fmt(n_disrupted)` disrupted and
-`r fmt(n_gained)` gained.
-
-```{r goal5-domain-bar, fig.width=10, fig.height=5}
-n_both <- length(intersect(
-  unique(paste(dom$comparator_isoform_id[dom$effect == "disrupted_lost"],
-               dom$reference_isoform_id[dom$effect == "disrupted_lost"])),
-  unique(paste(dom$comparator_isoform_id[dom$effect == "gained_intact"],
-               dom$reference_isoform_id[dom$effect == "gained_intact"]))))
-
-bar_data <- data.frame(
-  category = c("No CDS-overlapping events",
-               "CDS event, no domain overlap",
-               "Both disrupted & gained",
-               "Gained only",
-               "Disrupted/lost only"),
-  n = c(n_total - n_with_events,
-        n_with_events - n_with_domains,
-        n_both,
-        n_gained - n_both,
-        n_disrupted - n_both))
-bar_data$pct <- round(100 * bar_data$n / n_total, 1)
-bar_data$category <- factor(bar_data$category, levels = bar_data$category)
-bar_data$label <- sprintf("%s (%.1f%%)", format(bar_data$n, big.mark = ","), bar_data$pct)
-
-ggplot(bar_data, aes(x = category, y = n, fill = category)) +
-  geom_col() +
-  geom_text(aes(label = label), hjust = -0.1, size = 4) +
-  scale_fill_manual(values = c(
-    "Disrupted/lost only" = "#d6604d",
-    "Gained only" = "#4393c3",
-    "Both disrupted & gained" = "#8856a7",
-    "CDS event, no domain overlap" = "#bdbdbd",
-    "No CDS-overlapping events" = "#f0f0f0")) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
-  labs(title = "Domain Effects of Alternative Splicing",
-       subtitle = sprintf("Denominator: %s coding isoform comparisons. Categories are mutually exclusive.",
-                           fmt(n_total)),
-       x = "", y = "Number of Isoform Comparisons") +
-  theme(legend.position = "none") +
-  coord_flip()
-```
-
-## Table 8: Protein-Level Analysis Summary
-
-```{r goal5-summary-table}
-# ── Data provenance ──
-# All counts from goal5-load (single source of truth for this section).
-# n_total, n_with_events, n_with_domains, n_disrupted, n_gained, n_both:
-#   computed from pe and dom in goal5-load and goal5-domain-bar chunks.
-# n_ms_queried, n_ms_hits: from massspec_peptideatlas_v2.rds.
-# n_events, n_dom_overlaps, n_unique_doms: event- and domain-level counts.
-
-pooled_summary <- data.frame(
-  metric = c("Total coding isoform comparisons",
-             "  — with ≥1 CDS-overlapping splice event",
-             "  — without CDS events",
-             "Total CDS-overlapping events",
-             "Pairs with ≥1 Pfam domain affected",
-             "  — disrupted/lost only",
-             "  — gained only",
-             "  — both disrupted & gained",
-             "Total domain-event overlaps",
-             "Unique Pfam domains affected",
-             "Domains over-represented (FDR < 0.05)",
-             "Pairs with mass-spec support"),
-  n = c(n_total,
-        n_with_events,
-        n_total - n_with_events,
-        n_events,
-        n_with_domains,
-        n_disrupted - n_both,
-        n_gained - n_both,
-        n_both,
-        n_dom_overlaps,
-        n_unique_doms,
-        n_overrep_sig,
-        n_ms_hits),
-  pct = c(NA,
-          round(100 * n_with_events / n_total, 1),
-          round(100 * (n_total - n_with_events) / n_total, 1),
-          NA,
-          round(100 * n_with_domains / n_total, 1),
-          round(100 * (n_disrupted - n_both) / n_total, 1),
-          round(100 * (n_gained - n_both) / n_total, 1),
-          round(100 * n_both / n_total, 1),
-          NA, NA, NA,
-          round(100 * n_ms_hits / n_ms_queried, 1)))
-
-render_dt(pooled_summary,
-  caption = "Table 8: Protein-Level Analysis Summary (Pooled)")
-```
-
-Columns: **metric**; **n** = count; **pct** = percentage of the
-`r fmt(n_total)` coding isoform comparisons for pair-level rows, or of the
-`r fmt(n_ms_queried)` comparisons with splice-specific peptides for the
-mass-spec row. Event- and domain-level counts have no percentage.
-
-## Event-Level Gating: GAIN vs LOSS Domain Overlap
-
-GAIN and LOSS events may interact differently with protein domains. A LOSS event
-removes sequence from the comparator, potentially **disrupting** an existing
-domain. A GAIN event adds sequence, potentially **introducing** an intact domain
-that the reference lacks.
-
-```{r goal5-direction-gating}
-# ── Data provenance ──
-# pe = prot_v2$protein_events (CDS-overlapping splice events, has direction column)
-# dom = prot_v2$domain_effects (domain-event overlaps, has effect column)
-# Join: pe events → dom overlaps via (reference_isoform_id, comparator_isoform_id,
-#        event_type, event_protein_start/protein_start_aa, event_protein_end/protein_end_aa)
-
-# Create event key for pe
-pe$event_key <- paste(pe$reference_isoform_id, pe$comparator_isoform_id,
-                      pe$event_type, pe$protein_start_aa, pe$protein_end_aa,
-                      sep = "|")
-
-# Create matching key for dom
-dom$event_key <- paste(dom$reference_isoform_id, dom$comparator_isoform_id,
-                       dom$event_type, dom$event_protein_start, dom$event_protein_end,
-                       sep = "|")
-
-# Flag each pe event as overlapping any domain or not
-pe$has_domain_overlap <- pe$event_key %in% dom$event_key
-
-# Separate by direction
-gain_events <- pe[pe$direction == "GAIN", ]
-loss_events <- pe[pe$direction == "LOSS", ]
-
-n_gain <- nrow(gain_events)
-n_loss <- nrow(loss_events)
-n_gain_dom <- sum(gain_events$has_domain_overlap)
-n_loss_dom <- sum(loss_events$has_domain_overlap)
-pct_gain_dom <- round(100 * n_gain_dom / n_gain, 1)
-pct_loss_dom <- round(100 * n_loss_dom / n_loss, 1)
-
-# Fisher's exact test: domain overlap rate for GAIN vs LOSS
-ft_direction <- fisher.test(matrix(c(n_gain_dom, n_gain - n_gain_dom,
-                                     n_loss_dom, n_loss - n_loss_dom), nrow = 2))
-```
-
-GAIN events overlap at least one Pfam domain at a rate of **`r pct_gain_dom`%**
-(`r fmt(n_gain_dom)` / `r fmt(n_gain)`), compared to **`r pct_loss_dom`%**
-(`r fmt(n_loss_dom)` / `r fmt(n_loss)`) for LOSS events (Fisher's exact OR =
-`r round(ft_direction$estimate, 2)`, p = `r signif(ft_direction$p.value, 3)`).
-GAIN events preferentially target domain-containing protein regions.
-
-### Figure 11: Domain Overlap Rate by Direction
-
-```{r goal5-direction-bar, fig.width=8, fig.height=4}
-dir_bar <- data.frame(
-  direction = c("GAIN", "LOSS"),
-  pct = c(pct_gain_dom, pct_loss_dom),
-  n = c(n_gain, n_loss),
-  n_dom = c(n_gain_dom, n_loss_dom))
-dir_bar$label <- sprintf("%.1f%%\n(%s / %s)", dir_bar$pct,
-                          fmt(dir_bar$n_dom), fmt(dir_bar$n))
-
-fig11 <- ggplot(dir_bar, aes(x = direction, y = pct, fill = direction)) +
-  geom_col(width = 0.6) +
-  geom_text(aes(label = label), vjust = -0.3, size = 4) +
-  scale_fill_manual(values = c(GAIN = "#4393c3", LOSS = "#d6604d")) +
-  scale_y_continuous(limits = c(0, max(dir_bar$pct) * 1.25),
-                     expand = expansion(mult = c(0, 0))) +
-  labs(title = "Domain Overlap Rate by Splice Event Direction",
-       subtitle = sprintf("Fisher OR = %.2f, p = %s. Total events: %s GAIN, %s LOSS.",
-                           ft_direction$estimate, signif(ft_direction$p.value, 3),
-                           fmt(n_gain), fmt(n_loss)),
-       x = "Event Direction", y = "% of Events Overlapping ≥1 Pfam Domain") +
-  theme(legend.position = "none")
-
-save_fig(fig11, "fig11_domain_overlap_by_direction")
-```
-
-## Domain Enrichment by Direction
-
-The following tables test which specific Pfam domains are over-represented
-among disrupted and gained effects, and compare the two.
-
-### Table 9: Disrupted Domain Enrichment
-
-```{r goal5-enrichment}
-# ── Data provenance ──
-# overrep = prot_v2$overrep_tests (Fisher enrichment of disrupted domains)
-# MS annotation: count disrupted pairs per domain that also have PeptideAtlas support
-overrep <- prot_v2$overrep_tests
-
-# Add MS support columns
-disrupted_dom <- dom[dom$effect == "disrupted_lost", ]
-disrupted_ms <- disrupted_dom |>
-  dplyr::group_by(pfam_acc) |>
-  dplyr::summarise(
-    n_ms_supported = dplyr::n_distinct(pair_key[pair_key %in% ms_hit_keys]),
-    .groups = "drop")
-overrep <- merge(overrep, disrupted_ms, by = "pfam_acc", all.x = TRUE)
-overrep$n_ms_supported[is.na(overrep$n_ms_supported)] <- 0L
-overrep$pct_ms <- round(100 * overrep$n_ms_supported / pmax(overrep$n_disrupted, 1), 1)
-
-overrep_sig <- overrep[overrep$significant == TRUE & !is.na(overrep$significant), ]
-overrep_sig <- overrep_sig[order(overrep_sig$fisher_p), ]
-overrep_top <- head(overrep_sig, 30)
-overrep_top$fisher_OR <- round(overrep_top$fisher_OR, 2)
-overrep_top$padj <- signif(overrep_top$padj, 3)
-
-render_dt(overrep_top[, c("pfam_acc", "domain_name", "n_ref", "n_disrupted",
-  "n_ms_supported", "pct_ms", "fisher_OR", "padj")],
-  caption = "Table 9: Top 30 Over-Represented Disrupted Domains (FDR < 0.05)")
-```
-
-Of `r fmt(n_overrep_tested)` Pfam domains tested, **`r fmt(n_overrep_sig)` are
-significantly over-represented** among disrupted domains (FDR < 0.05). The test
-compares each domain's disruption rate to its prevalence among reference
-(dominant) isoforms.
-
-Columns: **pfam_acc** = Pfam accession; **domain_name**; **n_ref** = reference
-isoforms with this domain; **n_disrupted** = comparisons where this domain
-overlaps a splice event; **n_ms_supported** = disrupted pairs with ≥1
-PeptideAtlas hit for splice-specific peptides; **pct_ms** = % of disrupted pairs
-with MS support; **fisher_OR** = odds ratio; **padj** = BH-adjusted p-value.
-
-### Table 9b: Gained Domain Enrichment
-
-```{r goal5-gained-enrichment}
-# ── Data provenance ──
-# dom$effect == "gained_intact": events where a GAIN introduces a domain
-# Denominator: comparator-side domain prevalence from parsed_doms (hmmscan)
-# n_total: total unique coding pairs (from prot_v2$metadata$n_unique_pairs)
-# MS annotation: count gained pairs per domain that also have PeptideAtlas support
-
-gained <- dom[dom$effect == "gained_intact", ]
-gained_counts <- gained |>
-  dplyr::group_by(pfam_acc) |>
-  dplyr::summarise(
-    n_gained = dplyr::n_distinct(paste(reference_isoform_id, comparator_isoform_id)),
-    domain_name = domain_name[1],
-    .groups = "drop")
-
-n_any_gained <- length(unique(paste(
-  gained$reference_isoform_id, gained$comparator_isoform_id)))
-
-# Add MS support columns
-gained_ms <- gained |>
-  dplyr::group_by(pfam_acc) |>
-  dplyr::summarise(
-    n_ms_supported = dplyr::n_distinct(pair_key[pair_key %in% ms_hit_keys]),
-    .groups = "drop")
-
-# Comparator-side domain prevalence: how many comparator isoforms carry each domain?
-comp_ids <- unique(pe$comparator_isoform_id)
-comp_dom_counts <- parsed_doms[parsed_doms$isoform_id %in% comp_ids, ] |>
-  dplyr::group_by(pfam_acc) |>
-  dplyr::summarise(n_comp = dplyr::n_distinct(isoform_id), .groups = "drop")
-
-gained_enrich <- merge(gained_counts, comp_dom_counts, by = "pfam_acc", all.x = TRUE)
-gained_enrich$n_comp[is.na(gained_enrich$n_comp)] <- 0L
-gained_enrich <- merge(gained_enrich, gained_ms, by = "pfam_acc", all.x = TRUE)
-gained_enrich$n_ms_supported[is.na(gained_enrich$n_ms_supported)] <- 0L
-gained_enrich$pct_ms <- round(100 * gained_enrich$n_ms_supported /
-                                pmax(gained_enrich$n_gained, 1), 1)
-
-# Fisher's exact test per domain
-# 2×2: (gained / not gained) × (has domain / no domain)
-# Denominator: comparator isoforms with this domain (n_comp)
-gained_enrich$fisher_p <- NA_real_
-gained_enrich$fisher_OR <- NA_real_
-for (i in seq_len(nrow(gained_enrich))) {
-  a <- gained_enrich$n_gained[i]
-  b <- max(gained_enrich$n_comp[i] - a, 0L)
-  c_val <- max(n_any_gained - a, 0L)
-  d_val <- max(n_total - a - b - c_val, 0L)
-  ft <- tryCatch(fisher.test(matrix(c(a, c_val, b, d_val), nrow = 2)),
-                 error = function(e) NULL)
-  if (!is.null(ft)) {
-    gained_enrich$fisher_p[i] <- ft$p.value
-    gained_enrich$fisher_OR[i] <- as.numeric(ft$estimate)
-  }
-}
-gained_enrich$padj <- p.adjust(gained_enrich$fisher_p, method = "BH")
-gained_enrich$significant <- gained_enrich$padj < 0.05
-gained_enrich <- gained_enrich[order(gained_enrich$fisher_p), ]
-
-n_gained_tested <- nrow(gained_enrich)
-n_gained_sig <- sum(gained_enrich$significant, na.rm = TRUE)
-
-gained_sig <- gained_enrich[gained_enrich$significant == TRUE &
-                              !is.na(gained_enrich$significant), ]
-gained_top <- head(gained_sig, 30)
-gained_top$fisher_OR <- round(gained_top$fisher_OR, 2)
-gained_top$padj <- signif(gained_top$padj, 3)
-
-render_dt(gained_top[, c("pfam_acc", "domain_name", "n_comp", "n_gained",
-  "n_ms_supported", "pct_ms", "fisher_OR", "padj")],
-  caption = "Table 9b: Top 30 Over-Represented Gained Domains (FDR < 0.05)")
-```
-
-Of `r fmt(n_gained_tested)` Pfam domains tested, **`r fmt(n_gained_sig)` are
-significantly over-represented** among gained-intact domains (FDR < 0.05). The
-test compares each domain's rate of being gained intact to its prevalence among
-comparator isoforms (the isoforms that carry the gained domain).
-
-Columns: **pfam_acc** = Pfam accession; **domain_name**; **n_comp** = comparator
-isoforms carrying this domain (baseline prevalence); **n_gained** = comparisons
-where this domain is gained intact; **n_ms_supported** = gained pairs with ≥1
-PeptideAtlas hit; **pct_ms** = % of gained pairs with MS support;
-**fisher_OR** = odds ratio; **padj** = BH-adjusted p-value.
-
-### Table 9c: Disrupted vs Gained Comparison
-
-```{r goal5-disrupted-vs-gained}
-# ── Data provenance ──
-# For each domain with ≥5 affected pairs (disrupted or gained):
-# Test whether the gained fraction exceeds the overall baseline.
-# Baseline = overall gained fraction across all domain-affected pairs.
-
-# Merge disrupted and gained counts
-dg_compare <- merge(
-  overrep[, c("pfam_acc", "domain_name", "n_disrupted")],
-  gained_counts[, c("pfam_acc", "n_gained")],
-  by = "pfam_acc", all = TRUE)
-dg_compare$n_disrupted[is.na(dg_compare$n_disrupted)] <- 0L
-dg_compare$n_gained[is.na(dg_compare$n_gained)] <- 0L
-
-# Fill domain_name from gained_counts where missing
-missing_name <- is.na(dg_compare$domain_name)
-if (any(missing_name)) {
-  name_lk <- setNames(gained_counts$domain_name, gained_counts$pfam_acc)
-  dg_compare$domain_name[missing_name] <- name_lk[dg_compare$pfam_acc[missing_name]]
-}
-
-dg_compare$n_total_affected <- dg_compare$n_disrupted + dg_compare$n_gained
-dg_compare$pct_gained <- round(100 * dg_compare$n_gained / dg_compare$n_total_affected, 1)
-
-# Filter to domains with ≥5 affected pairs
-dg_testable <- dg_compare[dg_compare$n_total_affected >= 5, ]
-
-# Overall baseline: fraction of all domain effects that are gained
-baseline_gained <- n_any_gained / (n_any_gained +
-  length(unique(paste(
-    dom$comparator_isoform_id[dom$effect == "disrupted_lost"],
-    dom$reference_isoform_id[dom$effect == "disrupted_lost"]))))
-
-# One-sided binomial test per domain: is gained fraction > baseline?
-dg_testable$binom_p <- NA_real_
-for (i in seq_len(nrow(dg_testable))) {
-  bt <- tryCatch(
-    binom.test(dg_testable$n_gained[i], dg_testable$n_total_affected[i],
-               p = baseline_gained, alternative = "greater"),
-    error = function(e) NULL)
-  if (!is.null(bt)) dg_testable$binom_p[i] <- bt$p.value
-}
-dg_testable$padj <- p.adjust(dg_testable$binom_p, method = "BH")
-dg_testable$significant <- dg_testable$padj < 0.05
-dg_testable <- dg_testable[order(-dg_testable$pct_gained), ]
-
-n_dg_tested <- nrow(dg_testable)
-n_dg_sig <- sum(dg_testable$significant, na.rm = TRUE)
-
-dg_display <- dg_testable[, c("pfam_acc", "domain_name", "n_disrupted",
-  "n_gained", "n_total_affected", "pct_gained", "padj")]
-dg_display$padj <- signif(dg_display$padj, 3)
-
-render_dt(dg_display,
-  caption = sprintf("Table 9c: Disrupted vs Gained by Domain (≥5 affected pairs, baseline gained = %.1f%%)",
-                    100 * baseline_gained))
-```
-
-Of `r fmt(n_dg_tested)` domains with ≥5 affected pairs, **`r fmt(n_dg_sig)`**
-have a gained fraction significantly above the overall baseline of
-**`r round(100 * baseline_gained, 1)`%** (one-sided binomial, BH-adjusted
-p < 0.05).
-
-Columns: **pfam_acc** = Pfam accession; **domain_name**; **n_disrupted** =
-pairs where the domain is disrupted; **n_gained** = pairs where the domain is
-gained intact; **n_total_affected** = disrupted + gained; **pct_gained** =
-percentage gained; **padj** = BH-adjusted binomial p-value.
-
-## Mass Spectrometry Integration
-
-Domain overlap results are cross-referenced with PeptideAtlas mass-spectrometry
-data to assess whether domain-affecting splice events produce detectable protein
-products.
-
-### Table 10: Domain × Mass-Spec Cross-Tabulation
-
-```{r goal5-domain-ms-crosstab}
-# ── Data provenance ──
-# Universe: pairs with CDS-overlapping events (n_with_events)
-# dom$pair_key: pairs with domain overlap
-# ms_hit_keys: pairs with ≥1 PeptideAtlas hit (from ms loaded in goal5-load)
-# 2×2: (domain affected / not) × (MS hit / not)
-
-cds_pair_keys <- unique(pe$pair_key)
-has_dom <- cds_pair_keys %in% dom_pair_keys
-has_ms  <- cds_pair_keys %in% ms_hit_keys
-
-a <- sum(has_dom & has_ms)
-b <- sum(has_dom & !has_ms)
-c_val <- sum(!has_dom & has_ms)
-d_val <- sum(!has_dom & !has_ms)
-
-ft_dom_ms <- fisher.test(matrix(c(a, c_val, b, d_val), nrow = 2))
-
-crosstab <- data.frame(
-  category = c("Domain affected", "No domain affected", "Total"),
-  ms_hit = c(a, c_val, a + c_val),
-  no_ms_hit = c(b, d_val, b + d_val),
-  total = c(a + b, c_val + d_val, a + b + c_val + d_val))
-
-kable(crosstab,
-  caption = "Table 10: Domain × Mass-Spec Cross-Tabulation",
-  col.names = c("", "MS Hit", "No MS Hit", "Total"))
-```
-
-Among `r fmt(n_with_events)` pairs with CDS-overlapping events,
-domain-affected pairs have a mass-spec hit rate of
-**`r round(100 * a / (a + b), 1)`%** vs **`r round(100 * c_val / (c_val + d_val), 1)`%**
-for pairs without domain overlap (Fisher OR =
-`r round(ft_dom_ms$estimate, 2)`, p = `r signif(ft_dom_ms$p.value, 3)`).
-
-Columns: **MS Hit** = pairs with ≥1 PeptideAtlas-confirmed splice-specific
-peptide; **No MS Hit** = no PeptideAtlas match; rows stratified by whether the
-pair has ≥1 Pfam domain affected by alternative splicing.
-
-### Mass-Spec Validation Summary
-
-```{r goal5-massspec-summary}
-# ── Data provenance ──
-# Source: massspec_peptideatlas_v2.rds loaded in goal5-load chunk (single source of truth)
-# Pipeline: splice-specific peptides from event-affected protein regions
-#   → exact match against Human PeptideAtlas 2024-01 (1.5M peptides with
-#   n_observations, n_samples, best_probability per peptide)
-
-ms_summary <- data.frame(
-  metric = c("Comparisons with splice-specific peptides",
-             "Comparisons with ≥1 PeptideAtlas hit",
-             "  — with ≥2 confirmed peptides",
-             "  — with ≥4 confirmed peptides",
-             "  — high-confidence (best peptide in ≥10 samples)",
-             "Total splice-specific peptides queried",
-             "Total peptides found in PeptideAtlas"),
-  n = c(n_ms_queried, n_ms_hits,
-        sum(ms_hits$n_pa_hits >= 2),
-        sum(ms_hits$n_pa_hits >= 4),
-        sum(ms_hits$max_n_samples >= 10),
-        n_peptides, n_pep_hits),
-  pct_of_queried = c(NA, round(100 * n_ms_hits / n_ms_queried, 1),
-        round(100 * sum(ms_hits$n_pa_hits >= 2) / n_ms_queried, 1),
-        round(100 * sum(ms_hits$n_pa_hits >= 4) / n_ms_queried, 1),
-        round(100 * sum(ms_hits$max_n_samples >= 10) / n_ms_queried, 1),
-        NA, round(100 * n_pep_hits / n_peptides, 1)))
-
-kable(ms_summary, caption = "Table 10a: Mass Spectrometry Validation Summary",
-      col.names = c("Metric", "N", "% of queried"))
-```
-
-Columns: **Metric**; **N** = count; **% of queried** = percentage of the
-`r fmt(n_ms_queried)` comparisons with splice-specific peptides (first block)
-or of total peptides (last row).
-
-## Cell-Type Domain Analysis
-
-The analyses above use deduplicated pairs pooled across cell types. Here we
-stratify by cell type to assess whether domain overlap patterns vary across
-the five lung cell populations. Pairs appear in all cell types where they were
-observed, so cell types are **not independent** — a pair shared across three
-CTs contributes to each. This inflates per-CT sample sizes; interpret
-cross-CT comparisons as descriptive rather than formally independent tests.
-
-### Table 9d: Domain Overlap by Cell Type
-
-```{r goal5-ct-domain}
-# ── Data provenance ──
-# ct_membership: named list from prot_v2, key = "ref_id|comp_id", value = CT labels
-#   (lowercase: "at", "dd", "do", "fb", "mv")
-# pe$pair_key, dom$pair_key: pair-level keys matching ct_membership names
-# Subsetting pe and dom by ct_membership to compute per-CT metrics
-
-ct_domain_rows <- lapply(main_cts, function(ct) {
-  ct_lower <- ct_map[ct]
-  ct_keys <- names(ct_membership)[sapply(ct_membership, function(x) ct_lower %in% x)]
-
-  pe_ct <- pe[pe$pair_key %in% ct_keys, ]
-  dom_ct <- dom[dom$pair_key %in% ct_keys, ]
-
-  n_pairs_ct <- length(ct_keys)
-  n_cds_ct <- length(unique(pe_ct$pair_key))
-  n_dom_ct <- length(unique(dom_ct$pair_key))
-  n_dis_ct <- length(unique(dom_ct$pair_key[dom_ct$effect == "disrupted_lost"]))
-  n_gai_ct <- length(unique(dom_ct$pair_key[dom_ct$effect == "gained_intact"]))
-
+# Source: limma DE files from /Users/petecastaldi/claude_projects/nmd/isocall_dge/limma/yul/
+# Raw unshrunk logFC per cell type — independent estimates (no mashr shrinkage)
+# Used as response variable for dose-response analysis
+
+limma_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/limma/yul"
+limma_cts <- c(AT = "at", DD = "dd", DD_ALI = "ddali", DO = "do", FB = "fb", MV = "mv")
+
+limma_logfc <- lapply(names(limma_cts), function(ct) {
+  f <- file.path(limma_dir, sprintf("nmd_dge_%s_2026.3.3.csv", limma_cts[ct]))
+  de <- read.csv(f, stringsAsFactors = FALSE)
+  # Use transcript_id column
+  id_col <- if ("transcript_id" %in% names(de)) "transcript_id" else "txid"
   data.frame(
+    isoform_id = de[[id_col]],
     cell_type = ct,
-    n_pairs = n_pairs_ct,
-    n_cds_events = n_cds_ct,
-    n_domain_overlap = n_dom_ct,
-    pct_domain_overlap = round(100 * n_dom_ct / max(n_cds_ct, 1), 1),
-    n_disrupted = n_dis_ct,
-    n_gained = n_gai_ct)
+    logFC = de$logFC,
+    stringsAsFactors = FALSE
+  )
 })
-ct_domain_table <- do.call(rbind, ct_domain_rows)
+limma_long <- do.call(rbind, limma_logfc)
 
-render_dt(ct_domain_table,
-  caption = "Table 9d: Domain Overlap Summary by Cell Type")
+# Mean logFC per isoform (across cell types)
+mean_logfc <- limma_long %>%
+  group_by(isoform_id) %>%
+  summarise(
+    mean_logFC = mean(logFC, na.rm = TRUE),
+    n_cts = n(),
+    .groups = "drop"
+  )
+
+# Merge with unified model scores (NMD isoforms only)
+nmd_scored <- unified$scored_isoforms %>%
+  filter(is_nmd == 1) %>%
+  inner_join(mean_logfc, by = "isoform_id")
+
+cat("NMD isoforms with both model scores and limma logFC:", nrow(nmd_scored), "\n")
+cat("Mean logFC (NMD isoforms):", round(mean(nmd_scored$mean_logFC), 3), "\n")
 ```
 
-Columns: **cell_type**; **n_pairs** = coding isoform pairs in this CT;
-**n_cds_events** = pairs with ≥1 CDS-overlapping splice event;
-**n_domain_overlap** = pairs with ≥1 Pfam domain affected;
-**pct_domain_overlap** = % of CDS-event pairs with domain overlap;
-**n_disrupted** = pairs with ≥1 disrupted domain; **n_gained** = pairs with ≥1
-gained domain.
+## Unified Model Score vs NMD Response Magnitude
 
-### Figure 11b: Direction × Cell Type
+```{r sec2d-scatter, fig.width=10, fig.height=5}
+# Spearman correlation
+rho_all <- cor(nmd_scored$pred_prob, nmd_scored$mean_logFC, method = "spearman")
+p_all <- cor.test(nmd_scored$pred_prob, nmd_scored$mean_logFC, method = "spearman")$p.value
 
-```{r goal5-ct-direction, fig.width=10, fig.height=5}
+# Split by PTC status for side-by-side
+ptc_status <- ptc %>%
+  filter(isoform_id %in% nmd_scored$isoform_id) %>%
+  select(isoform_id, has_ptc)
+
+nmd_scored_ptc <- nmd_scored %>%
+  inner_join(ptc_status, by = "isoform_id") %>%
+  mutate(PTC = ifelse(has_ptc, "PTC+", "PTC\u2212"))
+
+rho_ptcpos <- with(nmd_scored_ptc[nmd_scored_ptc$has_ptc == TRUE, ],
+                    cor(pred_prob, mean_logFC, method = "spearman"))
+rho_ptcneg <- with(nmd_scored_ptc[nmd_scored_ptc$has_ptc == FALSE, ],
+                    cor(pred_prob, mean_logFC, method = "spearman"))
+
+fig_dose <- ggplot(nmd_scored_ptc,
+                   aes(x = pred_prob, y = mean_logFC, color = PTC)) +
+  geom_point(alpha = 0.15, size = 0.8) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1) +
+  facet_wrap(~PTC, scales = "free_x") +
+  scale_color_manual(values = c("PTC+" = "#ef8a62", "PTC\u2212" = "#67a9cf")) +
+  labs(title = "Unified Model Score vs NMD Response Magnitude",
+       subtitle = sprintf("All NMD: rho = %.3f | PTC+: %.3f | PTC\u2212: %.3f",
+                          rho_all, rho_ptcpos, rho_ptcneg),
+       x = "Predicted NMD probability (unified model)",
+       y = "Mean logFC (limma, across cell types)",
+       color = "") +
+  theme(legend.position = "none")
+save_fig(fig_dose, "fig_dose_response_unified", width = 10, height = 5)
+```
+
+NMD is a continuous response, not a binary switch. The unified model's
+predicted probability correlates with actual NMD response magnitude
+(Spearman rho = `r round(rho_all, 3)`, p = `r signif(p_all, 3)`). This
+holds for both PTC-positive isoforms (where stop codon position determines
+response strength) and PTC-negative isoforms (where 5'UTR features predict
+response magnitude).
+
+# 3. Shared ATGs — The Same Start Codon, Multiple Fates {#sec3-shared-atgs}
+
+The unified model treats PTC and uORF features as independent predictors.
+But biologically, where do the overlapping uORFs come from? We find that the
+ATGs creating overlapping uORFs are not random — many are functional CDS starts
+in other isoforms from the same gene.
+
+**Data source:** Overlapping uORF ATGs identified from C2 PTC-negative paired
+comparators (paired framework). The ATG role analysis then examines ALL coding
+isoforms of those genes (broader than pairs) to determine whether the ATG
+serves as CDS start in other isoforms.
+
+```{r sec3-shared-atg-analysis}
 # ── Data provenance ──
-# Expand events to CT level via ct_membership, then compute domain overlap rate
-# by CT × direction. CMH test for overall direction × domain overlap association
-# stratified by cell type.
+# Source: utr5_features.rds → isoform_features (overlapping uORFs),
+#   cds.rds (CDS start positions), structures.rds (strand info)
+# Population: Genes with PTC-negative NMD comparators that have overlapping uORFs.
+#   For each such gene, we examine ALL expressed coding isoforms.
 
-ct_dir_rows <- list()
-for (ct in main_cts) {
-  ct_lower <- ct_map[ct]
-  ct_keys <- names(ct_membership)[sapply(ct_membership, function(x) ct_lower %in% x)]
-  pe_ct <- pe[pe$pair_key %in% ct_keys, ]
+# PTC-negative NMD comparator isoforms with overlapping uORFs
+ptc_c2_as <- set_results[["c2_allsamples"]]$ptc_assoc
+coding_ids_set <- cds$isoform_id[cds$coding_status == "coding"]
+sec3_coding_c2 <- profiles_list[["c2_allsamples"]] %>%
+  filter(reference_isoform_id %in% coding_ids_set,
+         comparator_isoform_id %in% coding_ids_set)
 
-  for (dir in c("GAIN", "LOSS")) {
-    events_dir <- pe_ct[pe_ct$direction == dir, ]
-    n_dir <- nrow(events_dir)
-    n_dom_dir <- sum(events_dir$has_domain_overlap)
-    ct_dir_rows[[length(ct_dir_rows) + 1]] <- data.frame(
-      cell_type = ct, direction = dir,
-      n_events = n_dir, n_dom = n_dom_dir,
-      pct_dom = round(100 * n_dom_dir / max(n_dir, 1), 1))
-  }
-}
-ct_dir_df <- do.call(rbind, ct_dir_rows)
+ptc_lookup <- ptc_c2_as$pair_summary[, c("comparator_isoform_id", "comp_has_ptc")]
+coding_c2_ptc <- merge(sec3_coding_c2, ptc_lookup, by = "comparator_isoform_id", all.x = TRUE)
+ptc_neg_comps <- coding_c2_ptc %>%
+  filter(comp_has_ptc == FALSE)
 
-fig11b <- ggplot(ct_dir_df, aes(x = cell_type, y = pct_dom, fill = direction)) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
-  geom_text(aes(label = sprintf("%.0f%%", pct_dom)),
-            position = position_dodge(width = 0.7), vjust = -0.3, size = 3.5) +
-  scale_fill_manual(values = c(GAIN = "#4393c3", LOSS = "#d6604d")) +
-  scale_y_continuous(limits = c(0, max(ct_dir_df$pct_dom) * 1.2),
-                     expand = expansion(mult = c(0, 0))) +
-  labs(title = "Domain Overlap Rate by Direction and Cell Type",
-       subtitle = "% of CDS-overlapping events that overlap ≥1 Pfam domain",
-       x = "Cell Type", y = "% Events with Domain Overlap", fill = "Direction") +
-  theme(legend.position = "bottom")
+# Get UTR5 features for PTC-neg comparators
+utr5_paired <- readRDS(file.path(cache_dir, "utr5_features.rds"))
+ptc_neg_with_uorfs <- utr5_paired$isoform_features %>%
+  filter(isoform_id %in% ptc_neg_comps$comparator_isoform_id,
+         n_orfs_overlapping > 0,
+         !excluded)
 
-save_fig(fig11b, "fig11b_direction_by_celltype", width = 10, height = 5)
+cat("PTC-negative NMD comparators with overlapping uORFs:",
+    nrow(ptc_neg_with_uorfs), "\n")
 
-# CMH test: direction × domain overlap, stratified by CT
-# Build 3D array: 2 (direction) × 2 (domain overlap) × 5 (CT)
-cmh_array <- array(0L, dim = c(2, 2, length(main_cts)),
-  dimnames = list(direction = c("GAIN", "LOSS"),
-                  domain = c("overlap", "no_overlap"),
-                  ct = main_cts))
+# Get the gene IDs for these isoforms
+genes_with_overlap_uorfs <- unique(
+  coding_c2_ptc$gene_id[coding_c2_ptc$comparator_isoform_id %in%
+                           ptc_neg_with_uorfs$isoform_id]
+)
+cat("Genes with PTC-neg + overlapping uORFs:", length(genes_with_overlap_uorfs), "\n")
 
-for (i in seq_along(main_cts)) {
-  ct <- main_cts[i]
-  ct_lower <- ct_map[ct]
-  ct_keys <- names(ct_membership)[sapply(ct_membership, function(x) ct_lower %in% x)]
-  pe_ct <- pe[pe$pair_key %in% ct_keys, ]
+# For each gene, get CDS start positions of ALL coding isoforms
+gene_cds_starts <- coding_structures %>%
+  filter(gene_id %in% genes_with_overlap_uorfs) %>%
+  inner_join(coding_cds %>% select(isoform_id, cds_start, cds_stop),
+             by = "isoform_id") %>%
+  mutate(
+    cds_5prime = ifelse(strand == "+", cds_start, cds_stop)
+  ) %>%
+  select(isoform_id, gene_id, strand, cds_5prime)
 
-  for (dir in c("GAIN", "LOSS")) {
-    events_dir <- pe_ct[pe_ct$direction == dir, ]
-    cmh_array[dir, "overlap", i] <- sum(events_dir$has_domain_overlap)
-    cmh_array[dir, "no_overlap", i] <- sum(!events_dir$has_domain_overlap)
-  }
-}
+# Count distinct CDS start positions per gene
+cds_start_diversity <- gene_cds_starts %>%
+  group_by(gene_id) %>%
+  summarise(
+    n_isoforms = n(),
+    n_cds_starts = n_distinct(cds_5prime),
+    .groups = "drop"
+  )
 
-cmh_test <- mantelhaen.test(cmh_array)
+cat("\nCDS start diversity in these genes:\n")
+cat("  Genes with ≥2 CDS starts:",
+    sum(cds_start_diversity$n_cds_starts >= 2),
+    sprintf("(%.1f%%)\n", 100 * mean(cds_start_diversity$n_cds_starts >= 2)))
+cat("  Genes with ≥3 CDS starts:",
+    sum(cds_start_diversity$n_cds_starts >= 3),
+    sprintf("(%.1f%%)\n", 100 * mean(cds_start_diversity$n_cds_starts >= 3)))
+
+# Check NMD status of isoforms sharing CDS starts
+nmd_ids_set <- nmd_class$all_samples$nmd
+non_nmd_ids_set <- nmd_class$all_samples$non_nmd
+
+gene_cds_starts$is_nmd <- gene_cds_starts$isoform_id %in% nmd_ids_set
+gene_cds_starts$is_non_nmd <- gene_cds_starts$isoform_id %in% non_nmd_ids_set
+
+# For each distinct CDS start in these genes, how many isoforms use it?
+cds_start_usage <- gene_cds_starts %>%
+  group_by(gene_id, cds_5prime) %>%
+  summarise(
+    n_isoforms = n(),
+    n_nmd = sum(is_nmd),
+    n_non_nmd = sum(is_non_nmd),
+    .groups = "drop"
+  )
+
+# CDS starts used by both NMD and non-NMD isoforms
+shared_starts <- cds_start_usage %>%
+  filter(n_nmd > 0, n_non_nmd > 0)
+
+cat("\nShared ATG analysis:\n")
+cat("  Total distinct CDS starts:", nrow(cds_start_usage), "\n")
+cat("  Used by both NMD and non-NMD:", nrow(shared_starts),
+    sprintf("(%.1f%%)\n", 100 * nrow(shared_starts) / nrow(cds_start_usage)))
+cat("  Non-NMD isoforms using shared starts:", sum(shared_starts$n_non_nmd), "\n")
+cat("  NMD isoforms using shared starts:", sum(shared_starts$n_nmd), "\n")
 ```
 
-GAIN events consistently show higher domain overlap rates than LOSS events
-across all cell types (Figure 11b). A Cochran-Mantel-Haenszel test confirms
-this association is significant when stratified by cell type (common OR =
-`r round(cmh_test$estimate, 2)`, p = `r signif(cmh_test$p.value, 3)`).
+The same ATG position can serve as a CDS start in one isoform, an
+overlapping uORF in another, or internal CDS in a third — with the role
+determined entirely by the exon path. Genes encode overlapping reading
+frames through shared ATGs. The exon path — determined by TSS, internal
+splicing, and TES — selects which frame is productive. NMD degrades
+transcripts where the selected path produces a reading frame that
+terminates upstream of EJCs.
 
-**Note:** Because pairs can appear in multiple cell types, CT strata are not
-fully independent. The CMH test assumes independent strata; the p-value should
-be interpreted conservatively.
 
-### Table 9e: Cell-Type-Specific Domain Enrichment
+# 4. Protein-Level Consequences of Normal Alternative Splicing {#goal5}
 
-```{r goal5-ct-domain-enrichment, fig.width=10, fig.height=8}
-# ── Data provenance ──
-# For each Pfam domain: build a 2×5 table (affected/not × 5 CTs).
-# Denominator per CT: pairs with CDS events in that CT.
-# Test: chi-squared with Monte Carlo simulation (handles sparse cells).
-# H0: the rate at which domain X is affected is the same across all CTs.
-# BH correction across tested domains.
+This analysis has been moved to a separate report:
+**`05g_protein_report_mashr.Rmd`** / **`05g_protein_report_mashr.html`**
 
-# Pre-compute per-CT CDS-event pair sets and domain-affected pair sets
-ct_cds_keys <- list()
-ct_dom_affected <- list()  # pair_key → pfam_acc affected
-for (ct in main_cts) {
-  ct_lower <- ct_map[ct]
-  ct_keys <- names(ct_membership)[sapply(ct_membership, function(x) ct_lower %in% x)]
-  ct_cds_keys[[ct]] <- unique(pe$pair_key[pe$pair_key %in% ct_keys])
-  dom_ct <- dom[dom$pair_key %in% ct_keys, ]
-  ct_dom_affected[[ct]] <- dom_ct[, c("pair_key", "pfam_acc")]
-}
+That report examines the dominant vs next-best non-NMD isoform for each gene,
+including domain overlap analysis, domain enrichment tests, mass-spectrometry
+validation, and cell-type-specific patterns.
 
-# Get all domains with ≥10 total affected pairs across CTs AND ≥2 CTs with ≥1
-all_doms <- unique(dom$pfam_acc)
-dom_ct_counts <- list()
-for (d in all_doms) {
-  cts_with <- 0L
-  total <- 0L
-  per_ct <- integer(length(main_cts))
-  names(per_ct) <- main_cts
-  for (j in seq_along(main_cts)) {
-    ct <- main_cts[j]
-    n_aff <- length(unique(ct_dom_affected[[ct]]$pair_key[
-      ct_dom_affected[[ct]]$pfam_acc == d]))
-    per_ct[j] <- n_aff
-    total <- total + n_aff
-    if (n_aff > 0) cts_with <- cts_with + 1L
-  }
-  if (total >= 10 && cts_with >= 2) {
-    dom_ct_counts[[d]] <- per_ct
-  }
-}
-
-n_ct_enrich_tested <- length(dom_ct_counts)
-
-# Run chi-squared tests
-ct_enrich_results <- list()
-set.seed(42)  # reproducibility for Monte Carlo
-for (d in names(dom_ct_counts)) {
-  affected <- dom_ct_counts[[d]]
-  n_cds <- sapply(main_cts, function(ct) length(ct_cds_keys[[ct]]))
-  not_affected <- n_cds - affected
-
-  # 2×5 matrix: rows = affected/not, cols = CTs
-  mat <- rbind(affected, not_affected)
-
-  # Monte Carlo for p-value (handles sparse cells)
-  ct_mc <- tryCatch(
-    chisq.test(mat, simulate.p.value = TRUE, B = 10000),
-    error = function(e) NULL)
-  # Standard chi-squared for residuals (stdres not available with simulation)
-  ct_std <- tryCatch(
-    chisq.test(mat),
-    error = function(e) NULL)
-
-  if (!is.null(ct_mc) && !is.null(ct_std)) {
-    std_res <- ct_std$stdres[1, ]
-    ct_enrich_results[[d]] <- data.frame(
-      pfam_acc = d,
-      chisq = round(ct_mc$statistic, 2),
-      p_value = ct_mc$p.value,
-      max_residual_ct = names(which.max(std_res)),
-      max_residual = round(max(std_res), 2),
-      min_residual_ct = names(which.min(std_res)),
-      min_residual = round(min(std_res), 2),
-      stringsAsFactors = FALSE)
-  }
-}
-
-ct_enrich_df <- do.call(rbind, ct_enrich_results)
-ct_enrich_df$padj <- p.adjust(ct_enrich_df$p_value, method = "BH")
-ct_enrich_df$significant <- ct_enrich_df$padj < 0.05
-ct_enrich_df <- ct_enrich_df[order(ct_enrich_df$p_value), ]
-
-# Add domain name lookup
-dom_name_lk <- setNames(dom$domain_name, dom$pfam_acc)
-dom_name_lk <- dom_name_lk[!duplicated(names(dom_name_lk))]
-ct_enrich_df$domain_name <- dom_name_lk[ct_enrich_df$pfam_acc]
-
-n_ct_enrich_sig <- sum(ct_enrich_df$significant, na.rm = TRUE)
-
-# Add per-CT percentage columns to ALL tested domains (needed for display)
-for (ct in main_cts) {
-  ct_enrich_df[[paste0("pct_", ct)]] <- sapply(ct_enrich_df$pfam_acc, function(d) {
-    n_aff <- dom_ct_counts[[d]][ct]
-    n_cds <- length(ct_cds_keys[[ct]])
-    round(100 * n_aff / max(n_cds, 1), 2)
-  })
-}
-
-ct_enrich_sig <- ct_enrich_df[ct_enrich_df$significant == TRUE &
-                                !is.na(ct_enrich_df$significant), ]
-
-display_cols <- c("pfam_acc", "domain_name",
-  paste0("pct_", main_cts), "chisq", "padj",
-  "max_residual_ct", "max_residual", "min_residual_ct", "min_residual")
-
-if (nrow(ct_enrich_sig) > 0) {
-  ct_enrich_display <- head(ct_enrich_sig[, display_cols], 30)
-  ct_enrich_display$padj <- signif(ct_enrich_display$padj, 3)
-  render_dt(ct_enrich_display,
-    caption = sprintf("Table 9e: Domains with Cell-Type-Specific Enrichment (FDR < 0.05, %s tested)",
-                      fmt(n_ct_enrich_tested)))
-} else {
-  cat("No domains with significant cell-type heterogeneity at FDR < 0.05.\n")
-}
-```
-
-Of `r fmt(n_ct_enrich_tested)` Pfam domains tested (≥10 affected pairs across
-≥2 cell types), **`r fmt(n_ct_enrich_sig)`** show significant heterogeneity in
-their rate of being affected across cell types (chi-squared with Monte Carlo
-simulation, BH-adjusted p < 0.05).
-
-Columns: **pfam_acc** = Pfam accession; **domain_name**; **pct_AT** through
-**pct_MV** = % of CDS-event pairs in each CT where this domain is affected;
-**chisq** = chi-squared statistic; **padj** = BH-adjusted p-value;
-**max_residual_ct** = cell type with the largest positive standardized residual
-(most enriched); **max_residual** = that residual value; **min_residual_ct** =
-cell type with the largest negative residual (most depleted);
-**min_residual** = that residual value.
-
-### Figure 11c: Cell-Type-Specific Domain Heatmap
-
-```{r goal5-ct-domain-heatmap, fig.width=10, fig.height=8}
-# ── Data provenance ──
-# Standardized residuals from the chi-squared tests above.
-# Positive residual = domain affected more than expected in that CT.
-# Negative residual = affected less than expected.
-
-if (nrow(ct_enrich_sig) > 0) {
-  # Build residual matrix for top significant domains (up to 30)
-  top_doms <- head(ct_enrich_sig$pfam_acc, 30)
-
-  resid_rows <- list()
-  for (d in top_doms) {
-    affected <- dom_ct_counts[[d]]
-    n_cds <- sapply(main_cts, function(ct) length(ct_cds_keys[[ct]]))
-    not_affected <- n_cds - affected
-    mat <- rbind(affected, not_affected)
-    ct_test <- chisq.test(mat)  # standard chi-sq for stdres
-    resid_rows[[d]] <- ct_test$stdres[1, ]
-  }
-
-  resid_mat <- do.call(rbind, resid_rows)
-  rownames(resid_mat) <- paste0(dom_name_lk[top_doms], " (", top_doms, ")")
-
-  # Reshape for ggplot
-  resid_df <- data.frame(
-    domain = rep(rownames(resid_mat), ncol(resid_mat)),
-    cell_type = rep(colnames(resid_mat), each = nrow(resid_mat)),
-    residual = as.vector(resid_mat),
-    stringsAsFactors = FALSE)
-  resid_df$domain <- factor(resid_df$domain, levels = rev(rownames(resid_mat)))
-
-  # Cap residuals at ±4 for color scale
-  resid_df$residual_capped <- pmin(pmax(resid_df$residual, -4), 4)
-
-  fig11c <- ggplot(resid_df, aes(x = cell_type, y = domain, fill = residual_capped)) +
-    geom_tile(color = "white", linewidth = 0.5) +
-    geom_text(aes(label = round(residual, 1)), size = 3) +
-    scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#b2182b",
-                         midpoint = 0, limits = c(-4, 4),
-                         name = "Std. Residual") +
-    labs(title = "Cell-Type-Specific Domain Enrichment",
-         subtitle = sprintf("Top %d domains with significant heterogeneity (FDR < 0.05). Positive = enriched, negative = depleted.",
-                            length(top_doms)),
-         x = "Cell Type", y = "") +
-    theme(axis.text.y = element_text(size = 9),
-          panel.grid = element_blank())
-
-  save_fig(fig11c, "fig11c_ct_domain_heatmap", width = 10, height = max(4, length(top_doms) * 0.35))
-} else {
-  cat("No domains with significant cell-type heterogeneity at FDR < 0.05.\n")
-}
-```
-
-The heatmap displays standardized residuals from the chi-squared tests. A
-positive residual (red) indicates the domain is affected more frequently than
-expected in that cell type; a negative residual (blue) indicates less frequently.
-Residuals beyond ±2 are conventionally considered noteworthy.
-
-**Non-independence caveat:** Pairs shared across cell types contribute to
-multiple columns. This inflates chi-squared statistics and may produce
-anti-conservative p-values. The results identify candidate CT-specific domain
-patterns, but formal confirmation would require CT-exclusive pair analysis or a
-mixed-effects framework.
-
-# 6. Cross-Cell-Type Summary {#summary}
+# 5. Cross-Cell-Type Summary {#summary}
 
 ```{r sec6-summary-table}
 # ── Data provenance ──

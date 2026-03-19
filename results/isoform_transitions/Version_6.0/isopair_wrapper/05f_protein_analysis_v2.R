@@ -304,14 +304,23 @@ if (nrow(domain_effects) > 0) {
   overrep <- merge(disrupted_counts, ref_dom_counts, by = "pfam_acc", all.x = TRUE)
   overrep$n_ref[is.na(overrep$n_ref)] <- 0L
 
+  # Total comparisons with ANY domain disrupted (background rate)
+  n_any_disrupted <- length(unique(paste(
+    domain_effects$comparator_isoform_id[domain_effects$effect == "disrupted_lost"],
+    domain_effects$reference_isoform_id[domain_effects$effect == "disrupted_lost"])))
+
   overrep$fisher_p <- NA_real_
   overrep$fisher_OR <- NA_real_
   for (i in seq_len(nrow(overrep))) {
-    a <- overrep$n_disrupted[i]
-    b <- max(overrep$n_ref[i] - a, 0L)
-    c_val <- max(n_total - overrep$n_ref[i], 0L)
-    d_val <- max(n_total - a - b - c_val, 0L)
-    ft <- tryCatch(fisher.test(matrix(c(a, b, c_val, d_val), nrow = 2)),
+    # 2x2: (has domain / no domain) x (disrupted / not disrupted)
+    #              Disrupted    Not disrupted
+    # Has domain      a              b
+    # No domain       c              d
+    a <- overrep$n_disrupted[i]                          # disrupted AND has domain
+    b <- max(overrep$n_ref[i] - a, 0L)                  # has domain AND not disrupted
+    c_val <- max(n_any_disrupted - a, 0L)                # disrupted AND no domain (other domains)
+    d_val <- max(n_total - a - b - c_val, 0L)            # no domain AND not disrupted
+    ft <- tryCatch(fisher.test(matrix(c(a, c_val, b, d_val), nrow = 2)),
                    error = function(e) NULL)
     if (!is.null(ft)) {
       overrep$fisher_p[i] <- ft$p.value
@@ -447,6 +456,7 @@ output <- list(
   protein_events = protein_events,
   domain_effects = domain_effects,
   overrep_tests = overrep,
+  parsed_doms = if (use_hmmscan) parsed_doms else NULL,
   massspec = ms_df,
   ct_membership = ct_membership,
   metadata = list(
