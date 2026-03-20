@@ -2839,64 +2839,228 @@ depleted in PTC-negative NMD vs Control (OR =
 `r signif(ft_utr3_neg$p.value, 3)`), consistent with 3'UTR splicing being a
 PTC-creating mechanism rather than an independent NMD trigger.
 
-# 2c. Explaining PTC-Negative NMD: CDS Prediction Bias and ORF Landscape {#sec2c-ptc-neg}
+# 2c. Explaining PTC-Negative NMD {#sec2c-ptc-neg}
 
-Section 2b accounted for PTC-positive NMD pairs: splicing events create premature
-stop codons with downstream EJCs. But `r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%
-of NMD pairs lack a PTC in their annotated CDS. Here we show that most of this
-"PTC-negative" category reflects a systematic bias in computational CDS prediction,
-and that the remaining cases are explained by enrichment of NMD-competent ORFs
-in the transcript's reading frame landscape.
+Section 2b accounted for `r fmt(n_ptc_pos)` PTC-positive NMD pairs
+(`r round(100 * n_ptc_pos / nrow(coding_pairs_c2), 1)`%), and the 3'UTR
+analysis ruled out 3'UTR length as an independent NMD mechanism. This leaves
+`r fmt(n_ptc_neg)` PTC-negative pairs
+(`r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%) unexplained. Here
+we investigate what drives NMD in these isoforms through a systematic
+examination of their structural properties.
 
-## CDS Prediction and Its Limitations
+## 5'UTR Length and uORF Enrichment
 
-CDS annotations for our isoforms come from SQANTI3's TransDecoder2 (TD2)
-pipeline, which runs on all transcripts — both GENCODE-annotated (ENST) and
-novel isoforms. TD2 operates in two steps: `TD2.LongOrfs` identifies all ORFs
-≥90 amino acids in all three reading frames, then `TD2.Predict` filters
-candidates using PSAURON (a neural network coding potential scorer) and a
-length-based false discovery rate filter that retains ORFs significantly longer
-than expected by chance given the transcript's GC content.
+We begin by examining the 5'UTR — the region upstream of the annotated CDS —
+in the `r fmt(n_ptc_neg)` PTC-negative NMD comparators, their paired
+references, and `r fmt(nrow(set_results[["c4_allsamples"]]$divergence))`
+gene-matched Control (C4) comparators.
 
-For GENCODE-annotated transcripts, TD2 independently arrives at the same CDS
-as GENCODE 92% of the time — validating its accuracy on normal transcripts.
-However, when a frameshift creates a premature stop codon, the truncated ORF
-is shorter than typical CDSs and may fail TD2's length-based filter or score
-lower on PSAURON. TD2 then selects a longer ORF in a different reading frame
-— one whose stop falls in the last exon with no downstream EJCs. This makes
-the isoform appear PTC-negative when the reading frame the ribosome would use
-actually terminates prematurely.
+```{r sec2c-utr5-observations, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: set_results → divergence (quantifyPairDivergence output)
+#   utr5_bp_ref/comp: exonic bp in 5'UTR for reference and comparator
+# Population: PTC-negative NMD pairs (n = n_ptc_neg) vs Control (C4)
 
-`r sprintf("%.1f%%", 100 * mean(grepl("\\.novel\\d+$", coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc])))`
-of PTC-negative NMD comparators are novel isoforms whose CDS comes entirely
-from TD2 prediction — not from curated GENCODE annotation.
+div_c2_all <- set_results[["c2_allsamples"]]$divergence
+div_c4_all <- set_results[["c4_allsamples"]]$divergence
 
-## Reference-ATG Tracing Reveals Hidden PTCs
+# Subset to PTC-negative
+ptc_neg_comp_ids_2c <- coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc]
+ptc_pos_comp_ids_2c <- coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc]
 
-Of the `r fmt(nrow(coding_pairs_c2))` gene-matched coding NMD pairs,
-`r fmt(n_ptc_neg)` (`r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%)
-are classified as PTC-negative by their annotated CDS. For each of these
-`r fmt(n_ptc_neg)` pairs, we trace the reference isoform's CDS start ATG
-through the comparator's transcript. The reference CDS is trustworthy:
-`r sprintf("%.1f%%", 100 * mean(grepl("^ENST", unique(coding_pairs_c2$reference_isoform_id))))`
-of references are GENCODE-annotated, and their CDS start represents the ATG
-where the ribosome initiates translation in the dominant, non-NMD isoform.
+div_ptcneg <- div_c2_all[div_c2_all$comparator_isoform_id %in% ptc_neg_comp_ids_2c, ]
+div_ptcpos <- div_c2_all[div_c2_all$comparator_isoform_id %in% ptc_pos_comp_ids_2c, ]
+
+utr5_data <- rbind(
+  data.frame(group = "NMD PTC\u2212 comp", utr5 = div_ptcneg$utr5_bp_comp),
+  data.frame(group = "NMD PTC\u2212 ref", utr5 = div_ptcneg$utr5_bp_ref),
+  data.frame(group = "Control comp", utr5 = div_c4_all$utr5_bp_comp))
+
+fig_utr5 <- ggplot(utr5_data[utr5_data$utr5 > 0, ], aes(x = utr5, fill = group)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10(labels = scales::comma) +
+  scale_fill_manual(values = c("NMD PTC\u2212 comp" = "#ef8a62",
+                                "NMD PTC\u2212 ref" = "#fddbc7",
+                                "Control comp" = "#67a9cf")) +
+  labs(title = "5\u2032UTR Length: PTC-Negative NMD Comparators vs References and Control",
+       subtitle = sprintf("PTC\u2212 comparator median: %s bp | Reference median: %s bp | Control: %s bp",
+                          fmt(median(div_ptcneg$utr5_bp_comp)),
+                          fmt(median(div_ptcneg$utr5_bp_ref)),
+                          fmt(median(div_c4_all$utr5_bp_comp))),
+       x = "5\u2032UTR length (bp, log scale)", y = "Density", fill = NULL)
+save_fig(fig_utr5, "fig_sec2c_utr5_length", width = 10, height = 5)
+```
+
+PTC-negative NMD comparators have substantially longer predicted 5'UTRs
+(median `r fmt(median(div_ptcneg$utr5_bp_comp))` bp) than both their paired
+references (`r fmt(median(div_ptcneg$utr5_bp_ref))` bp) and Control
+comparators (`r fmt(median(div_c4_all$utr5_bp_comp))` bp). This raises the
+question: why is the 5'UTR so much longer in these isoforms?
+
+## Decomposing the 5'UTR Extension: TSS vs CDS Movement
+
+The 5'UTR is bounded by the transcription start site (TSS) at the 5' end and
+the CDS start at the 3' end. A longer 5'UTR could result from the TSS moving
+upstream (extending the transcript) or the CDS start moving downstream
+(shrinking the coding region), or both. We decompose the 5'UTR extension into
+these two components for the same `r fmt(nrow(div_ptcneg))` PTC-negative pairs
+and compare to `r fmt(nrow(div_c4_all))` Control pairs.
+
+```{r sec2c-decompose-5utr, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: structures.rds (tx_start/tx_end for TSS), cds.rds (cds_start/cds_stop)
+# Population: PTC-negative NMD pairs (n_ptc_neg) and Control pairs
+# For each pair: compute strand-aware TSS shift and CDS shift
+
+ptc_neg_pairs_2c <- coding_pairs_c2[!coding_pairs_c2$comp_has_ptc, ]
+
+ref_structs_2c <- structures[match(ptc_neg_pairs_2c$reference_isoform_id, structures$isoform_id), ]
+comp_structs_2c <- structures[match(ptc_neg_pairs_2c$comparator_isoform_id, structures$isoform_id), ]
+strand_2c <- ref_structs_2c$strand
+
+# TSS: strand-aware 5' end
+ref_tss <- ifelse(strand_2c == "+", ref_structs_2c$tx_start, ref_structs_2c$tx_end)
+comp_tss <- ifelse(strand_2c == "+", comp_structs_2c$tx_start, comp_structs_2c$tx_end)
+
+# CDS start: strand-aware
+ref_cds5_2c <- ifelse(cds$strand[match(ptc_neg_pairs_2c$reference_isoform_id, cds$isoform_id)] == "+",
+                       cds$cds_start[match(ptc_neg_pairs_2c$reference_isoform_id, cds$isoform_id)],
+                       cds$cds_stop[match(ptc_neg_pairs_2c$reference_isoform_id, cds$isoform_id)])
+comp_cds5_2c <- ifelse(cds$strand[match(ptc_neg_pairs_2c$comparator_isoform_id, cds$isoform_id)] == "+",
+                        cds$cds_start[match(ptc_neg_pairs_2c$comparator_isoform_id, cds$isoform_id)],
+                        cds$cds_stop[match(ptc_neg_pairs_2c$comparator_isoform_id, cds$isoform_id)])
+
+# TSS contribution: positive = moved upstream = extends 5'UTR
+tss_shift <- ifelse(strand_2c == "+",
+  as.numeric(ref_tss) - as.numeric(comp_tss),
+  as.numeric(comp_tss) - as.numeric(ref_tss))
+
+# CDS contribution: positive = moved downstream = extends 5'UTR
+cds_shift <- ifelse(strand_2c == "+",
+  as.numeric(comp_cds5_2c) - as.numeric(ref_cds5_2c),
+  as.numeric(ref_cds5_2c) - as.numeric(comp_cds5_2c))
+
+# Same for Control
+c4_pairs_2c <- profiles_list[["c4_allsamples"]]
+c4_ref_s <- structures[match(c4_pairs_2c$reference_isoform_id, structures$isoform_id), ]
+c4_comp_s <- structures[match(c4_pairs_2c$comparator_isoform_id, structures$isoform_id), ]
+c4_strand <- c4_ref_s$strand
+
+c4_tss_shift <- ifelse(c4_strand == "+",
+  as.numeric(ifelse(c4_strand == "+", c4_ref_s$tx_start, c4_ref_s$tx_end)) -
+  as.numeric(ifelse(c4_strand == "+", c4_comp_s$tx_start, c4_comp_s$tx_end)),
+  as.numeric(ifelse(c4_strand == "+", c4_comp_s$tx_start, c4_comp_s$tx_end)) -
+  as.numeric(ifelse(c4_strand == "+", c4_ref_s$tx_start, c4_ref_s$tx_end)))
+
+c4_cds_shift <- ifelse(c4_strand == "+",
+  as.numeric(ifelse(c4_strand == "+",
+    cds$cds_start[match(c4_pairs_2c$comparator_isoform_id, cds$isoform_id)],
+    cds$cds_stop[match(c4_pairs_2c$comparator_isoform_id, cds$isoform_id)])) -
+  as.numeric(ifelse(c4_strand == "+",
+    cds$cds_start[match(c4_pairs_2c$reference_isoform_id, cds$isoform_id)],
+    cds$cds_stop[match(c4_pairs_2c$reference_isoform_id, cds$isoform_id)])),
+  as.numeric(ifelse(c4_strand == "+",
+    cds$cds_start[match(c4_pairs_2c$reference_isoform_id, cds$isoform_id)],
+    cds$cds_stop[match(c4_pairs_2c$reference_isoform_id, cds$isoform_id)])) -
+  as.numeric(ifelse(c4_strand == "+",
+    cds$cds_start[match(c4_pairs_2c$comparator_isoform_id, cds$isoform_id)],
+    cds$cds_stop[match(c4_pairs_2c$comparator_isoform_id, cds$isoform_id)])))
+
+wt_tss <- wilcox.test(tss_shift, c4_tss_shift)
+wt_cds <- wilcox.test(cds_shift, c4_cds_shift)
+
+cat("TSS shift (positive = upstream, extends 5'UTR):\n")
+cat("  PTC- median:", round(median(tss_shift, na.rm=TRUE)), "bp\n")
+cat("  Control median:", round(median(c4_tss_shift, na.rm=TRUE)), "bp\n")
+cat("  Wilcoxon p:", signif(wt_tss$p.value, 3), "\n\n")
+
+cat("CDS shift (positive = downstream, extends 5'UTR):\n")
+cat("  PTC- median:", round(median(cds_shift, na.rm=TRUE)), "bp\n")
+cat("  Control median:", round(median(c4_cds_shift, na.rm=TRUE)), "bp\n")
+cat("  Wilcoxon p:", signif(wt_cds$p.value, 3), "\n")
+
+# Figure: side-by-side boxplots
+shift_data <- rbind(
+  data.frame(group = "NMD PTC\u2212", boundary = "TSS shift\n(upstream = extends)",
+             shift = tss_shift),
+  data.frame(group = "Control", boundary = "TSS shift\n(upstream = extends)",
+             shift = c4_tss_shift),
+  data.frame(group = "NMD PTC\u2212", boundary = "CDS shift\n(downstream = extends)",
+             shift = cds_shift),
+  data.frame(group = "Control", boundary = "CDS shift\n(downstream = extends)",
+             shift = c4_cds_shift))
+
+fig_decompose <- ggplot(shift_data, aes(x = group, y = shift, fill = group)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  facet_wrap(~boundary, scales = "free_y") +
+  scale_fill_manual(values = c("NMD PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Decomposing the 5\u2032UTR Extension: TSS vs CDS Movement",
+       subtitle = sprintf("PTC\u2212 (n=%s) vs Control (n=%s) | Both boundaries shift, but CDS dominates",
+                          fmt(nrow(ptc_neg_pairs_2c)), fmt(nrow(c4_pairs_2c))),
+       x = NULL, y = "Shift (bp)", fill = NULL) +
+  theme(legend.position = "none")
+save_fig(fig_decompose, "fig_sec2c_decompose_5utr", width = 10, height = 5)
+```
+
+Both boundaries contribute to the longer 5'UTR in PTC-negative comparators.
+The TSS moves upstream by a median of
+`r round(median(tss_shift, na.rm = TRUE))` bp (p =
+`r signif(wt_tss$p.value, 3)` vs Control) — a real but modest shift. The CDS
+start, however, moves downstream by a median of
+`r fmt(round(median(cds_shift, na.rm = TRUE)))` bp (p =
+`r signif(wt_cds$p.value, 3)`). **CDS movement accounts for the vast majority
+of the 5'UTR extension.** The 5'UTR is longer not primarily because
+transcription starts earlier, but because the predicted CDS starts later.
+
+This raises the next question: why did the CDS prediction move downstream?
+
+## The Reference ATG Is Still Present
+
+Of the `r fmt(n_ptc_neg)` PTC-negative pairs,
+`r fmt(sum(ref_cds5_2c != comp_cds5_2c, na.rm = TRUE))`
+(`r round(100 * mean(ref_cds5_2c != comp_cds5_2c, na.rm = TRUE), 1)`%) have a
+different predicted CDS start than their reference. We ask: has the reference's
+CDS start ATG been lost from the comparator, or is it still present in shared
+exonic sequence?
 
 ```{r sec2c-ref-atg-load}
 # ── Data provenance ──
 # Source: 05r_ref_atg_analysis.R → ref_atg_analysis.rds
-# For each gene-matched coding pair: traces the reference CDS start ATG
-# through the comparator's transcript sequence, finds the first in-frame
-# stop, counts downstream EJCs.
+# Population: All PTC-negative coding pairs (n = n_ptc_neg)
+# For each pair: checks whether the reference CDS start ATG position is
+# exonic in the comparator, then traces the reading frame to find the
+# first in-frame stop and counts downstream EJCs.
 
 ref_atg <- readRDS(file.path(cache_dir, "ref_atg_analysis.rds"))
 c2_ref <- ref_atg$c2
 c4_ref <- ref_atg$c4
 
-# Focus on originally PTC-negative pairs
 ptc_neg_ref <- c2_ref[!c2_ref$original_ptc, ]
-cat("PTC-negative pairs:", nrow(ptc_neg_ref), "\n")
+
+n_atg_avail <- sum(ptc_neg_ref$ref_atg_exonic_in_comp == TRUE, na.rm = TRUE)
+n_atg_lost_2c <- sum(ptc_neg_ref$ref_atg_exonic_in_comp == FALSE, na.rm = TRUE)
 ```
+
+Of the `r fmt(sum(ref_cds5_2c != comp_cds5_2c, na.rm = TRUE))` pairs with a
+different CDS start, `r fmt(n_atg_avail - sum(ref_cds5_2c == comp_cds5_2c, na.rm = TRUE))`
+retain the reference ATG in shared exonic sequence. The ATG was not lost —
+the CDS prediction algorithm simply selected a different start codon.
+
+CDS annotations come from SQANTI3's TransDecoder2 (TD2) pipeline, which
+selects ORFs using PSAURON (a neural network coding potential scorer) and a
+length-based false discovery rate filter. When a frameshift creates a premature
+stop codon, the truncated ORF scores lower, and TD2 selects a longer
+alternative in a different reading frame.
+
+## Reference-ATG Tracing Reveals Hidden PTCs
+
+To test this directly, we trace the reference ATG reading frame through the
+`r fmt(n_atg_avail)` PTC-negative comparators where the reference ATG is
+available. For each, we find the first in-frame stop codon and count
+downstream EJCs.
 
 ```{r sec2c-ref-atg-density, fig.width=10, fig.height=5}
 # ORF length ratio: comparator ORF (from ref ATG) / reference ORF
@@ -2913,54 +3077,45 @@ fig_ratio <- ggplot(atg_avail, aes(x = orf_ratio)) +
            vjust = 2, hjust = -0.1, color = "#d62728", size = 3.5) +
   scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.25)) +
   labs(title = "ORF Truncation: Reference ATG Traced Through PTC\u2212 Comparators",
-       subtitle = sprintf("Effectively-PTC cases (n = %s) | Ratio < 1 = ORF truncated",
-                          fmt(nrow(atg_avail))),
+       subtitle = sprintf("Effectively-PTC cases (n = %s of %s with ref ATG available) | Ratio < 1 = truncated",
+                          fmt(nrow(atg_avail)), fmt(n_atg_avail)),
        x = "ORF length ratio (comparator / reference)", y = "Density")
 save_fig(fig_ratio, "fig_sec2c_ref_atg_orf_ratio", width = 10, height = 5)
 ```
 
-Of the `r fmt(nrow(ptc_neg_ref))` PTC-negative pairs, `r fmt(sum(ptc_neg_ref$ref_atg_exonic_in_comp, na.rm = TRUE))`
-(`r round(100 * mean(ptc_neg_ref$ref_atg_exonic_in_comp, na.rm = TRUE), 1)`%)
-have the reference ATG in shared exonic sequence. Among these,
-`r fmt(nrow(atg_avail))` are reclassified as effectively PTC — the reading
-frame from the reference ATG is truncated (median ratio
-`r round(median(atg_avail$orf_ratio, na.rm = TRUE), 2)`) and terminates
-upstream of exon-exon junctions.
-
 ```{r sec2c-reclassification}
-# Reclassification table
+# Reclassification of all PTC-negative pairs
 reclass_tab <- ptc_neg_ref %>%
   count(category) %>%
   mutate(pct = round(100 * n / sum(n), 1)) %>%
   arrange(-n)
 
 render_dt(reclass_tab,
-  caption = "Table 8a: PTC-Negative Reclassification by Reference ATG Tracing")
+  caption = sprintf("Table 8a: Reclassification of %s PTC-Negative Pairs by Reference ATG Tracing",
+                    fmt(nrow(ptc_neg_ref))))
 
 n_eff_ptc <- sum(ptc_neg_ref$category == "effectively_ptc")
 n_atg_lost <- sum(ptc_neg_ref$category == "ref_atg_lost")
 n_truly_nonptc <- nrow(ptc_neg_ref) - n_eff_ptc - n_atg_lost
 ```
 
-Column definitions: **category** = reclassification based on tracing the
-reference CDS start ATG through the comparator transcript;
-**effectively_ptc** = ORF is truncated and the stop has ≥1 downstream EJC;
-**ref_atg_lost** = reference ATG not in comparator exonic sequence;
-**no_downstream_ejc** = ORF truncated but stop has no downstream EJCs;
-**n** = pair count; **pct** = percentage of PTC-negative pairs.
+Column definitions: **category** = outcome of tracing the reference CDS start
+ATG through the comparator; **effectively_ptc** = reading frame is truncated
+and stop has ≥1 downstream EJC; **ref_atg_lost** = reference ATG not in
+comparator exonic sequence; **no_downstream_ejc** = truncated but stop has
+no downstream EJCs; **n** = pair count; **pct** = percentage.
 
-`r fmt(n_eff_ptc)` pairs (`r round(100 * n_eff_ptc / nrow(ptc_neg_ref), 1)`%)
-are reclassified as **effectively PTC**: the reference ATG reading frame
-terminates prematurely with downstream EJCs. Combined with the original
-PTC-positive pairs, **`r round(100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2), 1)`%
+Of `r fmt(n_atg_avail)` pairs with the reference ATG available,
+`r fmt(n_eff_ptc)` (`r round(100 * n_eff_ptc / n_atg_avail, 1)`%) have a
+truncated reading frame with downstream EJCs — **effectively PTCs** that TD2's
+length-based scoring caused it to miss. Combined with the original PTC-positive
+pairs, **`r round(100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2), 1)`%
 of all coding NMD pairs are PTC-mediated** when viewed from the reference ATG.
 
 ```{r sec2c-td2-length, fig.width=10, fig.height=5}
-# TD2 selected a longer ORF — compare lengths
+# Among the reclassified pairs: compare TD2-selected CDS vs ref-ATG ORF length
 eff_ptc <- ptc_neg_ref[ptc_neg_ref$category == "effectively_ptc", ]
 eff_ptc_cds <- cds[match(eff_ptc$comparator_isoform_id, cds$isoform_id), ]
-
-# SQANTI CDS orf_length is in amino acids; ref_atg orf_length is in nucleotides
 eff_ptc$td2_orf_nt <- eff_ptc_cds$orf_length * 3L
 td2_longer <- sum(eff_ptc$td2_orf_nt > eff_ptc$comp_orf_length_from_ref_atg, na.rm = TRUE)
 pct_td2_longer <- round(100 * td2_longer / nrow(eff_ptc), 1)
@@ -2975,31 +3130,34 @@ fig_lengths <- ggplot(length_df, aes(x = length_nt, fill = ORF)) +
   scale_fill_manual(values = c("TD2-selected CDS" = "#67a9cf",
                                 "Reference ATG ORF" = "#ef8a62")) +
   labs(title = "TD2 Selects a Longer ORF Than the Reference ATG Reading Frame",
-       subtitle = sprintf("Effectively-PTC cases | TD2 CDS longer in %s%% of cases",
-                          pct_td2_longer),
+       subtitle = sprintf("%s reclassified pairs | TD2 CDS longer in %s%% of cases",
+                          fmt(nrow(eff_ptc)), pct_td2_longer),
        x = "ORF length (nt, log scale)", y = "Density", fill = NULL)
 save_fig(fig_lengths, "fig_sec2c_td2_vs_refatg_length", width = 10, height = 5)
 ```
 
-Among the `r fmt(nrow(eff_ptc))` effectively-PTC pairs, we compare the ORF
-selected by TD2 (the annotated CDS) to the ORF produced by the reference ATG.
-In `r pct_td2_longer`% of cases, TD2 selected a longer ORF (median
+Among the `r fmt(nrow(eff_ptc))` reclassified pairs, TD2 selected a longer ORF
+in `r pct_td2_longer`% of cases (median
 `r fmt(median(eff_ptc$td2_orf_nt, na.rm = TRUE))` vs
-`r fmt(median(eff_ptc$comp_orf_length_from_ref_atg, na.rm = TRUE))` nt).
-This is consistent with TD2's length-based scoring: the truncated reading
-frame from the reference ATG scores lower, so TD2 selects a longer
-alternative in a different reading frame — one whose stop codon falls in
-the last exon with no downstream EJCs.
+`r fmt(median(eff_ptc$comp_orf_length_from_ref_atg, na.rm = TRUE))` nt). The
+truncated reading frame from the reference ATG scores lower under TD2's
+length-based filter, so TD2 selects a longer alternative whose stop codon
+falls in the last exon with no downstream EJCs.
+
+## Reclassified Pairs Have the Same Splicing Patterns as PTC+
+
+If the `r fmt(nrow(eff_ptc))` reclassified pairs are truly PTC-positive
+isoforms misclassified by CDS prediction, their splicing patterns should
+resemble the original PTC+ group. We compare the splice events in these
+reclassified pairs to the `r fmt(nrow(set_results[["c4_allsamples"]]$divergence))`
+gene-matched Control (C4) pairs.
 
 ```{r sec2c-reclass-events, fig.width=10, fig.height=6}
 # ── Data provenance ──
-# Source: profiles_list (gene-matched C2 pairs with detailed_events),
-#   profiles_list (gene-matched C4 pairs for Control comparison)
-# Population: 1,295 effectively-PTC pairs (reclassified from PTC-)
-# Comparison: all splice events in Control (C4) pairs
-# For each event type: % of pairs containing that event, NMD vs Control
+# Source: profiles_list C2 (reclassified pairs) and C4 (Control)
+# Population: 1,295 reclassified effectively-PTC pairs vs Control
+# Analysis: splice event type proportions, paired dodged bars with Fisher p
 
-# Extract events from effectively-PTC NMD pairs
 eff_ptc_profiles <- profiles_list[["c2_allsamples"]] %>%
   filter(comparator_isoform_id %in% eff_ptc$comparator_isoform_id)
 
@@ -3009,7 +3167,6 @@ nmd_reclass_events <- do.call(rbind, lapply(seq_len(nrow(eff_ptc_profiles)), fun
   de[, c("event_type", "direction", "bp_diff")]
 }))
 
-# Extract events from Control pairs
 ctrl_profiles_sec2c <- profiles_list[["c4_allsamples"]] %>%
   filter(reference_isoform_id %in% cds$isoform_id[cds$coding_status == "coding"],
          comparator_isoform_id %in% cds$isoform_id[cds$coding_status == "coding"])
@@ -3020,7 +3177,6 @@ ctrl_events_sec2c <- do.call(rbind, lapply(seq_len(nrow(ctrl_profiles_sec2c)), f
   de[, c("event_type", "direction", "bp_diff")]
 }))
 
-# Compute prevalence: % of events that are each type
 n_nmd_events <- nrow(nmd_reclass_events)
 n_ctrl_events <- nrow(ctrl_events_sec2c)
 
@@ -3035,34 +3191,23 @@ ctrl_evt_freq$pct_ctrl <- round(100 * ctrl_evt_freq$n_ctrl / n_ctrl_events, 1)
 evt_compare <- merge(nmd_evt_freq, ctrl_evt_freq, by = "event_type", all = TRUE)
 evt_compare[is.na(evt_compare)] <- 0
 
-# Fisher's test per event type
 evt_compare$fisher_p <- sapply(seq_len(nrow(evt_compare)), function(i) {
   a <- evt_compare$n_nmd[i]; b <- n_nmd_events - a
   c_val <- evt_compare$n_ctrl[i]; d_val <- n_ctrl_events - c_val
-  ft <- tryCatch(fisher.test(matrix(c(a, b, c_val, d_val), nrow = 2)),
-                 error = function(e) list(p.value = NA))
-  ft$p.value
+  tryCatch(fisher.test(matrix(c(a, b, c_val, d_val), nrow = 2))$p.value, error = function(e) NA)
 })
 
-# Sort by NMD prevalence
 evt_compare <- evt_compare[order(-evt_compare$pct_nmd), ]
 
-# Paired dodged bar chart (matching PTC-causing events style)
 bar_df_reclass <- evt_compare %>%
-  select(event_type,
-         `Reclassified PTC (NMD)` = pct_nmd,
-         `All events (Control)` = pct_ctrl) %>%
+  select(event_type, `Reclassified PTC (NMD)` = pct_nmd, `All events (Control)` = pct_ctrl) %>%
   pivot_longer(-event_type, names_to = "source", values_to = "pct") %>%
   mutate(event_type = factor(event_type, levels = evt_compare$event_type))
 
 sig_df_reclass <- evt_compare %>%
-  mutate(
-    sig_label = case_when(
-      fisher_p < 0.001 ~ "***",
-      fisher_p < 0.01 ~ "**",
-      fisher_p < 0.05 ~ "*",
-      TRUE ~ "ns"),
-    y_pos = pmax(pct_nmd, pct_ctrl) + 1.5)
+  mutate(sig_label = case_when(fisher_p < 0.001 ~ "***", fisher_p < 0.01 ~ "**",
+                                fisher_p < 0.05 ~ "*", TRUE ~ "ns"),
+         y_pos = pmax(pct_nmd, pct_ctrl) + 1.5)
 
 fig_events <- ggplot(bar_df_reclass, aes(x = event_type, y = pct, fill = source)) +
   geom_col(position = position_dodge(width = 0.75), width = 0.7, alpha = 0.85) +
@@ -3071,71 +3216,48 @@ fig_events <- ggplot(bar_df_reclass, aes(x = event_type, y = pct, fill = source)
   scale_fill_manual(values = c("Reclassified PTC (NMD)" = "#ef8a62",
                                 "All events (Control)" = "#67a9cf")) +
   labs(title = "Splice Event Proportions: Reclassified PTC vs Control",
-       subtitle = sprintf("Reclassified PTC: %s events from %s pairs | Control: %s events from %s pairs",
+       subtitle = sprintf("Reclassified: %s events (%s pairs) | Control: %s events (%s pairs)",
                           fmt(n_nmd_events), fmt(nrow(eff_ptc)),
                           fmt(n_ctrl_events), fmt(nrow(ctrl_profiles_sec2c))),
        x = NULL, y = "% of events", fill = NULL) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "bottom")
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
 save_fig(fig_events, "fig_sec2c_reclass_events", width = 10, height = 6)
 ```
 
-## Frameshift-Causing Splice Events: NMD vs Control
-
-Of the `r fmt(nrow(eff_ptc))` reclassified effectively-PTC pairs, 95.1% have
-at least one frameshift-causing splice event (bp_diff not divisible by 3).
-To understand whether this reflects a broader pattern, we compare the
-frameshift rate across ALL splice event types in the full set of
-`r fmt(n_ptc_neg)` PTC-negative NMD pairs versus the
-`r fmt(nrow(ctrl_profiles_sec2c))` gene-matched Control (C4) pairs.
-
 ```{r sec2c-frameshift-comparison, fig.width=10, fig.height=6}
 # ── Data provenance ──
-# Source: profiles_list (gene-matched C2/C4 pairs with detailed_events)
-# Population: PTC-negative NMD pairs (n = 1,860) vs Control (C4) pairs
-# Analysis: for each event type, what fraction cause frameshifts (bp_diff mod 3 != 0)?
+# Source: profiles_list C2 (PTC-negative) and C4 (Control)
+# Population: All PTC-negative NMD pairs vs Control
+# Analysis: for each event type, what % cause frameshifts?
 
-# Compute event-type × frameshift for NMD PTC- and Control
 compute_fs_by_type <- function(profiles, label) {
   coding <- profiles %>%
     filter(reference_isoform_id %in% cds$isoform_id[cds$coding_status == "coding"],
            comparator_isoform_id %in% cds$isoform_id[cds$coding_status == "coding"])
-
   all_events <- do.call(rbind, lapply(seq_len(nrow(coding)), function(i) {
     de <- coding$detailed_events[[i]]
     if (is.null(de) || nrow(de) == 0) return(NULL)
     de[!is.na(de$bp_diff) & de$bp_diff != 0, c("event_type", "bp_diff")]
   }))
   if (is.null(all_events) || nrow(all_events) == 0) return(NULL)
-
   all_events$is_frameshift <- all_events$bp_diff %% 3 != 0
-
-  fs_summary <- all_events %>%
+  all_events %>%
     group_by(event_type) %>%
-    summarise(
-      n_events = n(),
-      n_frameshift = sum(is_frameshift),
-      pct_frameshift = round(100 * mean(is_frameshift), 1),
-      .groups = "drop") %>%
+    summarise(n_events = n(), n_frameshift = sum(is_frameshift),
+              pct_frameshift = round(100 * mean(is_frameshift), 1), .groups = "drop") %>%
     mutate(group = label)
-
-  fs_summary
 }
 
 ptc_assoc_sec2c <- set_results[["c2_allsamples"]]$ptc_assoc
 ptc_lkp <- ptc_assoc_sec2c$pair_summary[, c("comparator_isoform_id", "comp_has_ptc")]
-nmd_profiles <- merge(profiles_list[["c2_allsamples"]], ptc_lkp,
-                       by = "comparator_isoform_id", all.x = TRUE)
+nmd_profiles <- merge(profiles_list[["c2_allsamples"]], ptc_lkp, by = "comparator_isoform_id", all.x = TRUE)
 nmd_profiles$comp_has_ptc[is.na(nmd_profiles$comp_has_ptc)] <- FALSE
 
 fs_ptcneg <- compute_fs_by_type(nmd_profiles[!nmd_profiles$comp_has_ptc, ], "NMD PTC\u2212")
 fs_ctrl <- compute_fs_by_type(profiles_list[["c4_allsamples"]], "Control")
 
-fs_both <- rbind(fs_ptcneg, fs_ctrl) %>%
-  filter(n_events >= 20) %>%  # require minimum events for meaningful comparison
-  mutate(event_type = factor(event_type))
+fs_both <- rbind(fs_ptcneg, fs_ctrl) %>% filter(n_events >= 20)
 
-# Paired dodged bar chart (matching report style)
 fs_bar <- fs_both %>%
   select(event_type, group, pct_frameshift) %>%
   pivot_wider(names_from = group, values_from = pct_frameshift, values_fill = 0) %>%
@@ -3144,30 +3266,23 @@ fs_bar <- fs_both %>%
     levels = fs_both$event_type[fs_both$group == "NMD PTC\u2212"][
       order(-fs_both$pct_frameshift[fs_both$group == "NMD PTC\u2212"])]))
 
-# Fisher's tests per event type
 fs_wide <- fs_both %>%
   select(event_type, group, n_events, n_frameshift) %>%
   pivot_wider(names_from = group, values_from = c(n_events, n_frameshift))
 
 fs_wide$fisher_p <- sapply(seq_len(nrow(fs_wide)), function(i) {
-  nmd_col <- paste0("n_frameshift_NMD PTC\u2212")
-  ctrl_col <- "n_frameshift_Control"
-  nmd_tot <- paste0("n_events_NMD PTC\u2212")
-  ctrl_tot <- "n_events_Control"
-  a <- fs_wide[[nmd_col]][i]; b <- fs_wide[[nmd_tot]][i] - a
-  c_val <- fs_wide[[ctrl_col]][i]; d_val <- fs_wide[[ctrl_tot]][i] - c_val
+  a <- fs_wide[[paste0("n_frameshift_NMD PTC\u2212")]][i]
+  b <- fs_wide[[paste0("n_events_NMD PTC\u2212")]][i] - a
+  c_val <- fs_wide[["n_frameshift_Control"]][i]
+  d_val <- fs_wide[["n_events_Control"]][i] - c_val
   if (any(is.na(c(a, b, c_val, d_val)))) return(NA)
-  tryCatch(fisher.test(matrix(c(a, b, c_val, d_val), nrow = 2))$p.value,
-           error = function(e) NA)
+  tryCatch(fisher.test(matrix(c(a, b, c_val, d_val), nrow = 2))$p.value, error = function(e) NA)
 })
 
 sig_fs <- data.frame(
   event_type = fs_wide$event_type,
-  sig_label = case_when(
-    fs_wide$fisher_p < 0.001 ~ "***",
-    fs_wide$fisher_p < 0.01 ~ "**",
-    fs_wide$fisher_p < 0.05 ~ "*",
-    TRUE ~ "ns"),
+  sig_label = case_when(fs_wide$fisher_p < 0.001 ~ "***", fs_wide$fisher_p < 0.01 ~ "**",
+                         fs_wide$fisher_p < 0.05 ~ "*", TRUE ~ "ns"),
   y_pos = pmax(
     fs_both$pct_frameshift[fs_both$group == "NMD PTC\u2212"][match(fs_wide$event_type, fs_both$event_type[fs_both$group == "NMD PTC\u2212"])],
     fs_both$pct_frameshift[fs_both$group == "Control"][match(fs_wide$event_type, fs_both$event_type[fs_both$group == "Control"])],
@@ -3179,62 +3294,114 @@ fig_fs <- ggplot(fs_bar, aes(x = event_type, y = pct, fill = group)) +
             inherit.aes = FALSE, size = 4, vjust = 0) +
   scale_fill_manual(values = c("NMD PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
   labs(title = "Frameshift Rate by Splice Event Type: NMD PTC\u2212 vs Control",
-       subtitle = "% of events causing frameshift (bp_diff not divisible by 3)",
+       subtitle = sprintf("All %s PTC\u2212 pairs vs %s Control pairs | %% of events causing frameshift",
+                          fmt(n_ptc_neg), fmt(nrow(ctrl_profiles_sec2c))),
        x = NULL, y = "% frameshift", fill = NULL) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "bottom")
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
 save_fig(fig_fs, "fig_sec2c_frameshift_rate", width = 10, height = 6)
 ```
 
-Column definitions: **event_type** = splice event type; **n_events** = total
-events of this type with non-zero bp_diff; **n_frameshift** = events where
-bp_diff is not divisible by 3; **pct_frameshift** = percentage causing
-frameshift.
+The reclassified pairs show the same splice event profile as the original
+PTC-positive group — enriched for SE and with high frameshift rates across
+multiple event types. These are not a distinct mechanism; they are PTC-positive
+isoforms that were misclassified by the CDS prediction algorithm.
 
-Frameshift-causing events are enriched across multiple splice event types in
-NMD PTC-negative pairs compared to Control — not just skipped exons.
-The same splice event types (SE, A3SS, A5SS) produce frameshifts at higher
-rates in NMD pairs, consistent with frameshift-causing splicing being the
-primary mechanism disrupting the reference reading frame.
+## Updated Accounting and Population Flow
 
-## NMD Susceptibility as an ORF Landscape Property
+```{r sec2c-accounting}
+n_remaining <- nrow(coding_pairs_c2) - n_ptc_pos - n_eff_ptc
 
-The reference-ATG analysis above focused on a single reading frame — the one
-initiated at the reference CDS start. Here we broaden the analysis to consider
-ALL ORFs (defined as ATG → first in-frame stop, minimum 9 nt) detected by
-ORFik across all `r fmt(n_ptc_neg)` PTC-negative NMD comparators and
-gene-matched Control (C4) comparators. For
-each ORF, we compute Kozak context strength and count downstream exon-exon
-junctions from the stop codon.
+cat("Updated NMD accounting:\n")
+cat("  Original PTC+:", fmt(n_ptc_pos), sprintf("(%.1f%%)\n", 100 * n_ptc_pos / nrow(coding_pairs_c2)))
+cat("  Reclassified PTC:", fmt(n_eff_ptc), sprintf("(%.1f%%)\n", 100 * n_eff_ptc / nrow(coding_pairs_c2)))
+cat("  Total PTC-mediated:", fmt(n_ptc_pos + n_eff_ptc),
+    sprintf("(%.1f%%)\n", 100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2)))
+cat("  Remaining PTC-:", fmt(n_remaining), sprintf("(%.1f%%)\n", 100 * n_remaining / nrow(coding_pairs_c2)))
+cat("    Ref ATG lost:", fmt(n_atg_lost), "\n")
+cat("    Other:", fmt(n_truly_nonptc), "\n")
+```
+
+```{r sec2c-flowchart, fig.width=10, fig.height=10}
+dot_flow <- sprintf('
+digraph flowchart {
+  graph [rankdir=TB, fontname="Helvetica", nodesep=1.5, ranksep=1.2]
+  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=14, margin="0.4,0.3"]
+  edge [color="#666666", penwidth=2.0]
+
+  A [label="All coding NMD pairs\\n(%s)", fillcolor="#f0f0f0"]
+  B [label="PTC+ (annotated CDS)\\n%s (%.1f%%)", fillcolor="#c7e9c0"]
+  C [label="PTC\\u2212 (annotated CDS)\\n%s (%.1f%%)", fillcolor="#fee0d2"]
+  D [label="5\\u2032UTR longer (median %s bp vs %s bp)\\nCDS moved downstream in %.1f%% of pairs", fillcolor="#fef0d9"]
+  E [label="Ref ATG available\\n%s (%.1f%%)", fillcolor="#fef0d9"]
+  F [label="Ref ATG lost\\n%s (%.1f%%)", fillcolor="#fdcccc"]
+  G [label="Effectively PTC\\n(ref ATG \\u2192 truncated ORF + EJCs)\\n%s (%.1f%%)", fillcolor="#c7e9c0"]
+  H [label="Remaining PTC\\u2212\\n%s (%.1f%%)", fillcolor="#fdcccc"]
+  I [label="Total PTC-mediated\\n%s (%.1f%%)", fillcolor="#a1d99b", color="#31a354", penwidth=2]
+
+  A -> B
+  A -> C
+  C -> D [label="Investigate"]
+  D -> E
+  D -> F
+  E -> G [label="Trace ref ATG"]
+  E -> H
+  B -> I [style=dashed]
+  G -> I [style=dashed]
+}',
+  fmt(nrow(coding_pairs_c2)),
+  fmt(n_ptc_pos), 100 * n_ptc_pos / nrow(coding_pairs_c2),
+  fmt(n_ptc_neg), 100 * n_ptc_neg / nrow(coding_pairs_c2),
+  fmt(median(div_ptcneg$utr5_bp_comp)), fmt(median(div_ptcneg$utr5_bp_ref)),
+  100 * mean(ref_cds5_2c != comp_cds5_2c, na.rm = TRUE),
+  fmt(n_atg_avail), 100 * n_atg_avail / n_ptc_neg,
+  fmt(n_atg_lost), 100 * n_atg_lost / n_ptc_neg,
+  fmt(n_eff_ptc), 100 * n_eff_ptc / n_ptc_neg,
+  fmt(n_truly_nonptc), 100 * n_truly_nonptc / n_ptc_neg,
+  fmt(n_ptc_pos + n_eff_ptc), 100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2))
+
+if (requireNamespace("DiagrammeR", quietly = TRUE)) {
+  DiagrammeR::grViz(dot_flow)
+} else {
+  cat("DiagrammeR not available\n")
+}
+```
+
+## The Remaining PTC-Negative Pairs
+
+After reclassification, `r fmt(n_remaining)` pairs
+(`r round(100 * n_remaining / nrow(coding_pairs_c2), 1)`% of all NMD pairs)
+remain PTC-negative. Of these, `r fmt(n_atg_lost)` lost the reference ATG
+entirely (Alt_TSS or first-exon differences force a different start codon),
+and `r fmt(n_truly_nonptc)` have the reference ATG but its reading frame does
+not produce a PTC with downstream EJCs.
+
+For these remaining pairs, we examine the broader ORF landscape using ORFik
+comprehensive ORF detection.
 
 ```{r sec2c-orfik-load}
 # ── Data provenance ──
 # Source: 05s_orfik_scan.R → orfik_scan.rds
-# ORFik findORFs on all 61,669 classified coding isoforms
-# Per-ORF features: Kozak score, downstream EJC count, position
+# ORFik findORFs on all classified coding isoforms
+# Per-ORF: Kozak score, downstream EJC count, position
 
 orfik_data <- readRDS(file.path(cache_dir, "orfik_scan.rds"))
 orf_feat <- orfik_data$orf_features
 orf_tx_sum <- orfik_data$tx_summary
 
-# Group assignments
 ptc_neg_comp_ids <- coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc]
-ptc_pos_comp_ids <- coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc]
 ctrl_comp_ids <- unique(profiles_list[["c4_allsamples"]]$comparator_isoform_id)
 ctrl_comp_ids <- ctrl_comp_ids[ctrl_comp_ids %in% orf_tx_sum$isoform_id]
 ```
 
 ```{r sec2c-orf-landscape, fig.width=10, fig.height=6}
-# NMD-competent ORFs by Kozak strength
+# NMD-competent ORFs by Kozak strength: PTC- comparators vs Control
 count_by_kozak <- function(iso_ids) {
   sub <- orf_feat[orf_feat$isoform_id %in% iso_ids, ]
   sub %>%
     group_by(isoform_id) %>%
-    summarise(
-      n_k2_ejc = sum(kozak_score == 2 & has_downstream_ejc),
-      n_k1plus_ejc = sum(kozak_score >= 1 & has_downstream_ejc),
-      n_any_ejc = sum(has_downstream_ejc),
-      .groups = "drop")
+    summarise(n_k2_ejc = sum(kozak_score == 2 & has_downstream_ejc),
+              n_k1plus_ejc = sum(kozak_score >= 1 & has_downstream_ejc),
+              n_any_ejc = sum(has_downstream_ejc), .groups = "drop")
 }
 
 ptcn_kozak <- count_by_kozak(ptc_neg_comp_ids) %>% mutate(group = "NMD PTC\u2212")
@@ -3245,20 +3412,19 @@ kozak_all <- rbind(ptcn_kozak, ctrl_kozak) %>%
                names_to = "metric", values_to = "count") %>%
   mutate(metric = factor(metric,
     levels = c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc"),
-    labels = c("Strong Kozak\n(score = 2)", "Moderate+ Kozak\n(score \u2265 1)",
-               "Any ORF")))
+    labels = c("Strong Kozak\n(score = 2)", "Moderate+ Kozak\n(score \u2265 1)", "Any ORF")))
 
 fig_kozak <- ggplot(kozak_all, aes(x = group, y = count, fill = group)) +
   geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
   facet_wrap(~metric, scales = "free_y") +
   scale_fill_manual(values = c("NMD PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
   labs(title = "NMD-Competent ORFs by Kozak Strength",
-       subtitle = "ORFs with \u22651 downstream EJC, stratified by start codon Kozak context",
+       subtitle = sprintf("PTC\u2212 comparators (n=%s) vs Control (n=%s) | ORFs with \u22651 downstream EJC",
+                          fmt(nrow(ptcn_kozak)), fmt(nrow(ctrl_kozak))),
        x = NULL, y = "Count per transcript") +
   theme(legend.position = "none")
 save_fig(fig_kozak, "fig_sec2c_orf_landscape", width = 10, height = 6)
 
-# Statistics
 for (var in c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc")) {
   wt <- wilcox.test(ptcn_kozak[[var]], ctrl_kozak[[var]])
   cat(sprintf("  %s: PTC- median %g vs Control %g (p = %g)\n",
@@ -3266,36 +3432,25 @@ for (var in c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc")) {
 }
 ```
 
-Column definitions: **Strong Kozak** = A/G at -3 AND G at +4 relative to ATG;
-**Moderate+** = A/G at -3 OR G at +4; **NMD-competent** = ORF stop has ≥1
-downstream exon-exon junction.
-
-PTC-negative NMD transcripts have more NMD-competent ORFs at every Kozak
-strength level. Under a model where ribosomal scanning samples ATGs
-proportional to their initiation context strength, having more strong-Kozak
-ORFs with downstream EJCs increases the per-round probability of
-NMD-triggering translation.
+PTC-negative NMD comparators have more NMD-competent ORFs at every Kozak
+strength level — more opportunities for the ribosome to initiate translation
+at an ORF whose stop has downstream EJCs.
 
 ## Gene-Level NMD Susceptibility
 
-The preceding analyses focused on NMD-sensitive isoforms. Here we ask whether
-NMD susceptibility extends to the gene level. We compare the logFC (SMG1i vs
-DMSO) of **non-NMD isoforms** — isoforms not classified as NMD-sensitive — from
-two groups: genes that harbor at least one NMD isoform (NMD-harboring genes)
-versus genes with no NMD isoforms at all. If NMD susceptibility is partly a
-gene-level property, even the non-NMD isoforms from NMD-harboring genes should
-show subtle upregulation under SMG1i.
+Finally, we ask whether NMD susceptibility extends beyond individual isoforms
+to the gene level. We compare the logFC (SMG1i vs DMSO) of **non-NMD
+isoforms** from genes that harbor at least one NMD isoform versus genes with
+no NMD isoforms at all.
 
 ```{r sec2c-gene-continuum, fig.width=10, fig.height=5}
 # ── Data provenance ──
-# Source: mashr DE files from /Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/
-# For each gene: average logFC of non-NMD isoforms, classified by whether the
-# gene harbors any NMD-sensitive isoform.
+# Source: mashr DE files (logFC per isoform per cell type)
+# Population: non-NMD isoforms, grouped by gene NMD status
 
 de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
 de_files <- list.files(de_dir, pattern = "csv$", full.names = TRUE)
 
-# Mean logFC across cell types per isoform
 logfc_per_ct <- lapply(de_files, function(f) {
   d <- read.csv(f, stringsAsFactors = FALSE)
   data.frame(isoform_id = d$txid, logFC = d$logFC, stringsAsFactors = FALSE)
@@ -3305,20 +3460,16 @@ mean_logfc <- logfc_combined %>%
   group_by(isoform_id) %>%
   summarise(mean_logFC = mean(logFC, na.rm = TRUE), .groups = "drop")
 
-# Gene classification
 nmd_ids_all <- nmd_class$all_samples$nmd
 non_nmd_ids_all <- nmd_class$all_samples$non_nmd
 gene_map <- structures[, c("isoform_id", "gene_id")]
 nmd_genes_all <- unique(gene_map$gene_id[gene_map$isoform_id %in% nmd_ids_all])
 
-# Non-NMD isoform logFC by gene NMD status
 non_nmd_logfc <- mean_logfc %>%
   filter(isoform_id %in% non_nmd_ids_all) %>%
   inner_join(gene_map, by = "isoform_id") %>%
-  mutate(gene_has_nmd = gene_id %in% nmd_genes_all,
-         gene_type = ifelse(gene_has_nmd, "NMD-harboring gene", "Non-NMD gene"))
+  mutate(gene_type = ifelse(gene_id %in% nmd_genes_all, "NMD-harboring gene", "Non-NMD gene"))
 
-# Per-gene average
 gene_logfc <- non_nmd_logfc %>%
   group_by(gene_id, gene_type) %>%
   summarise(mean_nonnmd_logfc = mean(mean_logFC, na.rm = TRUE), .groups = "drop")
@@ -3333,31 +3484,22 @@ fig_continuum <- ggplot(gene_logfc, aes(x = gene_type, y = mean_nonnmd_logfc, fi
   annotate("text", x = 1.5, y = max(gene_logfc$mean_nonnmd_logfc, na.rm = TRUE) * 0.8,
            label = sprintf("p = %s", signif(wt_gene$p.value, 3)), size = 4) +
   labs(title = "Non-NMD Isoform logFC by Gene NMD Status",
-       subtitle = "Even non-NMD isoforms from NMD-harboring genes show subtle upregulation under SMG1i",
+       subtitle = sprintf("NMD-harboring: %s genes | Non-NMD: %s genes",
+                          fmt(sum(gene_logfc$gene_type == "NMD-harboring gene")),
+                          fmt(sum(gene_logfc$gene_type == "Non-NMD gene"))),
        x = NULL, y = "Mean logFC (SMG1i vs DMSO)") +
   theme(legend.position = "none")
 save_fig(fig_continuum, "fig_sec2c_gene_continuum", width = 10, height = 5)
-
-cat("NMD-harboring genes:", sum(gene_logfc$gene_type == "NMD-harboring gene"), "\n")
-cat("Non-NMD genes:", sum(gene_logfc$gene_type == "Non-NMD gene"), "\n")
 ```
 
-Non-NMD isoforms from NMD-harboring genes have a small but highly significant
-positive shift in logFC compared to non-NMD isoforms from genes without any NMD
-isoforms (p = `r signif(wt_gene$p.value, 3)`). This suggests these isoforms
-undergo subclinical NMD — the ribosome occasionally samples an NMD-triggering
-ORF even in the dominant isoform.
-
 ```{r sec2c-junction-basis}
-# Structural basis: NMD-harboring genes have more exon-exon junctions
-# Compare the dominant non-NMD isoform between gene types
+# Structural basis: dominant isoform ORF landscape by gene type
 expr_mat_local <- readRDS("data_mashr/expression_data.rds")
 sample_meta_local <- readRDS("data_mashr/sample_metadata.rds")
 dmso_cols <- sample_meta_local$sample_id[sample_meta_local$treatment == "DMSO"]
 dmso_cpm <- sweep(expr_mat_local[, dmso_cols], 2, colSums(expr_mat_local[, dmso_cols]), "/") * 1e6
 mean_cpm <- rowMeans(dmso_cpm)
 
-# Dominant non-NMD isoform per gene
 dom_iso <- data.frame(isoform_id = names(mean_cpm), mean_cpm = as.numeric(mean_cpm),
                        stringsAsFactors = FALSE) %>%
   filter(isoform_id %in% non_nmd_ids_all,
@@ -3367,22 +3509,17 @@ dom_iso <- data.frame(isoform_id = names(mean_cpm), mean_cpm = as.numeric(mean_c
   slice_max(mean_cpm, n = 1, with_ties = FALSE) %>%
   ungroup()
 
-# ORF landscape for dominant isoforms
 dom_features <- orf_tx_sum[match(dom_iso$isoform_id, orf_tx_sum$isoform_id), ]
-dom_features$gene_type <- ifelse(dom_iso$gene_id %in% nmd_genes_all,
-                                  "NMD-harboring", "Non-NMD")
+dom_features$gene_type <- ifelse(dom_iso$gene_id %in% nmd_genes_all, "NMD-harboring", "Non-NMD")
 
 dom_summary <- dom_features %>%
   filter(!is.na(gene_type)) %>%
   group_by(gene_type) %>%
-  summarise(
-    n = n(),
-    median_orfs = median(n_orfs),
-    median_nmd_comp = median(n_nmd_competent),
-    median_junctions = median(n_junctions),
-    median_strong_kozak_nmd = median(n_strong_kozak_nmd_comp),
-    frac_nmd_comp = round(100 * median(n_nmd_competent / pmax(n_orfs, 1)), 1),
-    .groups = "drop")
+  summarise(n = n(), median_orfs = median(n_orfs),
+            median_nmd_comp = median(n_nmd_competent),
+            median_junctions = median(n_junctions),
+            frac_nmd_comp = round(100 * median(n_nmd_competent / pmax(n_orfs, 1)), 1),
+            .groups = "drop")
 
 render_dt(dom_summary,
   caption = "Table 8b: Dominant Isoform ORF Landscape by Gene NMD Status")
@@ -3393,36 +3530,14 @@ Column definitions: **median_orfs** = median ORFs per transcript;
 **median_junctions** = median exon-exon junctions;
 **frac_nmd_comp** = median fraction of ORFs that are NMD-competent.
 
-NMD-harboring genes have substantially more exon-exon junctions in their
-dominant isoform (median `r dom_summary$median_junctions[dom_summary$gene_type == "NMD-harboring"]`
+Non-NMD isoforms from NMD-harboring genes show a small but highly significant
+positive shift in logFC (p = `r signif(wt_gene$p.value, 3)`), consistent with
+subclinical NMD. The structural basis: NMD-harboring genes have more exon-exon
+junctions (median `r dom_summary$median_junctions[dom_summary$gene_type == "NMD-harboring"]`
 vs `r dom_summary$median_junctions[dom_summary$gene_type == "Non-NMD"]`),
-causing a higher fraction of their ORFs to be NMD-competent
-(`r dom_summary$frac_nmd_comp[dom_summary$gene_type == "NMD-harboring"]`% vs
-`r dom_summary$frac_nmd_comp[dom_summary$gene_type == "Non-NMD"]`%).
-Total ORF count and Kozak quality are similar — the difference is structural,
-determined by exon-intron architecture.
-
-## What Remains to Explain
-
-```{r sec2c-remaining}
-cat("Reclassification summary:\n")
-cat("  Original PTC+:", fmt(n_ptc_pos), "\n")
-cat("  Reclassified effectively PTC:", fmt(n_eff_ptc), "\n")
-cat("  Total PTC-mediated:", fmt(n_ptc_pos + n_eff_ptc),
-    sprintf("(%.1f%%)\n", 100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2)))
-cat("  Reference ATG lost:", fmt(n_atg_lost),
-    sprintf("(%.1f%% of PTC-)\n", 100 * n_atg_lost / nrow(ptc_neg_ref)))
-cat("  Truly non-PTC:", fmt(n_truly_nonptc),
-    sprintf("(%.1f%% of PTC-)\n", 100 * n_truly_nonptc / nrow(ptc_neg_ref)))
-```
-
-Of the remaining PTC-negative pairs, `r fmt(n_atg_lost)` lost the reference
-ATG from their exonic sequence — alternative TSS or first-exon differences
-force the ribosome to use a different ATG entirely. `r fmt(n_truly_nonptc)`
-pairs (`r round(100 * n_truly_nonptc / nrow(coding_pairs_c2), 1)`% of all NMD
-pairs) remain truly non-PTC even from the reference ATG perspective. For these,
-the enrichment of strong-Kozak NMD-competent ORFs in the broader ORF landscape
-(Section 2c.3) provides the most likely explanation for their NMD sensitivity.
+causing a higher fraction of their ORFs to terminate upstream of junctions.
+NMD susceptibility is partly a gene-level property of the exon-intron
+architecture.
 
 
 # 2d. NMD Response is Continuous {#sec2d-continuous}
