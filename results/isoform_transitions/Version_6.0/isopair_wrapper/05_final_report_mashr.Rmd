@@ -2982,25 +2982,120 @@ length-based filtering correctly identifies the longest reading frame — but
 that reading frame is not the one the ribosome uses when it initiates at the
 same ATG as the reference isoform.
 
-```{r sec2c-reclass-events, fig.width=10, fig.height=5}
-# Splice events causing the hidden PTC
-evt_tab <- sort(table(eff_ptc$attr_event), decreasing = TRUE)
-evt_df <- data.frame(event = names(evt_tab), n = as.integer(evt_tab),
-                      stringsAsFactors = FALSE) %>%
-  mutate(pct = round(100 * n / sum(n), 1),
-         event = factor(event, levels = event))
+```{r sec2c-reclass-events, fig.width=10, fig.height=6}
+# Splice events causing the hidden PTC — with gain/loss direction
+# Get full event details for reclassified pairs
+gm_c2_coding <- semi_join(
+  profiles_list[["c2_allsamples"]],
+  data.frame(gene_id = eff_ptc$gene_id,
+             reference_isoform_id = eff_ptc$reference_isoform_id),
+  by = c("gene_id", "reference_isoform_id")) %>%
+  filter(comparator_isoform_id %in% eff_ptc$comparator_isoform_id)
 
-fig_events <- ggplot(evt_df, aes(x = event, y = n)) +
-  geom_col(fill = "#ef8a62", alpha = 0.85) +
-  geom_text(aes(label = sprintf("%s\n(%.0f%%)", fmt(n), pct)),
-            vjust = -0.3, size = 3) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
-  labs(title = "Splice Events in Reclassified PTC Pairs",
-       subtitle = sprintf("Originally PTC\u2212, now effectively PTC (n = %s)", fmt(nrow(eff_ptc))),
-       x = NULL, y = "Number of pairs") +
+reclass_events <- do.call(rbind, lapply(seq_len(nrow(gm_c2_coding)), function(i) {
+  de <- gm_c2_coding$detailed_events[[i]]
+  if (is.null(de) || nrow(de) == 0) return(NULL)
+  de$pair_idx <- i
+  de[, c("event_type", "direction", "bp_diff", "pair_idx")]
+}))
+
+# Event × direction table
+evt_dir <- reclass_events %>%
+  count(event_type, direction) %>%
+  mutate(event_type = factor(event_type,
+    levels = names(sort(tapply(n, event_type, sum), decreasing = TRUE))))
+
+fig_events <- ggplot(evt_dir, aes(x = event_type, y = n, fill = direction)) +
+  geom_col(position = "stack", alpha = 0.85) +
+  scale_fill_manual(values = c("GAIN" = "#2980B9", "LOSS" = "#C0392B")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  labs(title = "Splice Events in Reclassified PTC Pairs (with Direction)",
+       subtitle = sprintf("Originally PTC\u2212, now effectively PTC (n = %s pairs)",
+                          fmt(nrow(eff_ptc))),
+       x = NULL, y = "Number of events", fill = "Direction") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-save_fig(fig_events, "fig_sec2c_reclass_events", width = 10, height = 5)
+save_fig(fig_events, "fig_sec2c_reclass_events", width = 10, height = 6)
 ```
+
+## Frameshift-Causing Splice Events: NMD vs Control
+
+The reclassified PTC-negative pairs are driven by frameshifts disrupting the
+reference reading frame. Are these frameshift-causing splice events enriched
+compared to Control pairs?
+
+```{r sec2c-frameshift-comparison, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: profiles_list (gene-matched C2/C4 pairs with detailed_events)
+# For each pair: identify SE events and whether they cause frameshifts
+# (bp_diff mod 3 != 0)
+
+classify_se_frameshifts <- function(profiles, label) {
+  coding <- profiles %>%
+    filter(reference_isoform_id %in% cds$isoform_id[cds$coding_status == "coding"],
+           comparator_isoform_id %in% cds$isoform_id[cds$coding_status == "coding"])
+  n_pairs <- nrow(coding)
+  has_se <- 0L; has_fs_se <- 0L; has_if_se <- 0L
+  for (i in seq_len(n_pairs)) {
+    de <- coding$detailed_events[[i]]
+    if (is.null(de) || nrow(de) == 0) next
+    se <- de[de$event_type == "SE", ]
+    if (nrow(se) == 0) next
+    has_se <- has_se + 1L
+    if (any(!is.na(se$bp_diff) & se$bp_diff %% 3 != 0)) has_fs_se <- has_fs_se + 1L
+    if (any(!is.na(se$bp_diff) & se$bp_diff %% 3 == 0)) has_if_se <- has_if_se + 1L
+  }
+  data.frame(group = label, n_pairs = n_pairs, has_se = has_se,
+             has_frameshift_se = has_fs_se, has_inframe_se = has_if_se,
+             pct_se = round(100 * has_se / n_pairs, 1),
+             pct_fs_among_se = round(100 * has_fs_se / max(has_se, 1), 1),
+             stringsAsFactors = FALSE)
+}
+
+# Split NMD by PTC status
+ptc_assoc_sec2c <- set_results[["c2_allsamples"]]$ptc_assoc
+ptc_lkp <- ptc_assoc_sec2c$pair_summary[, c("comparator_isoform_id", "comp_has_ptc")]
+
+nmd_profiles <- profiles_list[["c2_allsamples"]]
+nmd_profiles <- merge(nmd_profiles, ptc_lkp, by = "comparator_isoform_id", all.x = TRUE)
+nmd_profiles$comp_has_ptc[is.na(nmd_profiles$comp_has_ptc)] <- FALSE
+
+se_ptcpos <- classify_se_frameshifts(nmd_profiles[nmd_profiles$comp_has_ptc, ], "NMD PTC+")
+se_ptcneg <- classify_se_frameshifts(nmd_profiles[!nmd_profiles$comp_has_ptc, ], "NMD PTC\u2212")
+se_ctrl <- classify_se_frameshifts(profiles_list[["c4_allsamples"]], "Control")
+
+se_comparison <- rbind(se_ptcpos, se_ptcneg, se_ctrl)
+render_dt(se_comparison,
+  caption = "Table 8b: Skipped Exon Frameshift Rate by Group")
+
+# Bar chart: % of SE events causing frameshifts
+se_bar <- se_comparison %>%
+  select(group, `Frameshift SE (%)` = pct_fs_among_se, `In-frame SE (%)` = has_inframe_se) %>%
+  mutate(`In-frame SE (%)` = round(100 - `Frameshift SE (%)`, 1)) %>%
+  pivot_longer(-group, names_to = "type", values_to = "pct") %>%
+  mutate(group = factor(group, levels = c("NMD PTC+", "NMD PTC\u2212", "Control")))
+
+fig_fs <- ggplot(se_bar, aes(x = group, y = pct, fill = type)) +
+  geom_col(alpha = 0.85) +
+  geom_text(aes(label = sprintf("%.0f%%", pct)),
+            position = position_stack(vjust = 0.5), size = 4) +
+  scale_fill_manual(values = c("Frameshift SE (%)" = "#ef8a62", "In-frame SE (%)" = "#67a9cf")) +
+  labs(title = "Frameshift Rate Among Skipped Exon Events",
+       subtitle = "NMD pairs (both PTC+ and PTC\u2212) have more frameshift-causing SE than Control",
+       x = NULL, y = "% of SE events", fill = NULL) +
+  theme(legend.position = "bottom")
+save_fig(fig_fs, "fig_sec2c_frameshift_rate", width = 10, height = 5)
+```
+
+Column definitions: **n_pairs** = total coding pairs; **has_se** = pairs with
+at least one SE event; **pct_se** = prevalence of SE; **has_frameshift_se** =
+pairs where at least one SE has bp_diff not divisible by 3;
+**pct_fs_among_se** = % of SE-containing pairs with at least one frameshift SE.
+
+Both PTC-positive and PTC-negative NMD pairs have similar SE prevalence and
+frameshift rates (~86%), while Control pairs have only ~44% frameshift SE.
+The same type of splicing event — frameshift-causing exon skips — drives both
+the annotated PTCs (Section 2b) and the hidden PTCs revealed by reference-ATG
+tracing.
 
 ## NMD Susceptibility as an ORF Landscape Property
 
@@ -3324,23 +3419,13 @@ holds for both PTC-positive isoforms (where stop codon position determines
 response strength) and PTC-negative isoforms (where 5'UTR features predict
 response magnitude).
 
-# 3. Reading Frame Selection — Same ATGs, Different Fates {#sec3-shared-atgs}
+# 3. Combined NMD Mechanism Accounting {#sec3-accounting}
 
-Section 2b identified PTCs as the primary NMD mechanism, and Section 2c showed
-that most "PTC-negative" cases are actually hidden PTCs — a consequence of CDS
-prediction bias. The remaining PTC-negative cases have enriched NMD-competent
-ORF landscapes. Here we examine the structural basis: how do CDS start
-positions and reading frames differ between NMD and non-NMD isoforms?
-
-**Data source:** Gene-matched C2 and C4 profiles, CDS positions (cds.rds),
-PTC status (ptc.rds), ref-ATG analysis (ref_atg_analysis.rds). All analyses
-use the full structures/cds objects (not Section 1's NMD-excluded subset).
-
-## Do NMD and Non-NMD Isoforms Share CDS Starts?
-
-For each gene-matched pair, we classify whether the reference (non-NMD) and
-comparator (NMD or Control) share the same strand-aware CDS start position,
-and cross-tabulate with PTC status.
+Sections 2b and 2c characterized NMD mechanisms through two lenses:
+Section 2b identified PTCs in the annotated CDS; Section 2c showed that most
+"PTC-negative" cases harbor hidden PTCs when traced from the reference ATG,
+explained by CDS prediction bias. Here we present the complete accounting
+and unified interpretation.
 
 ```{r sec3-same-vs-diff-start, fig.width=9, fig.height=5}
 # ── Data provenance ──
@@ -3449,77 +3534,6 @@ Column definitions for the 2×2 table: **start_class** = whether reference and
 comparator share the same strand-aware CDS 5' position; **ptc_class** = whether
 the comparator has a PTC; **n** = pair count; **pct** = percentage of all NMD
 pairs.
-
-## Same Start, Different Exon Path, Different ORF Length
-
-When two isoforms share the same CDS start, any difference in ORF length is
-entirely due to exon path differences downstream. We compare the ORF length
-ratio (comparator / reference) for same-start NMD pairs vs same-start Control
-pairs.
-
-```{r sec3-orf-length-ratio, fig.width=10, fig.height=5}
-# ── Data provenance ──
-# Source: nmd_pairs, ctrl_pairs (computed above)
-# Population: same-start pairs only
-
-same_start_all <- rbind(
-  nmd_pairs %>% filter(same_start) %>%
-    select(comparison, orf_ratio, comp_has_ptc),
-  ctrl_pairs %>% filter(same_start) %>%
-    select(comparison, orf_ratio, comp_has_ptc)
-)
-
-cat("Same-start pairs:\n")
-cat("  NMD:", sum(nmd_pairs$same_start), "pairs\n")
-cat("    of which PTC+:", sum(nmd_pairs$same_start & nmd_pairs$comp_has_ptc), "\n")
-cat("    of which PTC-:", sum(nmd_pairs$same_start & !nmd_pairs$comp_has_ptc), "\n")
-cat("  Control:", sum(ctrl_pairs$same_start), "pairs\n")
-cat("\nORF length ratio (comp/ref) for same-start pairs:\n")
-cat("  NMD median:", round(median(nmd_pairs$orf_ratio[nmd_pairs$same_start]), 3), "\n")
-cat("  Control median:", round(median(ctrl_pairs$orf_ratio[ctrl_pairs$same_start]), 3), "\n")
-
-fig_orf_ratio <- ggplot(same_start_all, aes(x = orf_ratio, fill = comparison)) +
-  geom_density(alpha = 0.5) +
-  geom_vline(xintercept = 1, linetype = "dashed", color = "grey40") +
-  scale_fill_manual(values = c("NMD (C2)" = "#ef8a62", "Control (C4)" = "#67a9cf")) +
-  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.25)) +
-  labs(title = "ORF Length Ratio for Same-Start Pairs",
-       subtitle = "Comparator ORF / Reference ORF — ratio < 1 indicates truncation",
-       x = "ORF length ratio (comparator / reference)", y = "Density",
-       fill = NULL) +
-  theme(legend.position = "bottom")
-save_fig(fig_orf_ratio, "fig_sec3_orf_length_ratio", width = 10, height = 5)
-```
-
-Same-start NMD pairs should cluster below 1.0 (truncated ORFs from frameshifts
-and in-frame stops), while same-start Control pairs should center near 1.0
-(normal length variation).
-
-Section 2c showed that `r round(100 * n_eff_ptc / nrow(ptc_neg_ref), 1)`%
-of PTC-negative pairs are effectively PTC when traced from the reference ATG.
-The same genomic ATG produces a productive ORF in the reference but a
-truncated ORF with downstream EJCs in the NMD comparator — a consequence
-of frameshift-causing splice events downstream.
-
-## Synthesis
-
-```{r sec3-synthesis}
-# Summary statistics for inline references
-n_same_start_nmd <- sum(nmd_pairs$same_start)
-n_diff_start_nmd <- sum(!nmd_pairs$same_start)
-pct_same_start_nmd <- round(100 * n_same_start_nmd / nrow(nmd_pairs), 1)
-pct_same_start_ctrl <- round(100 * sum(ctrl_pairs$same_start) / nrow(ctrl_pairs), 1)
-```
-
-`r pct_same_start_nmd`% of NMD pairs share the same CDS start as their
-non-NMD reference (vs `r pct_same_start_ctrl`% of Control pairs). For these
-same-start pairs, exon path differences downstream of the shared ATG produce
-truncated ORFs (median ratio `r round(median(nmd_pairs$orf_ratio[nmd_pairs$same_start]), 2)`)
-via frameshifts and in-frame stops — the mechanisms characterized in Section 2b.
-
-For the `r 100 - pct_same_start_nmd`% of NMD pairs with different CDS starts,
-the exon path difference is upstream: a different TSS or alternative first exon
-shifts the 5' end.
 
 ## Combined NMD Mechanism Accounting
 
