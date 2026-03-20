@@ -3370,8 +3370,9 @@ not produce a PTC with downstream EJCs.
 
 These remaining cases cannot be explained by a single dominant PTC. In
 Section 2d, we develop a broader framework — ORF competition and gene
-architecture — that explains both why these isoforms trigger NMD and why
-NMD response is continuous rather than binary.
+architecture — that addresses why NMD response is continuous rather than
+binary. Whether this framework fully accounts for the remaining
+`r fmt(n_truly_nonptc)` pairs is an open question.
 
 # 2d. ORF Competition and Gene Architecture {#sec2d-orf-competition}
 
@@ -3421,11 +3422,10 @@ dom_iso <- data.frame(isoform_id = names(mean_cpm), mean_cpm = as.numeric(mean_c
   slice_max(mean_cpm, n = 1, with_ties = FALSE) %>%
   ungroup()
 
-dom_features <- orf_tx_sum[match(dom_iso$isoform_id, orf_tx_sum$isoform_id), ]
-dom_features$gene_type <- ifelse(dom_iso$gene_id %in% nmd_genes_all, "NMD-harboring", "Non-NMD")
+dom_features <- inner_join(dom_iso, orf_tx_sum, by = "isoform_id")
+dom_features$gene_type <- ifelse(dom_features$gene_id %in% nmd_genes_all, "NMD-harboring", "Non-NMD")
 
 dom_summary <- dom_features %>%
-  filter(!is.na(gene_type)) %>%
   group_by(gene_type) %>%
   summarise(n = n(), median_orfs = median(n_orfs),
             median_nmd_comp = median(n_nmd_competent),
