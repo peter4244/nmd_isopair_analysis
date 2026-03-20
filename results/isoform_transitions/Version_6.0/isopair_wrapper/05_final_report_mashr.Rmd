@@ -1734,7 +1734,7 @@ association between 3'UTR length and NMD is fully captured by downstream
 EJC count. PTC and uORF mechanisms operate through different structural
 pathways to trigger NMD; 3'UTR length is not an independent pathway.
 
-# 2b. Stop Codons: Where Translation Terminates {#sec2b-stop-codons}
+# 2b. Stop Codon Analysis {#sec2b-stop-codons}
 
 The unified model (Section 2a) identifies downstream EJC count as the strongest
 single predictor of NMD status. Here we examine stop codon position in detail
@@ -2429,7 +2429,13 @@ nucleotide. The new frame encounters a stop codon at position 22,250,112
 (red triangle) — 406 bp before the normal stop at 22,250,518 (green triangle).
 Four exon-exon junctions remain downstream, triggering NMD.
 
-## 3'UTR Length and Splicing {#sec2b-3utr}
+# 2c. Explaining PTC-Negative NMD {#sec2c-ptc-neg}
+
+Section 2b characterized PTC-positive NMD isoforms. Here we investigate
+the remaining PTC-negative isoforms through a systematic examination of
+their structural properties, beginning with the 3'UTR and 5'UTR boundaries.
+
+## 3'UTR Length Does Not Independently Predict NMD {#sec2c-3utr}
 
 The unified model (Section 2a) showed that adding 3'UTR length to the full
 model does not improve holdout AUC (step 3:
@@ -2839,15 +2845,6 @@ depleted in PTC-negative NMD vs Control (OR =
 `r signif(ft_utr3_neg$p.value, 3)`), consistent with 3'UTR splicing being a
 PTC-creating mechanism rather than an independent NMD trigger.
 
-# 2c. Explaining PTC-Negative NMD {#sec2c-ptc-neg}
-
-Section 2b accounted for `r fmt(n_ptc_pos)` PTC-positive NMD pairs
-(`r round(100 * n_ptc_pos / nrow(coding_pairs_c2), 1)`%), and the 3'UTR
-analysis ruled out 3'UTR length as an independent NMD mechanism. This leaves
-`r fmt(n_ptc_neg)` PTC-negative pairs
-(`r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%) unexplained. Here
-we investigate what drives NMD in these isoforms through a systematic
-examination of their structural properties.
 
 ## 5'UTR Length and uORF Enrichment
 
@@ -2991,16 +2988,22 @@ shift_data <- rbind(
   data.frame(group = "Control", boundary = "CDS shift\n(downstream = extends)",
              shift = c4_cds_shift))
 
-fig_decompose <- ggplot(shift_data, aes(x = group, y = shift, fill = group)) +
+# Truncate extreme outliers for visualization (values > 100 kb are real but
+# represent cases where TD2 picked an ORF in a completely different part of
+# a very long transcript; N = sum(abs(cds_shift) > 100000) pairs truncated)
+shift_data$shift_trunc <- pmin(pmax(shift_data$shift, -100000), 100000)
+n_truncated <- sum(abs(shift_data$shift) > 100000, na.rm = TRUE)
+
+fig_decompose <- ggplot(shift_data, aes(x = group, y = shift_trunc, fill = group)) +
   geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
   facet_wrap(~boundary, scales = "free_y") +
   scale_fill_manual(values = c("NMD PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
   scale_y_continuous(labels = scales::comma) +
   labs(title = "Decomposing the 5\u2032UTR Extension: TSS vs CDS Movement",
-       subtitle = sprintf("PTC\u2212 (n=%s) vs Control (n=%s) | Both boundaries shift, but CDS dominates",
-                          fmt(nrow(ptc_neg_pairs_2c)), fmt(nrow(c4_pairs_2c))),
-       x = NULL, y = "Shift (bp)", fill = NULL) +
+       subtitle = sprintf("PTC\u2212 (n=%s) vs Control (n=%s) | Y-axis truncated at \u00b1100 kb (%d extreme values)",
+                          fmt(nrow(ptc_neg_pairs_2c)), fmt(nrow(c4_pairs_2c)), n_truncated),
+       x = NULL, y = "Shift (bp, truncated at \u00b1100 kb)", fill = NULL) +
   theme(legend.position = "none")
 save_fig(fig_decompose, "fig_sec2c_decompose_5utr", width = 10, height = 5)
 ```
@@ -3046,8 +3049,13 @@ n_atg_lost_2c <- sum(ptc_neg_ref$ref_atg_exonic_in_comp == FALSE, na.rm = TRUE)
 
 Of the `r fmt(sum(ref_cds5_2c != comp_cds5_2c, na.rm = TRUE))` pairs with a
 different CDS start, `r fmt(n_atg_avail - sum(ref_cds5_2c == comp_cds5_2c, na.rm = TRUE))`
-retain the reference ATG in shared exonic sequence. The ATG was not lost —
-the CDS prediction algorithm simply selected a different start codon.
+retain the reference ATG in shared exonic sequence. Together with the
+`r fmt(sum(ref_cds5_2c == comp_cds5_2c, na.rm = TRUE))` pairs that share the
+same CDS start (where the reference ATG is present by definition), a total of
+`r fmt(n_atg_avail)` of `r fmt(n_ptc_neg)` PTC-negative pairs
+(`r round(100 * n_atg_avail / n_ptc_neg, 1)`%) have the reference ATG
+available in the comparator. The ATG was not lost in these cases — the CDS
+prediction algorithm simply selected a different start codon.
 
 CDS annotations come from SQANTI3's TransDecoder2 (TD2) pipeline, which
 selects ORFs using PSAURON (a neural network coding potential scorer) and a
@@ -3057,9 +3065,9 @@ alternative in a different reading frame.
 
 ## Reference-ATG Tracing Reveals Hidden PTCs
 
-To test this directly, we trace the reference ATG reading frame through the
-`r fmt(n_atg_avail)` PTC-negative comparators where the reference ATG is
-available. For each, we find the first in-frame stop codon and count
+For the `r fmt(n_atg_avail)` PTC-negative pairs where the reference ATG is
+available (see above), we trace the reference reading frame through the
+comparator's transcript — finding the first in-frame stop codon and counting
 downstream EJCs.
 
 ```{r sec2c-ref-atg-density, fig.width=10, fig.height=5}
@@ -3148,15 +3156,14 @@ falls in the last exon with no downstream EJCs.
 
 If the `r fmt(nrow(eff_ptc))` reclassified pairs are truly PTC-positive
 isoforms misclassified by CDS prediction, their splicing patterns should
-resemble the original PTC+ group. We compare the splice events in these
-reclassified pairs to the `r fmt(nrow(set_results[["c4_allsamples"]]$divergence))`
-gene-matched Control (C4) pairs.
+resemble the original `r fmt(n_ptc_pos)` PTC+ pairs. We compare splice event
+proportions between these two groups.
 
 ```{r sec2c-reclass-events, fig.width=10, fig.height=6}
 # ── Data provenance ──
-# Source: profiles_list C2 (reclassified pairs) and C4 (Control)
-# Population: 1,295 reclassified effectively-PTC pairs vs Control
-# Analysis: splice event type proportions, paired dodged bars with Fisher p
+# Source: profiles_list C2 (reclassified pairs vs original PTC+ pairs)
+# Population: reclassified effectively-PTC vs original PTC+
+# Analysis: splice event type proportions, paired dodged bars
 
 eff_ptc_profiles <- profiles_list[["c2_allsamples"]] %>%
   filter(comparator_isoform_id %in% eff_ptc$comparator_isoform_id)
@@ -3167,6 +3174,17 @@ nmd_reclass_events <- do.call(rbind, lapply(seq_len(nrow(eff_ptc_profiles)), fun
   de[, c("event_type", "direction", "bp_diff")]
 }))
 
+# Original PTC+ events for comparison
+ptc_pos_profiles <- profiles_list[["c2_allsamples"]] %>%
+  filter(comparator_isoform_id %in% coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc])
+
+ptcpos_events <- do.call(rbind, lapply(seq_len(nrow(ptc_pos_profiles)), function(i) {
+  de <- ptc_pos_profiles$detailed_events[[i]]
+  if (is.null(de) || nrow(de) == 0) return(NULL)
+  de[, c("event_type", "direction", "bp_diff")]
+}))
+
+# Also get Control for three-way comparison
 ctrl_profiles_sec2c <- profiles_list[["c4_allsamples"]] %>%
   filter(reference_isoform_id %in% cds$isoform_id[cds$coding_status == "coding"],
          comparator_isoform_id %in% cds$isoform_id[cds$coding_status == "coding"])
@@ -3178,47 +3196,40 @@ ctrl_events_sec2c <- do.call(rbind, lapply(seq_len(nrow(ctrl_profiles_sec2c)), f
 }))
 
 n_nmd_events <- nrow(nmd_reclass_events)
+n_ptcpos_events <- nrow(ptcpos_events)
 n_ctrl_events <- nrow(ctrl_events_sec2c)
 
-nmd_evt_freq <- as.data.frame(table(nmd_reclass_events$event_type), stringsAsFactors = FALSE)
-names(nmd_evt_freq) <- c("event_type", "n_nmd")
-nmd_evt_freq$pct_nmd <- round(100 * nmd_evt_freq$n_nmd / n_nmd_events, 1)
+# Compute event proportions for three groups
+compute_evt_pct <- function(events, n_total, label) {
+  freq <- as.data.frame(table(events$event_type), stringsAsFactors = FALSE)
+  names(freq) <- c("event_type", "n")
+  freq$pct <- round(100 * freq$n / n_total, 1)
+  freq$group <- label
+  freq
+}
 
-ctrl_evt_freq <- as.data.frame(table(ctrl_events_sec2c$event_type), stringsAsFactors = FALSE)
-names(ctrl_evt_freq) <- c("event_type", "n_ctrl")
-ctrl_evt_freq$pct_ctrl <- round(100 * ctrl_evt_freq$n_ctrl / n_ctrl_events, 1)
+reclass_freq <- compute_evt_pct(nmd_reclass_events, n_nmd_events, "Reclassified PTC")
+ptcpos_freq <- compute_evt_pct(ptcpos_events, n_ptcpos_events, "Original PTC+")
+ctrl_freq <- compute_evt_pct(ctrl_events_sec2c, n_ctrl_events, "Control")
 
-evt_compare <- merge(nmd_evt_freq, ctrl_evt_freq, by = "event_type", all = TRUE)
-evt_compare[is.na(evt_compare)] <- 0
+# Merge all three
+all_evt <- rbind(reclass_freq, ptcpos_freq, ctrl_freq)
 
-evt_compare$fisher_p <- sapply(seq_len(nrow(evt_compare)), function(i) {
-  a <- evt_compare$n_nmd[i]; b <- n_nmd_events - a
-  c_val <- evt_compare$n_ctrl[i]; d_val <- n_ctrl_events - c_val
-  tryCatch(fisher.test(matrix(c(a, b, c_val, d_val), nrow = 2))$p.value, error = function(e) NA)
-})
+# Sort by reclassified PTC prevalence
+evt_order <- reclass_freq$event_type[order(-reclass_freq$pct)]
+all_evt$event_type <- factor(all_evt$event_type, levels = evt_order)
+all_evt$group <- factor(all_evt$group,
+  levels = c("Original PTC+", "Reclassified PTC", "Control"))
 
-evt_compare <- evt_compare[order(-evt_compare$pct_nmd), ]
-
-bar_df_reclass <- evt_compare %>%
-  select(event_type, `Reclassified PTC (NMD)` = pct_nmd, `All events (Control)` = pct_ctrl) %>%
-  pivot_longer(-event_type, names_to = "source", values_to = "pct") %>%
-  mutate(event_type = factor(event_type, levels = evt_compare$event_type))
-
-sig_df_reclass <- evt_compare %>%
-  mutate(sig_label = case_when(fisher_p < 0.001 ~ "***", fisher_p < 0.01 ~ "**",
-                                fisher_p < 0.05 ~ "*", TRUE ~ "ns"),
-         y_pos = pmax(pct_nmd, pct_ctrl) + 1.5)
-
-fig_events <- ggplot(bar_df_reclass, aes(x = event_type, y = pct, fill = source)) +
-  geom_col(position = position_dodge(width = 0.75), width = 0.7, alpha = 0.85) +
-  geom_text(data = sig_df_reclass, aes(x = event_type, y = y_pos, label = sig_label),
-            inherit.aes = FALSE, size = 4, vjust = 0) +
-  scale_fill_manual(values = c("Reclassified PTC (NMD)" = "#ef8a62",
-                                "All events (Control)" = "#67a9cf")) +
-  labs(title = "Splice Event Proportions: Reclassified PTC vs Control",
-       subtitle = sprintf("Reclassified: %s events (%s pairs) | Control: %s events (%s pairs)",
-                          fmt(n_nmd_events), fmt(nrow(eff_ptc)),
-                          fmt(n_ctrl_events), fmt(nrow(ctrl_profiles_sec2c))),
+fig_events <- ggplot(all_evt, aes(x = event_type, y = pct, fill = group)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.85) +
+  scale_fill_manual(values = c("Original PTC+" = "#fddbc7",
+                                "Reclassified PTC" = "#ef8a62",
+                                "Control" = "#67a9cf")) +
+  labs(title = "Splice Event Proportions: Reclassified PTC vs Original PTC+ vs Control",
+       subtitle = sprintf("Original PTC+: %s pairs | Reclassified: %s pairs | Control: %s pairs",
+                          fmt(nrow(ptc_pos_profiles)), fmt(nrow(eff_ptc)),
+                          fmt(nrow(ctrl_profiles_sec2c))),
        x = NULL, y = "% of events", fill = NULL) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
 save_fig(fig_events, "fig_sec2c_reclass_events", width = 10, height = 6)
@@ -3330,12 +3341,12 @@ digraph flowchart {
 
   A [label="All coding NMD pairs\\n(%s)", fillcolor="#f0f0f0"]
   B [label="PTC+ (annotated CDS)\\n%s (%.1f%%)", fillcolor="#c7e9c0"]
-  C [label="PTC\\u2212 (annotated CDS)\\n%s (%.1f%%)", fillcolor="#fee0d2"]
-  D [label="5\\u2032UTR longer (median %s bp vs %s bp)\\nCDS moved downstream in %.1f%% of pairs", fillcolor="#fef0d9"]
+  C [label="PTC- (annotated CDS)\\n%s (%.1f%%)", fillcolor="#fee0d2"]
+  D [label="5-prime UTR longer (median %s bp vs %s bp)\\nCDS moved downstream in %.1f%% of pairs", fillcolor="#fef0d9"]
   E [label="Ref ATG available\\n%s (%.1f%%)", fillcolor="#fef0d9"]
   F [label="Ref ATG lost\\n%s (%.1f%%)", fillcolor="#fdcccc"]
-  G [label="Effectively PTC\\n(ref ATG \\u2192 truncated ORF + EJCs)\\n%s (%.1f%%)", fillcolor="#c7e9c0"]
-  H [label="Remaining PTC\\u2212\\n%s (%.1f%%)", fillcolor="#fdcccc"]
+  G [label="Effectively PTC\\n(ref ATG traces to truncated ORF + EJCs)\\n%s (%.1f%%)", fillcolor="#c7e9c0"]
+  H [label="Remaining PTC-\\n%s (%.1f%%)", fillcolor="#fdcccc"]
   I [label="Total PTC-mediated\\n%s (%.1f%%)", fillcolor="#a1d99b", color="#31a354", penwidth=2]
 
   A -> B
