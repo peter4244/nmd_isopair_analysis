@@ -2839,511 +2839,391 @@ depleted in PTC-negative NMD vs Control (OR =
 `r signif(ft_utr3_neg$p.value, 3)`), consistent with 3'UTR splicing being a
 PTC-creating mechanism rather than an independent NMD trigger.
 
-# 2c. The 5'UTR Pathway: uORFs as the Non-PTC NMD Mechanism {#sec2c-start-codons}
+# 2c. Explaining PTC-Negative NMD: CDS Prediction Bias and ORF Landscape {#sec2c-ptc-neg}
 
-Section 2b accounted for PTC-positive NMD pairs through a complete mechanistic
-pipeline: splicing event → frameshift or in-frame stop → PTC → downstream
-EJCs → NMD. But `r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`% of NMD
-pairs lack a PTC. The unified model (Section 2a) identifies overlapping uORFs
-as the key 5'UTR feature distinguishing these PTC-negative pairs. Here we
-apply the same accounting framework: establish prevalence, classify mechanisms,
-trace each gained overlapping uORF to its causative splicing event, and
-illustrate with a concrete example.
+Section 2b accounted for PTC-positive NMD pairs: splicing events create premature
+stop codons with downstream EJCs. But `r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`%
+of NMD pairs lack a PTC in their annotated CDS. Here we show that most of this
+"PTC-negative" category reflects a systematic bias in computational CDS prediction,
+and that the remaining cases are explained by enrichment of NMD-competent ORFs
+in the transcript's reading frame landscape.
 
-```{r goal4b-utr5-load}
+## CDS Prediction and Its Limitations
+
+CDS annotations for our isoforms come from SQANTI3's TransDecoder2 (TD2)
+pipeline, which runs on all transcripts — both GENCODE-annotated (ENST) and
+novel isoforms. TD2 operates in two steps: `TD2.LongOrfs` identifies all ORFs
+≥90 amino acids in all three reading frames, then `TD2.Predict` filters
+candidates using PSAURON (a neural network coding potential scorer) and a
+length-based false discovery rate filter that retains ORFs significantly longer
+than expected by chance given the transcript's GC content.
+
+For GENCODE-annotated transcripts, TD2 independently arrives at the same CDS
+as GENCODE 92% of the time — validating its accuracy on normal transcripts.
+However, when a frameshift creates a premature stop codon, the truncated ORF
+is shorter than typical CDSs and may fail TD2's length-based filter or score
+lower on PSAURON. TD2 then selects a longer ORF in a different reading frame
+— one whose stop falls in the last exon with no downstream EJCs. This makes
+the isoform appear PTC-negative when the reading frame the ribosome would use
+actually terminates prematurely.
+
+`r sprintf("%.1f%%", 100 * mean(grepl("\\.novel\\d+$", coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc])))`
+of PTC-negative NMD comparators are novel isoforms whose CDS comes entirely
+from TD2 prediction — not from curated GENCODE annotation.
+
+## Reference-ATG Tracing Reveals Hidden PTCs
+
+To test whether PTC-negative isoforms harbor hidden PTCs, we trace the
+reference isoform's CDS start ATG through each comparator. The reference
+CDS is trustworthy: `r sprintf("%.1f%%", 100 * mean(grepl("^ENST", unique(coding_pairs_c2$reference_isoform_id))))`
+of references are GENCODE-annotated, and their CDS start represents the ATG
+where the ribosome initiates translation in the dominant, non-NMD isoform.
+
+```{r sec2c-ref-atg-load}
 # ── Data provenance ──
-# Source: utr5_features.rds (5'UTR features), uorf_analysis.rds (uORF counts),
-#   uorf_comparison.rds (set operations, event enrichment),
-#   uorf_event_attribution.rds (Isopair::attributeUorfsToEvents() output)
+# Source: 05r_ref_atg_analysis.R → ref_atg_analysis.rds
+# For each gene-matched coding pair: traces the reference CDS start ATG
+# through the comparator's transcript sequence, finds the first in-frame
+# stop, counts downstream EJCs.
 
-utr5_data <- readRDS(file.path(cache_dir, "utr5_features.rds"))
-utr5_feat <- utr5_data$isoform_features
-utr5_feat$group <- factor(utr5_feat$group, levels = c("PTC_neg", "PTC_pos", "Control"))
+ref_atg <- readRDS(file.path(cache_dir, "ref_atg_analysis.rds"))
+c2_ref <- ref_atg$c2
+c4_ref <- ref_atg$c4
 
-uorf_data <- readRDS(file.path(cache_dir, "uorf_analysis.rds"))
-uorf <- uorf_data$per_isoform
-uorf$group <- factor(uorf$group, levels = c("PTC_neg", "PTC_pos", "Control"))
-
-uorf_comp <- readRDS(file.path(cache_dir, "uorf_comparison.rds"))
-uorf_attr <- readRDS(file.path(cache_dir, "uorf_event_attribution.rds"))
-gs <- uorf_comp$group_summaries
-
-comp_feat <- utr5_feat |> filter(!excluded, !is.na(group))
+# Focus on originally PTC-negative pairs
+ptc_neg_ref <- c2_ref[!c2_ref$original_ptc, ]
+cat("PTC-negative pairs:", nrow(ptc_neg_ref), "\n")
 ```
 
-## 5'UTR Length: The Precondition for uORFs
+```{r sec2c-ref-atg-density, fig.width=10, fig.height=5}
+# ORF length ratio: comparator ORF (from ref ATG) / reference ORF
+atg_avail <- ptc_neg_ref[ptc_neg_ref$category == "effectively_ptc", ]
+atg_avail$orf_ratio <- atg_avail$comp_orf_length_from_ref_atg / atg_avail$ref_orf_length
 
-Longer 5'UTRs provide more sequence for uORFs. PTC-negative NMD comparators
-have longer 5'UTRs than Controls, creating the substrate for uORF-mediated
-NMD.
-
-```{r goal4b-feature-summary}
-# Summary stats for inline use
-utr5_summary <- comp_feat |>
-  group_by(group) |>
-  summarise(
-    n = n(),
-    median_utr5_bp = median(utr5_length),
-    median_n_atg = median(n_atg),
-    median_n_orfs = median(n_orfs),
-    pct_with_uorf = round(100 * mean(n_orfs > 0), 1),
-    median_n_overlap = median(n_orfs_overlapping),
-    pct_overlapping = round(100 * mean(n_orfs_overlapping > 0), 1),
-    median_longest_orf = median(longest_orf_nt),
-    .groups = "drop")
-
-uorf_summary <- uorf |>
-  group_by(group) |>
-  summarise(
-    median_utr5_bp = median(utr5_length),
-    median_n_uorfs = median(n_uorfs),
-    .groups = "drop")
-
-utr5_plot <- uorf[uorf$utr5_length > 0, ]
-utr5_plot$group_label <- factor(utr5_plot$group,
-  levels = c("PTC_neg", "PTC_pos", "Control"),
-  labels = c("NMD PTC\u2212", "NMD PTC+", "Control"))
-
-fig_utr5 <- ggplot(utr5_plot, aes(x = utr5_length, fill = group_label)) +
-  geom_density(alpha = 0.5) +
-  scale_x_log10(labels = scales::comma) +
-  scale_fill_manual(values = c("NMD PTC\u2212" = "#fddbc7", "NMD PTC+" = "#ef8a62",
-                                "Control" = "#67a9cf")) +
-  labs(title = "5'UTR Length Distribution by Group",
-       subtitle = paste0(
-         "Median: PTC\u2212 = ",
-         uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"], " bp, ",
-         "PTC+ = ",
-         uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_pos"], " bp, ",
-         "Control = ",
-         uorf_summary$median_utr5_bp[uorf_summary$group == "Control"], " bp"),
-       x = "5'UTR Length (bp, log scale)", y = "Density", fill = "")
-save_fig(fig_utr5, "fig8a_utr5_length_distribution", width = 10, height = 6)
+fig_ratio <- ggplot(atg_avail, aes(x = orf_ratio)) +
+  geom_density(fill = "#ef8a62", alpha = 0.6) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey40") +
+  geom_vline(xintercept = median(atg_avail$orf_ratio, na.rm = TRUE),
+             color = "#d62728", linewidth = 1) +
+  annotate("text", x = median(atg_avail$orf_ratio, na.rm = TRUE), y = Inf,
+           label = sprintf("median = %.2f", median(atg_avail$orf_ratio, na.rm = TRUE)),
+           vjust = 2, hjust = -0.1, color = "#d62728", size = 3.5) +
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.25)) +
+  labs(title = "ORF Truncation: Reference ATG Traced Through PTC\u2212 Comparators",
+       subtitle = sprintf("Effectively-PTC cases (n = %s) | Ratio < 1 = ORF truncated",
+                          fmt(nrow(atg_avail))),
+       x = "ORF length ratio (comparator / reference)", y = "Density")
+save_fig(fig_ratio, "fig_sec2c_ref_atg_orf_ratio", width = 10, height = 5)
 ```
 
-PTC-negative NMD comparators have longer 5'UTRs than either PTC-positive or
-Control isoforms (median
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"]` bp vs
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_pos"]` and
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "Control"]` bp). Longer
-5'UTRs provide more sequence for ATGs and in-frame stop codons, the building
-blocks of uORFs.
+When the reference ATG reading frame is traced through the PTC-negative
+comparator, the ORF is truncated in the vast majority of cases (median ratio
+`r round(median(atg_avail$orf_ratio, na.rm = TRUE), 2)`).
 
-## Which uORF Type Matters? Overlapping uORFs Are the Key Distinction
-
-Not all uORFs are equal. The unified model identifies *overlapping* uORFs —
-those whose stop codon falls at or past the main CDS start — as the most
-predictive feature. We test this directly.
-
-```{r goal4b-uorf-tests}
-# ── Data provenance ──
-# Source: uorf (from uorf_analysis.rds)
-# Fisher's exact tests: any uORF and overlapping uORF prevalence by group
-
-uorf_tests <- list()
-test_pairs <- list(
-  c("PTC_neg", "Control", "any uORF"),
-  c("PTC_pos", "Control", "any uORF"),
-  c("PTC_neg", "PTC_pos", "any uORF"),
-  c("PTC_neg", "Control", "overlapping uORF")
-)
-
-for (tp in test_pairs) {
-  sub <- uorf[uorf$group %in% tp[1:2], ]
-  sub$group <- droplevels(factor(sub$group))
-  if (tp[3] == "any uORF") {
-    has_feat <- sub$n_uorfs > 0
-  } else {
-    has_feat <- sub$n_overlapping_uorfs > 0
-  }
-  n1 <- sum(sub$group == tp[1])
-  n2 <- sum(sub$group == tp[2])
-  pct1 <- round(100 * mean(has_feat[sub$group == tp[1]]), 1)
-  pct2 <- round(100 * mean(has_feat[sub$group == tp[2]]), 1)
-  tbl <- matrix(c(
-    sum(has_feat & sub$group == tp[1]),
-    sum(!has_feat & sub$group == tp[1]),
-    sum(has_feat & sub$group == tp[2]),
-    sum(!has_feat & sub$group == tp[2])
-  ), nrow = 2, byrow = TRUE)
-  ft <- tryCatch(fisher.test(tbl), error = function(e) NULL)
-  if (!is.null(ft)) {
-    uorf_tests[[length(uorf_tests) + 1]] <- data.frame(
-      comparison = paste(tp[1], "vs", tp[2]),
-      test = tp[3],
-      n_group1 = n1, pct_group1 = pct1,
-      n_group2 = n2, pct_group2 = pct2,
-      OR = round(as.numeric(ft$estimate), 2),
-      p_value = signif(as.numeric(ft$p.value), 3),
-      stringsAsFactors = FALSE)
-  }
-}
-uorf_test_df <- do.call(rbind, uorf_tests)
-render_dt(uorf_test_df, caption = "Table 8b: uORF Enrichment Tests (Fisher's exact)")
-```
-
-Column definitions: **comparison** = group pair tested; **test** = "any uORF"
-or "overlapping uORF"; **pct_group1/pct_group2** = prevalence (%);
-**OR** = odds ratio (>1 = group1 enriched); **p_value** = Fisher's exact p.
-
-```{r goal4b-uorf-prevalence-barplot, fig.width=10, fig.height=5}
-# Prevalence barplot: any uORF and overlapping uORF side by side
-prev_data <- uorf |>
-  group_by(group) |>
-  summarise(
-    `Any uORF` = round(100 * mean(n_uorfs > 0), 1),
-    `Overlapping uORF` = round(100 * mean(n_overlapping_uorfs > 0), 1),
-    .groups = "drop") |>
-  pivot_longer(-group, names_to = "uorf_type", values_to = "pct") |>
-  mutate(group_label = factor(group,
-    levels = c("PTC_neg", "PTC_pos", "Control"),
-    labels = c("NMD PTC\u2212", "NMD PTC+", "Control")))
-
-fig_prev <- ggplot(prev_data, aes(x = group_label, y = pct, fill = uorf_type)) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6, alpha = 0.85) +
-  geom_text(aes(label = paste0(pct, "%")),
-            position = position_dodge(width = 0.7), vjust = -0.5, size = 3.5) +
-  scale_fill_manual(values = c("Any uORF" = "#67a9cf", "Overlapping uORF" = "#ef8a62")) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.15)), limits = c(0, 105)) +
-  labs(title = "uORF Prevalence by Group and Type",
-       subtitle = "Overlapping uORFs (stop at/past CDS start) are specifically enriched in PTC-negative NMD",
-       x = NULL, y = "% of isoforms", fill = NULL) +
-  theme(legend.position = "bottom")
-save_fig(fig_prev, "fig8b_uorf_prevalence", width = 10, height = 5)
-```
-
-Nearly all PTC-negative NMD comparators have at least one uORF, but the critical
-distinction is *overlapping* uORFs. PTC-positive pairs are depleted for
-overlapping uORFs — their NMD is driven by the PTC, not 5'UTR features.
-
-## How Splicing Creates Overlapping uORFs: Mechanism Attribution
-
-Section 2b traced each PTC to a causative splicing event via the Sankey
-diagram. We apply the same approach here, using `attributeUorfsToEvents()`
-to identify the splicing event responsible for each gained overlapping uORF.
-The function classifies attribution into three types:
-
-- **Containment**: the splice event boundaries encompass the uORF ATG
-  position — the ATG itself is in a gained or altered exon region, meaning it
-  is newly accessible in the comparator.
-- **Frameshift**: the uORF ATG exists in both isoforms, but a splice event
-  between the ATG and the uORF stop codon changes the exonic length by a
-  non-multiple of 3. This shifts the downstream reading frame, moving the
-  uORF's stop codon — potentially converting a short non-overlapping uORF
-  into one that extends past the CDS start (overlapping).
-- **In-frame splice**: a splice event between ATG and stop that changes
-  length by a multiple of 3, altering the uORF without shifting frame.
-
-We additionally classify whether the gained uORF's ATG matches the reference
-isoform's CDS start position — indicating the reference's productive start
-codon has become a uORF initiator due to a CDS start shift.
-
-```{r sec2c-uorf-attribution, fig.width=10, fig.height=7}
-# ── Data provenance ──
-# Source: uorf_event_attribution.rds (attributeUorfsToEvents on C2 profiles),
-#   uorf_comparison.rds → uorf_detail (gained overlapping flag),
-#   cds.rds (reference CDS start for ATG matching)
-
-# Merge attribution with gained-overlapping status
-go_detail <- uorf_comp$comparisons_c2$uorf_detail %>%
-  filter(status == "gained", comp_is_overlapping)
-
-go_attr <- uorf_attr %>%
-  filter(uorf_status == "gained") %>%
-  inner_join(go_detail %>% select(reference_isoform_id, comparator_isoform_id,
-                                   atg_genomic_pos, comp_is_overlapping),
-             by = c("reference_isoform_id", "comparator_isoform_id", "atg_genomic_pos")) %>%
-  filter(comp_is_overlapping)
-
-# Add CDS-start-match classification
-cds_pos_sec2c <- cds %>%
-  filter(coding_status == "coding") %>%
-  transmute(isoform_id,
-            cds_5prime = ifelse(strand == "+", cds_start, cds_stop))
-
-go_attr$ref_cds5 <- cds_pos_sec2c$cds_5prime[
-  match(go_attr$reference_isoform_id, cds_pos_sec2c$isoform_id)]
-go_attr$atg_is_ref_cds <- go_attr$atg_genomic_pos == go_attr$ref_cds5
-
-# Combined mechanism label
-go_attr$mechanism <- ifelse(go_attr$atg_is_ref_cds,
-  "Ref CDS start \u2192 uORF",
-  ifelse(go_attr$attribution_type == "unresolved",
-    "Unresolved",
-    paste0("New ATG (", go_attr$attribution_type, ")")))
-
-# Simplify mechanism labels
-go_attr$mechanism_simple <- case_when(
-  go_attr$atg_is_ref_cds ~ "CDS start becomes uORF",
-  go_attr$attribution_type == "containment" ~ "ATG in gained/changed exon",
-  go_attr$attribution_type == "frameshift" ~ "Frameshift alters uORF",
-  go_attr$attribution_type == "inframe_splice" ~ "In-frame splice",
-  TRUE ~ "Unresolved"
-)
-
-cat("Gained overlapping uORFs:", nrow(go_attr), "\n\n")
-cat("Mechanism attribution:\n")
-print(sort(table(go_attr$mechanism_simple), decreasing = TRUE))
-cat("\nATG = ref CDS start:", sum(go_attr$atg_is_ref_cds),
-    sprintf("(%.1f%%)\n", 100 * mean(go_attr$atg_is_ref_cds)))
-
-# ── Sankey: Splice Event → Mechanism ──
-# Filter to resolved attributions
-resolved <- go_attr %>% filter(attribution_type != "unresolved")
-
-# Build Sankey nodes and links
-sankey_data <- resolved %>%
-  count(event_type, mechanism_simple) %>%
-  filter(n > 0)
-
-# Nodes
-all_nodes <- unique(c(sankey_data$event_type, sankey_data$mechanism_simple))
-nodes <- data.frame(name = all_nodes, stringsAsFactors = FALSE)
-
-# Links
-links <- sankey_data %>%
-  transmute(
-    source = match(event_type, nodes$name) - 1L,
-    target = match(mechanism_simple, nodes$name) - 1L,
-    value = n
-  )
-
-if (requireNamespace("networkD3", quietly = TRUE)) {
-  sn <- networkD3::sankeyNetwork(
-    Links = as.data.frame(links), Nodes = nodes,
-    Source = "source", Target = "target", Value = "value",
-    NodeID = "name", fontSize = 12, nodeWidth = 20,
-    sinksRight = TRUE)
-  sn
-} else {
-  cat("networkD3 not available; showing table instead.\n")
-  print(sankey_data)
-}
-```
-
-The Sankey traces each gained overlapping uORF (with resolved attribution) from
-its causative splice event type (left) to the mechanism by which it creates
-the uORF (right). Skipped exons dominate both as a source of frameshifts within
-the uORF region and as a mechanism placing the ATG in a gained exon region.
-
-```{r sec2c-uorf-mechanism-table}
-# Summary table: mechanism × event type
-mech_summary <- go_attr %>%
-  count(mechanism_simple) %>%
+```{r sec2c-reclassification}
+# Reclassification table
+reclass_tab <- ptc_neg_ref %>%
+  count(category) %>%
   mutate(pct = round(100 * n / sum(n), 1)) %>%
   arrange(-n)
 
-render_dt(mech_summary,
-  caption = sprintf("Table 8d: Gained Overlapping uORF Mechanisms (n = %s)",
-                    fmt(nrow(go_attr))))
+render_dt(reclass_tab,
+  caption = "Table 8a: PTC-Negative Reclassification by Reference ATG Tracing")
+
+n_eff_ptc <- sum(ptc_neg_ref$category == "effectively_ptc")
+n_atg_lost <- sum(ptc_neg_ref$category == "ref_atg_lost")
+n_truly_nonptc <- nrow(ptc_neg_ref) - n_eff_ptc - n_atg_lost
 ```
 
-Column definitions: **mechanism_simple** = how the overlapping uORF was
-created; **n** = count of gained overlapping uORFs; **pct** = percentage of
-all gained overlapping uORFs.
+Column definitions: **category** = reclassification based on tracing the
+reference CDS start ATG through the comparator transcript;
+**effectively_ptc** = ORF is truncated and the stop has ≥1 downstream EJC;
+**ref_atg_lost** = reference ATG not in comparator exonic sequence;
+**no_downstream_ejc** = ORF truncated but stop has no downstream EJCs;
+**n** = pair count; **pct** = percentage of PTC-negative pairs.
 
-## Illustrative Example: CDS Start Becomes Overlapping uORF (PPRC1)
+`r fmt(n_eff_ptc)` pairs (`r round(100 * n_eff_ptc / nrow(ptc_neg_ref), 1)`%)
+are reclassified as **effectively PTC**: the reference ATG reading frame
+terminates prematurely with downstream EJCs. Combined with the original
+PTC-positive pairs, **`r round(100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2), 1)`%
+of all coding NMD pairs are PTC-mediated** when viewed from the reference ATG.
 
-The Sankey shows that
-`r round(100 * mean(go_attr$atg_is_ref_cds), 1)`% of gained overlapping uORFs
-arise when the reference's CDS start ATG falls in the comparator's 5'UTR.
-PPRC1 (PGC-1 related coactivator) illustrates this mechanism.
+```{r sec2c-td2-length, fig.width=10, fig.height=5}
+# TD2 selected a longer ORF — compare lengths
+eff_ptc <- ptc_neg_ref[ptc_neg_ref$category == "effectively_ptc", ]
+eff_ptc_cds <- cds[match(eff_ptc$comparator_isoform_id, cds$isoform_id), ]
 
-The non-NMD reference (ENST00000278070.7) initiates translation at position
-102,133,069. The NMD comparator (novel1) has a partial intron retention event
-that shortens exon 3 by 101 bp (Partial_IR_3). This alters the exon content
-upstream, shifting the CDS start downstream to 102,137,956. The reference's
-original ATG now falls in the comparator's 5'UTR, where it initiates a 351 nt
-overlapping uORF that extends 772 nt past the new CDS start.
+# SQANTI CDS orf_length is in amino acids; ref_atg orf_length is in nucleotides
+eff_ptc$td2_orf_nt <- eff_ptc_cds$orf_length * 3L
+td2_longer <- sum(eff_ptc$td2_orf_nt > eff_ptc$comp_orf_length_from_ref_atg, na.rm = TRUE)
+pct_td2_longer <- round(100 * td2_longer / nrow(eff_ptc), 1)
 
-```{r sec2c-example-pprc1, fig.width=10, fig.height=6}
-# PPRC1: + strand. Ref CDS start at 102133069, Comp CDS start at 102137956.
-pprc1_ref_s <- c(102133040, 102137850, 102138619, 102138879, 102139100, 102143045,
-                  102144250, 102145020, 102146672, 102148372, 102148628, 102148817,
-                  102149178, 102149926)
-pprc1_ref_e <- c(102133221, 102138038, 102138765, 102138980, 102142004, 102143098,
-                  102144307, 102145090, 102147392, 102148521, 102148694, 102148938,
-                  102149329, 102150333)
-pprc1_comp_s <- c(102133018, 102137850, 102138720, 102138879, 102139100, 102143045,
-                   102144250, 102145020, 102146672, 102148372, 102148628, 102148817,
-                   102149178, 102149926)
-pprc1_comp_e <- c(102133221, 102138038, 102138765, 102138980, 102142004, 102143098,
-                   102144307, 102145090, 102147392, 102148521, 102148694, 102148938,
-                   102149329, 102150333)
+length_df <- data.frame(
+  ORF = rep(c("TD2-selected CDS", "Reference ATG ORF"), each = nrow(eff_ptc)),
+  length_nt = c(eff_ptc$td2_orf_nt, eff_ptc$comp_orf_length_from_ref_atg))
 
-pprc1_events <- data.frame(
-  five_prime = c(102138619, 102133040),
-  three_prime = c(102138719, 102133018),
-  event_type = c("Partial_IR_3", "Alt_TSS"),
-  direction = c("LOSS", "GAIN"))
-
-pprc1_ref_atg <- list(type = "frameshift_boundary", track = "ref",
-  x = 102133069, label = "Ref CDS start", color = "#2ca02c")
-pprc1_comp_atg <- list(type = "frameshift_boundary", track = "comp",
-  x = 102137956, label = "Comp CDS start", color = "#2980B9")
-pprc1_uorf <- list(type = "region_shade", track = "comp",
-  xmin = 102133069, xmax = 102138728,
-  color = "#F39C12", alpha = 0.25,
-  label = "Overlapping uORF (351 nt)")
-pprc1_uorf_stop <- list(type = "ptc_marker", track = "comp",
-  x = 102138728, label = "uORF stop", color = "#F39C12")
-
-p_pprc1 <- plot_ucsc_pair(
-  pprc1_ref_s, pprc1_ref_e, pprc1_comp_s, pprc1_comp_e, strand = "+",
-  ref_cds = list(cds_start = 102133069, cds_stop = 102150029),
-  comp_cds = list(cds_start = 102137956, cds_stop = 102150029),
-  ref_label = "Non-NMD Ref (ENST00000278070.7, 1665 aa)",
-  comp_label = "NMD Comp (novel1, 1545 aa)",
-  events = pprc1_events,
-  annotations = list(pprc1_ref_atg, pprc1_comp_atg, pprc1_uorf, pprc1_uorf_stop),
-  title = "PPRC1: CDS Start in Reference \u2192 Overlapping uORF in NMD Comparator",
-  subtitle = "Orange = overlapping uORF (351 nt). uORF extends past comp CDS start (blue), overlapping the main CDS.")
-print(p_pprc1)
+fig_lengths <- ggplot(length_df, aes(x = length_nt, fill = ORF)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10(labels = scales::comma) +
+  scale_fill_manual(values = c("TD2-selected CDS" = "#67a9cf",
+                                "Reference ATG ORF" = "#ef8a62")) +
+  labs(title = "TD2 Selects a Longer ORF Than the Reference ATG Reading Frame",
+       subtitle = sprintf("Effectively-PTC cases | TD2 CDS longer in %s%% of cases",
+                          pct_td2_longer),
+       x = "ORF length (nt, log scale)", y = "Density", fill = NULL)
+save_fig(fig_lengths, "fig_sec2c_td2_vs_refatg_length", width = 10, height = 5)
 ```
 
-```{r sec2c-example-pprc1-zoom, fig.width=10, fig.height=6}
-pprc1_zoom_events <- data.frame(
-  five_prime = 102138619,
-  three_prime = 102138719,
-  event_type = "Partial_IR_3",
-  direction = "LOSS")
+In `r pct_td2_longer`% of effectively-PTC cases, the TD2-selected CDS is
+longer than the reference ATG reading frame (median
+`r fmt(median(eff_ptc$td2_orf_nt, na.rm = TRUE))` vs
+`r fmt(median(eff_ptc$comp_orf_length_from_ref_atg, na.rm = TRUE))` nt). TD2's
+length-based filtering correctly identifies the longest reading frame — but
+that reading frame is not the one the ribosome uses when it initiates at the
+same ATG as the reference isoform.
 
-p_pprc1_zoom <- plot_ucsc_pair(
-  pprc1_ref_s, pprc1_ref_e, pprc1_comp_s, pprc1_comp_e, strand = "+",
-  ref_cds = list(cds_start = 102133069, cds_stop = 102150029),
-  comp_cds = list(cds_start = 102137956, cds_stop = 102150029),
-  ref_label = "Non-NMD Ref",
-  comp_label = "NMD Comp",
-  events = pprc1_zoom_events,
-  annotations = list(
-    pprc1_ref_atg, pprc1_comp_atg, pprc1_uorf, pprc1_uorf_stop,
-    list(type = "region_shade", track = "ref",
-         xmin = 102138619, xmax = 102138719,
-         color = "#C0392B", alpha = 0.20,
-         label = "Lost 101 bp (Partial_IR_3)")),
-  xlim = c(102132500, 102139500),
-  title = "PPRC1: Zoom \u2014 Overlapping uORF (351 nt) Spans CDS Start",
-  subtitle = "Orange = uORF from ref ATG (green) to stop at 102,138,728. uORF overlaps comp CDS start (blue) by 772 nt.")
-print(p_pprc1_zoom)
+```{r sec2c-reclass-events, fig.width=10, fig.height=5}
+# Splice events causing the hidden PTC
+evt_tab <- sort(table(eff_ptc$attr_event), decreasing = TRUE)
+evt_df <- data.frame(event = names(evt_tab), n = as.integer(evt_tab),
+                      stringsAsFactors = FALSE) %>%
+  mutate(pct = round(100 * n / sum(n), 1),
+         event = factor(event, levels = event))
+
+fig_events <- ggplot(evt_df, aes(x = event, y = n)) +
+  geom_col(fill = "#ef8a62", alpha = 0.85) +
+  geom_text(aes(label = sprintf("%s\n(%.0f%%)", fmt(n), pct)),
+            vjust = -0.3, size = 3) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Splice Events in Reclassified PTC Pairs",
+       subtitle = sprintf("Originally PTC\u2212, now effectively PTC (n = %s)", fmt(nrow(eff_ptc))),
+       x = NULL, y = "Number of pairs") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+save_fig(fig_events, "fig_sec2c_reclass_events", width = 10, height = 5)
 ```
 
-The zoomed view shows the full extent of the overlapping uORF. In the reference
-(top), the ATG at 102,133,069 (green dashed) initiates productive translation
-through a 4,995 bp ORF. In the comparator (bottom), partial intron retention
-(red shading, 101 bp lost from exon 3) shifts the CDS start downstream to
-102,137,956 (blue dashed). The reference's ATG now initiates a 351 nt
-overlapping uORF (orange) that extends 772 nt past the main CDS start,
-competing with productive translation.
+## NMD Susceptibility as an ORF Landscape Property
 
-## uORF ATGs as Functional CDS Starts in Other Isoforms
+Beyond the reference ATG, PTC-negative transcripts have a broader enrichment
+of NMD-competent ORFs. Using ORFik for comprehensive ORF detection (all
+ATG → first in-frame stop pairs, minimum 9 nt), we compare the ORF landscape
+across groups.
 
-Are gained uORF ATGs random sequence features, or do they have demonstrated
-translational function? We test this by checking whether each gained uORF ATG
-serves as a CDS start in any other coding isoform of the same gene.
-
-```{r sec2c-uorf-atg-as-cds}
+```{r sec2c-orfik-load}
 # ── Data provenance ──
-# Source: uorf_comp$comparisons_c2$uorf_detail (gained uORFs),
-#   cds.rds + structures.rds (CDS starts for all coding isoforms)
-# For each gained uORF ATG in PTC-neg pairs: does the ATG position match
-# a CDS start in ANY coding isoform of the same gene?
+# Source: 05s_orfik_scan.R → orfik_scan.rds
+# ORFik findORFs on all 61,669 classified coding isoforms
+# Per-ORF features: Kozak score, downstream EJC count, position
 
-# Build gene → CDS start lookup
-cds_starts_by_gene <- cds %>%
-  filter(coding_status == "coding") %>%
-  inner_join(structures %>% select(isoform_id, gene_id), by = "isoform_id") %>%
-  transmute(gene_id, isoform_id,
-            cds_5prime = ifelse(strand == "+", cds_start, cds_stop))
+orfik_data <- readRDS(file.path(cache_dir, "orfik_scan.rds"))
+orf_feat <- orfik_data$orf_features
+orf_tx_sum <- orfik_data$tx_summary
 
-gene_cds_lookup <- cds_starts_by_gene %>%
-  group_by(gene_id) %>%
-  summarise(cds_starts = list(unique(cds_5prime)), .groups = "drop")
-gene_cds_map <- setNames(gene_cds_lookup$cds_starts, gene_cds_lookup$gene_id)
-
-# All gained uORFs in PTC-neg comparators
-ptc_neg_comps_sec2c <- coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc]
-gained_all_ptcneg <- uorf_comp$comparisons_c2$uorf_detail %>%
-  filter(status == "gained",
-         comparator_isoform_id %in% ptc_neg_comps_sec2c)
-
-gained_all_ptcneg$atg_is_gene_cds <- mapply(function(gid, atg) {
-  starts <- gene_cds_map[[gid]]
-  if (is.null(starts)) return(FALSE)
-  atg %in% starts
-}, gained_all_ptcneg$gene_id, gained_all_ptcneg$atg_genomic_pos)
-
-# uORF-level
-n_gained_total <- nrow(gained_all_ptcneg)
-n_atg_is_cds <- sum(gained_all_ptcneg$atg_is_gene_cds)
-pct_atg_is_cds <- round(100 * n_atg_is_cds / n_gained_total, 1)
-
-cat("uORF-level (all gained uORFs in PTC-neg pairs):\n")
-cat("  Total gained uORFs:", fmt(n_gained_total), "\n")
-cat("  ATG = CDS start in same-gene isoform:", fmt(n_atg_is_cds),
-    sprintf("(%.1f%%)\n", pct_atg_is_cds))
-
-# By overlapping status
-ov_g <- gained_all_ptcneg[gained_all_ptcneg$comp_is_overlapping, ]
-nov_g <- gained_all_ptcneg[!gained_all_ptcneg$comp_is_overlapping, ]
-cat("\n  Overlapping uORFs:", fmt(nrow(ov_g)),
-    "— ATG = gene CDS:", fmt(sum(ov_g$atg_is_gene_cds)),
-    sprintf("(%.1f%%)\n", 100*mean(ov_g$atg_is_gene_cds)))
-cat("  Non-overlapping uORFs:", fmt(nrow(nov_g)),
-    "— ATG = gene CDS:", fmt(sum(nov_g$atg_is_gene_cds)),
-    sprintf("(%.1f%%)\n", 100*mean(nov_g$atg_is_gene_cds)))
-
-# Pair-level
-pair_cds_check <- gained_all_ptcneg %>%
-  group_by(comparator_isoform_id) %>%
-  summarise(any_atg_is_cds = any(atg_is_gene_cds), .groups = "drop")
-
-n_pairs_with_gained <- nrow(pair_cds_check)
-n_pairs_with_cds_atg <- sum(pair_cds_check$any_atg_is_cds)
-pct_pairs_with_cds_atg <- round(100 * n_pairs_with_cds_atg / n_pairs_with_gained, 1)
-
-cat("\nPair-level (PTC-neg with gained uORFs):\n")
-cat("  Pairs:", fmt(n_pairs_with_gained), "\n")
-cat("  \u22651 gained uORF ATG = CDS in same-gene isoform:",
-    fmt(n_pairs_with_cds_atg), sprintf("(%.1f%%)\n", pct_pairs_with_cds_atg))
+# Group assignments
+ptc_neg_comp_ids <- coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc]
+ptc_pos_comp_ids <- coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc]
+ctrl_comp_ids <- unique(profiles_list[["c4_allsamples"]]$comparator_isoform_id)
+ctrl_comp_ids <- ctrl_comp_ids[ctrl_comp_ids %in% orf_tx_sum$isoform_id]
 ```
 
-At the individual uORF level, `r pct_atg_is_cds`% of gained uORF ATGs match a
-CDS start in another isoform of the same gene. Overlapping uORFs are enriched
-for this (`r round(100*mean(ov_g$atg_is_gene_cds), 1)`% vs
-`r round(100*mean(nov_g$atg_is_gene_cds), 1)`% for non-overlapping). At the
-pair level, `r pct_pairs_with_cds_atg`% of PTC-negative pairs with gained
-uORFs have at least one uORF whose ATG is a functional CDS start elsewhere in
-the gene.
+```{r sec2c-orf-landscape, fig.width=10, fig.height=6}
+# NMD-competent ORFs by Kozak strength
+count_by_kozak <- function(iso_ids) {
+  sub <- orf_feat[orf_feat$isoform_id %in% iso_ids, ]
+  sub %>%
+    group_by(isoform_id) %>%
+    summarise(
+      n_k2_ejc = sum(kozak_score == 2 & has_downstream_ejc),
+      n_k1plus_ejc = sum(kozak_score >= 1 & has_downstream_ejc),
+      n_any_ejc = sum(has_downstream_ejc),
+      .groups = "drop")
+}
 
-This has implications for translational efficiency. An ATG that serves as a CDS
-start in another isoform is, by definition, competent for ribosomal initiation
-— it has demonstrated translational function in a different exon context. A
-single mRNA molecule undergoes potentially many rounds of ribosomal scanning.
-Each encounter presents an opportunity for each uORF to capture the ribosome.
-An NMD-triggering uORF only needs to be selected once for NMD to occur:
-translation of the uORF terminates at its stop codon, and if exon-exon
-junctions from the main CDS remain downstream, the transcript is degraded.
-The high pair-level rate (`r pct_pairs_with_cds_atg`%) is therefore
-biologically relevant — it reflects the probability that the transcript
-contains at least one uORF with proven initiation competence.
+ptcn_kozak <- count_by_kozak(ptc_neg_comp_ids) %>% mutate(group = "NMD PTC\u2212")
+ctrl_kozak <- count_by_kozak(ctrl_comp_ids) %>% mutate(group = "Control")
 
-## Conclusion: The 5'UTR Pathway to NMD
+kozak_all <- rbind(ptcn_kozak, ctrl_kozak) %>%
+  pivot_longer(cols = c(n_k2_ejc, n_k1plus_ejc, n_any_ejc),
+               names_to = "metric", values_to = "count") %>%
+  mutate(metric = factor(metric,
+    levels = c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc"),
+    labels = c("Strong Kozak\n(score = 2)", "Moderate+ Kozak\n(score \u2265 1)",
+               "Any ORF")))
 
-PTC-negative NMD comparators have longer 5'UTRs with more uORFs. The mechanism
-attribution traces gained overlapping uORFs to specific splicing events, with
-containment (the event introduces the ATG) providing the cleanest causal link
-and frameshifts (the event alters where the uORF terminates) as a secondary
-mechanism. `r round(100 * mean(go_attr$atg_is_ref_cds), 1)`% of gained
-overlapping uORF ATGs match the paired reference's CDS start, and
-`r pct_atg_is_cds`% match a CDS start in any same-gene isoform — indicating
-these are not random ATGs but functional translation initiation sites
-repurposed by exon path variation.
+fig_kozak <- ggplot(kozak_all, aes(x = group, y = count, fill = group)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  facet_wrap(~metric, scales = "free_y") +
+  scale_fill_manual(values = c("NMD PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
+  labs(title = "NMD-Competent ORFs by Kozak Strength",
+       subtitle = "ORFs with \u22651 downstream EJC, stratified by start codon Kozak context",
+       x = NULL, y = "Count per transcript") +
+  theme(legend.position = "none")
+save_fig(fig_kozak, "fig_sec2c_orf_landscape", width = 10, height = 6)
 
-**Limitations:** uORF detection is sequence-based and does not confirm
-translation. The frameshift attribution identifies events that alter the
-uORF reading frame but does not prove they introduced the uORF ATG itself —
-the ATG may have been made accessible by a separate upstream event. Other
-non-PTC NMD mechanisms cannot be ruled out from structural data alone.
+# Statistics
+for (var in c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc")) {
+  wt <- wilcox.test(ptcn_kozak[[var]], ctrl_kozak[[var]])
+  cat(sprintf("  %s: PTC- median %g vs Control %g (p = %g)\n",
+      var, median(ptcn_kozak[[var]]), median(ctrl_kozak[[var]]), wt$p.value))
+}
+```
+
+Column definitions: **Strong Kozak** = A/G at -3 AND G at +4 relative to ATG;
+**Moderate+** = A/G at -3 OR G at +4; **NMD-competent** = ORF stop has ≥1
+downstream exon-exon junction.
+
+PTC-negative NMD transcripts have more NMD-competent ORFs at every Kozak
+strength level. Under a model where ribosomal scanning samples ATGs
+proportional to their initiation context strength, having more strong-Kozak
+ORFs with downstream EJCs increases the per-round probability of
+NMD-triggering translation.
+
+## Gene-Level NMD Susceptibility
+
+If NMD susceptibility depends on the ORF landscape, it should be partly a
+gene-level property — determined by the gene's exon structure, which is
+shared across isoforms. We test this by comparing the logFC (SMG1i vs DMSO)
+of **non-NMD isoforms** from NMD-harboring genes vs genes with no NMD
+isoforms.
+
+```{r sec2c-gene-continuum, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: mashr DE files from /Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/
+# For each gene: average logFC of non-NMD isoforms, classified by whether the
+# gene harbors any NMD-sensitive isoform.
+
+de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
+de_files <- list.files(de_dir, pattern = "csv$", full.names = TRUE)
+
+# Mean logFC across cell types per isoform
+logfc_per_ct <- lapply(de_files, function(f) {
+  d <- read.csv(f, stringsAsFactors = FALSE)
+  data.frame(isoform_id = d$txid, logFC = d$logFC, stringsAsFactors = FALSE)
+})
+logfc_combined <- do.call(rbind, logfc_per_ct)
+mean_logfc <- logfc_combined %>%
+  group_by(isoform_id) %>%
+  summarise(mean_logFC = mean(logFC, na.rm = TRUE), .groups = "drop")
+
+# Gene classification
+nmd_ids_all <- nmd_class$all_samples$nmd
+non_nmd_ids_all <- nmd_class$all_samples$non_nmd
+gene_map <- structures[, c("isoform_id", "gene_id")]
+nmd_genes_all <- unique(gene_map$gene_id[gene_map$isoform_id %in% nmd_ids_all])
+
+# Non-NMD isoform logFC by gene NMD status
+non_nmd_logfc <- mean_logfc %>%
+  filter(isoform_id %in% non_nmd_ids_all) %>%
+  inner_join(gene_map, by = "isoform_id") %>%
+  mutate(gene_has_nmd = gene_id %in% nmd_genes_all,
+         gene_type = ifelse(gene_has_nmd, "NMD-harboring gene", "Non-NMD gene"))
+
+# Per-gene average
+gene_logfc <- non_nmd_logfc %>%
+  group_by(gene_id, gene_type) %>%
+  summarise(mean_nonnmd_logfc = mean(mean_logFC, na.rm = TRUE), .groups = "drop")
+
+wt_gene <- wilcox.test(gene_logfc$mean_nonnmd_logfc[gene_logfc$gene_type == "NMD-harboring gene"],
+                        gene_logfc$mean_nonnmd_logfc[gene_logfc$gene_type == "Non-NMD gene"])
+
+fig_continuum <- ggplot(gene_logfc, aes(x = gene_type, y = mean_nonnmd_logfc, fill = gene_type)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_fill_manual(values = c("NMD-harboring gene" = "#ef8a62", "Non-NMD gene" = "#67a9cf")) +
+  annotate("text", x = 1.5, y = max(gene_logfc$mean_nonnmd_logfc, na.rm = TRUE) * 0.8,
+           label = sprintf("p = %s", signif(wt_gene$p.value, 3)), size = 4) +
+  labs(title = "Non-NMD Isoform logFC by Gene NMD Status",
+       subtitle = "Even non-NMD isoforms from NMD-harboring genes show subtle upregulation under SMG1i",
+       x = NULL, y = "Mean logFC (SMG1i vs DMSO)") +
+  theme(legend.position = "none")
+save_fig(fig_continuum, "fig_sec2c_gene_continuum", width = 10, height = 5)
+
+cat("NMD-harboring genes:", sum(gene_logfc$gene_type == "NMD-harboring gene"), "\n")
+cat("Non-NMD genes:", sum(gene_logfc$gene_type == "Non-NMD gene"), "\n")
+```
+
+Non-NMD isoforms from NMD-harboring genes have a small but highly significant
+positive shift in logFC compared to non-NMD isoforms from genes without any NMD
+isoforms (p = `r signif(wt_gene$p.value, 3)`). This suggests these isoforms
+undergo subclinical NMD — the ribosome occasionally samples an NMD-triggering
+ORF even in the dominant isoform.
+
+```{r sec2c-junction-basis}
+# Structural basis: NMD-harboring genes have more exon-exon junctions
+# Compare the dominant non-NMD isoform between gene types
+expr_mat_local <- readRDS("data_mashr/expression_data.rds")
+sample_meta_local <- readRDS("data_mashr/sample_metadata.rds")
+dmso_cols <- sample_meta_local$sample_id[sample_meta_local$treatment == "DMSO"]
+dmso_cpm <- sweep(expr_mat_local[, dmso_cols], 2, colSums(expr_mat_local[, dmso_cols]), "/") * 1e6
+mean_cpm <- rowMeans(dmso_cpm)
+
+# Dominant non-NMD isoform per gene
+dom_iso <- data.frame(isoform_id = names(mean_cpm), mean_cpm = as.numeric(mean_cpm),
+                       stringsAsFactors = FALSE) %>%
+  filter(isoform_id %in% non_nmd_ids_all,
+         isoform_id %in% cds$isoform_id[cds$coding_status == "coding"]) %>%
+  inner_join(gene_map, by = "isoform_id") %>%
+  group_by(gene_id) %>%
+  slice_max(mean_cpm, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+# ORF landscape for dominant isoforms
+dom_features <- orf_tx_sum[match(dom_iso$isoform_id, orf_tx_sum$isoform_id), ]
+dom_features$gene_type <- ifelse(dom_iso$gene_id %in% nmd_genes_all,
+                                  "NMD-harboring", "Non-NMD")
+
+dom_summary <- dom_features %>%
+  filter(!is.na(gene_type)) %>%
+  group_by(gene_type) %>%
+  summarise(
+    n = n(),
+    median_orfs = median(n_orfs),
+    median_nmd_comp = median(n_nmd_competent),
+    median_junctions = median(n_junctions),
+    median_strong_kozak_nmd = median(n_strong_kozak_nmd_comp),
+    frac_nmd_comp = round(100 * median(n_nmd_competent / pmax(n_orfs, 1)), 1),
+    .groups = "drop")
+
+render_dt(dom_summary,
+  caption = "Table 8b: Dominant Isoform ORF Landscape by Gene NMD Status")
+```
+
+Column definitions: **median_orfs** = median ORFs per transcript;
+**median_nmd_comp** = median ORFs with ≥1 downstream EJC;
+**median_junctions** = median exon-exon junctions;
+**frac_nmd_comp** = median fraction of ORFs that are NMD-competent.
+
+NMD-harboring genes have substantially more exon-exon junctions in their
+dominant isoform (median `r dom_summary$median_junctions[dom_summary$gene_type == "NMD-harboring"]`
+vs `r dom_summary$median_junctions[dom_summary$gene_type == "Non-NMD"]`),
+causing a higher fraction of their ORFs to be NMD-competent
+(`r dom_summary$frac_nmd_comp[dom_summary$gene_type == "NMD-harboring"]`% vs
+`r dom_summary$frac_nmd_comp[dom_summary$gene_type == "Non-NMD"]`%).
+Total ORF count and Kozak quality are similar — the difference is structural,
+determined by exon-intron architecture.
+
+## What Remains to Explain
+
+```{r sec2c-remaining}
+cat("Reclassification summary:\n")
+cat("  Original PTC+:", fmt(n_ptc_pos), "\n")
+cat("  Reclassified effectively PTC:", fmt(n_eff_ptc), "\n")
+cat("  Total PTC-mediated:", fmt(n_ptc_pos + n_eff_ptc),
+    sprintf("(%.1f%%)\n", 100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2)))
+cat("  Reference ATG lost:", fmt(n_atg_lost),
+    sprintf("(%.1f%% of PTC-)\n", 100 * n_atg_lost / nrow(ptc_neg_ref)))
+cat("  Truly non-PTC:", fmt(n_truly_nonptc),
+    sprintf("(%.1f%% of PTC-)\n", 100 * n_truly_nonptc / nrow(ptc_neg_ref)))
+```
+
+Of the remaining PTC-negative pairs, `r fmt(n_atg_lost)` lost the reference
+ATG from their exonic sequence — alternative TSS or first-exon differences
+force the ribosome to use a different ATG entirely. `r fmt(n_truly_nonptc)`
+pairs (`r round(100 * n_truly_nonptc / nrow(coding_pairs_c2), 1)`% of all NMD
+pairs) remain truly non-PTC even from the reference ATG perspective. For these,
+the enrichment of strong-Kozak NMD-competent ORFs in the broader ORF landscape
+(Section 2c.3) provides the most likely explanation for their NMD sensitivity.
+
 
 # 2d. NMD Response is Continuous {#sec2d-continuous}
 
@@ -3446,21 +3326,15 @@ response magnitude).
 
 # 3. Reading Frame Selection — Same ATGs, Different Fates {#sec3-shared-atgs}
 
-Sections 2b and 2c identified two structural features that predict NMD:
-premature termination codons (from exon path changes that shift reading frame
-or introduce in-frame stops) and overlapping uORFs (from exon path changes
-that remodel the 5'UTR). The unified model treats these as independent
-predictors. But are they independent phenomena, or two consequences of the
-same underlying process — exon path selection determining which reading frame
-a given ATG initiates?
-
-To answer this, we examine all gene-matched C2 (NMD) and C4 (Control) pairs
-at the level of their CDS start positions.
+Section 2b identified PTCs as the primary NMD mechanism, and Section 2c showed
+that most "PTC-negative" cases are actually hidden PTCs — a consequence of CDS
+prediction bias. The remaining PTC-negative cases have enriched NMD-competent
+ORF landscapes. Here we examine the structural basis: how do CDS start
+positions and reading frames differ between NMD and non-NMD isoforms?
 
 **Data source:** Gene-matched C2 and C4 profiles, CDS positions (cds.rds),
-PTC status (ptc.rds), uORF comparison data (uorf_comparison.rds). All
-analyses use the full structures/cds objects (not Section 1's NMD-excluded
-subset).
+PTC status (ptc.rds), ref-ATG analysis (ref_atg_analysis.rds). All analyses
+use the full structures/cds objects (not Section 1's NMD-excluded subset).
 
 ## Do NMD and Non-NMD Isoforms Share CDS Starts?
 
@@ -3621,13 +3495,11 @@ Same-start NMD pairs should cluster below 1.0 (truncated ORFs from frameshifts
 and in-frame stops), while same-start Control pairs should center near 1.0
 (normal length variation).
 
-The CDS-start-as-uORF mechanism quantified in Section 2c
-(`r round(100 * mean(go_attr$atg_is_ref_cds), 1)`% of gained overlapping
-uORFs) is the 5'UTR counterpart of the PTC mechanism in Section 2b. In both
-cases, the same genomic ATG appears in different structural contexts — as a
-productive CDS start in the non-NMD isoform and as either a PTC-producing
-start (Section 2b, POLR3D) or a uORF initiator (Section 2c, PPRC1) in the
-NMD isoform.
+Section 2c showed that `r round(100 * n_eff_ptc / nrow(ptc_neg_ref), 1)`%
+of PTC-negative pairs are effectively PTC when traced from the reference ATG.
+The same genomic ATG produces a productive ORF in the reference but a
+truncated ORF with downstream EJCs in the NMD comparator — a consequence
+of frameshift-causing splice events downstream.
 
 ## Synthesis
 
@@ -3647,19 +3519,19 @@ via frameshifts and in-frame stops — the mechanisms characterized in Section 2
 
 For the `r 100 - pct_same_start_nmd`% of NMD pairs with different CDS starts,
 the exon path difference is upstream: a different TSS or alternative first exon
-shifts the 5' end. As shown in Section 2c, the reference's functional CDS start
-frequently appears as a gained overlapping uORF in the NMD comparator.
+shifts the 5' end.
 
 ## Combined NMD Mechanism Accounting
 
-The figure below unifies the pair-level accounting from Sections 2b and 2c
-into a single view. Every coding NMD pair is classified first by PTC status,
-then by the mechanism through which splicing produces the NMD trigger.
+The figure below unifies the pair-level accounting from Sections 2b and 2c.
+Every coding NMD pair is classified first by PTC status (from the annotated
+CDS), then PTC-negative pairs are reclassified using the reference-ATG tracing
+from Section 2c.
 
 ```{r sec3-combined-accounting, fig.width=10, fig.height=8}
 # ── Data provenance ──
 # Source: coding_pairs_c2 (from goal1-ptc-rates-subsetting), ptc status from
-#   set_results, frame walk (fw_c2_allsamples.rds), uorf_comparison.rds
+#   set_results, frame walk (fw_c2_allsamples.rds), ref_atg_analysis.rds
 # All numbers computed at the pair level for clean accounting.
 
 # PTC+ mechanism classification (pair-level)
@@ -3693,63 +3565,43 @@ n_frameshift <- sum(diff_stop_pairs$has_frameshift)
 n_inframe_stop <- sum(!diff_stop_pairs$has_frameshift)
 n_3utr_splice <- sum(ptc_pos_pairs$same_stop)
 
-# PTC- mechanism classification (pair-level)
-ptc_neg_pairs <- coding_pairs_c2[!coding_pairs_c2$comp_has_ptc, ]
-
-# All gained uORFs (any type)
-gained_any <- uorf_comp$comparisons_c2$uorf_detail %>%
-  filter(status == "gained")
-gained_overlap_comps <- unique(gained_any$comparator_isoform_id[gained_any$comp_is_overlapping])
-gained_nonoverlap_comps <- unique(gained_any$comparator_isoform_id[!gained_any$comp_is_overlapping])
-gained_any_comps <- unique(gained_any$comparator_isoform_id)
-
-ptc_neg_pairs$has_gained_any <- ptc_neg_pairs$comparator_isoform_id %in% gained_any_comps
-ptc_neg_pairs$has_gained_overlap <- ptc_neg_pairs$comparator_isoform_id %in% gained_overlap_comps
-ptc_neg_pairs$has_gained_nonoverlap_only <- ptc_neg_pairs$has_gained_any & !ptc_neg_pairs$has_gained_overlap
-
-n_ptc_neg_with_uorf <- sum(ptc_neg_pairs$has_gained_any)
-n_ptc_neg_with_overlap <- sum(ptc_neg_pairs$has_gained_overlap)
-n_ptc_neg_nonoverlap_only <- sum(ptc_neg_pairs$has_gained_nonoverlap_only)
-n_ptc_neg_no_uorf <- sum(!ptc_neg_pairs$has_gained_any)
-
+# PTC- mechanism classification: ref-ATG-based (from Section 2c)
 n_total <- nrow(coding_pairs_c2)
-n_ptc_pos <- nrow(ptc_pos_pairs)
-n_ptc_neg <- nrow(ptc_neg_pairs)
+n_ptc_pos_sankey <- nrow(ptc_pos_pairs)
+n_ptc_neg_sankey <- nrow(ptc_neg_ref)
 
 cat("Combined accounting (pair-level):\n")
 cat("  Total coding pairs:", fmt(n_total), "\n")
-cat("  PTC+:", fmt(n_ptc_pos), "\n")
+cat("  PTC+:", fmt(n_ptc_pos_sankey), "\n")
 cat("    Frameshift:", fmt(n_frameshift), "\n")
 cat("    In-frame stop:", fmt(n_inframe_stop), "\n")
 cat("    3'UTR splice:", fmt(n_3utr_splice), "\n")
-cat("  PTC-:", fmt(n_ptc_neg), "\n")
-cat("    Gained uORF (any):", fmt(n_ptc_neg_with_uorf), "\n")
-cat("      incl. overlapping:", fmt(n_ptc_neg_with_overlap), "\n")
-cat("      non-overlapping only:", fmt(n_ptc_neg_nonoverlap_only), "\n")
-cat("    No gained uORF:", fmt(n_ptc_neg_no_uorf), "\n")
+cat("  PTC-:", fmt(n_ptc_neg_sankey), "\n")
+cat("    Effectively PTC (ref ATG trace):", fmt(n_eff_ptc), "\n")
+cat("    Ref ATG lost:", fmt(n_atg_lost), "\n")
+cat("    Truly non-PTC:", fmt(n_truly_nonptc), "\n")
 cat("  Check sum:", fmt(n_frameshift + n_inframe_stop + n_3utr_splice +
-    n_ptc_neg_with_overlap + n_ptc_neg_nonoverlap_only + n_ptc_neg_no_uorf), "\n")
+    n_eff_ptc + n_atg_lost + n_truly_nonptc), "\n")
 
 # ── Sankey diagram ──
 nodes <- data.frame(name = c(
   sprintf("All coding NMD pairs\n(%s)", fmt(n_total)),                     # 0
-  sprintf("PTC+ (%s)", fmt(n_ptc_pos)),                                    # 1
-  sprintf("PTC\u2212 (%s)", fmt(n_ptc_neg)),                               # 2
+  sprintf("PTC+ (%s)", fmt(n_ptc_pos_sankey)),                             # 1
+  sprintf("PTC\u2212 (%s)", fmt(n_ptc_neg_sankey)),                        # 2
   sprintf("Frameshift\n(%s)", fmt(n_frameshift)),                          # 3
   sprintf("In-frame stop\n(%s)", fmt(n_inframe_stop)),                     # 4
   sprintf("3\u2032UTR splice\n(%s)", fmt(n_3utr_splice)),                  # 5
-  sprintf("Gained uORF\n(%s)", fmt(n_ptc_neg_with_uorf)),                 # 6
-  sprintf("No gained uORF\n(%s)", fmt(n_ptc_neg_no_uorf)),                # 7
-  sprintf("Incl. overlapping\n(%s)", fmt(n_ptc_neg_with_overlap)),        # 8
-  sprintf("Non-overlapping only\n(%s)", fmt(n_ptc_neg_nonoverlap_only))   # 9
+  sprintf("Effectively PTC\n(ref ATG trace, %s)", fmt(n_eff_ptc)),        # 6
+  sprintf("Ref ATG lost\n(%s)", fmt(n_atg_lost)),                          # 7
+  sprintf("Truly non-PTC\n(%s)", fmt(n_truly_nonptc))                      # 8
 ), stringsAsFactors = FALSE)
 
 links <- data.frame(
-  source = c(0, 0, 1, 1, 1, 2, 2, 6, 6),
-  target = c(1, 2, 3, 4, 5, 6, 7, 8, 9),
-  value = c(n_ptc_pos, n_ptc_neg, n_frameshift, n_inframe_stop, n_3utr_splice,
-            n_ptc_neg_with_uorf, n_ptc_neg_no_uorf,
-            n_ptc_neg_with_overlap, n_ptc_neg_nonoverlap_only)
+  source = c(0, 0, 1, 1, 1, 2, 2, 2),
+  target = c(1, 2, 3, 4, 5, 6, 7, 8),
+  value = c(n_ptc_pos_sankey, n_ptc_neg_sankey,
+            n_frameshift, n_inframe_stop, n_3utr_splice,
+            n_eff_ptc, n_atg_lost, n_truly_nonptc)
 )
 
 if (requireNamespace("networkD3", quietly = TRUE)) {
@@ -3765,23 +3617,20 @@ if (requireNamespace("networkD3", quietly = TRUE)) {
 ```
 
 Every coding NMD pair is accounted for. The PTC pathway (Section 2b)
-explains `r round(100 * n_ptc_pos / n_total, 1)`% of pairs — primarily
-through frameshifts from skipped exons. The uORF pathway (Section 2c)
-covers `r round(100 * n_ptc_neg_with_uorf / n_total, 1)`% of pairs:
-`r round(100 * n_ptc_neg_with_overlap / n_total, 1)`% gain overlapping
-uORFs (the unified model's strongest 5'UTR predictor), and an additional
-`r round(100 * n_ptc_neg_nonoverlap_only / n_total, 1)`% gain only
-non-overlapping uORFs. Just `r round(100 * n_ptc_neg_no_uorf / n_total, 1)`%
-of pairs have no PTC and no gained uORFs — the residual fraction not
-explained by the structural features in this analysis.
+explains `r round(100 * n_ptc_pos_sankey / n_total, 1)`% of pairs — primarily
+through frameshifts from skipped exons. Among PTC-negative pairs, Section 2c
+showed that `r round(100 * n_eff_ptc / n_total, 1)`% are effectively PTC when
+traced from the reference ATG — hidden by CDS prediction bias.
+`r round(100 * n_atg_lost / n_total, 1)`% lost the reference ATG entirely, and
+`r round(100 * n_truly_nonptc / n_total, 1)`% remain truly non-PTC.
 
-Both patterns trace to the same underlying process. Alternative splicing
-determines the exon path. The exon path determines the reading frame — which
-ATG initiates translation, where the stop codon falls, and whether EJCs remain
-downstream. NMD degrades transcripts where the selected reading frame terminates
-prematurely. The two feature classes in the unified model (stop codon position
-and 5'UTR ORFs) are not independent biological mechanisms but two structural
-consequences of exon path variation.
+The dominant mechanism across both PTC-positive and reclassified PTC-negative
+pairs is the same: **frameshift-causing exon skips that create premature stop
+codons with downstream EJCs.** The PTC+/PTC- distinction largely reflects
+which ORF the CDS prediction algorithm selects, not distinct biological
+mechanisms. NMD susceptibility is further modulated by the gene's ORF
+landscape — genes with more exon-exon junctions have a higher baseline
+fraction of NMD-competent ORFs, making all their isoforms more susceptible.
 
 # 4. Protein-Level Consequences of Normal Alternative Splicing {#sec4-protein}
 
