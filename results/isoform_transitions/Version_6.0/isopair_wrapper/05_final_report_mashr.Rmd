@@ -3368,133 +3368,44 @@ entirely (Alt_TSS or first-exon differences force a different start codon),
 and `r fmt(n_truly_nonptc)` have the reference ATG but its reading frame does
 not produce a PTC with downstream EJCs.
 
-For these remaining pairs, we examine the broader ORF landscape using ORFik
-comprehensive ORF detection.
+These remaining cases cannot be explained by a single dominant PTC. In
+Section 2d, we develop a broader framework — ORF competition and gene
+architecture — that explains both why these isoforms trigger NMD and why
+NMD response is continuous rather than binary.
 
-```{r sec2c-orfik-load}
+# 2d. ORF Competition and Gene Architecture {#sec2d-orf-competition}
+
+The accounting in Section 2c explained individual NMD isoforms through PTC
+identification. Here we investigate a complementary question: why is NMD a
+continuous phenomenon rather than a binary switch? We propose that
+translation is stochastic — each ribosomal scanning event samples an ATG
+proportional to its initiation context strength. If the selected ORF
+terminates upstream of exon-exon junctions, the transcript is degraded. The
+probability of NMD per translation round depends on two factors: (1) the
+number and attractiveness of ATGs leading to NMD-competent ORFs, and (2) the
+gene's exon-exon junction architecture, which determines what fraction of
+ORF stops are upstream of junctions.
+
+## Junction Architecture as the Structural Basis
+
+What distinguishes NMD-harboring genes from non-NMD genes at the structural
+level? We compare the dominant non-NMD isoform (highest DMSO expression)
+between these two gene classes using ORFik comprehensive ORF detection.
+
+```{r sec2d-junction-basis}
 # ── Data provenance ──
-# Source: 05s_orfik_scan.R → orfik_scan.rds
-# ORFik findORFs on all classified coding isoforms
-# Per-ORF: Kozak score, downstream EJC count, position
+# Source: orfik_scan.rds (per-isoform ORF summaries), expression_data.rds
+# Population: dominant non-NMD isoform per gene, NMD-harboring vs non-NMD genes
 
 orfik_data <- readRDS(file.path(cache_dir, "orfik_scan.rds"))
 orf_feat <- orfik_data$orf_features
 orf_tx_sum <- orfik_data$tx_summary
-
-# Remaining PTC- = exclude reclassified (effectively_ptc) and ref_atg_lost
-remaining_ptcneg <- ptc_neg_ref[!ptc_neg_ref$category %in% c("effectively_ptc", "ref_atg_lost"), ]
-remaining_comp_ids <- remaining_ptcneg$comparator_isoform_id
-
-# Also keep all PTC- for comparison
-all_ptc_neg_comp_ids <- coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc]
-
-ctrl_comp_ids <- unique(profiles_list[["c4_allsamples"]]$comparator_isoform_id)
-ctrl_comp_ids <- ctrl_comp_ids[ctrl_comp_ids %in% orf_tx_sum$isoform_id]
-
-cat("Remaining PTC- pairs (after reclassification):", nrow(remaining_ptcneg), "\n")
-```
-
-```{r sec2c-orf-landscape, fig.width=10, fig.height=6}
-# NMD-competent ORFs by Kozak strength: PTC- comparators vs Control
-count_by_kozak <- function(iso_ids) {
-  sub <- orf_feat[orf_feat$isoform_id %in% iso_ids, ]
-  sub %>%
-    group_by(isoform_id) %>%
-    summarise(n_k2_ejc = sum(kozak_score == 2 & has_downstream_ejc),
-              n_k1plus_ejc = sum(kozak_score >= 1 & has_downstream_ejc),
-              n_any_ejc = sum(has_downstream_ejc), .groups = "drop")
-}
-
-ptcn_kozak <- count_by_kozak(remaining_comp_ids) %>% mutate(group = "Remaining PTC\u2212")
-ctrl_kozak <- count_by_kozak(ctrl_comp_ids) %>% mutate(group = "Control")
-
-kozak_all <- rbind(ptcn_kozak, ctrl_kozak) %>%
-  pivot_longer(cols = c(n_k2_ejc, n_k1plus_ejc, n_any_ejc),
-               names_to = "metric", values_to = "count") %>%
-  mutate(metric = factor(metric,
-    levels = c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc"),
-    labels = c("Strong Kozak\n(score = 2)", "Moderate+ Kozak\n(score \u2265 1)", "Any ORF")))
-
-fig_kozak <- ggplot(kozak_all, aes(x = group, y = count, fill = group)) +
-  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
-  facet_wrap(~metric, scales = "free_y") +
-  scale_fill_manual(values = c("Remaining PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
-  labs(title = "NMD-Competent ORFs by Kozak Strength: Remaining PTC\u2212 vs Control",
-       subtitle = sprintf("Remaining PTC\u2212 (n=%s, after reclassification) vs Control (n=%s)",
-                          fmt(nrow(ptcn_kozak)), fmt(nrow(ctrl_kozak))),
-       x = NULL, y = "Count per transcript") +
-  theme(legend.position = "none")
-save_fig(fig_kozak, "fig_sec2c_orf_landscape", width = 10, height = 6)
-
-for (var in c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc")) {
-  wt <- wilcox.test(ptcn_kozak[[var]], ctrl_kozak[[var]])
-  cat(sprintf("  %s: PTC- median %g vs Control %g (p = %g)\n",
-      var, median(ptcn_kozak[[var]]), median(ctrl_kozak[[var]]), wt$p.value))
-}
-```
-
-PTC-negative NMD comparators have more NMD-competent ORFs at every Kozak
-strength level — more opportunities for the ribosome to initiate translation
-at an ORF whose stop has downstream EJCs.
-
-## Gene-Level NMD Susceptibility
-
-Finally, we ask whether NMD susceptibility extends beyond individual isoforms
-to the gene level. We compare the logFC (SMG1i vs DMSO) of **non-NMD
-isoforms** from genes that harbor at least one NMD isoform versus genes with
-no NMD isoforms at all.
-
-```{r sec2c-gene-continuum, fig.width=10, fig.height=5}
-# ── Data provenance ──
-# Source: mashr DE files (logFC per isoform per cell type)
-# Population: non-NMD isoforms, grouped by gene NMD status
-
-de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
-de_files <- list.files(de_dir, pattern = "csv$", full.names = TRUE)
-
-logfc_per_ct <- lapply(de_files, function(f) {
-  d <- read.csv(f, stringsAsFactors = FALSE)
-  data.frame(isoform_id = d$txid, logFC = d$logFC, stringsAsFactors = FALSE)
-})
-logfc_combined <- do.call(rbind, logfc_per_ct)
-mean_logfc <- logfc_combined %>%
-  group_by(isoform_id) %>%
-  summarise(mean_logFC = mean(logFC, na.rm = TRUE), .groups = "drop")
 
 nmd_ids_all <- nmd_class$all_samples$nmd
 non_nmd_ids_all <- nmd_class$all_samples$non_nmd
 gene_map <- structures[, c("isoform_id", "gene_id")]
 nmd_genes_all <- unique(gene_map$gene_id[gene_map$isoform_id %in% nmd_ids_all])
 
-non_nmd_logfc <- mean_logfc %>%
-  filter(isoform_id %in% non_nmd_ids_all) %>%
-  inner_join(gene_map, by = "isoform_id") %>%
-  mutate(gene_type = ifelse(gene_id %in% nmd_genes_all, "NMD-harboring gene", "Non-NMD gene"))
-
-gene_logfc <- non_nmd_logfc %>%
-  group_by(gene_id, gene_type) %>%
-  summarise(mean_nonnmd_logfc = mean(mean_logFC, na.rm = TRUE), .groups = "drop")
-
-wt_gene <- wilcox.test(gene_logfc$mean_nonnmd_logfc[gene_logfc$gene_type == "NMD-harboring gene"],
-                        gene_logfc$mean_nonnmd_logfc[gene_logfc$gene_type == "Non-NMD gene"])
-
-fig_continuum <- ggplot(gene_logfc, aes(x = gene_type, y = mean_nonnmd_logfc, fill = gene_type)) +
-  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  scale_fill_manual(values = c("NMD-harboring gene" = "#ef8a62", "Non-NMD gene" = "#67a9cf")) +
-  annotate("text", x = 1.5, y = max(gene_logfc$mean_nonnmd_logfc, na.rm = TRUE) * 0.8,
-           label = sprintf("p = %s", signif(wt_gene$p.value, 3)), size = 4) +
-  labs(title = "Non-NMD Isoform logFC by Gene NMD Status",
-       subtitle = sprintf("NMD-harboring: %s genes | Non-NMD: %s genes",
-                          fmt(sum(gene_logfc$gene_type == "NMD-harboring gene")),
-                          fmt(sum(gene_logfc$gene_type == "Non-NMD gene"))),
-       x = NULL, y = "Mean logFC (SMG1i vs DMSO)") +
-  theme(legend.position = "none")
-save_fig(fig_continuum, "fig_sec2c_gene_continuum", width = 10, height = 5)
-```
-
-```{r sec2c-junction-basis}
-# Structural basis: dominant isoform ORF landscape by gene type
 expr_mat_local <- readRDS("data_mashr/expression_data.rds")
 sample_meta_local <- readRDS("data_mashr/sample_metadata.rds")
 dmso_cols <- sample_meta_local$sample_id[sample_meta_local$treatment == "DMSO"]
@@ -3523,37 +3434,141 @@ dom_summary <- dom_features %>%
             .groups = "drop")
 
 render_dt(dom_summary,
-  caption = "Table 8b: Dominant Isoform ORF Landscape by Gene NMD Status")
+  caption = "Table 9a: Dominant Isoform ORF Landscape by Gene NMD Status")
 ```
 
 Column definitions: **median_orfs** = median ORFs per transcript;
-**median_nmd_comp** = median ORFs with ≥1 downstream EJC;
+**median_nmd_comp** = median ORFs with >=1 downstream EJC;
 **median_junctions** = median exon-exon junctions;
 **frac_nmd_comp** = median fraction of ORFs that are NMD-competent.
 
+NMD-harboring genes have substantially more exon-exon junctions in their
+dominant isoform (median `r dom_summary$median_junctions[dom_summary$gene_type == "NMD-harboring"]`
+vs `r dom_summary$median_junctions[dom_summary$gene_type == "Non-NMD"]`),
+causing a higher fraction of their ORFs to be NMD-competent
+(`r dom_summary$frac_nmd_comp[dom_summary$gene_type == "NMD-harboring"]`% vs
+`r dom_summary$frac_nmd_comp[dom_summary$gene_type == "Non-NMD"]`%).
+Total ORF count and ORF length are similar — the difference is junction
+architecture, not ORF content.
+
+## NMD-Competent ORFs Across the Transcript Landscape
+
+The junction architecture determines what fraction of ORFs are NMD-competent.
+We compare the ORF landscape of all `r fmt(nrow(coding_pairs_c2))` NMD
+comparators versus gene-matched Control, stratified by Kozak start codon
+context strength (an index of ATG initiation competence).
+
+```{r sec2d-orf-landscape, fig.width=10, fig.height=6}
+# ── Data provenance ──
+# Source: orfik_scan.rds
+# Population: ALL NMD comparators vs Control
+
+all_nmd_comp_ids <- coding_pairs_c2$comparator_isoform_id
+ctrl_comp_ids <- unique(profiles_list[["c4_allsamples"]]$comparator_isoform_id)
+ctrl_comp_ids <- ctrl_comp_ids[ctrl_comp_ids %in% orf_tx_sum$isoform_id]
+
+count_by_kozak <- function(iso_ids) {
+  sub <- orf_feat[orf_feat$isoform_id %in% iso_ids, ]
+  sub %>%
+    group_by(isoform_id) %>%
+    summarise(n_k2_ejc = sum(kozak_score == 2 & has_downstream_ejc),
+              n_k1plus_ejc = sum(kozak_score >= 1 & has_downstream_ejc),
+              n_any_ejc = sum(has_downstream_ejc), .groups = "drop")
+}
+
+nmd_kozak <- count_by_kozak(all_nmd_comp_ids) %>% mutate(group = "NMD (all)")
+ctrl_kozak <- count_by_kozak(ctrl_comp_ids) %>% mutate(group = "Control")
+
+kozak_all <- rbind(nmd_kozak, ctrl_kozak) %>%
+  pivot_longer(cols = c(n_k2_ejc, n_k1plus_ejc, n_any_ejc),
+               names_to = "metric", values_to = "count") %>%
+  mutate(metric = factor(metric,
+    levels = c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc"),
+    labels = c("Strong Kozak\n(score = 2)", "Moderate+ Kozak\n(score \u2265 1)", "Any ORF")))
+
+fig_kozak <- ggplot(kozak_all, aes(x = group, y = count, fill = group)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  facet_wrap(~metric, scales = "free_y") +
+  scale_fill_manual(values = c("NMD (all)" = "#ef8a62", "Control" = "#67a9cf")) +
+  labs(title = "NMD-Competent ORFs by Kozak Strength: All NMD vs Control",
+       subtitle = sprintf("NMD comparators (n=%s) vs Control (n=%s) | ORFs with \u22651 downstream EJC",
+                          fmt(nrow(nmd_kozak)), fmt(nrow(ctrl_kozak))),
+       x = NULL, y = "Count per transcript") +
+  theme(legend.position = "none")
+save_fig(fig_kozak, "fig_sec2d_orf_landscape", width = 10, height = 6)
+
+for (var in c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc")) {
+  wt <- wilcox.test(nmd_kozak[[var]], ctrl_kozak[[var]])
+  cat(sprintf("  %s: NMD median %g vs Control %g (p = %g)\n",
+      var, median(nmd_kozak[[var]]), median(ctrl_kozak[[var]]), wt$p.value))
+}
+```
+
+NMD comparators have more NMD-competent ORFs at every Kozak strength level.
+Under a stochastic initiation model, each ribosomal scanning event has a
+higher probability of selecting an NMD-triggering ORF in these transcripts.
+
+## Subclinical NMD: Evidence for Stochastic ORF Selection
+
+If the ribosome stochastically samples ORFs proportional to their initiation
+context, even non-NMD isoforms from junction-rich genes should undergo some
+NMD — the occasional round of translation selects an NMD-competent ORF. We
+test this by comparing the logFC (SMG1i vs DMSO) of non-NMD isoforms from
+NMD-harboring genes versus non-NMD genes.
+
+```{r sec2d-gene-continuum, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: mashr DE files (logFC per isoform per cell type)
+# Population: non-NMD isoforms, grouped by gene NMD status
+
+de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
+de_files <- list.files(de_dir, pattern = "csv$", full.names = TRUE)
+
+logfc_per_ct <- lapply(de_files, function(f) {
+  d <- read.csv(f, stringsAsFactors = FALSE)
+  data.frame(isoform_id = d$txid, logFC = d$logFC, stringsAsFactors = FALSE)
+})
+logfc_combined <- do.call(rbind, logfc_per_ct)
+mean_logfc <- logfc_combined %>%
+  group_by(isoform_id) %>%
+  summarise(mean_logFC = mean(logFC, na.rm = TRUE), .groups = "drop")
+
+non_nmd_logfc <- mean_logfc %>%
+  filter(isoform_id %in% non_nmd_ids_all) %>%
+  inner_join(gene_map, by = "isoform_id") %>%
+  mutate(gene_type = ifelse(gene_id %in% nmd_genes_all, "NMD-harboring gene", "Non-NMD gene"))
+
+gene_logfc <- non_nmd_logfc %>%
+  group_by(gene_id, gene_type) %>%
+  summarise(mean_nonnmd_logfc = mean(mean_logFC, na.rm = TRUE), .groups = "drop")
+
+wt_gene <- wilcox.test(gene_logfc$mean_nonnmd_logfc[gene_logfc$gene_type == "NMD-harboring gene"],
+                        gene_logfc$mean_nonnmd_logfc[gene_logfc$gene_type == "Non-NMD gene"])
+
+fig_continuum <- ggplot(gene_logfc, aes(x = gene_type, y = mean_nonnmd_logfc, fill = gene_type)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_fill_manual(values = c("NMD-harboring gene" = "#ef8a62", "Non-NMD gene" = "#67a9cf")) +
+  annotate("text", x = 1.5, y = max(gene_logfc$mean_nonnmd_logfc, na.rm = TRUE) * 0.8,
+           label = sprintf("p = %s", signif(wt_gene$p.value, 3)), size = 4) +
+  labs(title = "Non-NMD Isoform logFC by Gene NMD Status",
+       subtitle = sprintf("NMD-harboring: %s genes | Non-NMD: %s genes",
+                          fmt(sum(gene_logfc$gene_type == "NMD-harboring gene")),
+                          fmt(sum(gene_logfc$gene_type == "Non-NMD gene"))),
+       x = NULL, y = "Mean logFC (SMG1i vs DMSO)") +
+  theme(legend.position = "none")
+save_fig(fig_continuum, "fig_sec2d_gene_continuum", width = 10, height = 5)
+```
+
 Non-NMD isoforms from NMD-harboring genes show a small but highly significant
 positive shift in logFC (p = `r signif(wt_gene$p.value, 3)`), consistent with
-subclinical NMD. The structural basis: NMD-harboring genes have more exon-exon
-junctions (median `r dom_summary$median_junctions[dom_summary$gene_type == "NMD-harboring"]`
-vs `r dom_summary$median_junctions[dom_summary$gene_type == "Non-NMD"]`),
-causing a higher fraction of their ORFs to terminate upstream of junctions.
-NMD susceptibility is partly a gene-level property of the exon-intron
-architecture.
+subclinical NMD. The structural basis — more junctions leading to a higher
+fraction of NMD-competent ORFs — creates a baseline NMD susceptibility that
+affects all isoforms of the gene. NMD-specific splicing events (Section 2c)
+amplify this baseline into full NMD, but the susceptibility is a gene-level
+property of the exon-intron architecture.
 
-
-# 2d. NMD Response is Continuous {#sec2d-continuous}
-
-Both stop codon and start codon features predict NMD response *magnitude*,
-not just binary status. Using raw limma logFC values (independent per-cell-type
-estimates, appropriate for mixed-effects modeling), we show that the unified
-model's predicted probability correlates with NMD response strength.
-
-**Data source:** Raw limma logFC values from per-cell-type DE files
-(6 cell types: AT, DD, DD_ALI, DO, FB, MV). Predicted probabilities from
-the unified model (Section 2a).
-
-**Statistical approach:** Spearman correlation on isoform-level mean logFC
-(averaged across cell types) for interpretability.
+## NMD Response Magnitude Correlates with Predicted Probability
 
 ```{r sec2d-load-limma}
 # ── Data provenance ──
@@ -3639,6 +3654,7 @@ predicted probability correlates with actual NMD response magnitude
 holds for both PTC-positive isoforms (where stop codon position determines
 response strength) and PTC-negative isoforms (where 5'UTR features predict
 response magnitude).
+
 
 # 3. Combined NMD Mechanism Accounting {#sec3-accounting}
 
