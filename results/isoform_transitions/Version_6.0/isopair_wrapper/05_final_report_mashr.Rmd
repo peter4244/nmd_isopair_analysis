@@ -3264,49 +3264,35 @@ ptc_lkp <- ptc_assoc_sec2c$pair_summary[, c("comparator_isoform_id", "comp_has_p
 nmd_profiles <- merge(profiles_list[["c2_allsamples"]], ptc_lkp, by = "comparator_isoform_id", all.x = TRUE)
 nmd_profiles$comp_has_ptc[is.na(nmd_profiles$comp_has_ptc)] <- FALSE
 
-fs_ptcneg <- compute_fs_by_type(nmd_profiles[!nmd_profiles$comp_has_ptc, ], "NMD PTC\u2212")
+# Three groups: Original PTC+, Reclassified PTC (from PTC-), Control
+# Use the reclassified pairs specifically (not all PTC-)
+reclass_profiles <- nmd_profiles[nmd_profiles$comparator_isoform_id %in% eff_ptc$comparator_isoform_id, ]
+
+fs_ptcpos <- compute_fs_by_type(nmd_profiles[nmd_profiles$comp_has_ptc, ], "Original PTC+")
+fs_reclass <- compute_fs_by_type(reclass_profiles, "Reclassified PTC")
 fs_ctrl <- compute_fs_by_type(profiles_list[["c4_allsamples"]], "Control")
 
-fs_both <- rbind(fs_ptcneg, fs_ctrl) %>% filter(n_events >= 20)
+fs_all <- rbind(fs_ptcpos, fs_reclass, fs_ctrl) %>% filter(n_events >= 20)
 
-fs_bar <- fs_both %>%
+# Sort by reclassified PTC frameshift rate
+evt_order_fs <- fs_all$event_type[fs_all$group == "Reclassified PTC"][
+  order(-fs_all$pct_frameshift[fs_all$group == "Reclassified PTC"])]
+
+fs_bar <- fs_all %>%
   select(event_type, group, pct_frameshift) %>%
-  pivot_wider(names_from = group, values_from = pct_frameshift, values_fill = 0) %>%
-  pivot_longer(-event_type, names_to = "group", values_to = "pct") %>%
-  mutate(event_type = factor(event_type,
-    levels = fs_both$event_type[fs_both$group == "NMD PTC\u2212"][
-      order(-fs_both$pct_frameshift[fs_both$group == "NMD PTC\u2212"])]))
+  mutate(event_type = factor(event_type, levels = evt_order_fs),
+         group = factor(group, levels = c("Original PTC+", "Reclassified PTC", "Control")))
 
-fs_wide <- fs_both %>%
-  select(event_type, group, n_events, n_frameshift) %>%
-  pivot_wider(names_from = group, values_from = c(n_events, n_frameshift))
-
-fs_wide$fisher_p <- sapply(seq_len(nrow(fs_wide)), function(i) {
-  a <- fs_wide[[paste0("n_frameshift_NMD PTC\u2212")]][i]
-  b <- fs_wide[[paste0("n_events_NMD PTC\u2212")]][i] - a
-  c_val <- fs_wide[["n_frameshift_Control"]][i]
-  d_val <- fs_wide[["n_events_Control"]][i] - c_val
-  if (any(is.na(c(a, b, c_val, d_val)))) return(NA)
-  tryCatch(fisher.test(matrix(c(a, b, c_val, d_val), nrow = 2))$p.value, error = function(e) NA)
-})
-
-sig_fs <- data.frame(
-  event_type = fs_wide$event_type,
-  sig_label = case_when(fs_wide$fisher_p < 0.001 ~ "***", fs_wide$fisher_p < 0.01 ~ "**",
-                         fs_wide$fisher_p < 0.05 ~ "*", TRUE ~ "ns"),
-  y_pos = pmax(
-    fs_both$pct_frameshift[fs_both$group == "NMD PTC\u2212"][match(fs_wide$event_type, fs_both$event_type[fs_both$group == "NMD PTC\u2212"])],
-    fs_both$pct_frameshift[fs_both$group == "Control"][match(fs_wide$event_type, fs_both$event_type[fs_both$group == "Control"])],
-    na.rm = TRUE) + 3)
-
-fig_fs <- ggplot(fs_bar, aes(x = event_type, y = pct, fill = group)) +
-  geom_col(position = position_dodge(width = 0.75), width = 0.7, alpha = 0.85) +
-  geom_text(data = sig_fs, aes(x = event_type, y = y_pos, label = sig_label),
-            inherit.aes = FALSE, size = 4, vjust = 0) +
-  scale_fill_manual(values = c("NMD PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
-  labs(title = "Frameshift Rate by Splice Event Type: NMD PTC\u2212 vs Control",
-       subtitle = sprintf("All %s PTC\u2212 pairs vs %s Control pairs | %% of events causing frameshift",
-                          fmt(n_ptc_neg), fmt(nrow(ctrl_profiles_sec2c))),
+fig_fs <- ggplot(fs_bar, aes(x = event_type, y = pct_frameshift, fill = group)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.85) +
+  scale_fill_manual(values = c("Original PTC+" = "#fddbc7",
+                                "Reclassified PTC" = "#ef8a62",
+                                "Control" = "#67a9cf")) +
+  labs(title = "Frameshift Rate by Splice Event Type",
+       subtitle = sprintf("Original PTC+ (%s) vs Reclassified PTC (%s) vs Control (%s) | %% causing frameshift",
+                          fmt(sum(nmd_profiles$comp_has_ptc)),
+                          fmt(nrow(eff_ptc)),
+                          fmt(nrow(ctrl_profiles_sec2c))),
        x = NULL, y = "% frameshift", fill = NULL) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
 save_fig(fig_fs, "fig_sec2c_frameshift_rate", width = 10, height = 6)
@@ -3342,28 +3328,24 @@ digraph flowchart {
   A [label="All coding NMD pairs\\n(%s)", fillcolor="#f0f0f0"]
   B [label="PTC+ (annotated CDS)\\n%s (%.1f%%)", fillcolor="#c7e9c0"]
   C [label="PTC- (annotated CDS)\\n%s (%.1f%%)", fillcolor="#fee0d2"]
-  D [label="5-prime UTR longer (median %s bp vs %s bp)\\nCDS moved downstream in %.1f%% of pairs", fillcolor="#fef0d9"]
-  E [label="Ref ATG available\\n%s (%.1f%%)", fillcolor="#fef0d9"]
-  F [label="Ref ATG lost\\n%s (%.1f%%)", fillcolor="#fdcccc"]
-  G [label="Effectively PTC\\n(ref ATG traces to truncated ORF + EJCs)\\n%s (%.1f%%)", fillcolor="#c7e9c0"]
-  H [label="Remaining PTC-\\n%s (%.1f%%)", fillcolor="#fdcccc"]
-  I [label="Total PTC-mediated\\n%s (%.1f%%)", fillcolor="#a1d99b", color="#31a354", penwidth=2]
+  D [label="Ref ATG available\\n%s (%.1f%% of PTC-)", fillcolor="#fef0d9"]
+  E [label="Ref ATG lost\\n%s (%.1f%% of PTC-)", fillcolor="#fdcccc"]
+  F [label="Effectively PTC\\n(ref ATG traces to truncated ORF + EJCs)\\n%s (%.1f%% of PTC-)", fillcolor="#c7e9c0"]
+  G [label="Remaining PTC-\\n%s (%.1f%% of PTC-)", fillcolor="#fdcccc"]
+  H [label="Total PTC-mediated\\n%s (%.1f%% of all NMD)", fillcolor="#a1d99b", color="#31a354", penwidth=2]
 
   A -> B
   A -> C
-  C -> D [label="Investigate"]
-  D -> E
-  D -> F
-  E -> G [label="Trace ref ATG"]
-  E -> H
-  B -> I [style=dashed]
-  G -> I [style=dashed]
+  C -> D
+  C -> E
+  D -> F [label="Trace ref ATG"]
+  D -> G
+  B -> H [style=dashed]
+  F -> H [style=dashed]
 }',
   fmt(nrow(coding_pairs_c2)),
   fmt(n_ptc_pos), 100 * n_ptc_pos / nrow(coding_pairs_c2),
   fmt(n_ptc_neg), 100 * n_ptc_neg / nrow(coding_pairs_c2),
-  fmt(median(div_ptcneg$utr5_bp_comp)), fmt(median(div_ptcneg$utr5_bp_ref)),
-  100 * mean(ref_cds5_2c != comp_cds5_2c, na.rm = TRUE),
   fmt(n_atg_avail), 100 * n_atg_avail / n_ptc_neg,
   fmt(n_atg_lost), 100 * n_atg_lost / n_ptc_neg,
   fmt(n_eff_ptc), 100 * n_eff_ptc / n_ptc_neg,
