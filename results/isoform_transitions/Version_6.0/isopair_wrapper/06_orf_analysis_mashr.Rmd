@@ -1,0 +1,438 @@
+---
+title: "ORF-Centric NMD Analysis"
+subtitle: "Reference-Anchored PTC Reclassification and CDS-Agnostic ORF Landscape"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+    fig_width: 8
+    fig_height: 5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 8, fig.height = 5)
+library(Isopair)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(DT)
+library(patchwork)
+source("visualization_functions.R")
+
+render_dt <- function(df, caption = NULL, pageLength = 15, ...) {
+  datatable(df, caption = caption, rownames = FALSE,
+            options = list(pageLength = pageLength, scrollX = TRUE), ...)
+}
+
+theme_pub <- theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold", size = 13),
+        plot.subtitle = element_text(size = 10, color = "grey40"),
+        legend.position = "bottom",
+        panel.grid.minor = element_blank())
+theme_set(theme_pub)
+
+fmt <- function(x) format(x, big.mark = ",")
+
+save_fig <- function(p, name, width = 8, height = 5) {
+  fig_dir <- "figures_mashr"
+  if (!dir.exists(fig_dir)) dir.create(fig_dir)
+  ggsave(file.path(fig_dir, paste0(name, ".pdf")), p, width = width, height = height)
+  ggsave(file.path(fig_dir, paste0(name, ".png")), p, width = width, height = height, dpi = 150)
+  p
+}
+```
+
+# Overview
+
+This report examines NMD from an ORF-centric perspective. The key finding:
+**most isoforms classified as "PTC-negative" by computational CDS prediction
+actually produce premature stop codons with downstream EJCs when the reading
+frame is traced from the reference isoform's CDS start ATG.** The PTC+/PTC-
+distinction is largely an artifact of CDS prediction on the NMD comparator.
+
+**ORF definition used throughout:** An ORF is defined as an ATG codon followed
+by the first in-frame stop codon (TAA, TAG, or TGA), scanning downstream in
+the same reading frame. Minimum length: 9 nucleotides (3 codons).
+
+# 0. Data Loading
+
+```{r load-data}
+# ── Data provenance ──
+# Primary data: gene-matched C2 (NMD) and C4 (Control) pairs from mashr pipeline
+# Infrastructure: cds.rds, structures.rds (from Isopair pipeline)
+# Precomputed: ref_atg_analysis.rds (from 05r_ref_atg_analysis.R)
+#              orf_landscape.rds (from 05m_orf_landscape.R)
+
+cds <- readRDS("data_mashr/cds.rds")
+structures <- readRDS("data_mashr/structures.rds")
+nmd_class <- readRDS("data_mashr/nmd_classification.rds")
+
+ref_atg <- readRDS("data_mashr/analysis_cache/ref_atg_analysis.rds")
+orf_landscape <- readRDS("data_mashr/analysis_cache/orf_landscape.rds")
+
+c2 <- ref_atg$c2
+c4 <- ref_atg$c4
+
+cat("NMD (C2) pairs:", nrow(c2), "\n")
+cat("Control (C4) pairs:", nrow(c4), "\n")
+
+# Gene symbol lookup
+de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
+gene_symbol_lookup <- character(0)
+for (f in list.files(de_dir, pattern = "csv$", full.names = TRUE)) {
+  d <- read.csv(f, stringsAsFactors = FALSE)[, c("gene_id", "hgnc_symbol")]
+  d <- d[!duplicated(d$gene_id) & !is.na(d$hgnc_symbol) & d$hgnc_symbol != "", ]
+  new <- setdiff(d$gene_id, names(gene_symbol_lookup))
+  gene_symbol_lookup[d$gene_id[d$gene_id %in% new]] <- d$hgnc_symbol[d$gene_id %in% new]
+}
+get_gene_sym <- function(gid) {
+  sym <- gene_symbol_lookup[gid]
+  if (is.na(sym) || sym == "") gid else sym
+}
+```
+
+# 1. Reference-Anchored PTC Analysis
+
+## 1a. Three Groups
+
+The reference isoform in each pair is the dominant non-NMD isoform — often
+GENCODE-annotated with a curated CDS. We trust its CDS start ATG as the
+position where the ribosome initiates translation. For each NMD comparator,
+we ask: is this ATG still accessible?
+
+```{r groups}
+# Group assignment
+c2$group <- ifelse(c2$ref_atg_exonic_in_comp, "Ref ATG available", "Ref ATG lost")
+
+group_tab <- c2 %>%
+  count(group) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
+
+render_dt(group_tab, caption = "NMD Pair Groups by Reference ATG Availability")
+```
+
+Column definitions: **group** = whether the reference's CDS start ATG is
+exonic in the comparator; **n** = pair count; **pct** = percentage.
+
+`r group_tab$n[group_tab$group == "Ref ATG available"]` pairs
+(`r group_tab$pct[group_tab$group == "Ref ATG available"]`%) retain the
+reference ATG in their exonic sequence. The ribosome can still initiate at
+the same position. `r group_tab$n[group_tab$group == "Ref ATG lost"]` pairs
+(`r group_tab$pct[group_tab$group == "Ref ATG lost"]`%) have lost the
+reference ATG — the exon containing it is absent from the comparator.
+
+## 1b. Tracing the Reference ATG
+
+For the `r group_tab$n[group_tab$group == "Ref ATG available"]` pairs where
+the reference ATG is available, we trace the reading frame from that ATG
+through the comparator's transcript sequence and compare to the reference.
+
+```{r orf-tracing, fig.width=10, fig.height=5}
+# ORF length comparison: ref ATG traced through ref vs comp
+atg_avail <- c2[c2$group == "Ref ATG available" &
+                  !is.na(c2$ref_orf_length) & !is.na(c2$comp_orf_length_from_ref_atg), ]
+
+cat("Pairs with valid ORF tracing:", nrow(atg_avail), "\n")
+cat("Ref ORF length: median", median(atg_avail$ref_orf_length), "nt\n")
+cat("Comp ORF (from ref ATG): median", median(atg_avail$comp_orf_length_from_ref_atg), "nt\n")
+cat("Comp ORF shorter:", sum(atg_avail$comp_orf_length_from_ref_atg < atg_avail$ref_orf_length),
+    sprintf("(%.1f%%)\n", 100 * mean(atg_avail$comp_orf_length_from_ref_atg < atg_avail$ref_orf_length)))
+
+# Density plot of ORF length ratio
+atg_avail$orf_ratio <- atg_avail$comp_orf_length_from_ref_atg / atg_avail$ref_orf_length
+
+fig_ratio <- ggplot(atg_avail, aes(x = orf_ratio)) +
+  geom_density(fill = "#ef8a62", alpha = 0.6) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey40") +
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.25)) +
+  labs(title = "ORF Length Ratio: Comparator / Reference (from Reference ATG)",
+       subtitle = sprintf("n = %s pairs | Ratio < 1 = ORF truncated in comparator",
+                          fmt(nrow(atg_avail))),
+       x = "ORF length ratio (comparator / reference)", y = "Density")
+save_fig(fig_ratio, "fig_orf_ratio_ref_atg", width = 10, height = 5)
+```
+
+## 1c. Reclassification
+
+```{r reclassification}
+# Reclassification table
+reclass <- c2 %>%
+  mutate(original_class = ifelse(original_ptc, "Originally PTC+", "Originally PTC\u2212")) %>%
+  count(original_class, category) %>%
+  arrange(original_class, -n) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
+
+render_dt(reclass, caption = "Reclassification: Original PTC Status vs Reference-ATG-Traced Category")
+
+# Key numbers
+orig_ptc_pos <- sum(c2$original_ptc)
+orig_ptc_neg <- sum(!c2$original_ptc)
+reclass_eff_ptc <- sum(c2$category == "effectively_ptc" & !c2$original_ptc, na.rm = TRUE)
+total_eff_ptc <- orig_ptc_pos + reclass_eff_ptc
+
+cat("\nOriginal PTC+:", orig_ptc_pos, "\n")
+cat("Originally PTC-, reclassified as effectively PTC:", reclass_eff_ptc,
+    sprintf("(%.1f%% of PTC-)\n", 100 * reclass_eff_ptc / orig_ptc_neg))
+cat("Total PTC-mediated:", total_eff_ptc, "of", nrow(c2),
+    sprintf("(%.1f%%)\n", 100 * total_eff_ptc / nrow(c2)))
+```
+
+Column definitions: **original_class** = PTC status from SQANTI CDS annotation;
+**category** = reclassification based on tracing the reference ATG through the
+comparator; **n** = pair count; **pct** = percentage of all pairs.
+
+`r sprintf("%.1f%%", 100 * reclass_eff_ptc / orig_ptc_neg)` of originally
+PTC-negative pairs are reclassified as effectively PTC when the reading frame
+is traced from the reference's CDS start. Combined with the original PTC+
+pairs, **`r sprintf("%.1f%%", 100 * total_eff_ptc / nrow(c2))`% of all NMD
+pairs are PTC-mediated** when viewed from the reference ATG.
+
+## 1d. Splice Events in Reclassified Pairs
+
+```{r reclassified-events, fig.width=10, fig.height=5}
+reclass_pairs <- c2[c2$category == "effectively_ptc" & !c2$original_ptc, ]
+
+cat("Reclassified effectively-PTC pairs:", nrow(reclass_pairs), "\n\n")
+cat("Attributed splice events:\n")
+evt_tab <- sort(table(reclass_pairs$attr_event), decreasing = TRUE)
+for (nm in names(evt_tab)) {
+  cat(sprintf("  %s: %d (%.1f%%)\n", nm, evt_tab[nm], 100 * evt_tab[nm] / nrow(reclass_pairs)))
+}
+
+# Bar chart
+evt_df <- data.frame(
+  event = names(evt_tab),
+  n = as.integer(evt_tab),
+  stringsAsFactors = FALSE) %>%
+  mutate(pct = round(100 * n / sum(n), 1),
+         event = factor(event, levels = event))
+
+fig_events <- ggplot(evt_df, aes(x = event, y = n, fill = event)) +
+  geom_col(alpha = 0.85) +
+  geom_text(aes(label = sprintf("%d\n(%.0f%%)", n, pct)), vjust = -0.3, size = 3) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Splice Events in Reclassified PTC Pairs",
+       subtitle = sprintf("Originally PTC\u2212, reclassified as effectively PTC (n = %s)",
+                          fmt(nrow(reclass_pairs))),
+       x = NULL, y = "Number of pairs") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+save_fig(fig_events, "fig_reclass_splice_events", width = 10, height = 5)
+```
+
+# 2. CDS-Agnostic ORF Landscape
+
+Having shown that PTC status depends on which ATG we trace from, we now
+drop CDS annotations entirely and compare ORF landscapes across the three
+groups using only the transcript sequence and exon structure.
+
+## 2a. ORF Counts by Group
+
+```{r orf-landscape-groups, fig.width=10, fig.height=6}
+# Map isoform IDs to groups
+# Reference isoforms
+ref_ids <- unique(c2$reference_isoform_id)
+# NMD comparators by group
+comp_atg_avail <- c2$comparator_isoform_id[c2$group == "Ref ATG available"]
+comp_atg_lost <- c2$comparator_isoform_id[c2$group == "Ref ATG lost"]
+# Control comparators
+ctrl_comp_ids <- unique(c4$comparator_isoform_id)
+
+orf_landscape$analysis_group <- case_when(
+  orf_landscape$isoform_id %in% ref_ids ~ "Reference",
+  orf_landscape$isoform_id %in% comp_atg_avail ~ "NMD / ATG available",
+  orf_landscape$isoform_id %in% comp_atg_lost ~ "NMD / ATG lost",
+  orf_landscape$isoform_id %in% ctrl_comp_ids ~ "Control",
+  TRUE ~ NA_character_
+)
+
+orf_grouped <- orf_landscape %>%
+  filter(!is.na(analysis_group)) %>%
+  mutate(analysis_group = factor(analysis_group,
+    levels = c("Reference", "NMD / ATG available", "NMD / ATG lost", "Control")))
+
+# Summary table
+orf_summary <- orf_grouped %>%
+  group_by(analysis_group) %>%
+  summarise(
+    n = n(),
+    median_orfs = median(n_orfs),
+    median_nmd_competent = median(n_nmd_competent),
+    median_atgs = median(n_atgs),
+    median_junctions = median(n_junctions),
+    pct_any_nmd_comp = round(100 * mean(has_any_nmd_competent), 1),
+    .groups = "drop")
+
+render_dt(orf_summary, caption = "ORF Landscape by Analysis Group")
+```
+
+Column definitions: **median_orfs** = median ORFs per isoform; **median_nmd_competent**
+= median ORFs whose stop has ≥1 downstream EJC; **median_atgs** = median ATG
+count; **median_junctions** = median exon-exon junctions; **pct_any_nmd_comp** =
+% with at least one NMD-competent ORF.
+
+```{r orf-boxplots, fig.width=12, fig.height=5}
+# Side-by-side boxplots
+p1 <- ggplot(orf_grouped, aes(x = analysis_group, y = n_orfs, fill = analysis_group)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  scale_y_continuous(limits = c(0, 150)) +
+  labs(title = "A. Total ORFs", y = "ORFs per isoform", x = NULL) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 20, hjust = 1))
+
+p2 <- ggplot(orf_grouped, aes(x = analysis_group, y = n_nmd_competent, fill = analysis_group)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  scale_y_continuous(limits = c(0, 80)) +
+  labs(title = "B. ORFs with Downstream EJCs", y = "NMD-competent ORFs", x = NULL) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 20, hjust = 1))
+
+fig_orf_box <- p1 | p2
+save_fig(fig_orf_box, "fig_orf_landscape_groups", width = 12, height = 5)
+```
+
+## 2b. Pair-Level Deltas
+
+```{r pair-deltas, fig.width=10, fig.height=5}
+# Compute delta (comp - ref) for NMD and Control pairs
+build_deltas <- function(pairs, label) {
+  ref_orf <- orf_landscape[match(pairs$reference_isoform_id, orf_landscape$isoform_id),
+    c("n_orfs", "n_nmd_competent")]
+  comp_orf <- orf_landscape[match(pairs$comparator_isoform_id, orf_landscape$isoform_id),
+    c("n_orfs", "n_nmd_competent")]
+  data.frame(
+    label = label,
+    delta_orfs = comp_orf$n_orfs - ref_orf$n_orfs,
+    delta_nmd_comp = comp_orf$n_nmd_competent - ref_orf$n_nmd_competent,
+    stringsAsFactors = FALSE)
+}
+
+deltas_nmd <- build_deltas(c2, "NMD (C2)")
+deltas_ctrl <- build_deltas(c4, "Control (C4)")
+deltas_all <- rbind(deltas_nmd, deltas_ctrl)
+
+cat("Pair-level deltas (comparator - reference):\n")
+for (lb in c("NMD (C2)", "Control (C4)")) {
+  sub <- deltas_all[deltas_all$label == lb, ]
+  cat(sprintf("  %s: delta ORFs median %+.0f, delta NMD-comp median %+.0f, %% gaining NMD-comp %.1f%%\n",
+      lb, median(sub$delta_orfs, na.rm=TRUE), median(sub$delta_nmd_comp, na.rm=TRUE),
+      100 * mean(sub$delta_nmd_comp > 0, na.rm=TRUE)))
+}
+
+fig_deltas <- ggplot(deltas_all, aes(x = label, y = delta_nmd_comp, fill = label)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_fill_manual(values = c("NMD (C2)" = "#ef8a62", "Control (C4)" = "#67a9cf")) +
+  labs(title = "Change in NMD-Competent ORFs (Comparator \u2212 Reference)",
+       subtitle = "NMD comparators gain ORFs with downstream EJCs; Controls do not",
+       x = NULL, y = "\u0394 ORFs with downstream EJCs") +
+  theme(legend.position = "none")
+save_fig(fig_deltas, "fig_delta_nmd_competent", width = 10, height = 5)
+```
+
+## 2c. Splice Events: Frameshift Rate
+
+```{r splice-frameshift, fig.width=10, fig.height=5}
+# For each pair, check SE events and their frameshift rate
+classify_se <- function(profiles, label) {
+  n_pairs <- nrow(profiles)
+  has_se <- 0L; has_fs_se <- 0L; has_if_se <- 0L
+  for (i in seq_len(n_pairs)) {
+    de <- profiles$detailed_events[[i]]
+    if (is.null(de) || nrow(de) == 0) next
+    se <- de[de$event_type == "SE", ]
+    if (nrow(se) == 0) next
+    has_se <- has_se + 1L
+    if (any(!is.na(se$bp_diff) & se$bp_diff %% 3 != 0)) has_fs_se <- has_fs_se + 1L
+    if (any(!is.na(se$bp_diff) & se$bp_diff %% 3 == 0)) has_if_se <- has_if_se + 1L
+  }
+  data.frame(label = label, n_pairs = n_pairs, has_se = has_se,
+             has_frameshift_se = has_fs_se, has_inframe_se = has_if_se,
+             stringsAsFactors = FALSE)
+}
+
+# Need original profiles for detailed_events
+profiles_c2 <- readRDS("data_mashr/profiles_c2_allsamples.rds")
+profiles_c4 <- readRDS("data_mashr/profiles_c4_allsamples.rds")
+
+shared <- inner_join(
+  unique(profiles_c2[, c("gene_id", "reference_isoform_id")]),
+  unique(profiles_c4[, c("gene_id", "reference_isoform_id")]),
+  by = c("gene_id", "reference_isoform_id"))
+gm_c2 <- semi_join(profiles_c2, shared, by = c("gene_id", "reference_isoform_id"))
+gm_c4 <- semi_join(profiles_c4, shared, by = c("gene_id", "reference_isoform_id"))
+coding_ids <- cds$isoform_id[cds$coding_status == "coding"]
+gm_c2_coding <- gm_c2 %>% filter(reference_isoform_id %in% coding_ids,
+                                    comparator_isoform_id %in% coding_ids)
+gm_c4_coding <- gm_c4 %>% filter(reference_isoform_id %in% coding_ids,
+                                    comparator_isoform_id %in% coding_ids)
+
+se_nmd <- classify_se(gm_c2_coding, "NMD")
+se_ctrl <- classify_se(gm_c4_coding, "Control")
+se_both <- rbind(se_nmd, se_ctrl)
+
+se_both$pct_se <- round(100 * se_both$has_se / se_both$n_pairs, 1)
+se_both$pct_fs_among_se <- round(100 * se_both$has_frameshift_se / pmax(se_both$has_se, 1), 1)
+
+render_dt(se_both, caption = "Skipped Exon Events and Frameshift Rate")
+```
+
+Column definitions: **has_se** = pairs with at least one SE event;
+**has_frameshift_se** = pairs with SE where bp_diff is not divisible by 3;
+**pct_fs_among_se** = % of SE-containing pairs where at least one SE causes
+a frameshift.
+
+The frameshift rate among SE events is
+`r se_both$pct_fs_among_se[se_both$label == "NMD"]`% in NMD pairs vs
+`r se_both$pct_fs_among_se[se_both$label == "Control"]`% in Control pairs.
+NMD isoforms are enriched for frameshift-causing exon skips — the same
+mechanism that creates PTCs when it disrupts the main reading frame.
+
+# 3. Synthesis
+
+```{r synthesis}
+# Collect key numbers for inline use
+n_total <- nrow(c2)
+n_orig_ptc <- orig_ptc_pos
+n_reclass <- reclass_eff_ptc
+n_total_ptc <- total_eff_ptc
+pct_total_ptc <- round(100 * n_total_ptc / n_total, 1)
+n_atg_lost <- sum(c2$category == "ref_atg_lost", na.rm = TRUE)
+n_truly_nonptc <- sum(c2$category %in% c("no_downstream_ejc", "truncated_no_ejc",
+                                           "same_or_longer_with_ejc"), na.rm = TRUE)
+```
+
+Of `r fmt(n_total)` gene-matched coding NMD pairs:
+
+- **`r fmt(n_orig_ptc)`** (`r round(100 * n_orig_ptc / n_total, 1)`%) were
+  originally classified as PTC+ by SQANTI CDS prediction
+- **`r fmt(n_reclass)`** additional pairs are **effectively PTC** when traced
+  from the reference ATG — the same reading frame hits a premature stop with
+  downstream EJCs
+- **Total PTC-mediated: `r fmt(n_total_ptc)` (`r pct_total_ptc`%)**
+- **`r fmt(n_atg_lost)`** pairs (`r round(100 * n_atg_lost / n_total, 1)`%)
+  lost the reference ATG entirely
+- **`r fmt(n_truly_nonptc)`** pairs
+  (`r round(100 * n_truly_nonptc / n_total, 1)`%) are truly non-PTC even from
+  the reference ATG
+
+The PTC+/PTC- distinction is largely an artifact of computational CDS
+prediction. When the CDS predictor (GeneMarkS-T) encounters an NMD comparator
+with a disrupted reading frame, it often selects a different ATG as the
+"main" CDS start — one whose ORF terminates in the last exon (no downstream
+EJCs). This makes the isoform appear PTC-negative. But the reference's
+original ATG is still there, and the reading frame from it terminates
+prematurely.
+
+The underlying mechanism is consistent: **frameshift-causing exon skips
+(`r se_both$pct_fs_among_se[se_both$label == "NMD"]`% of NMD SE events vs
+`r se_both$pct_fs_among_se[se_both$label == "Control"]`% in Control)
+disrupt reading frames, creating premature stop codons with downstream EJCs.**
+Whether we call this a "PTC" or a "non-PTC uORF" depends entirely on which
+ATG the CDS predictor selects as the main start codon.
+
+```{r session-info}
+sessionInfo()
+```
