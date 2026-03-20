@@ -3540,12 +3540,14 @@ causing a higher fraction of their ORFs to be NMD-susceptible
 Total ORF count and ORF length are similar — the difference is junction
 architecture, not ORF content.
 
-## NMD-Competent ORFs Across the Transcript Landscape
+## NMD-Susceptible ORFs at the Isoform Level
 
-The junction architecture determines what fraction of ORFs are NMD-susceptible.
-We compare the ORF landscape of all `r fmt(nrow(coding_pairs_c2))` NMD
-comparators versus gene-matched Control, stratified by Kozak start codon
-context strength (an index of ATG initiation competence).
+The gene-level analysis above used one representative isoform per gene. We now
+shift to the isoform level to ask: do NMD comparators themselves have more
+NMD-susceptible ORFs than Control comparators? We compare all
+`r fmt(nrow(coding_pairs_c2))` NMD comparators from gene-matched C2 pairs
+versus gene-matched Control (C4) comparators, stratified by Kozak start codon
+context strength.
 
 ```{r sec2d-orf-landscape, fig.width=10, fig.height=6}
 # ── Data provenance ──
@@ -3579,7 +3581,7 @@ fig_kozak <- ggplot(kozak_all, aes(x = group, y = count, fill = group)) +
   geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
   facet_wrap(~metric, scales = "free_y") +
   scale_fill_manual(values = c("NMD (all)" = "#ef8a62", "Control" = "#67a9cf")) +
-  labs(title = "NMD-Competent ORFs by Kozak Strength: All NMD vs Control",
+  labs(title = "NMD-Susceptible ORFs by Kozak Strength: All NMD vs Control",
        subtitle = sprintf("NMD comparators (n=%s) vs Control (n=%s) | ORFs with \u22651 downstream EJC",
                           fmt(nrow(nmd_kozak)), fmt(nrow(ctrl_kozak))),
        x = NULL, y = "Count per transcript") +
@@ -3599,11 +3601,12 @@ higher probability of selecting an NMD-triggering ORF in these transcripts.
 
 ## Sub-Threshold NMD: Evidence for Stochastic ORF Selection
 
-If the ribosome stochastically samples ORFs proportional to their initiation
-context, even non-NMD isoforms from junction-rich genes should undergo some
-NMD — the occasional round of translation selects an NMD-susceptible ORF. We
-test this by comparing the logFC (SMG1i vs DMSO) of non-NMD isoforms from
-NMD-harboring genes versus non-NMD genes.
+Returning to the gene level, we test a prediction of the stochastic ORF
+selection model: if ribosomes occasionally sample NMD-susceptible ORFs, even
+non-NMD isoforms from junction-rich genes should show some NMD. Using the
+same `r fmt(nrow(dom_summary %>% summarise(n = sum(n))))` genes from the
+junction architecture analysis above, we compare the logFC (SMG1i vs DMSO)
+of non-NMD isoforms from NMD-harboring genes versus non-NMD genes.
 
 ```{r sec2d-gene-continuum, fig.width=10, fig.height=5}
 # ── Data provenance ──
