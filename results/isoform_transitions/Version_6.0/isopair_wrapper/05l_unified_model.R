@@ -6,9 +6,11 @@
 # Progressive elastic net with chromosome-based holdout validation.
 #
 # Model steps (progressive — each adds a feature category):
-#   Step 1: Stop codon position — downstream_ejc_category (0 / 1 / 2–3 / ≥4)
+#   Step 1: Stop codon position — downstream_ejc (continuous, capped at 5)
 #   Step 2: + Start codon context — atg_density, atg_count, atg_strong_kozak
-#   Step 3: + ORF features — uorf_count_overlapping, uorf_longest_nt, etc.
+#   Step 3: + ORF features — uorf_count_overlapping, uorf_longest_nt,
+#            uorf_count_inframe, uorf_count_outframe, utr5_orf_coverage,
+#            stop_density, atg_orphan_count
 #
 # Population: ALL mashr-classified NMD and non-NMD coding isoforms with
 # complete structural features (~60K isoforms).
@@ -19,7 +21,7 @@
 # Outputs elastic net models with regularized coefficients and AUC progression.
 #
 # Feature name mapping (R variable → paper display name):
-#   downstream_ejc_category  → Downstream EJC count (0 / 1 / 2–3 / ≥4)
+#   downstream_ejc           → Downstream EJC count (continuous, truncated at 5)
 #   uorf_count_overlapping   → Overlapping uORF count
 #   uorf_longest_nt          → Longest uORF (nt)
 #   uorf_count_inframe       → In-frame uORF count
@@ -62,11 +64,7 @@ cat("Started:", format(Sys.time()), "\n\n")
 # Feature display names (for figures and tables)
 # ==============================================================================
 feature_labels <- c(
-  downstream_ejc_category = "Downstream EJC count",
-  # Factor levels get their own labels in model output:
-  "downstream_ejc_category1"   = "Downstream EJC: 1",
-  "downstream_ejc_category2-3" = "Downstream EJC: 2\u20133",
-  "downstream_ejc_category4+"  = "Downstream EJC: \u22654",
+  downstream_ejc = "Downstream EJC count",
   uorf_count_overlapping = "Overlapping uORF count",
   uorf_longest_nt        = "Longest uORF (nt)",
   uorf_count_inframe     = "In-frame uORF count",
@@ -76,7 +74,8 @@ feature_labels <- c(
   atg_strong_kozak       = "Strong Kozak ATG count",
   atg_orphan_count       = "Orphan ATG count",
   utr5_orf_coverage      = "5\u2032UTR ORF coverage (%)",
-  stop_density           = "5\u2032UTR stop density (per 100 bp)"
+  stop_density           = "5\u2032UTR stop density (per 100 bp)",
+  log_utr3_length        = "3\u2032UTR length (log bp)"
 )
 
 # ==============================================================================
@@ -112,20 +111,12 @@ ptc_features <- ptc %>%
   filter(isoform_id %in% outcome$isoform_id) %>%
   select(isoform_id, n_downstream_ejcs) %>%
   mutate(
-    downstream_ejc_category = factor(
-      case_when(
-        n_downstream_ejcs == 0 ~ "0",
-        n_downstream_ejcs == 1 ~ "1",
-        n_downstream_ejcs %in% 2:3 ~ "2-3",
-        n_downstream_ejcs >= 4 ~ "4+"
-      ),
-      levels = c("0", "1", "2-3", "4+")
-    )
+    downstream_ejc = pmin(n_downstream_ejcs, 5L)
   )
 
 cat("  PTC features:", nrow(ptc_features), "isoforms\n")
-cat("  EJC category distribution:\n")
-print(table(ptc_features$downstream_ejc_category))
+cat("  Downstream EJC distribution (truncated at 5):\n")
+print(table(ptc_features$downstream_ejc))
 
 # --- 5'UTR features (full population from 05k) ---
 utr5_feat <- utr5_all$isoform_features %>%
@@ -146,6 +137,36 @@ utr5_feat <- utr5_all$isoform_features %>%
 
 cat("  5'UTR features:", nrow(utr5_feat), "isoforms\n")
 
+# --- 3'UTR length (exonic bp from cds_stop to 3' transcript end) ---
+# Strand-aware: for + strand, 3'UTR = exonic bp after cds_stop
+#               for - strand, 3'UTR = exonic bp before cds_start (genomic)
+utr3_feat <- structures %>%
+  filter(isoform_id %in% outcome$isoform_id) %>%
+  inner_join(cds %>% filter(coding_status == "coding") %>%
+               select(isoform_id, cds_start, cds_stop, strand),
+             by = c("isoform_id", "strand")) %>%
+  rowwise() %>%
+  mutate(
+    utr3_length = {
+      starts <- exon_starts
+      ends <- exon_ends
+      if (strand == "+") {
+        # 3'UTR = exonic bp after cds_stop
+        sum(pmax(0L, ends - pmax(starts, cds_stop)))
+      } else {
+        # 3'UTR = exonic bp before cds_start (genomic coords)
+        sum(pmax(0L, pmin(ends, cds_start) - starts))
+      }
+    }
+  ) %>%
+  ungroup() %>%
+  transmute(isoform_id, utr3_length,
+            log_utr3_length = log1p(utr3_length))
+
+cat("  3'UTR features:", nrow(utr3_feat), "isoforms\n")
+cat("  Median 3'UTR length:", median(utr3_feat$utr3_length), "bp\n")
+cat("  3'UTR = 0 bp:", sum(utr3_feat$utr3_length == 0), "\n")
+
 # --- Chromosome for train/test split ---
 chr_map <- structures %>%
   filter(isoform_id %in% outcome$isoform_id) %>%
@@ -159,6 +180,7 @@ cat("\nAssembling feature matrix...\n")
 df <- outcome %>%
   inner_join(ptc_features, by = "isoform_id") %>%
   inner_join(utr5_feat, by = "isoform_id") %>%
+  inner_join(utr3_feat, by = "isoform_id") %>%
   inner_join(chr_map, by = "isoform_id")
 
 cat("  Complete feature matrix:", nrow(df), "isoforms\n")
@@ -191,12 +213,15 @@ cat("  Test:", nrow(test), "(NMD:", sum(test$is_nmd), ")\n")
 cat("\n=== Progressive Model Building ===\n")
 
 # Feature sets for each step
-step1_features <- "downstream_ejc_category"  # factor
+step1_features <- "downstream_ejc"  # continuous, truncated at 5
 step2_features <- c(step1_features, "atg_density", "atg_count", "atg_strong_kozak")
 step3_features <- c(step2_features,
                     "uorf_count_overlapping", "uorf_longest_nt",
                     "uorf_count_inframe", "uorf_count_outframe",
                     "utr5_orf_coverage", "stop_density", "atg_orphan_count")
+
+# Step 4: unified + 3'UTR length (to test whether 3'UTR adds value)
+step4_features <- c(step3_features, "log_utr3_length")
 
 # 5'UTR-only (no stop codon features) for complementarity
 utr5_only_features <- setdiff(step3_features, step1_features)
@@ -205,6 +230,35 @@ utr5_only_features <- setdiff(step3_features, step1_features)
 make_model_matrix <- function(data, features) {
   f <- as.formula(paste("~ 0 +", paste(features, collapse = " + ")))
   model.matrix(f, data = data)
+}
+
+# --- Helper: fit simple logistic regression (single-feature step) ---
+fit_glm <- function(train_df, test_df, features, step_name) {
+  cat("\n--- ", step_name, " (logistic regression) ---\n")
+
+  f <- as.formula(paste("is_nmd ~", paste(features, collapse = " + ")))
+  fit <- glm(f, data = train_df, family = binomial())
+
+  pred_train <- predict(fit, train_df, type = "response")
+  pred_test <- predict(fit, test_df, type = "response")
+
+  roc_train <- roc(train_df$is_nmd, pred_train, quiet = TRUE)
+  roc_test <- roc(test_df$is_nmd, pred_test, quiet = TRUE)
+
+  cat("  Train AUC:", round(auc(roc_train), 4), "\n")
+  cat("  Test AUC:", round(auc(roc_test), 4), "\n")
+
+  # Return structure compatible with elastic net results
+  list(
+    cv_fit = fit,
+    roc_train = roc_train, roc_test = roc_test,
+    auc_train = as.numeric(auc(roc_train)),
+    auc_test = as.numeric(auc(roc_test)),
+    pred_train = pred_train, pred_test = pred_test,
+    features = features,
+    scaling = NULL,
+    n_train = nrow(train_df), n_test = nrow(test_df)
+  )
 }
 
 # --- Helper: fit elastic net on model matrix ---
@@ -251,10 +305,13 @@ fit_elastic_net <- function(train_df, test_df, features, step_name, alpha = 0.5)
   )
 }
 
-# Progressive elastic net
-en_step1 <- fit_elastic_net(train, test, step1_features, "Step 1: Stop codon position")
+# Progressive models: step 1 uses GLM (single feature), steps 2-3 use elastic net
+en_step1 <- fit_glm(train, test, step1_features, "Step 1: Stop codon position")
 en_step2 <- fit_elastic_net(train, test, step2_features, "Step 2: + Start codon context")
 en_step3 <- fit_elastic_net(train, test, step3_features, "Step 3: + ORF features (unified)")
+
+# Step 4: does 3'UTR length add predictive value beyond the unified model?
+en_step4 <- fit_elastic_net(train, test, step4_features, "Step 4: + 3'UTR length")
 
 # Complementarity
 en_utr5_only <- fit_elastic_net(train, test, utr5_only_features, "5'UTR only (no stop codon)")
@@ -296,19 +353,23 @@ cat("  Mean pred_prob (non-NMD):",
 cat("\n=== SUMMARY ===\n\n")
 
 auc_summary <- data.frame(
-  step = c("1_stop_codon", "2_start_codon", "3_unified", "utr5_only"),
+  step = c("1_stop_codon", "2_start_codon", "3_unified",
+           "4_plus_utr3", "utr5_only"),
   description = c("Downstream EJC count",
                    "+ ATG density/count/Kozak",
                    "+ uORF/ORF features",
+                   "+ 3'UTR length",
                    "5'UTR features only (no stop codon)"),
   n_train = c(en_step1$n_train, en_step2$n_train,
-              en_step3$n_train, en_utr5_only$n_train),
+              en_step3$n_train, en_step4$n_train, en_utr5_only$n_train),
   n_test = c(en_step1$n_test, en_step2$n_test,
-             en_step3$n_test, en_utr5_only$n_test),
+             en_step3$n_test, en_step4$n_test, en_utr5_only$n_test),
   auc_train_en = c(en_step1$auc_train, en_step2$auc_train,
-                   en_step3$auc_train, en_utr5_only$auc_train),
+                   en_step3$auc_train, en_step4$auc_train,
+                   en_utr5_only$auc_train),
   auc_test_en = c(en_step1$auc_test, en_step2$auc_test,
-                  en_step3$auc_test, en_utr5_only$auc_test),
+                  en_step3$auc_test, en_step4$auc_test,
+                  en_utr5_only$auc_test),
   stringsAsFactors = FALSE
 )
 
@@ -326,6 +387,7 @@ results <- list(
     step1 = en_step1,
     step2 = en_step2,
     step3 = en_step3,
+    step4 = en_step4,
     utr5_only = en_utr5_only
   ),
 

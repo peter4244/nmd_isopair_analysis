@@ -742,28 +742,37 @@ Before asking what triggers NMD, we establish the transcriptional landscape
 that NMD operates on. Genes produce diverse isoforms through combinatorial
 TSS, internal splicing, and TES choices. This section characterizes
 isoform diversity within the gene-matched pair set — the same genes analyzed
-throughout this report. Diversity and TSS/TES analyses use all expressed
-isoforms (coding and non-coding); CDS-dependent analyses are restricted to
-coding isoforms.
+throughout this report. NMD-sensitive isoforms are excluded so that the
+landscape reflects baseline transcriptional diversity, not NMD-driven
+variation. Diversity and TSS/TES analyses use all non-NMD expressed
+isoforms (coding and non-coding); CDS-dependent analyses are further
+restricted to coding isoforms.
 
-**Data source:** All expressed isoforms for genes in the gene-matched pair
-set (structures.rds, expression_data.rds). CDS analyses additionally use
-cds.rds (coding isoforms only).
+**Data source:** Non-NMD expressed isoforms for genes in the gene-matched
+pair set (structures.rds, expression_data.rds, nmd_classification.rds). CDS
+analyses additionally use cds.rds (coding isoforms only).
 
 ```{r sec1-diversity-data}
 # ── Data provenance ──
 # Source: structures.rds (extractIsoformStructures), cds.rds (extractCds),
-#   expression_data.rds (TMM-normalized count matrix from 01_prepare_data_mashr.R)
-# Population: All expressed isoforms for genes in gene-matched pair set.
+#   expression_data.rds (TMM-normalized count matrix from 01_prepare_data_mashr.R),
+#   nmd_classification.rds (mashr NMD/non-NMD classification)
+# Population: Expressed NON-NMD isoforms for genes in gene-matched pair set.
+#   NMD-sensitive isoforms (mashr all_samples) are excluded so that Section 1
+#   describes the baseline transcriptional landscape that NMD acts upon.
 #   Gene set defined by profiles_list (loaded in STAGE 2, gene-matched).
 
 # Genes in the gene-matched pair set
 pair_genes <- unique(profiles_list[["c2_allsamples"]]$gene_id)
 
-# All expressed isoforms for these genes (coding + non-coding)
+# NMD isoform IDs to exclude
+nmd_isoforms <- nmd_class$all_samples$nmd
+
+# All expressed non-NMD isoforms for these genes (coding + non-coding)
 sec1_structures <- structures %>%
   filter(gene_id %in% pair_genes,
-         isoform_id %in% rownames(expr_mat))
+         isoform_id %in% rownames(expr_mat),
+         !isoform_id %in% nmd_isoforms)
 
 # Coding subset (for CDS-dependent analyses later)
 coding_structures <- sec1_structures %>%
@@ -773,7 +782,10 @@ coding_cds <- cds %>%
   filter(isoform_id %in% coding_structures$isoform_id)
 
 cat("Gene-matched pair genes:", length(pair_genes), "\n")
-cat("All expressed isoforms (these genes):", nrow(sec1_structures), "\n")
+cat("NMD isoforms excluded:", sum(structures$isoform_id %in% nmd_isoforms &
+      structures$gene_id %in% pair_genes &
+      structures$isoform_id %in% rownames(expr_mat)), "\n")
+cat("Non-NMD expressed isoforms (these genes):", nrow(sec1_structures), "\n")
 cat("  of which coding:", nrow(coding_structures), "\n")
 
 # ── Isoform count per gene (all isoforms) ──
@@ -823,7 +835,7 @@ tss_tes <- sec1_structures %>%
     .groups = "drop"
   )
 
-cat("TSS diversity (multi-isoform coding genes, n =", nrow(tss_tes), "):\n")
+cat("TSS diversity (multi-isoform genes, n =", nrow(tss_tes), "):\n")
 cat("  Median distinct TSS per gene:", median(tss_tes$n_unique_tss), "\n")
 cat("  Median distinct TES per gene:", median(tss_tes$n_unique_tes), "\n")
 
@@ -890,36 +902,23 @@ p_diversity <- ggplot(tss_tes_long, aes(x = count, fill = feature)) +
   scale_x_continuous(limits = c(0, 20), breaks = seq(0, 20, 5)) +
   scale_fill_manual(values = c(TSS = "#ef8a62", TES = "#67a9cf")) +
   labs(title = "A. TSS and TES Diversity per Gene",
-       subtitle = sprintf("Multi-isoform coding genes (n = %s)",
+       subtitle = sprintf("Multi-isoform genes (n = %s)",
                           fmt(nrow(tss_tes))),
        x = "Number of distinct positions", y = "Number of genes", fill = "")
 
-# Panel B: Within-gene TSS-TES correlation distribution
-p_within <- ggplot(within_gene_cor, aes(x = rho_tss_tes)) +
-  geom_histogram(binwidth = 0.05, fill = "#756bb1", color = "white", alpha = 0.8) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
-  geom_vline(xintercept = within_gene_rho, color = "#e6550d", linewidth = 1) +
-  annotate("text", x = within_gene_rho + 0.05, y = Inf, vjust = 2,
-           label = sprintf("median = %.3f", within_gene_rho),
-           color = "#e6550d", size = 3.5, hjust = 0) +
-  labs(title = "B. Within-Gene TSS-TES Coupling",
-       subtitle = sprintf("Per-gene Spearman rho (n = %s genes with ≥3 isoforms)",
-                          fmt(nrow(within_gene_cor))),
-       x = "Spearman rho (TSS position vs TES position)", y = "Number of genes")
-
-# Panel C: Combination usage
+# Panel B: Combination usage
 p_combos <- ggplot(tss_tes_combos, aes(x = pct_used)) +
   geom_histogram(binwidth = 5, fill = "#31a354", color = "white", alpha = 0.8) +
   geom_vline(xintercept = median(tss_tes_combos$pct_used), color = "#e6550d", linewidth = 1) +
   annotate("text", x = median(tss_tes_combos$pct_used) + 2, y = Inf, vjust = 2,
            label = sprintf("median = %.0f%%", median(tss_tes_combos$pct_used)),
            color = "#e6550d", size = 3.5, hjust = 0) +
-  labs(title = "C. TSS × TES Combination Usage",
-       subtitle = "% of possible TSS-TES pairs actually observed",
+  labs(title = "B. TSS \u00d7 TES Combination Usage",
+       subtitle = "Consistent with independent sampling given isoform count",
        x = "Combinations used (%)", y = "Number of genes")
 
-fig_tss_tes <- p_diversity / (p_within | p_combos)
-save_fig(fig_tss_tes, "fig0b_tss_tes_diversity", width = 10, height = 8)
+fig_tss_tes <- p_diversity | p_combos
+save_fig(fig_tss_tes, "fig0b_tss_tes_diversity", width = 10, height = 5)
 ```
 
 Within any given gene, the TSS and TES positions are largely independent:
@@ -927,18 +926,23 @@ the median within-gene Spearman rho is `r round(within_gene_rho, 3)`,
 centered tightly around zero. Knowing which promoter a transcript initiates
 from does not predict where it will terminate.
 
-Yet genes use only `r round(median(tss_tes_combos$pct_used))`% of the
-TSS×TES combinations that would be possible if every start could pair with
-every end. This apparent contradiction resolves when we consider the exon
-path: internal splicing decisions constrain which TSS-TES pairings produce
-viable transcripts. TSS and TES are chosen independently of *each other*,
-but the internal exon structure acts as a filter — not all combinations
-produce stable, processable transcripts.
+Genes use only `r round(median(tss_tes_combos$pct_used))`% of possible
+TSS×TES combinations, but this is consistent with independent sampling:
+given the number of expressed isoforms per gene, random independent draws
+from the observed TSS and TES pools would produce a similar fraction of
+combinations. The low percentage reflects combinatorial mathematics
+(few isoforms relative to possible pairings), not biological constraint.
 
-## TSS–CDS and TES–CDS Coupling
+## Transcript Boundaries Determine Protein Boundaries
 
-```{r sec1-tss-cds-coupling}
-# TSS determines CDS start; TES determines CDS stop
+```{r sec1-tss-cds-coupling, fig.width=10, fig.height=4}
+# ── Data provenance ──
+# Source: coding_structures (coding isoforms for pair genes), coding_cds
+# Population: multi-isoform coding genes with ≥3 isoforms (for meaningful rho)
+# For each gene, compute within-gene Spearman rho for:
+#   TSS ↔ TES, TSS → CDS start (5' end), TES → CDS stop (3' end)
+# All coordinates are strand-aware.
+
 coupling <- coding_structures %>%
   filter(gene_id %in% multi_iso_genes) %>%
   inner_join(coding_cds %>% select(isoform_id, cds_start, cds_stop),
@@ -950,83 +954,203 @@ coupling <- coding_structures %>%
     cds_3prime = ifelse(strand == "+", cds_stop, cds_start)
   )
 
-# Per-gene correlations (genes with ≥3 isoforms for meaningful correlation)
 gene_cors <- coupling %>%
   group_by(gene_id) %>%
-  filter(n() >= 3) %>%
+  filter(n() >= 3, n_distinct(tss) >= 2, n_distinct(tes) >= 2) %>%
   summarise(
     n_iso = n(),
+    rho_tss_tes = cor(tss, tes, method = "spearman"),
     rho_tss_cds5 = cor(tss, cds_5prime, method = "spearman"),
     rho_tes_cds3 = cor(tes, cds_3prime, method = "spearman"),
     .groups = "drop"
   )
 
-cat("TSS → CDS start coupling (per-gene Spearman rho):\n")
-cat("  Median:", round(median(gene_cors$rho_tss_cds5, na.rm = TRUE), 3), "\n")
-cat("  Mean:", round(mean(gene_cors$rho_tss_cds5, na.rm = TRUE), 3), "\n")
+med_tss_tes <- median(gene_cors$rho_tss_tes, na.rm = TRUE)
+med_tss_cds <- median(gene_cors$rho_tss_cds5, na.rm = TRUE)
+med_tes_cds <- median(gene_cors$rho_tes_cds3, na.rm = TRUE)
 
-cat("\nTES → CDS stop coupling:\n")
-cat("  Median:", round(median(gene_cors$rho_tes_cds3, na.rm = TRUE), 3), "\n")
-cat("  Mean:", round(mean(gene_cors$rho_tes_cds3, na.rm = TRUE), 3), "\n")
+# Three-panel histogram
+cor_long <- gene_cors %>%
+  select(gene_id,
+         `TSS vs TES` = rho_tss_tes,
+         `TSS to CDS start` = rho_tss_cds5,
+         `TES to CDS stop` = rho_tes_cds3) %>%
+  pivot_longer(-gene_id, names_to = "comparison", values_to = "rho") %>%
+  filter(!is.na(rho))
+
+cor_long$comparison <- factor(cor_long$comparison,
+  levels = c("TSS vs TES", "TSS to CDS start", "TES to CDS stop"))
+
+med_df <- data.frame(
+  comparison = factor(
+    c("TSS vs TES", "TSS to CDS start", "TES to CDS stop"),
+    levels = levels(cor_long$comparison)),
+  med = c(med_tss_tes, med_tss_cds, med_tes_cds)
+)
+
+fig_coupling <- ggplot(cor_long, aes(x = rho)) +
+  geom_histogram(binwidth = 0.05, fill = "#4292c6", color = "white", alpha = 0.8) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
+  geom_vline(data = med_df, aes(xintercept = med),
+             color = "#e6550d", linewidth = 1) +
+  geom_text(data = med_df,
+            aes(x = med, y = Inf, label = sprintf("median = %.2f", med)),
+            vjust = 2, hjust = -0.1, color = "#e6550d", size = 3.5) +
+  facet_wrap(~comparison, nrow = 1) +
+  labs(title = "Within-Gene Coupling: Transcript Boundaries vs Protein Boundaries",
+       subtitle = sprintf("Per-gene Spearman rho (n = %s coding genes with >=3 isoforms)",
+                          fmt(nrow(gene_cors))),
+       x = "Spearman rho", y = "Number of genes")
+save_fig(fig_coupling, "fig0c_tss_cds_coupling", width = 10, height = 4)
 ```
 
-The TSS strongly determines the CDS start position, and the TES strongly
-determines the CDS stop position. The two ends of the protein are set by
-the two ends of the transcript — through the exon path, not directly.
+TSS and TES do not predict each other (median rho =
+`r round(med_tss_tes, 2)`), but each strongly determines its corresponding
+protein boundary: TSS → CDS start (median rho = `r round(med_tss_cds, 2)`)
+and TES → CDS stop (median rho = `r round(med_tes_cds, 2)`). The two ends
+of the protein are set by the two ends of the transcript, mediated by the
+exon path connecting them.
 
-## CDS Start Diversity and Reading Frame Multiplicity
+### CDS Diversity as a Consequence of Transcript Diversity
 
-```{r sec1-cds-start-diversity}
-# How many distinct CDS start positions per gene? (coding isoforms only)
+How much of the transcript boundary diversity translates into protein boundary
+diversity? We compare CDS start and stop counts directly against TSS and TES
+counts for each gene.
+
+```{r sec1-cds-diversity, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: coding_structures (coding isoforms for pair genes), coding_cds
+# Population: multi-isoform coding genes (≥2 coding isoforms)
+# For each gene, count distinct TSS, TES, CDS start (5' end), CDS stop (3' end)
+# All coordinates are strand-aware.
+
 cds_diversity <- coding_structures %>%
   filter(gene_id %in% multi_iso_genes) %>%
   inner_join(coding_cds %>% select(isoform_id, cds_start, cds_stop),
              by = "isoform_id") %>%
-  mutate(cds_5prime = ifelse(strand == "+", cds_start, cds_stop)) %>%
+  mutate(
+    tss = ifelse(strand == "+", tx_start, tx_end),
+    tes = ifelse(strand == "+", tx_end, tx_start),
+    cds_5prime = ifelse(strand == "+", cds_start, cds_stop),
+    cds_3prime = ifelse(strand == "+", cds_stop, cds_start)
+  ) %>%
   group_by(gene_id) %>%
   filter(n() >= 2) %>%
   summarise(
     n_isoforms = n(),
+    n_tss = n_distinct(tss),
+    n_tes = n_distinct(tes),
     n_cds_starts = n_distinct(cds_5prime),
-    cds_starts = list(unique(cds_5prime)),
+    n_cds_stops = n_distinct(cds_3prime),
     .groups = "drop"
+  ) %>%
+  mutate(
+    convergence_start = n_cds_starts / n_tss,
+    convergence_stop = n_cds_stops / n_tes
   )
 
-cat("CDS start diversity (multi-coding-isoform genes, n =", nrow(cds_diversity), "):\n")
-cat("  Genes with ≥2 distinct CDS starts:",
-    sum(cds_diversity$n_cds_starts >= 2),
-    sprintf("(%.1f%%)\n", 100 * mean(cds_diversity$n_cds_starts >= 2)))
-cat("  Genes with ≥3 distinct CDS starts:",
-    sum(cds_diversity$n_cds_starts >= 3),
-    sprintf("(%.1f%%)\n", 100 * mean(cds_diversity$n_cds_starts >= 3)))
-cat("  Median distinct CDS starts:", median(cds_diversity$n_cds_starts), "\n")
+cat("CDS vs transcript boundary diversity (multi-coding-isoform genes, n =",
+    nrow(cds_diversity), "):\n")
+cat("  Median TSS:", median(cds_diversity$n_tss),
+    " | Median CDS starts:", median(cds_diversity$n_cds_starts),
+    " | Ratio:", round(median(cds_diversity$convergence_start), 2), "\n")
+cat("  Median TES:", median(cds_diversity$n_tes),
+    " | Median CDS stops:", median(cds_diversity$n_cds_stops),
+    " | Ratio:", round(median(cds_diversity$convergence_stop), 2), "\n")
+cat("  Genes with more CDS starts than TSS:",
+    sprintf("%.2f%%\n", 100 * mean(cds_diversity$n_cds_starts > cds_diversity$n_tss)))
 
-# Of genes with multiple CDS starts, how many use different reading frames?
-# Two CDS starts are in different frames if their positions differ by a non-multiple of 3.
-cds_diversity$has_diff_frame <- sapply(cds_diversity$cds_starts, function(s) {
-  if (length(s) < 2) return(FALSE)
-  diffs <- outer(s, s, "-")
-  diffs <- diffs[upper.tri(diffs)]
-  any(diffs %% 3 != 0)
-})
+# ── Figure: paired comparison ──
+div_long <- cds_diversity %>%
+  select(gene_id, TSS = n_tss, `CDS start` = n_cds_starts,
+         TES = n_tes, `CDS stop` = n_cds_stops) %>%
+  pivot_longer(-gene_id, names_to = "boundary", values_to = "n_distinct") %>%
+  mutate(
+    end = ifelse(boundary %in% c("TSS", "CDS start"), "5' end", "3' end"),
+    type = ifelse(boundary %in% c("TSS", "TES"), "Transcript", "Protein"),
+    boundary = factor(boundary, levels = c("TSS", "CDS start", "TES", "CDS stop"))
+  )
 
-multi_start <- cds_diversity %>% filter(n_cds_starts >= 2)
-cat("\nReading frame diversity (genes with ≥2 CDS starts, n =", nrow(multi_start), "):\n")
-cat("  Genes with starts in DIFFERENT frames:",
-    sum(multi_start$has_diff_frame),
-    sprintf("(%.1f%%)\n", 100 * mean(multi_start$has_diff_frame)))
-cat("  Genes with all starts in SAME frame:",
-    sum(!multi_start$has_diff_frame),
-    sprintf("(%.1f%%)\n", 100 * mean(!multi_start$has_diff_frame)))
+med_labels <- div_long %>%
+  group_by(boundary, end) %>%
+  summarise(med = median(n_distinct), .groups = "drop")
+
+fig_cds_div <- ggplot(div_long, aes(x = n_distinct, fill = boundary)) +
+  geom_histogram(binwidth = 1, color = "white", alpha = 0.8, position = "identity") +
+  geom_vline(data = med_labels, aes(xintercept = med), color = "#e6550d", linewidth = 1) +
+  geom_text(data = med_labels,
+            aes(x = med, y = Inf, label = sprintf("median = %g", med)),
+            vjust = 2, hjust = -0.1, color = "#e6550d", size = 3.5, inherit.aes = FALSE) +
+  facet_wrap(~boundary, nrow = 1, scales = "free_y") +
+  scale_fill_manual(values = c("TSS" = "#4292c6", "CDS start" = "#6baed6",
+                                "TES" = "#4292c6", "CDS stop" = "#6baed6")) +
+  scale_x_continuous(limits = c(0, 20), breaks = seq(0, 20, 5)) +
+  labs(title = "Transcript vs Protein Boundary Diversity",
+       subtitle = sprintf("Per gene (n = %s multi-isoform coding genes)",
+                          fmt(nrow(cds_diversity))),
+       x = "Distinct positions per gene", y = "Number of genes") +
+  guides(fill = "none")
+save_fig(fig_cds_div, "fig0d_cds_diversity_comparison", width = 10, height = 5)
 ```
 
-`r sprintf("%.1f%%", 100 * mean(cds_diversity$n_cds_starts >= 2))` of genes
-with multiple coding isoforms use at least two distinct CDS start positions.
-Among these, `r sprintf("%.1f%%", 100 * mean(multi_start$has_diff_frame))`
-use CDS starts in different reading frames — the start positions differ by a
-non-multiple of 3, meaning the downstream protein sequences are in different
-frames. These genes encode genuinely distinct reading frames through their
-isoform repertoire, not merely N-terminal extensions of the same protein.
+Transcript boundary diversity substantially exceeds protein boundary diversity.
+The median gene has `r median(cds_diversity$n_tss)` distinct TSS positions but
+only `r median(cds_diversity$n_cds_starts)` distinct CDS start positions
+(ratio `r round(median(cds_diversity$convergence_start), 2)`). The pattern is
+similar at the 3' end: `r median(cds_diversity$n_tes)` TES positions reduce to
+`r median(cds_diversity$n_cds_stops)` CDS stop positions. Only
+`r sprintf("%.1f%%", 100 * mean(cds_diversity$n_cds_starts > cds_diversity$n_tss))`
+of genes have more CDS starts than TSS positions.
+
+### Within-Boundary Variation from Internal Splicing
+
+The TSS→CDS coupling is strong but not absolute. For most TSS positions, all
+isoforms sharing that TSS also share the same CDS start — the first in-frame
+ATG is determined by the 5' exon path. But in a subset of cases, internal
+splicing differences alter which exons appear between the TSS and the start
+codon, producing different CDS starts from the same TSS. We quantify this
+directly.
+
+```{r sec1-within-boundary-variation}
+# ── Data provenance ──
+# Source: coupling (computed above in sec1-tss-cds-coupling chunk)
+# For each (gene, TSS) group: how many distinct CDS starts?
+# For each (gene, TES) group: how many distinct CDS stops?
+
+within_boundary <- coupling %>%
+  group_by(gene_id) %>%
+  filter(n() >= 2) %>%
+  ungroup()
+
+# Within-TSS CDS start variation
+tss_groups <- within_boundary %>%
+  group_by(gene_id, tss) %>%
+  summarise(n_cds_starts = n_distinct(cds_5prime), .groups = "drop")
+
+pct_tss_multi_cds <- 100 * mean(tss_groups$n_cds_starts > 1)
+
+# Within-TES CDS stop variation
+tes_groups <- within_boundary %>%
+  group_by(gene_id, tes) %>%
+  summarise(n_cds_stops = n_distinct(cds_3prime), .groups = "drop")
+
+pct_tes_multi_cds <- 100 * mean(tes_groups$n_cds_stops > 1)
+
+cat("Within-boundary variation:\n")
+cat("  TSS groups total:", fmt(nrow(tss_groups)), "\n")
+cat("  TSS groups with >1 CDS start:", fmt(sum(tss_groups$n_cds_starts > 1)),
+    sprintf("(%.1f%%)\n", pct_tss_multi_cds))
+cat("  TES groups total:", fmt(nrow(tes_groups)), "\n")
+cat("  TES groups with >1 CDS stop:", fmt(sum(tes_groups$n_cds_stops > 1)),
+    sprintf("(%.1f%%)\n", pct_tes_multi_cds))
+```
+
+`r sprintf("%.1f%%", pct_tss_multi_cds)` of TSS groups contain isoforms with
+different CDS start positions — internal splicing between the TSS and the
+start codon selects a different ATG. At the 3' end,
+`r sprintf("%.1f%%", pct_tes_multi_cds)` of TES groups have isoforms with
+different CDS stop positions. Stop codon position is more sensitive to internal
+splicing variation than start codon position.
 
 ## Expression Concentration
 
@@ -1071,10 +1195,10 @@ cat("  Genes where dominant >80%:", sum(dominant_fraction$dominant_pct > 80),
     sprintf("(%.1f%%)\n", 100 * mean(dominant_fraction$dominant_pct > 80)))
 ```
 
-Transcriptional diversity is the norm. Genes maintain multiple exon paths,
-each producing a different reading frame context. Most genes concentrate
-expression on a dominant isoform, but devote substantial transcriptional
-output to alternatives — including paths that produce NMD substrates.
+Despite maintaining many expressed isoforms, most genes concentrate the
+majority of their transcriptional output on a single dominant isoform. The
+remaining isoforms collectively account for a substantial but minority share
+of each gene's expression.
 
 # 1b. Baseline Splicing and NMD-Enriched Events {#sec1b-baseline}
 
@@ -1362,6 +1486,80 @@ question, not a pair-level question.
 10-fold cross-validation on the training set. Holdout chromosomes 1, 3, 5, 7
 (~26% of data) are never used for feature selection or model tuning.
 
+## Model Features
+
+The table below describes each structural feature provided to the model, its
+definition, and the biological category it belongs to.
+
+```{r sec2a-feature-table}
+feature_desc <- data.frame(
+  Feature = c(
+    "Downstream EJC count",
+    "Overlapping uORF count",
+    "Longest uORF (nt)",
+    "In-frame uORF count",
+    "Out-of-frame uORF count",
+    "5\u2032UTR ATG density",
+    "5\u2032UTR ATG count",
+    "Strong Kozak ATG count",
+    "Orphan ATG count",
+    "5\u2032UTR ORF coverage",
+    "5\u2032UTR stop density",
+    "3\u2032UTR length (log bp)"
+  ),
+  Category = c(
+    "Stop codon position",
+    "Upstream ORF",
+    "Upstream ORF",
+    "Upstream ORF",
+    "Upstream ORF",
+    "Start codon context",
+    "Start codon context",
+    "Start codon context",
+    "Start codon context",
+    "Start codon context",
+    "Start codon context",
+    "3\u2032UTR"
+  ),
+  Type = c(
+    "Continuous (truncated at 5)",
+    "Count",
+    "Continuous",
+    "Count",
+    "Count",
+    "Continuous",
+    "Count",
+    "Count",
+    "Count",
+    "Continuous (0\u2013100%)",
+    "Continuous",
+    "Continuous"
+  ),
+  Description = c(
+    "Number of exon-exon junctions downstream of the stop codon. Truncated at 5 (values \u22655 are set to 5). Higher values place the stop codon further upstream of splice junctions.",
+    "Number of upstream ORFs whose reading frame extends past the annotated CDS start codon, overlapping the main coding sequence.",
+    "Length in nucleotides of the longest uORF in the 5\u2032UTR. Longer uORFs may compete more effectively with the main CDS for ribosomal initiation.",
+    "Number of uORFs in the same reading frame as the main CDS. In-frame uORFs can produce N-terminally extended or truncated protein variants.",
+    "Number of uORFs in a different reading frame from the main CDS. Out-of-frame uORFs produce peptides unrelated to the main protein and may regulate translation reinitiation.",
+    "Number of ATG codons per 100 bp of 5\u2032UTR. Higher density reflects a more complex translational initiation landscape.",
+    "Total number of ATG codons in the 5\u2032UTR, each a potential site of ribosomal initiation.",
+    "Number of 5\u2032UTR ATGs matching a strong Kozak consensus (favorable nucleotides at -3 and +4). These compete most effectively with the main CDS start codon.",
+    "Number of 5\u2032UTR ATGs not associated with any predicted ORF (no downstream in-frame stop codon within the 5\u2032UTR). These initiate translation that reads through into the CDS.",
+    "Percentage of the 5\u2032UTR spanned by predicted ORFs. High coverage indicates extensive upstream translational activity.",
+    "Number of stop codons (all three frames) per 100 bp of 5\u2032UTR. Higher density limits uORF length and may facilitate translation reinitiation at the main CDS.",
+    "Log-transformed exonic basepairs from the stop codon to the 3\u2032 transcript end (log1p). Tests whether 3\u2032UTR length predicts NMD independently of stop codon position."
+  ),
+  stringsAsFactors = FALSE
+)
+
+render_dt(feature_desc, caption = "Table: Model Feature Definitions")
+```
+
+Column definitions: **Feature** = display name used throughout the report;
+**Category** = biological domain (stop codon position, start codon context,
+or upstream ORF); **Type** = data type and scale; **Description** = what the
+feature measures and how it relates to translational regulation.
+
 ```{r sec2a-load-model}
 # ── Data provenance ──
 # Source: 05l_unified_model.R → unified_model.rds
@@ -1394,7 +1592,9 @@ en_models <- list(
   list(roc = unified$elastic_net$step2$roc_test,
        name = "Step 2: + Start codon context", color = "#91bfdb"),
   list(roc = unified$elastic_net$step3$roc_test,
-       name = "Step 3: + ORF features (unified)", color = "#1a1a1a")
+       name = "Step 3: + ORF features (unified)", color = "#1a1a1a"),
+  list(roc = unified$elastic_net$step4$roc_test,
+       name = "Step 4: + 3'UTR length", color = "#b2182b")
 )
 
 roc_curves <- lapply(en_models, function(spec) {
@@ -1430,23 +1630,28 @@ fig_roc <- ggplot(roc_all, aes(x = fpr, y = tpr, color = model)) +
 save_fig(fig_roc, "fig_progressive_roc", width = 7, height = 7)
 ```
 
-Each curve represents a progressive elastic net model evaluated on the
-holdout chromosomes. Stop codon position alone (the stepped orange curve)
-reflects the 4-level categorical predictor — it achieves coarse but
-meaningful discrimination (AUC =
+Each curve represents a progressive model evaluated on the holdout
+chromosomes. Stop codon position alone (downstream EJC count, truncated
+at 5) achieves meaningful discrimination (AUC =
 `r round(unified$elastic_net$step1$auc_test, 3)`). Adding start codon
 features produces a smooth curve with substantially improved sensitivity
-across all specificity levels. The final unified model (black) adds ORF
-features for further gains, particularly in the high-specificity region.
+across all specificity levels. ORF features (step 3, black) provide further
+gains. Adding 3'UTR length (step 4, red) does not improve holdout AUC
+(step 3: `r round(unified$elastic_net$step3$auc_test, 3)` → step 4:
+`r round(unified$elastic_net$step4$auc_test, 3)`), confirming that 3'UTR
+length carries no independent predictive information beyond stop codon
+position.
 
 ## Feature Importance
 
 ```{r sec2a-coefficients}
 # ── Data provenance ──
-# Source: unified$elastic_net$step3$cv_fit (elastic net, unified model)
+# Source: unified$elastic_net$step4$cv_fit (elastic net, unified + 3'UTR)
 # Non-zero coefficients at lambda.min, sorted by absolute magnitude
+# Uses step4 so that 3'UTR length is included (its near-zero coefficient
+# demonstrates redundancy with downstream EJC count).
 
-en_fit <- unified$elastic_net$step3$cv_fit
+en_fit <- unified$elastic_net$step4$cv_fit
 coefs <- as.matrix(coef(en_fit, s = "lambda.min"))
 nonzero <- coefs[coefs[, 1] != 0 & rownames(coefs) != "(Intercept)", , drop = FALSE]
 
@@ -1463,7 +1668,7 @@ coef_table <- data.frame(
   arrange(-`Abs. Coefficient`) %>%
   transmute(Feature, Coefficient = round(Coefficient, 4))
 
-render_dt(coef_table, caption = "Table: Elastic Net Feature Importance (Unified Model)")
+render_dt(coef_table, caption = "Table: Elastic Net Feature Importance (All Features Including 3'UTR)")
 ```
 
 Column definitions: **Feature** = model variable (display name);
@@ -1472,21 +1677,45 @@ features). Positive coefficients increase predicted NMD probability;
 negative coefficients decrease it. Features with zero coefficients are
 excluded by the elastic net penalty.
 
+```{r sec2a-coef-barplot, fig.width=8, fig.height=5}
+# ── Data provenance ──
+# Source: coef_table (computed above from unified elastic net step 3)
+
+coef_plot_df <- coef_table %>%
+  mutate(
+    Feature = factor(Feature, levels = rev(Feature)),
+    Direction = ifelse(Coefficient > 0, "Promotes NMD", "Protects from NMD")
+  )
+
+fig_coefs <- ggplot(coef_plot_df, aes(x = Coefficient, y = Feature, fill = Direction)) +
+  geom_col(alpha = 0.85, width = 0.7) +
+  geom_vline(xintercept = 0, color = "grey40", linewidth = 0.5) +
+  scale_fill_manual(values = c("Promotes NMD" = "#ef8a62", "Protects from NMD" = "#67a9cf")) +
+  labs(title = "Elastic Net Feature Importance (All Features Including 3'UTR)",
+       subtitle = "Standardized coefficients at lambda.min — holdout evaluation",
+       x = "Coefficient (standardized)", y = NULL, fill = NULL) +
+  theme(legend.position = "bottom")
+save_fig(fig_coefs, "fig_feature_importance", width = 8, height = 5)
+```
+
 ## Complementarity: Stop Codon vs Start Codon Features
 
 ```{r sec2a-complementarity}
-# Stop-codon-only vs 5'UTR-only vs combined
+# Stop-codon-only vs 5'UTR-only vs combined vs +3'UTR
 comp_df <- data.frame(
-  Model = c("Stop codon only", "5'UTR only", "Combined"),
+  Model = c("Stop codon only", "5'UTR only", "Combined (unified)",
+            "Unified + 3'UTR length"),
   `Train AUC` = round(c(
     unified$elastic_net$step1$auc_train,
     unified$elastic_net$utr5_only$auc_train,
-    unified$elastic_net$step3$auc_train
+    unified$elastic_net$step3$auc_train,
+    unified$elastic_net$step4$auc_train
   ), 3),
   `Test AUC` = round(c(
     unified$elastic_net$step1$auc_test,
     unified$elastic_net$utr5_only$auc_test,
-    unified$elastic_net$step3$auc_test
+    unified$elastic_net$step3$auc_test,
+    unified$elastic_net$step4$auc_test
   ), 3),
   check.names = FALSE
 )
@@ -1498,8 +1727,12 @@ training chromosomes; **Test AUC** = AUC on holdout chromosomes (1, 3, 5, 7).
 
 Stop codon and start codon features are complementary, not redundant. Each
 achieves comparable AUC alone (~0.70–0.72), but combined they reach
-`r round(unified$elastic_net$step3$auc_test, 3)`. This means PTC and uORF
-mechanisms operate through different structural pathways to trigger NMD.
+`r round(unified$elastic_net$step3$auc_test, 3)`. Adding 3'UTR length on
+top of the unified model provides no further improvement
+(`r round(unified$elastic_net$step4$auc_test, 3)`), confirming that any
+association between 3'UTR length and NMD is fully captured by downstream
+EJC count. PTC and uORF mechanisms operate through different structural
+pathways to trigger NMD; 3'UTR length is not an independent pathway.
 
 # 2b. Stop Codons: Where Translation Terminates {#sec2b-stop-codons}
 
@@ -2086,13 +2319,125 @@ Fisher's exact test p-value (2×2: this event vs others × PTC-causing vs
 Control); **direction** = Enriched/Depleted in PTC-causing, or Non-significant
 (p > 0.05).
 
+```{r goal2-fig5b-ptc-event-barplot, fig.width=10, fig.height=6}
+# ── Data provenance ──
+# Source: ptc_evt_df (computed above in goal2-table4b-baseline chunk)
+# Paired bar chart: PTC-causing event proportions vs Control baseline
+
+bar_df <- ptc_evt_df %>%
+  select(event_type, `PTC-causing (NMD)` = pct_of_ptc,
+         `All events (Control)` = pct_ctrl) %>%
+  pivot_longer(-event_type, names_to = "source", values_to = "pct") %>%
+  mutate(event_type = factor(event_type,
+    levels = ptc_evt_df$event_type[order(ptc_evt_df$pct_of_ptc, decreasing = TRUE)]))
+
+# Significance annotations
+sig_df <- ptc_evt_df %>%
+  mutate(
+    sig_label = case_when(
+      fisher_p < 0.001 ~ "***",
+      fisher_p < 0.01 ~ "**",
+      fisher_p < 0.05 ~ "*",
+      TRUE ~ "ns"
+    ),
+    y_pos = pmax(pct_of_ptc, pct_ctrl) + 1.5
+  )
+
+fig_ptc_events <- ggplot(bar_df, aes(x = event_type, y = pct, fill = source)) +
+  geom_col(position = position_dodge(width = 0.75), width = 0.7, alpha = 0.85) +
+  geom_text(data = sig_df, aes(x = event_type, y = y_pos, label = sig_label),
+            inherit.aes = FALSE, size = 4, vjust = 0) +
+  scale_fill_manual(values = c("PTC-causing (NMD)" = "#ef8a62",
+                                "All events (Control)" = "#67a9cf")) +
+  labs(title = "PTC-Causing Event Proportions vs Control Baseline",
+       subtitle = sprintf("NMD: %s attributed PTC-causing events | Control: %s total events",
+                          fmt(n_ptc_attr), fmt(ctrl_total)),
+       x = NULL, y = "% of events", fill = NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+save_fig(fig_ptc_events, "fig5b_ptc_event_proportions", width = 10, height = 6)
+```
+
+
+## Illustrative Example: Skipped Exon → Frameshift → PTC (POLR3D)
+
+POLR3D encodes a subunit of RNA Polymerase III. The non-NMD reference
+(ENST00000397802.8, 8 exons) and NMD comparator (novel2, 7 exons) share the
+same CDS start. The comparator skips exon 6 (265 bp). Because 265 is not
+divisible by 3 (265 mod 3 = 1), skipping this exon shifts the reading frame
+by +1 nucleotide, producing a premature stop codon 406 bp earlier than the
+normal stop. The ORF is truncated from 1,197 bp (399 aa) to 693 bp (231 aa).
+
+```{r sec2b-example-polr3d, fig.width=10, fig.height=6}
+# POLR3D: + strand, shared CDS start at 22245450
+polr3d_ref_s <- c(22245235, 22247221, 22247857, 22248154, 22248481, 22249044, 22250075, 22250396)
+polr3d_ref_e <- c(22245614, 22247264, 22248008, 22248278, 22248649, 22249309, 22250227, 22254600)
+polr3d_comp_s <- c(22245233, 22247221, 22247857, 22248154, 22248481, 22250075, 22250396)
+polr3d_comp_e <- c(22245614, 22247264, 22248008, 22248278, 22248649, 22250227, 22254360)
+
+polr3d_events <- data.frame(
+  five_prime = c(22249044, 22254600),
+  three_prime = c(22249309, 22254360),
+  event_type = c("SE", "Alt_TES"),
+  direction = c("LOSS", "LOSS"))
+
+polr3d_atg <- list(type = "frameshift_boundary", track = "ref",
+  x = 22245450, label = "Shared ATG", color = "#2ca02c")
+polr3d_ptc <- list(type = "ptc_marker", track = "comp",
+  x = 22250112, label = "PTC (frameshift)", color = "#E74C3C")
+polr3d_ref_stop <- list(type = "ptc_marker", track = "ref",
+  x = 22250518, label = "Normal stop", color = "#27AE60")
+
+p_polr3d <- plot_ucsc_pair(
+  polr3d_ref_s, polr3d_ref_e, polr3d_comp_s, polr3d_comp_e, strand = "+",
+  ref_cds = list(cds_start = 22245450, cds_stop = 22250518),
+  comp_cds = list(cds_start = 22245450, cds_stop = 22250112),
+  ref_label = "Non-NMD (ENST00000397802.8, 399 aa)",
+  comp_label = "NMD (novel2, 231 aa)",
+  events = polr3d_events,
+  annotations = list(polr3d_atg, polr3d_ptc, polr3d_ref_stop),
+  title = "POLR3D: Same ATG, Skipped Exon \u2192 Frameshift \u2192 PTC",
+  subtitle = "Skipped exon 6 is 265 bp (265 mod 3 = 1 \u2192 +1 frameshift). ORF truncated from 399 to 231 aa.")
+print(p_polr3d)
+```
+
+```{r sec2b-example-polr3d-zoom, fig.width=10, fig.height=6}
+# Zoomed view centered on the skipped exon and its consequences
+p_polr3d_zoom <- plot_ucsc_pair(
+  polr3d_ref_s, polr3d_ref_e, polr3d_comp_s, polr3d_comp_e, strand = "+",
+  ref_cds = list(cds_start = 22245450, cds_stop = 22250518),
+  comp_cds = list(cds_start = 22245450, cds_stop = 22250112),
+  ref_label = "Non-NMD (399 aa)",
+  comp_label = "NMD (231 aa)",
+  events = polr3d_events[1, ],  # SE only
+  annotations = list(
+    polr3d_ptc, polr3d_ref_stop,
+    list(type = "region_shade", track = "ref",
+         xmin = 22249044, xmax = 22249309,
+         color = "#E74C3C", alpha = 0.20,
+         label = "Skipped exon (265 bp, not \u00f73)")),
+  xlim = c(22248200, 22251000),
+  title = "POLR3D: Zoom on Frameshift Region",
+  subtitle = "Exon 6 (265 bp, red shade) is present in non-NMD, absent in NMD. 265 mod 3 \u2260 0 \u2192 downstream reading frame shifts, creating PTC.")
+print(p_polr3d_zoom)
+```
+
+The zoomed view shows the critical region: exon 6 (red shading, 265 bp) is
+present in the non-NMD reference but skipped in the NMD comparator. Because
+265 is not divisible by 3, the downstream reading frame shifts by one
+nucleotide. The new frame encounters a stop codon at position 22,250,112
+(red triangle) — 406 bp before the normal stop at 22,250,518 (green triangle).
+Four exon-exon junctions remain downstream, triggering NMD.
 
 ## 3'UTR Length and Splicing {#sec2b-3utr}
 
-The unified model (Section 2a) showed that 3'UTR features do not improve
-prediction beyond stop codon position. Here we test the long-3'UTR hypothesis
-and show that 3'UTR splicing operates through PTC creation (EJC repositioning),
-not independently.
+The unified model (Section 2a) showed that adding 3'UTR length to the full
+model does not improve holdout AUC (step 3:
+`r round(unified$elastic_net$step3$auc_test, 3)` → step 4:
+`r round(unified$elastic_net$step4$auc_test, 3)`), meaning 3'UTR length
+carries no predictive information beyond downstream EJC count. Here we test
+the long-3'UTR hypothesis directly and show that 3'UTR splicing operates
+through PTC creation (EJC repositioning), not independently.
 
 ```{r goal3-identify-ptc-neg}
 # ── Data provenance ──
@@ -2494,54 +2839,46 @@ depleted in PTC-negative NMD vs Control (OR =
 `r signif(ft_utr3_neg$p.value, 3)`), consistent with 3'UTR splicing being a
 PTC-creating mechanism rather than an independent NMD trigger.
 
-# 2c. Start Codons and ORFs: The 5'UTR Landscape {#sec2c-start-codons}
+# 2c. The 5'UTR Pathway: uORFs as the Non-PTC NMD Mechanism {#sec2c-start-codons}
 
-The unified model's second-largest AUC gain comes from 5'UTR ORF features
-(Section 2a: AUC `r round(unified$elastic_net$step2$auc_test, 3)` →
-`r round(unified$elastic_net$step3$auc_test, 3)`). Upstream open reading frames
-(uORFs) in the 5'UTR can trigger NMD when translation of the uORF terminates
-and the ribosome encounters downstream EJCs from the main CDS. Here we
-characterize the 5'UTR landscape in the paired framework to identify what
-specifically distinguishes PTC-negative NMD comparators from Controls.
+Section 2b accounted for PTC-positive NMD pairs through a complete mechanistic
+pipeline: splicing event → frameshift or in-frame stop → PTC → downstream
+EJCs → NMD. But `r round(100 * n_ptc_neg / nrow(coding_pairs_c2), 1)`% of NMD
+pairs lack a PTC. The unified model (Section 2a) identifies overlapping uORFs
+as the key 5'UTR feature distinguishing these PTC-negative pairs. Here we
+apply the same accounting framework: establish prevalence, classify mechanisms,
+trace each gained overlapping uORF to its causative splicing event, and
+illustrate with a concrete example.
 
 ```{r goal4b-utr5-load}
 # ── Data provenance ──
-# Source script: 05j_utr5_feature_analysis.R → analysis_cache/utr5_features.rds
-# Pipeline:
-#   1. Isopair::scan5UtrFeatures() computes 28 features per isoform:
-#      - ATG/stop codon counts (total and frame-stratified relative to CDS)
-#      - ORF counts (in-frame, out-of-frame, overlapping)
-#      - Density features (per 100bp), Kozak context, spatial features
-#   2. 5'UTR boundaries: strand-aware from genomic CDS + exon structure
-#      Validation: 98.6% of isoforms have ATG at computed CDS start position
-#   3. 5'UTR sequences extracted from SQANTI corrected transcript FASTA
-#   4. Groups: PTC_neg, PTC_pos, Control (same coding pair definitions as §2b)
-#   5. Univariate Wilcoxon tests (3 comparisons × 28 features)
-#   6. Multivariate elastic net (3 models)
-#   7. Pair-level delta analysis (comp - ref feature differences)
+# Source: utr5_features.rds (5'UTR features), uorf_analysis.rds (uORF counts),
+#   uorf_comparison.rds (set operations, event enrichment),
+#   uorf_event_attribution.rds (Isopair::attributeUorfsToEvents() output)
 
 utr5_data <- readRDS(file.path(cache_dir, "utr5_features.rds"))
 utr5_feat <- utr5_data$isoform_features
 utr5_feat$group <- factor(utr5_feat$group, levels = c("PTC_neg", "PTC_pos", "Control"))
 
-# Also load the old uorf_analysis.rds for backward-compatible uorf counts
 uorf_data <- readRDS(file.path(cache_dir, "uorf_analysis.rds"))
 uorf <- uorf_data$per_isoform
 uorf$group <- factor(uorf$group, levels = c("PTC_neg", "PTC_pos", "Control"))
 
-# Load uORF comparison data (set operations, event enrichment)
 uorf_comp <- readRDS(file.path(cache_dir, "uorf_comparison.rds"))
-```
-
-## Table 8a: 5'UTR Feature Summary by Group
-
-```{r goal4b-feature-summary}
-# ── Data provenance ──
-# Source: utr5_feat (from utr5_features.rds, loaded above)
-# Filtered to comparator isoforms (non-NA group) with non-excluded 5'UTRs
+uorf_attr <- readRDS(file.path(cache_dir, "uorf_event_attribution.rds"))
+gs <- uorf_comp$group_summaries
 
 comp_feat <- utr5_feat |> filter(!excluded, !is.na(group))
+```
 
+## 5'UTR Length: The Precondition for uORFs
+
+Longer 5'UTRs provide more sequence for uORFs. PTC-negative NMD comparators
+have longer 5'UTRs than Controls, creating the substrate for uORF-mediated
+NMD.
+
+```{r goal4b-feature-summary}
+# Summary stats for inline use
 utr5_summary <- comp_feat |>
   group_by(group) |>
   summarise(
@@ -2550,37 +2887,58 @@ utr5_summary <- comp_feat |>
     median_n_atg = median(n_atg),
     median_n_orfs = median(n_orfs),
     pct_with_uorf = round(100 * mean(n_orfs > 0), 1),
-    median_n_orfs_outframe = median(n_orfs_outframe),
     median_n_overlap = median(n_orfs_overlapping),
     pct_overlapping = round(100 * mean(n_orfs_overlapping > 0), 1),
-    median_pct_in_orfs = round(median(pct_utr5_in_orfs), 3),
-    pct_fully_covered = round(100 * mean(pct_utr5_in_orfs >= 1.0), 1),
     median_longest_orf = median(longest_orf_nt),
-    median_strong_kozak = median(n_strong_kozak_atg),
     .groups = "drop")
 
-render_dt(utr5_summary, caption = "Table 8a: 5'UTR Feature Summary by Group")
+uorf_summary <- uorf |>
+  group_by(group) |>
+  summarise(
+    median_utr5_bp = median(utr5_length),
+    median_n_uorfs = median(n_uorfs),
+    .groups = "drop")
+
+utr5_plot <- uorf[uorf$utr5_length > 0, ]
+utr5_plot$group_label <- factor(utr5_plot$group,
+  levels = c("PTC_neg", "PTC_pos", "Control"),
+  labels = c("NMD PTC\u2212", "NMD PTC+", "Control"))
+
+fig_utr5 <- ggplot(utr5_plot, aes(x = utr5_length, fill = group_label)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10(labels = scales::comma) +
+  scale_fill_manual(values = c("NMD PTC\u2212" = "#fddbc7", "NMD PTC+" = "#ef8a62",
+                                "Control" = "#67a9cf")) +
+  labs(title = "5'UTR Length Distribution by Group",
+       subtitle = paste0(
+         "Median: PTC\u2212 = ",
+         uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"], " bp, ",
+         "PTC+ = ",
+         uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_pos"], " bp, ",
+         "Control = ",
+         uorf_summary$median_utr5_bp[uorf_summary$group == "Control"], " bp"),
+       x = "5'UTR Length (bp, log scale)", y = "Density", fill = "")
+save_fig(fig_utr5, "fig8a_utr5_length_distribution", width = 10, height = 6)
 ```
 
-Columns: **group** = PTC_neg (NMD without PTC), PTC_pos (NMD with PTC), or
-Control (C4); **n** = isoforms; **median_utr5_bp** = median 5'UTR length (bp);
-**median_n_atg** = median ATG count in 5'UTR; **median_n_orfs** = median uORF count
-(ATG + in-frame stop, >=9 nt); **pct_with_uorf** = % with >=1 uORF;
-**median_n_orfs_outframe** = median out-of-frame uORFs (frame 1 or 2 relative
-to CDS); **median_n_overlap** = median overlapping uORFs (stop at/past CDS start);
-**pct_overlapping** = % with >=1 overlapping uORF;
-**median_pct_in_orfs** = median fraction of 5'UTR occupied by uORFs;
-**pct_fully_covered** = % of isoforms where entire 5'UTR is covered by uORFs;
-**median_longest_orf** = median length of longest uORF (nt);
-**median_strong_kozak** = median count of ATGs with strong Kozak context
-(A/G at -3 AND G at +4).
+PTC-negative NMD comparators have longer 5'UTRs than either PTC-positive or
+Control isoforms (median
+`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"]` bp vs
+`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_pos"]` and
+`r uorf_summary$median_utr5_bp[uorf_summary$group == "Control"]` bp). Longer
+5'UTRs provide more sequence for ATGs and in-frame stop codons, the building
+blocks of uORFs.
 
-## Table 8b: uORF Enrichment Tests
+## Which uORF Type Matters? Overlapping uORFs Are the Key Distinction
+
+Not all uORFs are equal. The unified model identifies *overlapping* uORFs —
+those whose stop codon falls at or past the main CDS start — as the most
+predictive feature. We test this directly.
 
 ```{r goal4b-uorf-tests}
 # ── Data provenance ──
-# Source: uorf (from uorf_analysis.rds) for backward-compatible Fisher's tests
-# "any uORF": >=1 uORF (>=3 codons), "overlapping uORF": stop at/past CDS start
+# Source: uorf (from uorf_analysis.rds)
+# Fisher's exact tests: any uORF and overlapping uORF prevalence by group
 
 uorf_tests <- list()
 test_pairs <- list(
@@ -2602,16 +2960,12 @@ for (tp in test_pairs) {
   n2 <- sum(sub$group == tp[2])
   pct1 <- round(100 * mean(has_feat[sub$group == tp[1]]), 1)
   pct2 <- round(100 * mean(has_feat[sub$group == tp[2]]), 1)
-
-  # Build table with group1 having the feature as the first row/col
-  # so OR > 1 means group1 enriched
   tbl <- matrix(c(
     sum(has_feat & sub$group == tp[1]),
     sum(!has_feat & sub$group == tp[1]),
     sum(has_feat & sub$group == tp[2]),
     sum(!has_feat & sub$group == tp[2])
   ), nrow = 2, byrow = TRUE)
-
   ft <- tryCatch(fisher.test(tbl), error = function(e) NULL)
   if (!is.null(ft)) {
     uorf_tests[[length(uorf_tests) + 1]] <- data.frame(
@@ -2628,204 +2982,368 @@ uorf_test_df <- do.call(rbind, uorf_tests)
 render_dt(uorf_test_df, caption = "Table 8b: uORF Enrichment Tests (Fisher's exact)")
 ```
 
-Columns: **comparison** = group pair tested; **test** = "any uORF" (>=1 uORF) or
-"overlapping uORF" (>=1 uORF with stop at/past CDS start); **n_group1/n_group2** =
-group sizes; **pct_group1/pct_group2** = prevalence (%) in each group;
-**OR** = odds ratio for having the feature in group1 vs group2 (OR > 1 = group1
-enriched); **p_value** = Fisher's exact test p-value.
+Column definitions: **comparison** = group pair tested; **test** = "any uORF"
+or "overlapping uORF"; **pct_group1/pct_group2** = prevalence (%);
+**OR** = odds ratio (>1 = group1 enriched); **p_value** = Fisher's exact p.
 
-## Figure 8a: 5'UTR Length Distribution
-
-```{r goal4b-utr5-density, fig.width=10, fig.height=6}
-# ── Data provenance ──
-# Source: uorf (from uorf_analysis.rds)
-# Filter: utr5_length > 0
-
-uorf_summary <- uorf |>
+```{r goal4b-uorf-prevalence-barplot, fig.width=10, fig.height=5}
+# Prevalence barplot: any uORF and overlapping uORF side by side
+prev_data <- uorf |>
   group_by(group) |>
   summarise(
-    median_utr5_bp = median(utr5_length),
-    median_n_uorfs = median(n_uorfs),
-    .groups = "drop")
+    `Any uORF` = round(100 * mean(n_uorfs > 0), 1),
+    `Overlapping uORF` = round(100 * mean(n_overlapping_uorfs > 0), 1),
+    .groups = "drop") |>
+  pivot_longer(-group, names_to = "uorf_type", values_to = "pct") |>
+  mutate(group_label = factor(group,
+    levels = c("PTC_neg", "PTC_pos", "Control"),
+    labels = c("NMD PTC\u2212", "NMD PTC+", "Control")))
 
-utr5_plot <- uorf[uorf$utr5_length > 0, ]
-utr5_plot$group_label <- factor(utr5_plot$group,
-  levels = c("PTC_neg", "PTC_pos", "Control"),
-  labels = c("NMD PTC-", "NMD PTC+", "Control"))
-
-fig_utr5 <- ggplot(utr5_plot, aes(x = utr5_length, fill = group_label)) +
-  geom_density(alpha = 0.5) +
-  scale_x_log10(labels = scales::comma) +
-  scale_fill_manual(values = c("NMD PTC-" = "#fddbc7", "NMD PTC+" = "#ef8a62",
-                                "Control" = "#67a9cf")) +
-  labs(title = "5'UTR Length Distribution by Group",
-       subtitle = paste0(
-         "Median 5'UTR length: NMD PTC- = ",
-         uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"], " bp, ",
-         "NMD PTC+ = ",
-         uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_pos"], " bp, ",
-         "Control = ",
-         uorf_summary$median_utr5_bp[uorf_summary$group == "Control"], " bp"),
-       x = "5'UTR Length (bp, log scale)", y = "Density", fill = "")
-save_fig(fig_utr5, "fig8a_utr5_length_distribution", width = 10, height = 6)
+fig_prev <- ggplot(prev_data, aes(x = group_label, y = pct, fill = uorf_type)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, alpha = 0.85) +
+  geom_text(aes(label = paste0(pct, "%")),
+            position = position_dodge(width = 0.7), vjust = -0.5, size = 3.5) +
+  scale_fill_manual(values = c("Any uORF" = "#67a9cf", "Overlapping uORF" = "#ef8a62")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)), limits = c(0, 105)) +
+  labs(title = "uORF Prevalence by Group and Type",
+       subtitle = "Overlapping uORFs (stop at/past CDS start) are specifically enriched in PTC-negative NMD",
+       x = NULL, y = "% of isoforms", fill = NULL) +
+  theme(legend.position = "bottom")
+save_fig(fig_prev, "fig8b_uorf_prevalence", width = 10, height = 5)
 ```
 
-**Figure 8a** shows that PTC-negative NMD comparators have dramatically longer
-5'UTRs than either PTC-positive or Control isoforms (median
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_neg"]` bp vs
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "PTC_pos"]` and
-`r uorf_summary$median_utr5_bp[uorf_summary$group == "Control"]` bp).
-This length difference is a necessary precondition for the uORF
-enrichment — longer 5'UTRs provide more sequence in which ATGs and in-frame stops
-can occur. However, as we show below, the enrichment goes beyond what length alone
-would predict: the *density* of uORF-related features is also elevated.
+Nearly all PTC-negative NMD comparators have at least one uORF, but the critical
+distinction is *overlapping* uORFs. PTC-positive pairs are depleted for
+overlapping uORFs — their NMD is driven by the PTC, not 5'UTR features.
 
-## Figure 8b: uORF Prevalence Barplot
+## How Splicing Creates Overlapping uORFs: Mechanism Attribution
 
-```{r goal4b-uorf-prevalence-barplot, fig.width=10, fig.height=6}
-uorf_prev <- uorf |>
-  group_by(group) |>
-  summarise(pct = round(100 * mean(n_uorfs > 0), 1), .groups = "drop")
-uorf_prev$group_label <- factor(uorf_prev$group,
-  levels = c("PTC_neg", "PTC_pos", "Control"),
-  labels = c("NMD PTC-", "NMD PTC+", "Control"))
+Section 2b traced each PTC to a causative splicing event via the Sankey
+diagram. We apply the same approach here, using `attributeUorfsToEvents()`
+to identify the splicing event responsible for each gained overlapping uORF.
+The function classifies attribution into three types:
 
-any_uorf_tests <- uorf_test_df[uorf_test_df$test == "any uORF", ]
-p_neg_ctrl <- signif(any_uorf_tests$p_value[any_uorf_tests$comparison == "PTC_neg vs Control"], 3)
-p_pos_ctrl <- signif(any_uorf_tests$p_value[any_uorf_tests$comparison == "PTC_pos vs Control"], 3)
-p_neg_pos  <- signif(any_uorf_tests$p_value[any_uorf_tests$comparison == "PTC_neg vs PTC_pos"], 3)
+- **Containment**: the splice event boundaries encompass the uORF ATG
+  position — the ATG itself is in a gained or altered exon region, meaning it
+  is newly accessible in the comparator.
+- **Frameshift**: the uORF ATG exists in both isoforms, but a splice event
+  between the ATG and the uORF stop codon changes the exonic length by a
+  non-multiple of 3. This shifts the downstream reading frame, moving the
+  uORF's stop codon — potentially converting a short non-overlapping uORF
+  into one that extends past the CDS start (overlapping).
+- **In-frame splice**: a splice event between ATG and stop that changes
+  length by a multiple of 3, altering the uORF without shifting frame.
 
-bar_x <- setNames(1:3, c("NMD PTC-", "NMD PTC+", "Control"))
-ymax <- max(uorf_prev$pct) + 15
+We additionally classify whether the gained uORF's ATG matches the reference
+isoform's CDS start position — indicating the reference's productive start
+codon has become a uORF initiator due to a CDS start shift.
 
-brackets <- data.frame(
-  x1 = c(bar_x["NMD PTC-"], bar_x["NMD PTC+"], bar_x["NMD PTC-"]),
-  x2 = c(bar_x["Control"],  bar_x["Control"],  bar_x["NMD PTC+"]),
-  y  = c(ymax - 10, ymax - 5, ymax),
-  label = c(paste0("p = ", p_neg_ctrl), paste0("p = ", p_pos_ctrl), paste0("p = ", p_neg_pos))
+```{r sec2c-uorf-attribution, fig.width=10, fig.height=7}
+# ── Data provenance ──
+# Source: uorf_event_attribution.rds (attributeUorfsToEvents on C2 profiles),
+#   uorf_comparison.rds → uorf_detail (gained overlapping flag),
+#   cds.rds (reference CDS start for ATG matching)
+
+# Merge attribution with gained-overlapping status
+go_detail <- uorf_comp$comparisons_c2$uorf_detail %>%
+  filter(status == "gained", comp_is_overlapping)
+
+go_attr <- uorf_attr %>%
+  filter(uorf_status == "gained") %>%
+  inner_join(go_detail %>% select(reference_isoform_id, comparator_isoform_id,
+                                   atg_genomic_pos, comp_is_overlapping),
+             by = c("reference_isoform_id", "comparator_isoform_id", "atg_genomic_pos")) %>%
+  filter(comp_is_overlapping)
+
+# Add CDS-start-match classification
+cds_pos_sec2c <- cds %>%
+  filter(coding_status == "coding") %>%
+  transmute(isoform_id,
+            cds_5prime = ifelse(strand == "+", cds_start, cds_stop))
+
+go_attr$ref_cds5 <- cds_pos_sec2c$cds_5prime[
+  match(go_attr$reference_isoform_id, cds_pos_sec2c$isoform_id)]
+go_attr$atg_is_ref_cds <- go_attr$atg_genomic_pos == go_attr$ref_cds5
+
+# Combined mechanism label
+go_attr$mechanism <- ifelse(go_attr$atg_is_ref_cds,
+  "Ref CDS start \u2192 uORF",
+  ifelse(go_attr$attribution_type == "unresolved",
+    "Unresolved",
+    paste0("New ATG (", go_attr$attribution_type, ")")))
+
+# Simplify mechanism labels
+go_attr$mechanism_simple <- case_when(
+  go_attr$atg_is_ref_cds ~ "CDS start becomes uORF",
+  go_attr$attribution_type == "containment" ~ "ATG in gained/changed exon",
+  go_attr$attribution_type == "frameshift" ~ "Frameshift alters uORF",
+  go_attr$attribution_type == "inframe_splice" ~ "In-frame splice",
+  TRUE ~ "Unresolved"
 )
 
-fig_prev <- ggplot(uorf_prev, aes(x = group_label, y = pct, fill = group_label)) +
-  geom_col(width = 0.6) +
-  geom_text(aes(label = paste0(pct, "%")), vjust = -0.5, size = 4.5) +
-  scale_fill_manual(values = c("NMD PTC-" = "#fddbc7", "NMD PTC+" = "#ef8a62",
-                                "Control" = "#67a9cf")) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.15)), limits = c(0, ymax + 3)) +
-  geom_segment(data = brackets, aes(x = x1, xend = x2, y = y, yend = y),
-               inherit.aes = FALSE, linewidth = 0.4) +
-  geom_segment(data = brackets, aes(x = x1, xend = x1, y = y - 1, yend = y),
-               inherit.aes = FALSE, linewidth = 0.4) +
-  geom_segment(data = brackets, aes(x = x2, xend = x2, y = y - 1, yend = y),
-               inherit.aes = FALSE, linewidth = 0.4) +
-  geom_text(data = brackets, aes(x = (x1 + x2) / 2, y = y + 1.5, label = label),
-            inherit.aes = FALSE, size = 3.5) +
-  labs(title = "uORF Prevalence by Group",
-       subtitle = "Percentage of isoforms with at least one uORF (>=3 codons)",
-       x = "", y = "% with >=1 uORF", fill = "") +
-  theme(legend.position = "none")
-save_fig(fig_prev, "fig8b_uorf_prevalence_barplot", width = 10, height = 6)
+cat("Gained overlapping uORFs:", nrow(go_attr), "\n\n")
+cat("Mechanism attribution:\n")
+print(sort(table(go_attr$mechanism_simple), decreasing = TRUE))
+cat("\nATG = ref CDS start:", sum(go_attr$atg_is_ref_cds),
+    sprintf("(%.1f%%)\n", 100 * mean(go_attr$atg_is_ref_cds)))
+
+# ── Sankey: Splice Event → Mechanism ──
+# Filter to resolved attributions
+resolved <- go_attr %>% filter(attribution_type != "unresolved")
+
+# Build Sankey nodes and links
+sankey_data <- resolved %>%
+  count(event_type, mechanism_simple) %>%
+  filter(n > 0)
+
+# Nodes
+all_nodes <- unique(c(sankey_data$event_type, sankey_data$mechanism_simple))
+nodes <- data.frame(name = all_nodes, stringsAsFactors = FALSE)
+
+# Links
+links <- sankey_data %>%
+  transmute(
+    source = match(event_type, nodes$name) - 1L,
+    target = match(mechanism_simple, nodes$name) - 1L,
+    value = n
+  )
+
+if (requireNamespace("networkD3", quietly = TRUE)) {
+  sn <- networkD3::sankeyNetwork(
+    Links = as.data.frame(links), Nodes = nodes,
+    Source = "source", Target = "target", Value = "value",
+    NodeID = "name", fontSize = 12, nodeWidth = 20,
+    sinksRight = TRUE)
+  sn
+} else {
+  cat("networkD3 not available; showing table instead.\n")
+  print(sankey_data)
+}
 ```
 
-**Figure 8b** shows uORF prevalence. Nearly all PTC-negative NMD comparators
-(`r uorf_prev$pct[uorf_prev$group == "PTC_neg"]`%) have at least one uORF,
-compared to `r uorf_prev$pct[uorf_prev$group == "Control"]`% of Controls
-(OR = `r any_uorf_tests$OR[any_uorf_tests$comparison == "PTC_neg vs Control"]`,
-p = `r p_neg_ctrl`). Notably, PTC-positive comparators are *less* likely to have
-uORFs than Controls
-(`r uorf_prev$pct[uorf_prev$group == "PTC_pos"]`% vs
-`r uorf_prev$pct[uorf_prev$group == "Control"]`%,
-OR = `r any_uorf_tests$OR[any_uorf_tests$comparison == "PTC_pos vs Control"]`)
-— suggesting that the uORF mechanism is specific to the PTC-negative group, not
-a general property of NMD-responsive isoforms.
+The Sankey traces each gained overlapping uORF (with resolved attribution) from
+its causative splice event type (left) to the mechanism by which it creates
+the uORF (right). Skipped exons dominate both as a source of frameshifts within
+the uORF region and as a mechanism placing the ATG in a gained exon region.
 
-## uORF Set Operations: Gained, Lost, and Shared uORFs
+```{r sec2c-uorf-mechanism-table}
+# Summary table: mechanism × event type
+mech_summary <- go_attr %>%
+  count(mechanism_simple) %>%
+  mutate(pct = round(100 * n / sum(n), 1)) %>%
+  arrange(-n)
 
-Within each gene-matched pair, individual uORFs are matched between reference
-and comparator by ATG genomic position. uORFs present only in the comparator
-are "gained"; those only in the reference are "lost." Gained uORFs are further
-stratified by overlapping status — the category the unified model identifies as
-most predictive (Section 2a).
+render_dt(mech_summary,
+  caption = sprintf("Table 8d: Gained Overlapping uORF Mechanisms (n = %s)",
+                    fmt(nrow(go_attr))))
+```
 
-```{r goal4b-uorf-setops}
+Column definitions: **mechanism_simple** = how the overlapping uORF was
+created; **n** = count of gained overlapping uORFs; **pct** = percentage of
+all gained overlapping uORFs.
+
+## Illustrative Example: CDS Start Becomes Overlapping uORF (PPRC1)
+
+The Sankey shows that
+`r round(100 * mean(go_attr$atg_is_ref_cds), 1)`% of gained overlapping uORFs
+arise when the reference's CDS start ATG falls in the comparator's 5'UTR.
+PPRC1 (PGC-1 related coactivator) illustrates this mechanism.
+
+The non-NMD reference (ENST00000278070.7) initiates translation at position
+102,133,069. The NMD comparator (novel1) has a partial intron retention event
+that shortens exon 3 by 101 bp (Partial_IR_3). This alters the exon content
+upstream, shifting the CDS start downstream to 102,137,956. The reference's
+original ATG now falls in the comparator's 5'UTR, where it initiates a 351 nt
+overlapping uORF that extends 772 nt past the new CDS start.
+
+```{r sec2c-example-pprc1, fig.width=10, fig.height=6}
+# PPRC1: + strand. Ref CDS start at 102133069, Comp CDS start at 102137956.
+pprc1_ref_s <- c(102133040, 102137850, 102138619, 102138879, 102139100, 102143045,
+                  102144250, 102145020, 102146672, 102148372, 102148628, 102148817,
+                  102149178, 102149926)
+pprc1_ref_e <- c(102133221, 102138038, 102138765, 102138980, 102142004, 102143098,
+                  102144307, 102145090, 102147392, 102148521, 102148694, 102148938,
+                  102149329, 102150333)
+pprc1_comp_s <- c(102133018, 102137850, 102138720, 102138879, 102139100, 102143045,
+                   102144250, 102145020, 102146672, 102148372, 102148628, 102148817,
+                   102149178, 102149926)
+pprc1_comp_e <- c(102133221, 102138038, 102138765, 102138980, 102142004, 102143098,
+                   102144307, 102145090, 102147392, 102148521, 102148694, 102148938,
+                   102149329, 102150333)
+
+pprc1_events <- data.frame(
+  five_prime = c(102138619, 102133040),
+  three_prime = c(102138719, 102133018),
+  event_type = c("Partial_IR_3", "Alt_TSS"),
+  direction = c("LOSS", "GAIN"))
+
+pprc1_ref_atg <- list(type = "frameshift_boundary", track = "ref",
+  x = 102133069, label = "Ref CDS start", color = "#2ca02c")
+pprc1_comp_atg <- list(type = "frameshift_boundary", track = "comp",
+  x = 102137956, label = "Comp CDS start", color = "#2980B9")
+pprc1_uorf <- list(type = "region_shade", track = "comp",
+  xmin = 102133069, xmax = 102138728,
+  color = "#F39C12", alpha = 0.25,
+  label = "Overlapping uORF (351 nt)")
+pprc1_uorf_stop <- list(type = "ptc_marker", track = "comp",
+  x = 102138728, label = "uORF stop", color = "#F39C12")
+
+p_pprc1 <- plot_ucsc_pair(
+  pprc1_ref_s, pprc1_ref_e, pprc1_comp_s, pprc1_comp_e, strand = "+",
+  ref_cds = list(cds_start = 102133069, cds_stop = 102150029),
+  comp_cds = list(cds_start = 102137956, cds_stop = 102150029),
+  ref_label = "Non-NMD Ref (ENST00000278070.7, 1665 aa)",
+  comp_label = "NMD Comp (novel1, 1545 aa)",
+  events = pprc1_events,
+  annotations = list(pprc1_ref_atg, pprc1_comp_atg, pprc1_uorf, pprc1_uorf_stop),
+  title = "PPRC1: CDS Start in Reference \u2192 Overlapping uORF in NMD Comparator",
+  subtitle = "Orange = overlapping uORF (351 nt). uORF extends past comp CDS start (blue), overlapping the main CDS.")
+print(p_pprc1)
+```
+
+```{r sec2c-example-pprc1-zoom, fig.width=10, fig.height=6}
+pprc1_zoom_events <- data.frame(
+  five_prime = 102138619,
+  three_prime = 102138719,
+  event_type = "Partial_IR_3",
+  direction = "LOSS")
+
+p_pprc1_zoom <- plot_ucsc_pair(
+  pprc1_ref_s, pprc1_ref_e, pprc1_comp_s, pprc1_comp_e, strand = "+",
+  ref_cds = list(cds_start = 102133069, cds_stop = 102150029),
+  comp_cds = list(cds_start = 102137956, cds_stop = 102150029),
+  ref_label = "Non-NMD Ref",
+  comp_label = "NMD Comp",
+  events = pprc1_zoom_events,
+  annotations = list(
+    pprc1_ref_atg, pprc1_comp_atg, pprc1_uorf, pprc1_uorf_stop,
+    list(type = "region_shade", track = "ref",
+         xmin = 102138619, xmax = 102138719,
+         color = "#C0392B", alpha = 0.20,
+         label = "Lost 101 bp (Partial_IR_3)")),
+  xlim = c(102132500, 102139500),
+  title = "PPRC1: Zoom \u2014 Overlapping uORF (351 nt) Spans CDS Start",
+  subtitle = "Orange = uORF from ref ATG (green) to stop at 102,138,728. uORF overlaps comp CDS start (blue) by 772 nt.")
+print(p_pprc1_zoom)
+```
+
+The zoomed view shows the full extent of the overlapping uORF. In the reference
+(top), the ATG at 102,133,069 (green dashed) initiates productive translation
+through a 4,995 bp ORF. In the comparator (bottom), partial intron retention
+(red shading, 101 bp lost from exon 3) shifts the CDS start downstream to
+102,137,956 (blue dashed). The reference's ATG now initiates a 351 nt
+overlapping uORF (orange) that extends 772 nt past the main CDS start,
+competing with productive translation.
+
+## uORF ATGs as Functional CDS Starts in Other Isoforms
+
+Are gained uORF ATGs random sequence features, or do they have demonstrated
+translational function? We test this by checking whether each gained uORF ATG
+serves as a CDS start in any other coding isoform of the same gene.
+
+```{r sec2c-uorf-atg-as-cds}
 # ── Data provenance ──
-# Source: uorf_comparison.rds → group_summaries (stratified by overlapping status)
-# Gained = present in comparator but not reference (by ATG genomic position)
-# Lost = present in reference but not comparator
-# Overlapping = uORF stop codon at or past main CDS start
+# Source: uorf_comp$comparisons_c2$uorf_detail (gained uORFs),
+#   cds.rds + structures.rds (CDS starts for all coding isoforms)
+# For each gained uORF ATG in PTC-neg pairs: does the ATG position match
+# a CDS start in ANY coding isoform of the same gene?
 
-gs <- uorf_comp$group_summaries
+# Build gene → CDS start lookup
+cds_starts_by_gene <- cds %>%
+  filter(coding_status == "coding") %>%
+  inner_join(structures %>% select(isoform_id, gene_id), by = "isoform_id") %>%
+  transmute(gene_id, isoform_id,
+            cds_5prime = ifelse(strand == "+", cds_start, cds_stop))
 
-render_dt(gs, caption = "Table 8c: uORF Set Operations by Group (with Overlapping Stratification)")
+gene_cds_lookup <- cds_starts_by_gene %>%
+  group_by(gene_id) %>%
+  summarise(cds_starts = list(unique(cds_5prime)), .groups = "drop")
+gene_cds_map <- setNames(gene_cds_lookup$cds_starts, gene_cds_lookup$gene_id)
+
+# All gained uORFs in PTC-neg comparators
+ptc_neg_comps_sec2c <- coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc]
+gained_all_ptcneg <- uorf_comp$comparisons_c2$uorf_detail %>%
+  filter(status == "gained",
+         comparator_isoform_id %in% ptc_neg_comps_sec2c)
+
+gained_all_ptcneg$atg_is_gene_cds <- mapply(function(gid, atg) {
+  starts <- gene_cds_map[[gid]]
+  if (is.null(starts)) return(FALSE)
+  atg %in% starts
+}, gained_all_ptcneg$gene_id, gained_all_ptcneg$atg_genomic_pos)
+
+# uORF-level
+n_gained_total <- nrow(gained_all_ptcneg)
+n_atg_is_cds <- sum(gained_all_ptcneg$atg_is_gene_cds)
+pct_atg_is_cds <- round(100 * n_atg_is_cds / n_gained_total, 1)
+
+cat("uORF-level (all gained uORFs in PTC-neg pairs):\n")
+cat("  Total gained uORFs:", fmt(n_gained_total), "\n")
+cat("  ATG = CDS start in same-gene isoform:", fmt(n_atg_is_cds),
+    sprintf("(%.1f%%)\n", pct_atg_is_cds))
+
+# By overlapping status
+ov_g <- gained_all_ptcneg[gained_all_ptcneg$comp_is_overlapping, ]
+nov_g <- gained_all_ptcneg[!gained_all_ptcneg$comp_is_overlapping, ]
+cat("\n  Overlapping uORFs:", fmt(nrow(ov_g)),
+    "— ATG = gene CDS:", fmt(sum(ov_g$atg_is_gene_cds)),
+    sprintf("(%.1f%%)\n", 100*mean(ov_g$atg_is_gene_cds)))
+cat("  Non-overlapping uORFs:", fmt(nrow(nov_g)),
+    "— ATG = gene CDS:", fmt(sum(nov_g$atg_is_gene_cds)),
+    sprintf("(%.1f%%)\n", 100*mean(nov_g$atg_is_gene_cds)))
+
+# Pair-level
+pair_cds_check <- gained_all_ptcneg %>%
+  group_by(comparator_isoform_id) %>%
+  summarise(any_atg_is_cds = any(atg_is_gene_cds), .groups = "drop")
+
+n_pairs_with_gained <- nrow(pair_cds_check)
+n_pairs_with_cds_atg <- sum(pair_cds_check$any_atg_is_cds)
+pct_pairs_with_cds_atg <- round(100 * n_pairs_with_cds_atg / n_pairs_with_gained, 1)
+
+cat("\nPair-level (PTC-neg with gained uORFs):\n")
+cat("  Pairs:", fmt(n_pairs_with_gained), "\n")
+cat("  \u22651 gained uORF ATG = CDS in same-gene isoform:",
+    fmt(n_pairs_with_cds_atg), sprintf("(%.1f%%)\n", pct_pairs_with_cds_atg))
 ```
 
-For each isoform pair, we compared individual uORFs between reference and
-comparator by matching on ATG genomic position. uORFs present only in the
-comparator are "gained"; those only in the reference are "lost." Gained uORFs
-are further stratified by whether they overlap the main CDS.
+At the individual uORF level, `r pct_atg_is_cds`% of gained uORF ATGs match a
+CDS start in another isoform of the same gene. Overlapping uORFs are enriched
+for this (`r round(100*mean(ov_g$atg_is_gene_cds), 1)`% vs
+`r round(100*mean(nov_g$atg_is_gene_cds), 1)`% for non-overlapping). At the
+pair level, `r pct_pairs_with_cds_atg`% of PTC-negative pairs with gained
+uORFs have at least one uORF whose ATG is a functional CDS start elsewhere in
+the gene.
 
-Columns: **group** = PTC_neg, PTC_pos, or Control; **pct_any_gained** = % of
-pairs where the comparator gains at least one uORF; **pct_gained_overlapping** =
-% gaining at least one overlapping uORF; **pct_gained_nonoverlapping** = %
-gaining non-overlapping uORFs; **median_gained/median_gained_overlap** = median
-counts; **pct_any_lost/pct_shared** = % with lost or shared uORFs.
+This has implications for translational efficiency. An ATG that serves as a CDS
+start in another isoform is, by definition, competent for ribosomal initiation
+— it has demonstrated translational function in a different exon context. A
+single mRNA molecule undergoes potentially many rounds of ribosomal scanning.
+Each encounter presents an opportunity for each uORF to capture the ribosome.
+An NMD-triggering uORF only needs to be selected once for NMD to occur:
+translation of the uORF terminates at its stop codon, and if exon-exon
+junctions from the main CDS remain downstream, the transcript is degraded.
+The high pair-level rate (`r pct_pairs_with_cds_atg`%) is therefore
+biologically relevant — it reflects the probability that the transcript
+contains at least one uORF with proven initiation competence.
 
-The key finding: **`r gs$pct_gained_overlapping[gs$group == "PTC_neg"]`% of
-PTC-negative NMD pairs gain at least one overlapping uORF**, compared to
-`r gs$pct_gained_overlapping[gs$group == "Control"]`% of Control pairs (Fisher's
-exact OR = `r round(uorf_comp$event_enrichment$OR[1], 1)` — see below).
-PTC-positive pairs are actually *depleted* for gained
-overlapping uORFs (`r gs$pct_gained_overlapping[gs$group == "PTC_pos"]`%),
-consistent with their NMD being driven by the PTC rather than 5'UTR features.
+## Conclusion: The 5'UTR Pathway to NMD
 
-## Splice Event Co-Occurrence
-
-If specific types of splicing changes are responsible for creating overlapping
-uORFs, those event types should be enriched in PTC-negative pairs that gain
-overlapping uORFs compared to PTC-negative pairs that do not. The table below
-tests this by comparing splice event prevalence between the two subgroups within
-PTC-negative NMD pairs.
-
-```{r goal4b-event-cooccurrence}
-# ── Data provenance ──
-# Source: uorf_comparison.rds → event_enrichment
-# For PTC_neg pairs: event type frequencies in pairs with gained overlapping uORFs
-# vs pairs without. Fisher's exact test for enrichment.
-
-ee <- uorf_comp$event_enrichment
-ee$p_adj <- p.adjust(ee$p_value, method = "BH")
-ee <- ee[order(ee$p_value), ]
-
-render_dt(ee, caption = "Table 8d: Splice Event Enrichment in Pairs with Gained Overlapping uORFs (PTC_neg)")
-```
-
-Columns: **event_type** = splice event type; **n_with_gained_overlap** = PTC_neg
-pairs with gained overlapping uORFs that also have this event type;
-**pct_gained_overlap** = prevalence in gained-overlap pairs;
-**n_without_gained_overlap** = PTC_neg pairs without gained overlapping uORFs;
-**pct_without** = prevalence in non-gained pairs; **OR** = Fisher's exact odds
-ratio (OR > 1 = enriched in gained-overlap pairs); **p_value** = Fisher p-value.
-
-Skipped exon events are the most enriched event type among pairs gaining
-overlapping uORFs, while Alt_TSS events are ubiquitous regardless of
-overlapping uORF status.
-
-### Conclusion: 5'UTR uORFs as the Primary Non-PTC NMD Mechanism
-
-The unified model (Section 2a) identifies overlapping uORFs and longest uORF
-length as the most important 5'UTR features for predicting NMD status. The
-paired analysis here confirms these features are specifically enriched in
-PTC-negative NMD comparators:
-`r gs$pct_gained_overlapping[gs$group == "PTC_neg"]`% of PTC-negative pairs
-gain at least one overlapping uORF vs
-`r gs$pct_gained_overlapping[gs$group == "Control"]`% of Controls. PTC-positive
-pairs are depleted for gained overlapping uORFs, consistent with their NMD
-being driven by the PTC rather than 5'UTR features. Our uORF detection method
-(validated against ORFik for non-overlapping uORFs) uniquely captures
-overlapping uORFs that are invisible to 5'UTR-only analyses.
+PTC-negative NMD comparators have longer 5'UTRs with more uORFs. The mechanism
+attribution traces gained overlapping uORFs to specific splicing events, with
+containment (the event introduces the ATG) providing the cleanest causal link
+and frameshifts (the event alters where the uORF terminates) as a secondary
+mechanism. `r round(100 * mean(go_attr$atg_is_ref_cds), 1)`% of gained
+overlapping uORF ATGs match the paired reference's CDS start, and
+`r pct_atg_is_cds`% match a CDS start in any same-gene isoform — indicating
+these are not random ATGs but functional translation initiation sites
+repurposed by exon path variation.
 
 **Limitations:** uORF detection is sequence-based and does not confirm
-translation. Other non-PTC NMD mechanisms cannot be ruled out from structural
-data alone.
+translation. The frameshift attribution identifies events that alter the
+uORF reading frame but does not prove they introduced the uORF ATG itself —
+the ATG may have been made accessible by a separate upstream event. Other
+non-PTC NMD mechanisms cannot be ruled out from structural data alone.
 
 # 2d. NMD Response is Continuous {#sec2d-continuous}
 
@@ -2926,118 +3444,344 @@ holds for both PTC-positive isoforms (where stop codon position determines
 response strength) and PTC-negative isoforms (where 5'UTR features predict
 response magnitude).
 
-# 3. Shared ATGs — The Same Start Codon, Multiple Fates {#sec3-shared-atgs}
+# 3. Reading Frame Selection — Same ATGs, Different Fates {#sec3-shared-atgs}
 
-The unified model treats PTC and uORF features as independent predictors.
-But biologically, where do the overlapping uORFs come from? We find that the
-ATGs creating overlapping uORFs are not random — many are functional CDS starts
-in other isoforms from the same gene.
+Sections 2b and 2c identified two structural features that predict NMD:
+premature termination codons (from exon path changes that shift reading frame
+or introduce in-frame stops) and overlapping uORFs (from exon path changes
+that remodel the 5'UTR). The unified model treats these as independent
+predictors. But are they independent phenomena, or two consequences of the
+same underlying process — exon path selection determining which reading frame
+a given ATG initiates?
 
-**Data source:** Overlapping uORF ATGs identified from C2 PTC-negative paired
-comparators (paired framework). The ATG role analysis then examines ALL coding
-isoforms of those genes (broader than pairs) to determine whether the ATG
-serves as CDS start in other isoforms.
+To answer this, we examine all gene-matched C2 (NMD) and C4 (Control) pairs
+at the level of their CDS start positions.
 
-```{r sec3-shared-atg-analysis}
+**Data source:** Gene-matched C2 and C4 profiles, CDS positions (cds.rds),
+PTC status (ptc.rds), uORF comparison data (uorf_comparison.rds). All
+analyses use the full structures/cds objects (not Section 1's NMD-excluded
+subset).
+
+## Do NMD and Non-NMD Isoforms Share CDS Starts?
+
+For each gene-matched pair, we classify whether the reference (non-NMD) and
+comparator (NMD or Control) share the same strand-aware CDS start position,
+and cross-tabulate with PTC status.
+
+```{r sec3-same-vs-diff-start, fig.width=9, fig.height=5}
 # ── Data provenance ──
-# Source: utr5_features.rds → isoform_features (overlapping uORFs),
-#   cds.rds (CDS start positions), structures.rds (strand info)
-# Population: Genes with PTC-negative NMD comparators that have overlapping uORFs.
-#   For each such gene, we examine ALL expressed coding isoforms.
+# Source: profiles_list (gene-matched C2/C4 pairs), cds.rds (CDS positions),
+#   ptc.rds (PTC status via set_results$ptc_assoc)
+# Population: All coding gene-matched pairs (ref and comp both coding)
+# For each pair: does ref share CDS 5' position with comp? Cross with PTC status.
 
-# PTC-negative NMD comparator isoforms with overlapping uORFs
-ptc_c2_as <- set_results[["c2_allsamples"]]$ptc_assoc
-coding_ids_set <- cds$isoform_id[cds$coding_status == "coding"]
-sec3_coding_c2 <- profiles_list[["c2_allsamples"]] %>%
-  filter(reference_isoform_id %in% coding_ids_set,
-         comparator_isoform_id %in% coding_ids_set)
-
-ptc_lookup <- ptc_c2_as$pair_summary[, c("comparator_isoform_id", "comp_has_ptc")]
-coding_c2_ptc <- merge(sec3_coding_c2, ptc_lookup, by = "comparator_isoform_id", all.x = TRUE)
-ptc_neg_comps <- coding_c2_ptc %>%
-  filter(comp_has_ptc == FALSE)
-
-# Get UTR5 features for PTC-neg comparators
-utr5_paired <- readRDS(file.path(cache_dir, "utr5_features.rds"))
-ptc_neg_with_uorfs <- utr5_paired$isoform_features %>%
-  filter(isoform_id %in% ptc_neg_comps$comparator_isoform_id,
-         n_orfs_overlapping > 0,
-         !excluded)
-
-cat("PTC-negative NMD comparators with overlapping uORFs:",
-    nrow(ptc_neg_with_uorfs), "\n")
-
-# Get the gene IDs for these isoforms
-genes_with_overlap_uorfs <- unique(
-  coding_c2_ptc$gene_id[coding_c2_ptc$comparator_isoform_id %in%
-                           ptc_neg_with_uorfs$isoform_id]
-)
-cat("Genes with PTC-neg + overlapping uORFs:", length(genes_with_overlap_uorfs), "\n")
-
-# For each gene, get CDS start positions of ALL coding isoforms
-gene_cds_starts <- coding_structures %>%
-  filter(gene_id %in% genes_with_overlap_uorfs) %>%
-  inner_join(coding_cds %>% select(isoform_id, cds_start, cds_stop),
-             by = "isoform_id") %>%
-  mutate(
-    cds_5prime = ifelse(strand == "+", cds_start, cds_stop)
-  ) %>%
-  select(isoform_id, gene_id, strand, cds_5prime)
-
-# Count distinct CDS start positions per gene
-cds_start_diversity <- gene_cds_starts %>%
-  group_by(gene_id) %>%
-  summarise(
-    n_isoforms = n(),
-    n_cds_starts = n_distinct(cds_5prime),
-    .groups = "drop"
-  )
-
-cat("\nCDS start diversity in these genes:\n")
-cat("  Genes with ≥2 CDS starts:",
-    sum(cds_start_diversity$n_cds_starts >= 2),
-    sprintf("(%.1f%%)\n", 100 * mean(cds_start_diversity$n_cds_starts >= 2)))
-cat("  Genes with ≥3 CDS starts:",
-    sum(cds_start_diversity$n_cds_starts >= 3),
-    sprintf("(%.1f%%)\n", 100 * mean(cds_start_diversity$n_cds_starts >= 3)))
-
-# Check NMD status of isoforms sharing CDS starts
+coding_ids_sec3 <- cds$isoform_id[cds$coding_status == "coding"]
 nmd_ids_set <- nmd_class$all_samples$nmd
 non_nmd_ids_set <- nmd_class$all_samples$non_nmd
 
-gene_cds_starts$is_nmd <- gene_cds_starts$isoform_id %in% nmd_ids_set
-gene_cds_starts$is_non_nmd <- gene_cds_starts$isoform_id %in% non_nmd_ids_set
+# Helper: classify pairs as same/diff start × PTC+/PTC-
+classify_pairs <- function(profiles, ptc_assoc, label) {
+  coding_pairs <- profiles %>%
+    filter(reference_isoform_id %in% coding_ids_sec3,
+           comparator_isoform_id %in% coding_ids_sec3)
 
-# For each distinct CDS start in these genes, how many isoforms use it?
-cds_start_usage <- gene_cds_starts %>%
-  group_by(gene_id, cds_5prime) %>%
-  summarise(
-    n_isoforms = n(),
-    n_nmd = sum(is_nmd),
-    n_non_nmd = sum(is_non_nmd),
-    .groups = "drop"
-  )
+  # Add CDS 5' positions (strand from cds object)
+  cds_pos <- cds %>%
+    filter(coding_status == "coding") %>%
+    transmute(isoform_id,
+              cds_5prime = ifelse(strand == "+", cds_start, cds_stop),
+              orf_length)
 
-# CDS starts used by both NMD and non-NMD isoforms
-shared_starts <- cds_start_usage %>%
-  filter(n_nmd > 0, n_non_nmd > 0)
+  pairs <- coding_pairs %>%
+    inner_join(cds_pos %>% rename(ref_cds5 = cds_5prime, ref_orf = orf_length),
+               by = c("reference_isoform_id" = "isoform_id")) %>%
+    inner_join(cds_pos %>% rename(comp_cds5 = cds_5prime, comp_orf = orf_length),
+               by = c("comparator_isoform_id" = "isoform_id"))
 
-cat("\nShared ATG analysis:\n")
-cat("  Total distinct CDS starts:", nrow(cds_start_usage), "\n")
-cat("  Used by both NMD and non-NMD:", nrow(shared_starts),
-    sprintf("(%.1f%%)\n", 100 * nrow(shared_starts) / nrow(cds_start_usage)))
-cat("  Non-NMD isoforms using shared starts:", sum(shared_starts$n_non_nmd), "\n")
-cat("  NMD isoforms using shared starts:", sum(shared_starts$n_nmd), "\n")
+  pairs$same_start <- pairs$ref_cds5 == pairs$comp_cds5
+  pairs$orf_ratio <- pairs$comp_orf / pairs$ref_orf
+
+  # Add PTC status
+  ptc_lookup <- ptc_assoc$pair_summary[, c("comparator_isoform_id", "comp_has_ptc")]
+  pairs <- merge(pairs, ptc_lookup, by = "comparator_isoform_id", all.x = TRUE)
+  pairs$comp_has_ptc[is.na(pairs$comp_has_ptc)] <- FALSE
+
+  pairs$comparison <- label
+  pairs
+}
+
+nmd_pairs <- classify_pairs(
+  profiles_list[["c2_allsamples"]],
+  set_results[["c2_allsamples"]]$ptc_assoc,
+  "NMD (C2)")
+
+ctrl_pairs <- classify_pairs(
+  profiles_list[["c4_allsamples"]],
+  set_results[["c4_allsamples"]]$ptc_assoc,
+  "Control (C4)")
+
+# ── 2×2 table: same/diff start × PTC status ──
+cross_tab <- nmd_pairs %>%
+  mutate(
+    start_class = ifelse(same_start, "Same CDS start", "Different CDS start"),
+    ptc_class = ifelse(comp_has_ptc, "PTC+", "PTC\u2212")
+  ) %>%
+  count(start_class, ptc_class) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
+
+cat("NMD pairs — CDS start × PTC status (n =", nrow(nmd_pairs), "):\n")
+print(as.data.frame(cross_tab))
+
+# Fisher's exact test
+ft_mat <- matrix(
+  c(sum(nmd_pairs$same_start & nmd_pairs$comp_has_ptc),
+    sum(!nmd_pairs$same_start & nmd_pairs$comp_has_ptc),
+    sum(nmd_pairs$same_start & !nmd_pairs$comp_has_ptc),
+    sum(!nmd_pairs$same_start & !nmd_pairs$comp_has_ptc)),
+  nrow = 2, dimnames = list(c("Same start", "Diff start"), c("PTC+", "PTC-")))
+ft_result <- fisher.test(ft_mat)
+cat("\nFisher's exact test (same start vs PTC status):\n")
+cat("  OR:", round(ft_result$estimate, 2), "  p:", signif(ft_result$p.value, 3), "\n")
+
+# ── Figure: stacked bar comparing NMD vs Control ──
+bar_data <- rbind(
+  nmd_pairs %>%
+    mutate(start_class = ifelse(same_start, "Same CDS start", "Different CDS start")) %>%
+    count(comparison, start_class) %>%
+    group_by(comparison) %>%
+    mutate(pct = 100 * n / sum(n)),
+  ctrl_pairs %>%
+    mutate(start_class = ifelse(same_start, "Same CDS start", "Different CDS start")) %>%
+    count(comparison, start_class) %>%
+    group_by(comparison) %>%
+    mutate(pct = 100 * n / sum(n))
+)
+
+fig_start_class <- ggplot(bar_data, aes(x = comparison, y = pct, fill = start_class)) +
+  geom_col(width = 0.6, alpha = 0.85) +
+  geom_text(aes(label = sprintf("%.0f%%", pct)),
+            position = position_stack(vjust = 0.5), size = 4) +
+  scale_fill_manual(values = c("Same CDS start" = "#ef8a62",
+                                "Different CDS start" = "#67a9cf")) +
+  labs(title = "Do Paired Isoforms Share the Same CDS Start?",
+       subtitle = sprintf("NMD: %s pairs | Control: %s pairs",
+                          fmt(nrow(nmd_pairs)), fmt(nrow(ctrl_pairs))),
+       x = NULL, y = "% of pairs", fill = NULL) +
+  theme(legend.position = "bottom")
+save_fig(fig_start_class, "fig_sec3_same_vs_diff_start", width = 9, height = 5)
 ```
 
-The same ATG position can serve as a CDS start in one isoform, an
-overlapping uORF in another, or internal CDS in a third — with the role
-determined entirely by the exon path. Genes encode overlapping reading
-frames through shared ATGs. The exon path — determined by TSS, internal
-splicing, and TES — selects which frame is productive. NMD degrades
-transcripts where the selected path produces a reading frame that
-terminates upstream of EJCs.
+Column definitions for the 2×2 table: **start_class** = whether reference and
+comparator share the same strand-aware CDS 5' position; **ptc_class** = whether
+the comparator has a PTC; **n** = pair count; **pct** = percentage of all NMD
+pairs.
 
+## Same Start, Different Exon Path, Different ORF Length
+
+When two isoforms share the same CDS start, any difference in ORF length is
+entirely due to exon path differences downstream. We compare the ORF length
+ratio (comparator / reference) for same-start NMD pairs vs same-start Control
+pairs.
+
+```{r sec3-orf-length-ratio, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: nmd_pairs, ctrl_pairs (computed above)
+# Population: same-start pairs only
+
+same_start_all <- rbind(
+  nmd_pairs %>% filter(same_start) %>%
+    select(comparison, orf_ratio, comp_has_ptc),
+  ctrl_pairs %>% filter(same_start) %>%
+    select(comparison, orf_ratio, comp_has_ptc)
+)
+
+cat("Same-start pairs:\n")
+cat("  NMD:", sum(nmd_pairs$same_start), "pairs\n")
+cat("    of which PTC+:", sum(nmd_pairs$same_start & nmd_pairs$comp_has_ptc), "\n")
+cat("    of which PTC-:", sum(nmd_pairs$same_start & !nmd_pairs$comp_has_ptc), "\n")
+cat("  Control:", sum(ctrl_pairs$same_start), "pairs\n")
+cat("\nORF length ratio (comp/ref) for same-start pairs:\n")
+cat("  NMD median:", round(median(nmd_pairs$orf_ratio[nmd_pairs$same_start]), 3), "\n")
+cat("  Control median:", round(median(ctrl_pairs$orf_ratio[ctrl_pairs$same_start]), 3), "\n")
+
+fig_orf_ratio <- ggplot(same_start_all, aes(x = orf_ratio, fill = comparison)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "grey40") +
+  scale_fill_manual(values = c("NMD (C2)" = "#ef8a62", "Control (C4)" = "#67a9cf")) +
+  scale_x_continuous(limits = c(0, 2), breaks = seq(0, 2, 0.25)) +
+  labs(title = "ORF Length Ratio for Same-Start Pairs",
+       subtitle = "Comparator ORF / Reference ORF — ratio < 1 indicates truncation",
+       x = "ORF length ratio (comparator / reference)", y = "Density",
+       fill = NULL) +
+  theme(legend.position = "bottom")
+save_fig(fig_orf_ratio, "fig_sec3_orf_length_ratio", width = 10, height = 5)
+```
+
+Same-start NMD pairs should cluster below 1.0 (truncated ORFs from frameshifts
+and in-frame stops), while same-start Control pairs should center near 1.0
+(normal length variation).
+
+The CDS-start-as-uORF mechanism quantified in Section 2c
+(`r round(100 * mean(go_attr$atg_is_ref_cds), 1)`% of gained overlapping
+uORFs) is the 5'UTR counterpart of the PTC mechanism in Section 2b. In both
+cases, the same genomic ATG appears in different structural contexts — as a
+productive CDS start in the non-NMD isoform and as either a PTC-producing
+start (Section 2b, POLR3D) or a uORF initiator (Section 2c, PPRC1) in the
+NMD isoform.
+
+## Synthesis
+
+```{r sec3-synthesis}
+# Summary statistics for inline references
+n_same_start_nmd <- sum(nmd_pairs$same_start)
+n_diff_start_nmd <- sum(!nmd_pairs$same_start)
+pct_same_start_nmd <- round(100 * n_same_start_nmd / nrow(nmd_pairs), 1)
+pct_same_start_ctrl <- round(100 * sum(ctrl_pairs$same_start) / nrow(ctrl_pairs), 1)
+```
+
+`r pct_same_start_nmd`% of NMD pairs share the same CDS start as their
+non-NMD reference (vs `r pct_same_start_ctrl`% of Control pairs). For these
+same-start pairs, exon path differences downstream of the shared ATG produce
+truncated ORFs (median ratio `r round(median(nmd_pairs$orf_ratio[nmd_pairs$same_start]), 2)`)
+via frameshifts and in-frame stops — the mechanisms characterized in Section 2b.
+
+For the `r 100 - pct_same_start_nmd`% of NMD pairs with different CDS starts,
+the exon path difference is upstream: a different TSS or alternative first exon
+shifts the 5' end. As shown in Section 2c, the reference's functional CDS start
+frequently appears as a gained overlapping uORF in the NMD comparator.
+
+## Combined NMD Mechanism Accounting
+
+The figure below unifies the pair-level accounting from Sections 2b and 2c
+into a single view. Every coding NMD pair is classified first by PTC status,
+then by the mechanism through which splicing produces the NMD trigger.
+
+```{r sec3-combined-accounting, fig.width=10, fig.height=8}
+# ── Data provenance ──
+# Source: coding_pairs_c2 (from goal1-ptc-rates-subsetting), ptc status from
+#   set_results, frame walk (fw_c2_allsamples.rds), uorf_comparison.rds
+# All numbers computed at the pair level for clean accounting.
+
+# PTC+ mechanism classification (pair-level)
+ptc_pos_pairs <- coding_pairs_c2[coding_pairs_c2$comp_has_ptc, ]
+
+# Same-stop vs diff-stop
+cds_pos_acct <- cds %>%
+  filter(coding_status == "coding") %>%
+  transmute(isoform_id, stop_3prime = ifelse(strand == "+", cds_stop, cds_start))
+
+ptc_pos_pairs$ref_stop <- cds_pos_acct$stop_3prime[
+  match(ptc_pos_pairs$reference_isoform_id, cds_pos_acct$isoform_id)]
+ptc_pos_pairs$comp_stop <- cds_pos_acct$stop_3prime[
+  match(ptc_pos_pairs$comparator_isoform_id, cds_pos_acct$isoform_id)]
+ptc_pos_pairs$same_stop <- ptc_pos_pairs$ref_stop == ptc_pos_pairs$comp_stop
+
+# Diff-stop: frameshift vs in-frame stop
+fw_data <- readRDS(file.path(cache_dir, "fw_c2_allsamples.rds"))
+diff_stop_pairs <- ptc_pos_pairs[!ptc_pos_pairs$same_stop, ]
+diff_keys <- paste(diff_stop_pairs$reference_isoform_id,
+                   diff_stop_pairs$comparator_isoform_id)
+fw_keys <- paste(fw_data$events$reference_isoform_id,
+                 fw_data$events$comparator_isoform_id)
+
+diff_stop_pairs$has_frameshift <- sapply(diff_keys, function(k) {
+  evts <- fw_data$events[fw_keys == k, ]
+  any(evts$is_frameshift, na.rm = TRUE)
+})
+
+n_frameshift <- sum(diff_stop_pairs$has_frameshift)
+n_inframe_stop <- sum(!diff_stop_pairs$has_frameshift)
+n_3utr_splice <- sum(ptc_pos_pairs$same_stop)
+
+# PTC- mechanism classification (pair-level)
+ptc_neg_pairs <- coding_pairs_c2[!coding_pairs_c2$comp_has_ptc, ]
+
+# All gained uORFs (any type)
+gained_any <- uorf_comp$comparisons_c2$uorf_detail %>%
+  filter(status == "gained")
+gained_overlap_comps <- unique(gained_any$comparator_isoform_id[gained_any$comp_is_overlapping])
+gained_nonoverlap_comps <- unique(gained_any$comparator_isoform_id[!gained_any$comp_is_overlapping])
+gained_any_comps <- unique(gained_any$comparator_isoform_id)
+
+ptc_neg_pairs$has_gained_any <- ptc_neg_pairs$comparator_isoform_id %in% gained_any_comps
+ptc_neg_pairs$has_gained_overlap <- ptc_neg_pairs$comparator_isoform_id %in% gained_overlap_comps
+ptc_neg_pairs$has_gained_nonoverlap_only <- ptc_neg_pairs$has_gained_any & !ptc_neg_pairs$has_gained_overlap
+
+n_ptc_neg_with_uorf <- sum(ptc_neg_pairs$has_gained_any)
+n_ptc_neg_with_overlap <- sum(ptc_neg_pairs$has_gained_overlap)
+n_ptc_neg_nonoverlap_only <- sum(ptc_neg_pairs$has_gained_nonoverlap_only)
+n_ptc_neg_no_uorf <- sum(!ptc_neg_pairs$has_gained_any)
+
+n_total <- nrow(coding_pairs_c2)
+n_ptc_pos <- nrow(ptc_pos_pairs)
+n_ptc_neg <- nrow(ptc_neg_pairs)
+
+cat("Combined accounting (pair-level):\n")
+cat("  Total coding pairs:", fmt(n_total), "\n")
+cat("  PTC+:", fmt(n_ptc_pos), "\n")
+cat("    Frameshift:", fmt(n_frameshift), "\n")
+cat("    In-frame stop:", fmt(n_inframe_stop), "\n")
+cat("    3'UTR splice:", fmt(n_3utr_splice), "\n")
+cat("  PTC-:", fmt(n_ptc_neg), "\n")
+cat("    Gained uORF (any):", fmt(n_ptc_neg_with_uorf), "\n")
+cat("      incl. overlapping:", fmt(n_ptc_neg_with_overlap), "\n")
+cat("      non-overlapping only:", fmt(n_ptc_neg_nonoverlap_only), "\n")
+cat("    No gained uORF:", fmt(n_ptc_neg_no_uorf), "\n")
+cat("  Check sum:", fmt(n_frameshift + n_inframe_stop + n_3utr_splice +
+    n_ptc_neg_with_overlap + n_ptc_neg_nonoverlap_only + n_ptc_neg_no_uorf), "\n")
+
+# ── Sankey diagram ──
+nodes <- data.frame(name = c(
+  sprintf("All coding NMD pairs\n(%s)", fmt(n_total)),                     # 0
+  sprintf("PTC+ (%s)", fmt(n_ptc_pos)),                                    # 1
+  sprintf("PTC\u2212 (%s)", fmt(n_ptc_neg)),                               # 2
+  sprintf("Frameshift\n(%s)", fmt(n_frameshift)),                          # 3
+  sprintf("In-frame stop\n(%s)", fmt(n_inframe_stop)),                     # 4
+  sprintf("3\u2032UTR splice\n(%s)", fmt(n_3utr_splice)),                  # 5
+  sprintf("Gained uORF\n(%s)", fmt(n_ptc_neg_with_uorf)),                 # 6
+  sprintf("No gained uORF\n(%s)", fmt(n_ptc_neg_no_uorf)),                # 7
+  sprintf("Incl. overlapping\n(%s)", fmt(n_ptc_neg_with_overlap)),        # 8
+  sprintf("Non-overlapping only\n(%s)", fmt(n_ptc_neg_nonoverlap_only))   # 9
+), stringsAsFactors = FALSE)
+
+links <- data.frame(
+  source = c(0, 0, 1, 1, 1, 2, 2, 6, 6),
+  target = c(1, 2, 3, 4, 5, 6, 7, 8, 9),
+  value = c(n_ptc_pos, n_ptc_neg, n_frameshift, n_inframe_stop, n_3utr_splice,
+            n_ptc_neg_with_uorf, n_ptc_neg_no_uorf,
+            n_ptc_neg_with_overlap, n_ptc_neg_nonoverlap_only)
+)
+
+if (requireNamespace("networkD3", quietly = TRUE)) {
+  sn <- networkD3::sankeyNetwork(
+    Links = links, Nodes = nodes,
+    Source = "source", Target = "target", Value = "value",
+    NodeID = "name", fontSize = 13, nodeWidth = 25,
+    sinksRight = TRUE, iterations = 0)
+  sn
+} else {
+  cat("networkD3 not available\n")
+}
+```
+
+Every coding NMD pair is accounted for. The PTC pathway (Section 2b)
+explains `r round(100 * n_ptc_pos / n_total, 1)`% of pairs — primarily
+through frameshifts from skipped exons. The uORF pathway (Section 2c)
+covers `r round(100 * n_ptc_neg_with_uorf / n_total, 1)`% of pairs:
+`r round(100 * n_ptc_neg_with_overlap / n_total, 1)`% gain overlapping
+uORFs (the unified model's strongest 5'UTR predictor), and an additional
+`r round(100 * n_ptc_neg_nonoverlap_only / n_total, 1)`% gain only
+non-overlapping uORFs. Just `r round(100 * n_ptc_neg_no_uorf / n_total, 1)`%
+of pairs have no PTC and no gained uORFs — the residual fraction not
+explained by the structural features in this analysis.
+
+Both patterns trace to the same underlying process. Alternative splicing
+determines the exon path. The exon path determines the reading frame — which
+ATG initiates translation, where the stop codon falls, and whether EJCs remain
+downstream. NMD degrades transcripts where the selected reading frame terminates
+prematurely. The two feature classes in the unified model (stop codon position
+and 5'UTR ORFs) are not independent biological mechanisms but two structural
+consequences of exon path variation.
 
 # 4. Protein-Level Consequences of Normal Alternative Splicing {#sec4-protein}
 
