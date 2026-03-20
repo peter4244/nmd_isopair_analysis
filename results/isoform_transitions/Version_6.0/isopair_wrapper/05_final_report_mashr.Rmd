@@ -3399,9 +3399,17 @@ orfik_data <- readRDS(file.path(cache_dir, "orfik_scan.rds"))
 orf_feat <- orfik_data$orf_features
 orf_tx_sum <- orfik_data$tx_summary
 
-ptc_neg_comp_ids <- coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc]
+# Remaining PTC- = exclude reclassified (effectively_ptc) and ref_atg_lost
+remaining_ptcneg <- ptc_neg_ref[!ptc_neg_ref$category %in% c("effectively_ptc", "ref_atg_lost"), ]
+remaining_comp_ids <- remaining_ptcneg$comparator_isoform_id
+
+# Also keep all PTC- for comparison
+all_ptc_neg_comp_ids <- coding_pairs_c2$comparator_isoform_id[!coding_pairs_c2$comp_has_ptc]
+
 ctrl_comp_ids <- unique(profiles_list[["c4_allsamples"]]$comparator_isoform_id)
 ctrl_comp_ids <- ctrl_comp_ids[ctrl_comp_ids %in% orf_tx_sum$isoform_id]
+
+cat("Remaining PTC- pairs (after reclassification):", nrow(remaining_ptcneg), "\n")
 ```
 
 ```{r sec2c-orf-landscape, fig.width=10, fig.height=6}
@@ -3415,7 +3423,7 @@ count_by_kozak <- function(iso_ids) {
               n_any_ejc = sum(has_downstream_ejc), .groups = "drop")
 }
 
-ptcn_kozak <- count_by_kozak(ptc_neg_comp_ids) %>% mutate(group = "NMD PTC\u2212")
+ptcn_kozak <- count_by_kozak(remaining_comp_ids) %>% mutate(group = "Remaining PTC\u2212")
 ctrl_kozak <- count_by_kozak(ctrl_comp_ids) %>% mutate(group = "Control")
 
 kozak_all <- rbind(ptcn_kozak, ctrl_kozak) %>%
@@ -3428,9 +3436,9 @@ kozak_all <- rbind(ptcn_kozak, ctrl_kozak) %>%
 fig_kozak <- ggplot(kozak_all, aes(x = group, y = count, fill = group)) +
   geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
   facet_wrap(~metric, scales = "free_y") +
-  scale_fill_manual(values = c("NMD PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
-  labs(title = "NMD-Competent ORFs by Kozak Strength",
-       subtitle = sprintf("PTC\u2212 comparators (n=%s) vs Control (n=%s) | ORFs with \u22651 downstream EJC",
+  scale_fill_manual(values = c("Remaining PTC\u2212" = "#ef8a62", "Control" = "#67a9cf")) +
+  labs(title = "NMD-Competent ORFs by Kozak Strength: Remaining PTC\u2212 vs Control",
+       subtitle = sprintf("Remaining PTC\u2212 (n=%s, after reclassification) vs Control (n=%s)",
                           fmt(nrow(ptcn_kozak)), fmt(nrow(ctrl_kozak))),
        x = NULL, y = "Count per transcript") +
   theme(legend.position = "none")
