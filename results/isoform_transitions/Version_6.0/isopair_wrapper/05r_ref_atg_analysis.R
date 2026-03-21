@@ -259,13 +259,16 @@ analyze_pairs <- function(pairs, label) {
     results$n_downstream_ejc[i] <- n_dejc
 
     # Classify
+    # Any ORF with downstream EJCs is effectively PTC, regardless of whether
+    # the ORF is shorter, same length, or longer than the reference. Cases:
+    #   - Shorter ORF + EJCs: frameshift or in-frame stop created a PTC
+    #   - Same-length ORF + EJCs: 3'UTR splice gained downstream junctions
+    #   - Longer ORF + EJCs: reference stop skipped, new stop still has EJCs
     ref_orf_len <- results$ref_orf_length[i]
-    if (!is.na(ref_orf_len) && comp_orf_len < ref_orf_len && n_dejc > 0) {
+    if (n_dejc > 0) {
       results$category[i] <- "effectively_ptc"
-    } else if (!is.na(ref_orf_len) && comp_orf_len < ref_orf_len && n_dejc == 0) {
+    } else if (!is.na(ref_orf_len) && comp_orf_len < ref_orf_len) {
       results$category[i] <- "truncated_no_ejc"
-    } else if (n_dejc > 0) {
-      results$category[i] <- "same_or_longer_with_ejc"
     } else {
       results$category[i] <- "no_downstream_ejc"
     }
@@ -297,78 +300,169 @@ c4_results <- analyze_pairs(c4_coding, "Control (C4)")
 
 # ==============================================================================
 # 5. Splice event attribution for effectively-PTC cases
+#    Uses the SAME shared function (attribute_ptc_events) as Section 2b for
+#    truncated-ORF pairs. Same-stop and longer-ORF pairs are attributed to
+#    3'UTR splice (gained downstream junctions) using the same approach as
+#    Section 2b's same-stop Sankey.
 # ==============================================================================
-cat("\n=== Splice Event Attribution ===\n")
+cat("\n=== Splice Event Attribution (Shared Function) ===\n")
 
-# For effectively-PTC cases in C2: find the splice event responsible
+source("analysis_functions.R")
+
+# Load frame walk results (same data as used in Section 2b Sankey)
+fw_c2 <- readRDS("data_mashr/analysis_cache/fw_c2_allsamples.rds")
+
+# Transcript-to-genomic coordinate mapping (reverse of genomic_to_transcript)
+transcript_to_genomic <- function(tx_pos, exon_starts, exon_ends, strand) {
+  if (strand == "-") {
+    exon_starts <- rev(exon_starts)
+    exon_ends <- rev(exon_ends)
+  }
+  cum <- 0L
+  for (j in seq_along(exon_starts)) {
+    es <- exon_starts[j]; ee <- exon_ends[j]
+    exon_len <- ee - es + 1L
+    if (tx_pos <= cum + exon_len) {
+      offset <- tx_pos - cum - 1L
+      if (strand == "+") return(es + offset)
+      else return(ee - offset)
+    }
+    cum <- cum + exon_len
+  }
+  NA_integer_
+}
+
+# For effectively-PTC cases in C2 (originally PTC-): map stop to genomic coords
 eff_ptc_mask <- c2_results$category == "effectively_ptc" & !c2_results$original_ptc
 eff_ptc_idx <- which(eff_ptc_mask)
 cat("  Reclassified effectively-PTC (originally PTC-):", length(eff_ptc_idx), "\n")
 
-attr_event <- character(nrow(c2_results))
-attr_event[] <- NA_character_
-
+# Map premature stop from transcript-space to genomic coordinates
+comp_stop_genomic <- rep(NA_integer_, nrow(c2_results))
 for (k in eff_ptc_idx) {
-  ref_id <- c2_results$reference_isoform_id[k]
   comp_id <- c2_results$comparator_isoform_id[k]
-
-  # Find this pair in profiles
-  pi <- which(c2_coding$reference_isoform_id == ref_id &
-                c2_coding$comparator_isoform_id == comp_id)
-  if (length(pi) == 0) next
-
-  de <- c2_coding$detailed_events[[pi[1]]]
-  if (is.null(de) || nrow(de) == 0) { attr_event[k] <- "no_events"; next }
-
-  ref_atg <- c2_results$ref_atg_genomic[k]
-  # Get comp stop in genomic coords: map back from transcript
-  comp_s <- structs_lookup[[comp_id]]
   strand <- c2_results$strand[k]
+  comp_stop_tx <- c2_results$comp_stop_tx_pos[k]
+  comp_s <- structs_lookup[[comp_id]]
+  if (!is.null(comp_s) && !is.na(comp_stop_tx)) {
+    comp_stop_genomic[k] <- transcript_to_genomic(
+      comp_stop_tx, comp_s$starts, comp_s$ends, strand)
+  }
+}
+c2_results$comp_stop_genomic <- comp_stop_genomic
 
-  # Find splice event between ref ATG and premature stop that caused the truncation
-  # Filter events to those whose genomic coordinates fall between ATG and stop
-  ref_atg_g <- c2_results$ref_atg_genomic[k]
-  # Get the premature stop codon's genomic position
-  # We need to map comp_stop_tx_pos back to genomic — use the event genomic coords instead
-  # Filter events by: event boundaries within the ATG-to-transcript-end region
-  # Since we can't easily map stop back to genomic, use all events and prioritize
-  # frameshifts (the most likely cause of ORF truncation)
+# Split reclassified pairs into:
+#   (a) Truncated ORF: comp_orf < ref_orf → use frameshift/in-frame stop attribution
+#   (b) Same/longer ORF with downstream EJCs → 3'UTR splice mechanism
+eff_ptc_all <- c2_results[eff_ptc_mask, ]
+is_truncated <- !is.na(eff_ptc_all$ref_orf_length) &
+  eff_ptc_all$comp_orf_length_from_ref_atg < eff_ptc_all$ref_orf_length
+is_truncated[is.na(is_truncated)] <- FALSE  # treat NA as non-truncated
 
-  # Prioritize: frameshift events first, then in-frame events
-  found <- FALSE
-  # Sort events by proximity to ref ATG for consistent attribution
-  ev_pos <- pmin(de$five_prime, de$three_prime)
-  ev_order <- order(abs(ev_pos - ref_atg_g))
+cat("  Truncated ORF (frameshift/in-frame stop):", sum(is_truncated), "\n")
+cat("  Same/longer ORF (3'UTR splice):", sum(!is_truncated), "\n")
 
-  for (j in ev_order) {
-    bp <- de$bp_diff[j]
-    if (!is.na(bp) && bp %% 3 != 0) {
-      attr_event[k] <- de$event_type[j]
-      found <- TRUE
-      break
+# --- (a) Truncated ORF attribution via shared function ---
+trunc_pairs <- eff_ptc_all[is_truncated, ]
+attr_mechanism <- rep(NA_character_, nrow(c2_results))
+attr_event <- rep(NA_character_, nrow(c2_results))
+
+if (nrow(trunc_pairs) > 0) {
+  ptc_stop_vec <- setNames(trunc_pairs$comp_stop_genomic, trunc_pairs$comparator_isoform_id)
+  atg_vec <- setNames(trunc_pairs$ref_atg_genomic, trunc_pairs$comparator_isoform_id)
+  strand_vec_t <- setNames(trunc_pairs$strand, trunc_pairs$comparator_isoform_id)
+
+  attr_result <- attribute_ptc_events(
+    pairs = trunc_pairs[, c("comparator_isoform_id", "reference_isoform_id")],
+    fw_events = fw_c2$events,
+    profiles = c2_coding,
+    ptc_genomic_pos = ptc_stop_vec,
+    atg_genomic_pos = atg_vec,
+    strand_vec = strand_vec_t,
+    is_frameshift_vec = NULL
+  )
+
+  attr_lookup <- setNames(seq_len(nrow(attr_result)), attr_result$comparator_isoform_id)
+  trunc_idx <- eff_ptc_idx[is_truncated]
+  for (k in seq_along(trunc_idx)) {
+    comp_id <- c2_results$comparator_isoform_id[trunc_idx[k]]
+    j <- attr_lookup[comp_id]
+    if (!is.na(j)) {
+      attr_mechanism[trunc_idx[k]] <- attr_result$mechanism[j]
+      attr_event[trunc_idx[k]] <- attr_result$ptc_causing_event[j]
     }
   }
-  if (!found) {
-    for (j in ev_order) {
-      bp <- de$bp_diff[j]
-      if (!is.na(bp) && bp %% 3 == 0 && bp != 0) {
-        attr_event[k] <- paste0(de$event_type[j], " (in-frame)")
-        found <- TRUE
-        break
-      }
-    }
-  }
-  if (!found) attr_event[k] <- "unresolved"
 }
 
+# --- (b) Same/longer ORF attribution: 3'UTR splice ---
+# These have downstream EJCs but the ORF isn't truncated. The comparator
+# gained junctions downstream of the stop (same mechanism as Section 2b
+# same-stop pairs). Uses shared attribute_3utr_splice() function.
+nontrunc_pairs <- eff_ptc_all[!is_truncated, ]
+nontrunc_idx <- eff_ptc_idx[!is_truncated]
+
+if (nrow(nontrunc_pairs) > 0) {
+  utr3_stop_vec <- setNames(nontrunc_pairs$comp_stop_genomic, nontrunc_pairs$comparator_isoform_id)
+  utr3_strand_vec <- setNames(nontrunc_pairs$strand, nontrunc_pairs$comparator_isoform_id)
+
+  utr3_result <- attribute_3utr_splice(
+    pairs = nontrunc_pairs[, c("comparator_isoform_id", "reference_isoform_id")],
+    profiles = c2_coding,
+    stop_genomic_pos = utr3_stop_vec,
+    strand_vec = utr3_strand_vec
+  )
+
+  utr3_lookup <- setNames(seq_len(nrow(utr3_result)), utr3_result$comparator_isoform_id)
+  for (k in seq_along(nontrunc_idx)) {
+    comp_id <- c2_results$comparator_isoform_id[nontrunc_idx[k]]
+    j <- utr3_lookup[comp_id]
+    if (!is.na(j)) {
+      attr_mechanism[nontrunc_idx[k]] <- utr3_result$mechanism[j]
+      attr_event[nontrunc_idx[k]] <- utr3_result$ptc_causing_event[j]
+    }
+  }
+}
+
+c2_results$attr_mechanism <- attr_mechanism
 c2_results$attr_event <- attr_event
 
 # Summary of attribution
 reclassified <- c2_results[eff_ptc_mask, ]
-cat("\n  Splice events for reclassified effectively-PTC:\n")
-evt_tab <- sort(table(reclassified$attr_event), decreasing = TRUE)
-for (nm in names(evt_tab)) {
-  cat(sprintf("    %s: %d (%.1f%%)\n", nm, evt_tab[nm], 100 * evt_tab[nm] / nrow(reclassified)))
+cat("\n  PTC-causing mechanism for reclassified pairs:\n")
+mech_tab <- sort(table(reclassified$attr_mechanism), decreasing = TRUE)
+for (nm in names(mech_tab)) {
+  cat(sprintf("    %s: %d (%.1f%%)\n", nm, mech_tab[nm],
+              100 * mech_tab[nm] / nrow(reclassified)))
+}
+
+cat("\n  Event types within Frameshift mechanism:\n")
+fs_reclass <- reclassified[reclassified$attr_mechanism == "Frameshift", ]
+if (nrow(fs_reclass) > 0) {
+  evt_tab <- sort(table(fs_reclass$attr_event), decreasing = TRUE)
+  for (nm in names(evt_tab)) {
+    cat(sprintf("    %s: %d (%.1f%%)\n", nm, evt_tab[nm],
+                100 * evt_tab[nm] / nrow(fs_reclass)))
+  }
+}
+
+cat("\n  Event types within In-frame stop mechanism:\n")
+ifs_reclass <- reclassified[reclassified$attr_mechanism == "In-frame stop", ]
+if (nrow(ifs_reclass) > 0) {
+  evt_tab2 <- sort(table(ifs_reclass$attr_event), decreasing = TRUE)
+  for (nm in names(evt_tab2)) {
+    cat(sprintf("    %s: %d (%.1f%%)\n", nm, evt_tab2[nm],
+                100 * evt_tab2[nm] / nrow(ifs_reclass)))
+  }
+}
+
+cat("\n  Event types within 3'UTR splice mechanism:\n")
+utr3_reclass <- reclassified[reclassified$attr_mechanism == "3'UTR splice", ]
+if (nrow(utr3_reclass) > 0) {
+  evt_tab3 <- sort(table(utr3_reclass$attr_event), decreasing = TRUE)
+  for (nm in names(evt_tab3)) {
+    cat(sprintf("    %s: %d (%.1f%%)\n", nm, evt_tab3[nm],
+                100 * evt_tab3[nm] / nrow(utr3_reclass)))
+  }
 }
 
 # ==============================================================================

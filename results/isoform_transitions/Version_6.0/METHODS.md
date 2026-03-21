@@ -1453,7 +1453,7 @@ averaged per isoform to produce a mean logFC. Spearman correlation between
 predicted probability and mean logFC is computed for all NMD isoforms, and
 separately for PTC-positive and PTC-negative subsets.
 
-### Shared ATG Analysis (Section 3)
+### uORF ATG Position Sharing (Section 3)
 
 For genes with PTC-negative NMD comparators that have overlapping uORFs,
 all expressed coding isoforms of those genes are examined to determine
@@ -1493,6 +1493,71 @@ boundary.
 
 This attribution enables a comprehensive Sankey diagram tracing PTC-causing
 splice events to their mechanism (frameshift vs in-frame stop).
+
+**Implementation**: The attribution logic is implemented in
+`attribute_ptc_events()` (defined in `analysis_functions.R`), called by both
+the report (Section 2b, for PTC-positive pairs) and the precompute script
+(`05r_ref_atg_analysis.R`, for reclassified PTC-negative pairs). The function
+takes configurable parameters: `atg_genomic_pos` (NULL for SQANTI CDS
+attribution, populated for reference-ATG attribution) and `is_frameshift_vec`
+(pre-computed from `compareIsoformFrames()` frame categories, or inferred from
+frame walk events).
+
+**Split-codon splice junctions**: A stop codon can span a splice junction,
+with 2 nucleotides from one exon and 1 from the adjacent exon. The event that
+creates the junction is technically just outside the stop codon's first-
+nucleotide position. To handle this, coordinate containment checks use a ±2 bp
+buffer (`stop_g >= ev_min - 2 & stop_g <= ev_max + 2`), and the ATG-to-stop
+region filter uses overlap semantics with a 3 bp extension rather than strict
+containment.
+
+### Reference-ATG Tracing (PTC-Negative Reclassification)
+
+For PTC-negative NMD pairs where both isoforms are coding, we test whether the
+comparator is effectively PTC-positive when analyzed from the reference isoform's
+CDS start position rather than the TransDecoder2-predicted CDS.
+
+**Motivation**: TransDecoder2 (TD2) selects the CDS with the highest PSAURON
+score and longest significant ORF. When a splice event creates a frameshift that
+truncates the reference reading frame, TD2 may select a longer alternative ORF
+whose stop codon has no downstream EJCs — making the isoform appear PTC-negative.
+For ENST isoforms, TD2 independently predicts the CDS (92.2% agreement with
+GENCODE at the CDS 5' position). For novel isoforms (76.8% of NMD comparators),
+the CDS is entirely TD2-predicted. CDS prediction provenance verified from
+SQANTI3 source code: `helpers.py:predictORF()` calls `run_td2()` (not
+GeneMarkS-T).
+
+**Algorithm** (implemented in `05r_ref_atg_analysis.R`):
+
+1. **ATG availability check**: For each gene-matched pair, determine the
+   reference isoform's strand-aware CDS start position (+ strand: `cds_start`;
+   - strand: `cds_stop`). Check whether the full 3-nucleotide ATG codon is
+   exonic in the comparator's exon structure.
+
+2. **ORF tracing**: If the ATG is available, map it to the comparator's
+   transcript-space position. Walk the comparator's transcript sequence from
+   the ATG in 3-nucleotide steps until the first in-frame stop codon
+   (TAA/TAG/TGA). Record the ORF length.
+
+3. **Downstream EJC counting**: Compute exon-exon junction positions in the
+   comparator's transcript-space. Count junctions >50 nt downstream of the
+   stop codon (the NMD rule).
+
+4. **Classification**: Pairs are classified as:
+   - `effectively_ptc`: ORF is shorter than the reference AND ≥1 downstream EJC
+   - `truncated_no_ejc`: ORF is shorter but no downstream EJC
+   - `ref_atg_lost`: Reference ATG codon not exonic in comparator
+   - `no_downstream_ejc`: ORF same or longer, no downstream EJC
+   - `same_or_longer_with_ejc`: ORF same or longer with downstream EJCs
+
+5. **PTC-causing event attribution**: For `effectively_ptc` pairs, the
+   PTC-causing splice event is identified using the same `attribute_ptc_events()`
+   function as for the original PTC-positive pairs (see "PTC-Causing Event
+   Attribution" above). The `atg_genomic_pos` parameter restricts attribution
+   to events overlapping the ATG-to-premature-stop genomic region.
+
+**Output**: `analysis_cache/ref_atg_analysis.rds` containing per-pair
+classification and attribution results for both C2 (NMD) and C4 (Control) pairs.
 
 ### 3'UTR Length Analysis with PTC Correction
 
@@ -1782,4 +1847,4 @@ Splice-specific peptides are validated against the Human PeptideAtlas
 
 **Document Version**: 2.8
 **Last Updated**: 2026-03-19
-**Status**: Complete and validated — added methods for transcriptional diversity (Section 1), unified model (Section 2a), dose-response (Section 2d), shared ATG analysis (Section 3)
+**Status**: Complete and validated 2026-03-20 — added methods for transcriptional diversity (Section 1), unified model (Section 2a), dose-response (Section 2d), uORF ATG position sharing (Section 3), reference-ATG tracing, PTC attribution implementation details
