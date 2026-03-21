@@ -567,18 +567,22 @@ render_dt(verification_df, caption = "Cache Consistency Check")
 
 # Event Type Glossary {.tabset}
 
-Isopair detects 12 structural event types organized into 4 categories. Each tab below
-shows a schematic diagram of the event alongside its definition. In all diagrams, the
-**Reference** (top) is the dominant non-NMD isoform and the **Comparator** (bottom) is
-the isoform being compared. Events are always described from the comparator's perspective:
-a **GAIN** means the comparator has additional sequence relative to the reference, and a
-**LOSS** means the comparator is missing sequence present in the reference.
+Isopair identifies structural differences between pairs of isoforms from the
+same gene by comparing their exon structures against a shared union exon
+coordinate system. Each detected splice event is validated through reference
+isoform reconstruction: the comparator's exon structure plus the detected
+events must exactly reconstruct the reference isoform's exon structure,
+ensuring that the event set is complete and self-consistent. The sections
+below define all 12 splice event types recognized by Isopair, organized into
+4 categories.
 
-**Corrections from the exploratory report (03):** A5SS and A3SS schematics were swapped;
-IR_diff_5 and IR_diff_3 schematics showed the retaining exon extending beyond the reference
-when the code classifies "diff" when the retaining exon falls short.
+In all diagrams, the **Reference** (top) is the dominant non-NMD isoform and
+the **Comparator** (bottom) is the isoform being compared. Events are always
+described from the comparator's perspective: a **GAIN** means the comparator
+has additional sequence relative to the reference, and a **LOSS** means the
+comparator is missing sequence present in the reference.
 
-```{r glossary, results='asis', fig.width=8, fig.height=3}
+```{r glossary-helper, include=FALSE}
 glossary_plot <- function(ref_s, ref_e, comp_s, comp_e, title, subtitle,
                           ref_cds = NULL, comp_cds = NULL, events = NULL) {
   plot_ucsc_pair(ref_s, ref_e, comp_s, comp_e, strand = "+",
@@ -586,163 +590,191 @@ glossary_plot <- function(ref_s, ref_e, comp_s, comp_e, title, subtitle,
                  ref_label = "Reference", comp_label = "Comparator",
                  events = events, title = title, subtitle = subtitle)
 }
+```
 
-# ---- Terminal Events ----
+## Alt_TSS
 
-cat("## Alt_TSS\n\n")
-cat("**Alternative Transcription Start Site.** The two isoforms begin at different\n")
-cat("genomic positions. Detected when the 5'-most exon of one isoform does not overlap\n")
-cat("the 5'-most exon of the other. Direction: GAIN if the comparator's TSS is further\n")
-cat("upstream (extending the transcript); LOSS if it is further downstream (truncating it).\n\n")
-p <- glossary_plot(
+**Alternative Transcription Start Site.** The two isoforms begin at different
+genomic positions. Detected when the 5'-most exon of one isoform does not
+overlap the 5'-most exon of the other. Direction: GAIN if the comparator's
+TSS is further upstream (extending the transcript); LOSS if it is further
+downstream (truncating it).
+
+```{r glossary-alt-tss, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(250, 400, 700), comp_e = c(350, 550, 850),
   title = "Alt_TSS: Alternative Transcription Start Site",
   subtitle = "Comparator starts at a different position (here, downstream = LOSS)")
-print(p); cat("\n\n")
+```
 
-cat("## Alt_TES\n\n")
-cat("**Alternative Transcription End Site.** The two isoforms end at different\n")
-cat("genomic positions. Detected when the 3'-most exon of one isoform does not overlap\n")
-cat("the 3'-most exon of the other. Direction: GAIN if the comparator extends further;\n")
-cat("LOSS if it ends earlier.\n\n")
-p <- glossary_plot(
+## Alt_TES
+
+**Alternative Transcription End Site.** The two isoforms end at different
+genomic positions. Detected when the 3'-most exon of one isoform does not
+overlap the 3'-most exon of the other. Direction: GAIN if the comparator
+extends further; LOSS if it ends earlier.
+
+```{r glossary-alt-tes, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 900),
   comp_s = c(100, 400, 700), comp_e = c(200, 550, 800),
   title = "Alt_TES: Alternative Transcription End Site",
   subtitle = "Comparator ends earlier (LOSS)")
-print(p); cat("\n\n")
+```
 
-# ---- Boundary Events ----
+## A5SS
 
-cat("## A5SS\n\n")
-cat("**Alternative 5' Splice Site.** An internal exon has a different **donor** (exon_end\n")
-cat("on + strand) boundary while sharing the same **acceptor** (exon_start) boundary.\n")
-cat("The exon is extended or truncated at its downstream/3' end.\n")
-cat("Direction: GAIN if the comparator's exon is longer; LOSS if shorter.\n\n")
-# A5SS: same acceptor (exon_start=400), different donor (exon_end: 550 vs 600)
-p <- glossary_plot(
+**Alternative 5' Splice Site.** An internal exon has a different **donor**
+(exon_end on + strand) boundary while sharing the same **acceptor**
+(exon_start) boundary. The exon is extended or truncated at its
+downstream/3' end. Direction: GAIN if the comparator's exon is longer;
+LOSS if shorter.
+
+```{r glossary-a5ss, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(100, 400, 700), comp_e = c(200, 600, 850),
   title = "A5SS: Alternative 5' Splice Site",
   subtitle = "Same acceptor (start), different donor (end). Comparator exon extends further (GAIN)")
-print(p); cat("\n\n")
+```
 
-cat("## A3SS\n\n")
-cat("**Alternative 3' Splice Site.** An internal exon has a different **acceptor** (exon_start\n")
-cat("on + strand) boundary while sharing the same **donor** (exon_end) boundary.\n")
-cat("The exon is extended or truncated at its upstream/5' end.\n")
-cat("Direction: GAIN if the comparator's exon is longer; LOSS if shorter.\n\n")
-# A3SS: different acceptor (exon_start: 400 vs 350), same donor (exon_end=550)
-p <- glossary_plot(
+## A3SS
+
+**Alternative 3' Splice Site.** An internal exon has a different **acceptor**
+(exon_start on + strand) boundary while sharing the same **donor** (exon_end)
+boundary. The exon is extended or truncated at its upstream/5' end.
+Direction: GAIN if the comparator's exon is longer; LOSS if shorter.
+
+```{r glossary-a3ss, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(100, 350, 700), comp_e = c(200, 550, 850),
   title = "A3SS: Alternative 3' Splice Site",
   subtitle = "Same donor (end), different acceptor (start). Comparator exon extends further (GAIN)")
-print(p); cat("\n\n")
+```
 
-cat("## Partial_IR_5\n\n")
-cat("**Partial Intron Retention (5' end).** An intron is partially retained: one isoform's\n")
-cat("exon extends into the intron from its 5' side, covering what is intronic sequence in\n")
-cat("the other isoform. The 3' boundary of the retaining exon falls within the intron.\n")
-cat("Direction: GAIN if the comparator retains; LOSS if the reference retains.\n\n")
-p <- glossary_plot(
+## Partial_IR_5
+
+**Partial Intron Retention (5' end).** An intron is partially retained: one
+isoform's exon extends into the intron from its 5' side, covering what is
+intronic sequence in the other isoform. The 3' boundary of the retaining
+exon falls within the intron. Direction: GAIN if the comparator retains;
+LOSS if the reference retains.
+
+```{r glossary-pir5, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(100, 400, 700), comp_e = c(200, 620, 850),
   title = "Partial_IR_5: Partial Intron Retention (5' side)",
   subtitle = "Comparator exon extends into the intron from the 5' end (GAIN)")
-print(p); cat("\n\n")
+```
 
-cat("## Partial_IR_3\n\n")
-cat("**Partial Intron Retention (3' end).** An intron is partially retained: one isoform's\n")
-cat("exon extends into the intron from its 3' side, covering what is intronic sequence in\n")
-cat("the other isoform. The 5' boundary of the retaining exon falls within the intron.\n")
-cat("Direction: GAIN if the comparator retains; LOSS if the reference retains.\n\n")
-p <- glossary_plot(
+## Partial_IR_3
+
+**Partial Intron Retention (3' end).** An intron is partially retained: one
+isoform's exon extends into the intron from its 3' side, covering what is
+intronic sequence in the other isoform. The 5' boundary of the retaining
+exon falls within the intron. Direction: GAIN if the comparator retains;
+LOSS if the reference retains.
+
+```{r glossary-pir3, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(100, 400, 640), comp_e = c(200, 550, 850),
   title = "Partial_IR_3: Partial Intron Retention (3' side)",
   subtitle = "Comparator exon extends into the intron from the 3' end (GAIN)")
-print(p); cat("\n\n")
+```
 
-# ---- Exon-Level Events ----
+## SE (Skipped Exon)
 
-cat("## SE (Skipped Exon)\n\n")
-cat("**Skipped Exon.** An exon present in one isoform is completely absent from the\n")
-cat("other. The flanking exons splice directly to each other, skipping over the exon.\n")
-cat("Direction: GAIN if the comparator includes the exon (reference skips it);\n")
-cat("LOSS if the comparator skips it (reference includes it).\n\n")
-p <- glossary_plot(
+**Skipped Exon.** An exon present in one isoform is completely absent from the
+other. The flanking exons splice directly to each other, skipping over the
+exon. Direction: GAIN if the comparator includes the exon (reference skips
+it); LOSS if the comparator skips it (reference includes it).
+
+```{r glossary-se, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 600, 800), ref_e  = c(200, 500, 700, 900),
   comp_s = c(100, 400, 800),       comp_e = c(200, 500, 900),
   title = "SE: Skipped Exon",
   subtitle = "Comparator skips an internal exon present in the reference (LOSS)")
-print(p); cat("\n\n")
+```
 
-cat("## Missing_Internal\n\n")
-cat("**Missing Internal Exon.** Similar to SE but arising from a multi-exon skip:\n")
-cat("one isoform is missing one or more internal exons that are present in the other.\n")
-cat("Often co-occurs with other Missing_Internal events from the same splice decision.\n")
-cat("Direction: GAIN if the comparator has the exon; LOSS if the comparator lacks it.\n\n")
-p <- glossary_plot(
+## Missing_Internal
+
+**Missing Internal Exon.** Similar to SE but arising from a multi-exon skip:
+one isoform is missing one or more internal exons that are present in the
+other. Often co-occurs with other Missing_Internal events from the same
+splice decision. Direction: GAIN if the comparator has the exon; LOSS if
+the comparator lacks it.
+
+```{r glossary-mi, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 350, 550, 750, 950), ref_e  = c(200, 450, 650, 850, 1050),
   comp_s = c(100, 950),                 comp_e = c(200, 1050),
   title = "Missing_Internal: Missing Internal Exon(s)",
   subtitle = "Comparator skips multiple internal exons (LOSS x 3)")
-print(p); cat("\n\n")
+```
 
-# ---- Intron Retention Events ----
+## IR
 
-cat("## IR\n\n")
-cat("**Full Intron Retention.** One isoform has a single exon that spans the region\n")
-cat("covered by two or more exons (plus the intervening intron) in the other isoform.\n")
-cat("The retaining exon boundaries match exactly. This is a full retention where the\n")
-cat("entire intron is included in the retaining isoform's exon.\n")
-cat("Direction: GAIN if the comparator retains the intron; LOSS if the reference retains it.\n\n")
-p <- glossary_plot(
+**Full Intron Retention.** One isoform has a single exon that spans the region
+covered by two or more exons (plus the intervening intron) in the other
+isoform. The retaining exon boundaries match exactly. Direction: GAIN if the
+comparator retains the intron; LOSS if the reference retains it.
+
+```{r glossary-ir, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(100, 400),       comp_e = c(200, 850),
   title = "IR: Full Intron Retention",
   subtitle = "Comparator retains intron -- single exon spans two exons + intron in ref (GAIN)")
-print(p); cat("\n\n")
+```
 
-cat("## IR_diff_5\n\n")
-cat("**Intron Retention with 5' Boundary Difference.** Like IR, but the retaining\n")
-cat("exon's 5' boundary differs from the first overlapping exon in the other isoform.\n")
-cat("The intron is retained, but the retaining exon starts after the first reference\n")
-cat("overlap exon (falls short at the 5' end).\n\n")
-# IR_diff_5: comp retaining exon starts AFTER first ref overlap exon start
-p <- glossary_plot(
+## IR_diff_5
+
+**Intron Retention with 5' Boundary Difference.** Like IR, but the retaining
+exon's 5' boundary differs from the first overlapping exon in the other
+isoform. The intron is retained, but the retaining exon starts after the
+first reference overlap exon (falls short at the 5' end).
+
+```{r glossary-ird5, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(100, 430),       comp_e = c(200, 850),
   title = "IR_diff_5: Intron Retention with 5' Boundary Difference",
   subtitle = "Retaining exon starts AFTER ref overlap exon (falls short at 5' end)")
-print(p); cat("\n\n")
+```
 
-cat("## IR_diff_3\n\n")
-cat("**Intron Retention with 3' Boundary Difference.** Like IR, but the retaining\n")
-cat("exon's 3' boundary differs from the last overlapping exon in the other isoform.\n")
-cat("The intron is retained, but the retaining exon ends before the last reference\n")
-cat("overlap exon (falls short at the 3' end).\n\n")
-# IR_diff_3: comp retaining exon ends BEFORE last ref overlap exon end
-p <- glossary_plot(
+## IR_diff_3
+
+**Intron Retention with 3' Boundary Difference.** Like IR, but the retaining
+exon's 3' boundary differs from the last overlapping exon in the other
+isoform. The intron is retained, but the retaining exon ends before the
+last reference overlap exon (falls short at the 3' end).
+
+```{r glossary-ird3, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(100, 400),       comp_e = c(200, 820),
   title = "IR_diff_3: Intron Retention with 3' Boundary Difference",
   subtitle = "Retaining exon ends BEFORE ref overlap exon (falls short at 3' end)")
-print(p); cat("\n\n")
+```
 
-cat("## IR_diff_5_3\n\n")
-cat("**Intron Retention with Both Boundary Differences.** Like IR, but both the 5'\n")
-cat("and 3' boundaries of the retaining exon differ from the flanking exons in the\n")
-cat("other isoform. The intron is retained but the retaining exon falls short at\n")
-cat("both ends.\n\n")
-p <- glossary_plot(
+## IR_diff_5_3
+
+**Intron Retention with Both Boundary Differences.** Like IR, but both the 5'
+and 3' boundaries of the retaining exon differ from the flanking exons in the
+other isoform. The intron is retained but the retaining exon falls short at
+both ends.
+
+```{r glossary-ird53, fig.width=8, fig.height=3, echo=FALSE}
+glossary_plot(
   ref_s  = c(100, 400, 700), ref_e  = c(200, 550, 850),
   comp_s = c(100, 430),       comp_e = c(200, 820),
   title = "IR_diff_5_3: Intron Retention with Both Boundary Differences",
   subtitle = "Retaining exon falls short at both 5' and 3' ends")
-print(p); cat("\n\n")
 ```
 
 In the IR section of this report, **IR_diff** refers to the aggregate of IR_diff_5,
@@ -867,33 +899,48 @@ ref_ids_c2 <- unique(profiles_list[["c2_allsamples"]]$reference_isoform_id)
 comp_ids_c2 <- unique(profiles_list[["c2_allsamples"]]$comparator_isoform_id)
 comp_ids_c4 <- unique(profiles_list[["c4_allsamples"]]$comparator_isoform_id)
 
-get_mean_cpm <- function(ids) {
-  idx <- match(ids, rownames(cpm_mat))
+# Compute mean CPM separately for DMSO and SMG1i conditions
+smg1i_samples <- sample_meta$sample_id[sample_meta$treatment == "Smg1i"]
+smg1i_mat <- expr_mat[, colnames(expr_mat) %in% smg1i_samples]
+smg1i_lib <- colSums(smg1i_mat)
+smg1i_cpm_mat <- sweep(smg1i_mat, 2, smg1i_lib, "/") * 1e6
+
+get_mean_cpm <- function(ids, mat) {
+  idx <- match(ids, rownames(mat))
   idx <- idx[!is.na(idx)]
-  rowMeans(cpm_mat[idx, , drop = FALSE])
+  rowMeans(mat[idx, , drop = FALSE])
 }
 
-cpm_ref <- get_mean_cpm(ref_ids_c2)
-cpm_nmd <- get_mean_cpm(comp_ids_c2)
-cpm_ctrl <- get_mean_cpm(comp_ids_c4)
+# DMSO expression
+cpm_ref_dmso <- get_mean_cpm(ref_ids_c2, cpm_mat)
+cpm_nmd_dmso <- get_mean_cpm(comp_ids_c2, cpm_mat)
+cpm_ctrl_dmso <- get_mean_cpm(comp_ids_c4, cpm_mat)
+
+# SMG1i expression
+cpm_ref_smg1i <- get_mean_cpm(ref_ids_c2, smg1i_cpm_mat)
+cpm_nmd_smg1i <- get_mean_cpm(comp_ids_c2, smg1i_cpm_mat)
+cpm_ctrl_smg1i <- get_mean_cpm(comp_ids_c4, smg1i_cpm_mat)
 
 cpm_compare <- rbind(
-  data.frame(group = "Reference (non-NMD)", cpm = cpm_ref),
-  data.frame(group = "NMD comparator", cpm = cpm_nmd),
-  data.frame(group = "Control comparator", cpm = cpm_ctrl))
+  data.frame(group = "Reference", cpm = cpm_ref_dmso, condition = "DMSO"),
+  data.frame(group = "NMD comparator", cpm = cpm_nmd_dmso, condition = "DMSO"),
+  data.frame(group = "Control comparator", cpm = cpm_ctrl_dmso, condition = "DMSO"),
+  data.frame(group = "Reference", cpm = cpm_ref_smg1i, condition = "SMG1i"),
+  data.frame(group = "NMD comparator", cpm = cpm_nmd_smg1i, condition = "SMG1i"),
+  data.frame(group = "Control comparator", cpm = cpm_ctrl_smg1i, condition = "SMG1i"))
 cpm_compare$group <- factor(cpm_compare$group,
-  levels = c("Reference (non-NMD)", "Control comparator", "NMD comparator"))
+  levels = c("Reference", "Control comparator", "NMD comparator"))
+cpm_compare$condition <- factor(cpm_compare$condition, levels = c("DMSO", "SMG1i"))
 
-fig_cpm <- ggplot(cpm_compare, aes(x = group, y = log10(cpm + 1), fill = group)) +
-  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
-  scale_fill_manual(values = c("Reference (non-NMD)" = "#4393c3",
-                                "Control comparator" = "#67a9cf",
-                                "NMD comparator" = "#ef8a62")) +
-  labs(title = "Expression Level by Isoform Role",
+fig_cpm <- ggplot(cpm_compare, aes(x = group, y = log10(cpm + 1), fill = condition)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7, position = position_dodge(width = 0.8)) +
+  scale_fill_manual(values = c("DMSO" = "#4393c3", "SMG1i" = "#ef8a62")) +
+  labs(title = "Expression Level by Isoform Role and Treatment",
        subtitle = sprintf("Reference: %s | NMD comp: %s | Control comp: %s isoforms",
-                          fmt(length(cpm_ref)), fmt(length(cpm_nmd)), fmt(length(cpm_ctrl))),
-       x = NULL, y = "log10(mean DMSO CPM + 1)") +
-  theme(legend.position = "none")
+                          fmt(length(cpm_ref_dmso)), fmt(length(cpm_nmd_dmso)),
+                          fmt(length(cpm_ctrl_dmso))),
+       x = NULL, y = "log10(mean CPM + 1)", fill = "Treatment") +
+  theme(legend.position = "bottom")
 save_fig(fig_cpm, "fig_sec1_cpm_by_role", width = 10, height = 5)
 
 # --- Transcript length comparison ---
@@ -938,9 +985,13 @@ and `r pct_gt80`% exceed 80%. This concentration motivates the paired
 comparison framework: the dominant non-NMD isoform serves as the reference
 against which NMD-sensitive comparators are compared.
 
-NMD comparators are expressed at lower levels than references (as expected
-for isoforms targeted by degradation) and have similar transcript lengths to
-control comparators.
+NMD comparators are expressed at lower levels than references in DMSO (as
+expected for isoforms targeted by degradation) but increase under SMG1i
+treatment, which inhibits the NMD pathway. This rescue effect --- higher
+expression when NMD is blocked --- is the empirical basis for classifying
+these isoforms as NMD-sensitive. Reference and Control comparator expression
+is largely unchanged between conditions, confirming that the SMG1i effect is
+specific to NMD targets.
 
 # 2. Splicing Patterns in NMD vs Control Pairs {#sec2-baseline}
 
@@ -4078,6 +4129,45 @@ high sensitivity for reclassified pairs where TD2 selected the wrong CDS.
 The biological driver of NMD prediction is PTC identification, and the most
 accurate PTCs come from the gene's reference reading frame, not from
 de novo CDS prediction on the NMD isoform.
+
+## Ref-ATG Model Score vs NMD Response Magnitude
+
+```{r sec3e-dose-response, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: model2_complete (ref-ATG model from sec3e-model2),
+#   mean_logfc (limma logFC computed in sec2d-load-limma, reused here)
+# Population: NMD isoforms with both ref-ATG model score and limma logFC
+
+# Predict ref-ATG model scores for NMD isoforms
+nmd_model2 <- model2_complete[model2_complete$is_nmd == 1, ]
+nmd_model2$pred_2a <- as.numeric(predict(m_2a, newdata = nmd_model2, type = "response"))
+
+# Reuse mean_logfc from Section 3a (already computed from limma DE files)
+nmd_model2_scored <- nmd_model2 %>%
+  inner_join(mean_logfc, by = "isoform_id")
+
+rho_2a <- cor(nmd_model2_scored$pred_2a, nmd_model2_scored$mean_logFC,
+               method = "spearman", use = "complete.obs")
+p_2a <- cor.test(nmd_model2_scored$pred_2a, nmd_model2_scored$mean_logFC,
+                  method = "spearman")$p.value
+
+fig_dose2 <- ggplot(nmd_model2_scored,
+                     aes(x = pred_2a, y = mean_logFC)) +
+  geom_point(alpha = 0.15, size = 0.8, color = "#d6604d") +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1, color = "#d6604d") +
+  labs(title = "Ref-ATG Model Score vs NMD Response Magnitude",
+       subtitle = sprintf("n = %s NMD isoforms | Spearman rho = %.3f, p = %s",
+                          fmt(nrow(nmd_model2_scored)), rho_2a, signif(p_2a, 3)),
+       x = "Predicted NMD probability (ref-ATG model)",
+       y = "Mean logFC (limma, across cell types)")
+save_fig(fig_dose2, "fig_sec3e_dose_response_refatg", width = 10, height = 5)
+```
+
+The ref-ATG model's predicted probability also correlates with NMD response
+magnitude (Spearman rho = `r round(rho_2a, 3)`, p = `r signif(p_2a, 3)`),
+confirming that the CDS-independent PTC feature captures the continuous nature
+of NMD --- isoforms with more downstream EJCs from the reference reading
+frame show stronger SMG1i rescue.
 
 # 4. NMD Mechanism Summary {#sec3-accounting}
 
