@@ -851,21 +851,37 @@ fig_iso_count <- ggplot(iso_per_gene, aes(x = n_isoforms)) +
 save_fig(fig_iso_count, "fig0a_isoform_count_distribution")
 ```
 
+An "expressed isoform" is one that passed the condition-stratified 5%
+isoform proportion filter applied during data preparation
+(`01_prepare_data_mashr.R`): for each gene, an isoform is retained if it
+contributes at least 5% of the gene's total expression in either the DMSO
+or SMG1i condition. Expression is quantified from a PacBio long-read IsoSeq
+count matrix (`r fmt(n_raw_isoforms)` isoforms across `r n_samples` samples
+after exclusion of 2 outlier samples), TMM-normalized via edgeR. The gene set
+shown here is restricted to the `r fmt(length(pair_genes))` genes in the
+gene-matched pair set (genes with at least one NMD-sensitive and one
+non-NMD isoform in both C2 and C4 comparisons). NMD-sensitive isoforms
+(mashr posterior logFC > 0 and lfsr < 0.05 in the all-samples analysis)
+are excluded from this count so that the distribution reflects baseline
+transcriptional diversity, not NMD-driven variation. Both coding and
+non-coding isoforms are included.
+
 ## Expression Concentration and Isoform Roles
 
 ```{r sec1-expression-concentration}
 # ── Data provenance ──
-# Source: expression_data.rds (DMSO samples), coding_structures (from sec1-diversity-data),
+# Source: expression_data.rds (DMSO + SMG1i samples), sec1_structures
+#   (all expressed non-NMD isoforms, coding + non-coding),
 #   profiles_list (gene-matched pairs for reference/comparator CPM)
-# Population: multi-isoform coding genes in the gene-matched pair set
+# Population: multi-isoform genes in the gene-matched pair set (all biotypes)
 # --- Dominant isoform expression share ---
 dmso_samples <- sample_meta$sample_id[sample_meta$treatment == "DMSO"]
 dmso_mat <- expr_mat[, colnames(expr_mat) %in% dmso_samples]
 lib_sizes <- colSums(dmso_mat)
 cpm_mat <- sweep(dmso_mat, 2, lib_sizes, "/") * 1e6
 
-gene_ids <- coding_structures$gene_id[match(rownames(cpm_mat), coding_structures$isoform_id)]
-valid <- !is.na(gene_ids) & rownames(cpm_mat) %in% coding_structures$isoform_id
+gene_ids <- sec1_structures$gene_id[match(rownames(cpm_mat), sec1_structures$isoform_id)]
+valid <- !is.na(gene_ids) & rownames(cpm_mat) %in% sec1_structures$isoform_id
 mean_cpm <- rowMeans(cpm_mat[valid, ])
 iso_df <- data.frame(isoform_id = rownames(cpm_mat)[valid],
                       gene_id = gene_ids[valid], mean_cpm = mean_cpm,
@@ -973,15 +989,48 @@ fig_len <- ggplot(len_compare, aes(x = group, y = length, fill = group)) +
        x = NULL, y = "Transcript length (bp, log scale)") +
   theme(legend.position = "none")
 save_fig(fig_len, "fig_sec1_length_by_role", width = 10, height = 5)
+
+# Pairwise Wilcoxon tests and summary statistics
+len_by_group <- split(len_compare$length, len_compare$group)
+len_summary <- data.frame(
+  Group = names(len_by_group),
+  n = sapply(len_by_group, length),
+  Median = sapply(len_by_group, median, na.rm = TRUE),
+  Q25 = sapply(len_by_group, quantile, 0.25, na.rm = TRUE),
+  Q75 = sapply(len_by_group, quantile, 0.75, na.rm = TRUE),
+  stringsAsFactors = FALSE)
+
+# Pairwise tests
+pw_tests <- list(
+  c("NMD comparator", "Reference (non-NMD)"),
+  c("NMD comparator", "Control comparator"),
+  c("Control comparator", "Reference (non-NMD)"))
+pw_results <- do.call(rbind, lapply(pw_tests, function(pair) {
+  wt <- wilcox.test(len_by_group[[pair[1]]], len_by_group[[pair[2]]])
+  data.frame(Comparison = paste(pair[1], "vs", pair[2]),
+             p_value = signif(wt$p.value, 3), stringsAsFactors = FALSE)
+}))
+
+render_dt(len_summary, caption = "Transcript Length Summary by Isoform Role (bp)")
+render_dt(pw_results, caption = "Pairwise Wilcoxon Tests: Transcript Length")
 ```
 
-For each multi-isoform coding gene, the dominant isoform share is computed
-as `100 * max(mean_DMSO_CPM) / sum(mean_DMSO_CPM)` across all expressed
-coding isoforms for that gene. Despite maintaining many expressed isoforms,
-most genes concentrate the majority of their output on a single dominant
-isoform (median `r med_dom_pct`% of gene expression). `r pct_gt50`% of
-genes have a dominant isoform accounting for more than half their output,
-and `r pct_gt80`% exceed 80%. This concentration motivates the paired
+Columns: **Group** = isoform role; **n** = number of isoforms; **Median**,
+**Q25**, **Q75** = transcript length in bp. Pairwise tests use the
+two-sided Wilcoxon rank-sum test.
+
+For each multi-isoform gene, the dominant isoform share is computed as
+`100 * max(mean_DMSO_CPM) / sum(mean_DMSO_CPM)` across all expressed
+non-NMD isoforms for that gene. Some genes show very high concentration
+(>90%) because the 5% isoform proportion filter is condition-stratified:
+an isoform passes if it reaches 5% in either DMSO or SMG1i. Minor
+isoforms that pass only in SMG1i (e.g., NMD targets rescued by SMG1
+inhibition) may have very low DMSO expression, contributing little to
+the denominator. Despite maintaining many expressed isoforms, most genes
+concentrate the majority of their output on a single dominant isoform
+(median `r med_dom_pct`% of gene expression). `r pct_gt50`% of genes have
+a dominant isoform accounting for more than half their output, and
+`r pct_gt80`% exceed 80%. This concentration motivates the paired
 comparison framework: the dominant non-NMD isoform serves as the reference
 against which NMD-sensitive comparators are compared.
 
@@ -1024,7 +1073,7 @@ pct_shared_data <- pct_shared_data[!is.na(pct_shared_data$pct_shared), ]
 fig1_shared <- ggplot(pct_shared_data, aes(x = pct_shared, fill = comparison)) +
   geom_density(alpha = 0.5) +
   scale_fill_manual(values = pal) +
-  labs(title = "Exonic Sequence Shared (%): NMD vs Control",
+  labs(title = "Exonic Sequence Shared with Reference Isoform, %: NMD vs Control",
        subtitle = "NMD pairs shifted right = more similar (targeted splicing changes)",
        x = "Sequence Shared (%)", y = "Density", fill = "")
 save_fig(fig1_shared, "fig1_pct_shared_density")
@@ -3203,6 +3252,160 @@ strong or adequate Kozak context at the reference ATG, consistent with
 biologically active translation initiation sites. ENST references have
 slightly stronger Kozak context than novel references, as expected from
 curated annotation.
+
+### Reference ATG vs TD2 ATG: Kozak Comparison in NMD Comparators
+
+Of the `r fmt(nrow(ptc_neg_ref[ptc_neg_ref$ref_atg_exonic_in_comp == TRUE &
+!is.na(ptc_neg_ref$ref_atg_exonic_in_comp), ]))` PTC-negative NMD
+comparators where the reference ATG is exonic, `r { comp_cds_sec2c <- cds[match(ptc_neg_ref$comparator_isoform_id[ptc_neg_ref$ref_atg_exonic_in_comp == TRUE & !is.na(ptc_neg_ref$ref_atg_exonic_in_comp)], cds$isoform_id), ]; td2_5p <- ifelse(comp_cds_sec2c$strand == "+", comp_cds_sec2c$cds_start, comp_cds_sec2c$cds_stop); ref_5p <- ptc_neg_ref$ref_atg_genomic[ptc_neg_ref$ref_atg_exonic_in_comp == TRUE & !is.na(ptc_neg_ref$ref_atg_exonic_in_comp)]; fmt(sum(ref_5p != td2_5p, na.rm = TRUE)) }`
+use a different CDS start than their reference. For these pairs, the
+ribosome faces two candidate ATGs: the reference ATG (used by the gene's
+dominant non-NMD isoform) and the TD2-predicted ATG (selected by the CDS
+prediction algorithm for ORF length). We compare their Kozak initiation
+context to assess which is more likely to be used by scanning ribosomes.
+
+```{r sec2c-kozak-comparison, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: corrected FASTA (transcript sequences), cds.rds (TD2 CDS),
+#   ref_atg_analysis.rds (reference ATG positions), structures.rds
+# Population: PTC-negative NMD comparators with ref ATG available AND
+#   different TD2 CDS start (n pairs where ref ATG != TD2 ATG)
+
+# Structure lookup (for coordinate conversion)
+structs_lookup <- setNames(
+  lapply(seq_len(nrow(structures)), function(i)
+    list(starts = structures$exon_starts[[i]], ends = structures$exon_ends[[i]])),
+  structures$isoform_id)
+
+# Identify pairs with different ATGs
+ptc_neg_avail <- ptc_neg_ref[ptc_neg_ref$ref_atg_exonic_in_comp == TRUE &
+                               !is.na(ptc_neg_ref$ref_atg_exonic_in_comp), ]
+comp_cds_koz <- cds[match(ptc_neg_avail$comparator_isoform_id, cds$isoform_id), ]
+td2_atg_koz <- ifelse(comp_cds_koz$strand == "+", comp_cds_koz$cds_start, comp_cds_koz$cds_stop)
+diff_atg_mask <- ptc_neg_avail$ref_atg_genomic != td2_atg_koz & !is.na(td2_atg_koz)
+diff_pairs_koz <- ptc_neg_avail[diff_atg_mask, ]
+diff_td2_atg <- td2_atg_koz[diff_atg_mask]
+
+# Load comparator sequences
+comp_ids_koz <- unique(diff_pairs_koz$comparator_isoform_id)
+id_file_koz <- tempfile(fileext = ".txt")
+writeLines(comp_ids_koz, id_file_koz)
+awk_koz <- sprintf(
+  "awk 'BEGIN{while((getline id < \"%s\") > 0) want[id]=1} /^>/{if(seq && found) print hdr \"\\t\" seq; hdr=substr($1,2); found=(hdr in want); seq=\"\"; next} found{seq=seq$0} END{if(seq && found) print hdr \"\\t\" seq}' '%s'",
+  id_file_koz, FASTA_PATH)
+raw_koz <- system(awk_koz, intern = TRUE)
+unlink(id_file_koz)
+split_koz <- strsplit(raw_koz, "\t", fixed = TRUE)
+seq_koz <- setNames(toupper(vapply(split_koz, `[`, character(1), 2)),
+                      vapply(split_koz, `[`, character(1), 1))
+
+# Score Kozak for both ATGs in each pair
+kozak_score_fn <- function(seq_str, tx_pos) {
+  if (is.na(tx_pos) || tx_pos < 4 || tx_pos + 3 > nchar(seq_str)) return(NA_character_)
+  if (substr(seq_str, tx_pos, tx_pos + 2) != "ATG") return(NA_character_)
+  m3 <- substr(seq_str, tx_pos - 3, tx_pos - 3)
+  p4 <- substr(seq_str, tx_pos + 3, tx_pos + 3)
+  if (m3 %in% c("A","G") && p4 == "G") "Strong"
+  else if (m3 %in% c("A","G") || p4 == "G") "Adequate"
+  else "Weak"
+}
+
+ref_kozak_vec <- character(nrow(diff_pairs_koz))
+td2_kozak_vec <- character(nrow(diff_pairs_koz))
+
+for (k in seq_len(nrow(diff_pairs_koz))) {
+  cid <- diff_pairs_koz$comparator_isoform_id[k]
+  strand_k <- diff_pairs_koz$strand[k]
+  if (!cid %in% names(seq_koz)) { ref_kozak_vec[k] <- NA; td2_kozak_vec[k] <- NA; next }
+  cs <- structs_lookup[[cid]]
+  if (is.null(cs)) { ref_kozak_vec[k] <- NA; td2_kozak_vec[k] <- NA; next }
+
+  ref_tx <- genomic_to_transcript_local(diff_pairs_koz$ref_atg_genomic[k],
+                                          cs$starts, cs$ends, strand_k)
+  td2_tx <- genomic_to_transcript_local(diff_td2_atg[k], cs$starts, cs$ends, strand_k)
+
+  ref_kozak_vec[k] <- kozak_score_fn(seq_koz[cid], ref_tx)
+  td2_kozak_vec[k] <- kozak_score_fn(seq_koz[cid], td2_tx)
+}
+
+# Numeric Kozak PWM score: weighted match to consensus at positions -6 to +4
+# Weights: -3 (A/G) = 2, +4 (G) = 2, -1/-2 (C) = 1 each,
+#   -4/-5 (C) = 0.5, -6 (A/G) = 0.5. Max = 7.5.
+kozak_pwm_score <- function(seq_str, atg_tx_pos) {
+  if (is.na(atg_tx_pos)) return(NA_real_)
+  start <- atg_tx_pos - 6L; end <- atg_tx_pos + 4L
+  if (start < 1 || end > nchar(seq_str)) return(NA_real_)
+  w <- substr(seq_str, start, end)
+  if (nchar(w) != 11 || substr(w, 7, 9) != "ATG") return(NA_real_)
+  ch <- strsplit(w, "")[[1]]
+  s <- 0
+  if (ch[4] %in% c("A","G")) s <- s + 2    # -3
+  if (ch[10] == "G") s <- s + 2             # +4
+  if (ch[6] == "C") s <- s + 1              # -1
+  if (ch[5] == "C") s <- s + 1              # -2
+  if (ch[3] == "C") s <- s + 0.5            # -4
+  if (ch[2] == "C") s <- s + 0.5            # -5
+  if (ch[1] %in% c("A","G")) s <- s + 0.5   # -6
+  s
+}
+
+ref_pwm <- numeric(nrow(diff_pairs_koz))
+td2_pwm <- numeric(nrow(diff_pairs_koz))
+for (k in seq_len(nrow(diff_pairs_koz))) {
+  cid <- diff_pairs_koz$comparator_isoform_id[k]
+  strand_k <- diff_pairs_koz$strand[k]
+  if (!cid %in% names(seq_koz)) { ref_pwm[k] <- NA; td2_pwm[k] <- NA; next }
+  cs <- structs_lookup[[cid]]
+  if (is.null(cs)) { ref_pwm[k] <- NA; td2_pwm[k] <- NA; next }
+  ref_tx <- genomic_to_transcript_local(diff_pairs_koz$ref_atg_genomic[k],
+                                          cs$starts, cs$ends, strand_k)
+  td2_tx <- genomic_to_transcript_local(diff_td2_atg[k], cs$starts, cs$ends, strand_k)
+  ref_pwm[k] <- kozak_pwm_score(seq_koz[cid], ref_tx)
+  td2_pwm[k] <- kozak_pwm_score(seq_koz[cid], td2_tx)
+}
+
+koz_valid <- !is.na(ref_pwm) & !is.na(td2_pwm)
+n_koz_valid <- sum(koz_valid)
+
+# Boxplot of numeric Kozak PWM scores
+koz_df <- rbind(
+  data.frame(ATG_source = "Reference ATG", score = ref_pwm[koz_valid]),
+  data.frame(ATG_source = "TD2-predicted ATG", score = td2_pwm[koz_valid]))
+koz_df$ATG_source <- factor(koz_df$ATG_source,
+  levels = c("Reference ATG", "TD2-predicted ATG"))
+
+wt_koz <- wilcox.test(ref_pwm[koz_valid], td2_pwm[koz_valid], paired = TRUE)
+
+fig_kozak <- ggplot(koz_df, aes(x = ATG_source, y = score, fill = ATG_source)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7, width = 0.5) +
+  scale_fill_manual(values = c("Reference ATG" = "#4393c3",
+                                "TD2-predicted ATG" = "#ef8a62")) +
+  annotate("text", x = 1.5, y = max(koz_df$score, na.rm = TRUE) + 0.3,
+           label = sprintf("paired Wilcoxon p = %s", signif(wt_koz$p.value, 3)),
+           size = 4.5) +
+  labs(title = "Kozak Initiation Context Score: Reference vs TD2-Predicted ATG",
+       subtitle = sprintf("%s NMD comparators with different ref and TD2 start codons | Score range: 0-7.5",
+                          fmt(n_koz_valid)),
+       x = NULL, y = "Kozak PWM score") +
+  theme(legend.position = "none", text = element_text(size = 14))
+save_fig(fig_kozak, "fig_sec2c_kozak_ref_vs_td2", width = 10, height = 5)
+
+ref_median <- round(median(ref_pwm[koz_valid]), 1)
+td2_median <- round(median(td2_pwm[koz_valid]), 1)
+pct_ref_higher <- round(100 * mean(ref_pwm[koz_valid] > td2_pwm[koz_valid]), 1)
+```
+
+Among `r fmt(n_koz_valid)` pairs where the reference and TD2 ATGs differ,
+the reference ATG has a median Kozak score of `r ref_median` versus
+`r td2_median` for the TD2 ATG (paired Wilcoxon p =
+`r signif(wt_koz$p.value, 3)`). The reference ATG scores higher in
+`r pct_ref_higher`% of pairs. The Kozak PWM score weights the two critical
+positions (-3: A/G, weight 2; +4: G, weight 2) plus supporting positions
+(-1, -2: C, weight 1 each; -4 to -6, weight 0.5 each; max = 7.5). TD2
+selects ATGs that maximize ORF length, not initiation context --- the
+reference ATG, used by the gene's dominant isoform, has substantially
+stronger Kozak context and is more likely to be the biologically active
+start codon.
 
 ## PTC-Causing Mechanisms in Reclassified Pairs
 
