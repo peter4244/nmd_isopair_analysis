@@ -1042,6 +1042,49 @@ these isoforms as NMD-sensitive. Reference and Control comparator expression
 is largely unchanged between conditions, confirming that the SMG1i effect is
 specific to NMD targets.
 
+## Isoform Annotation Status
+
+```{r sec1-annotation-status}
+# ── Data provenance ──
+# Source: profiles_list (gene-matched C2 and C4 pairs)
+# Population: unique isoform IDs by role (reference, NMD comparator, Control comparator)
+# Novel isoforms identified by ".novelN" suffix in the isoform ID
+
+is_novel_iso <- function(ids) grepl("[.]novel[0-9]+$", ids)
+
+ref_ids_ann <- unique(profiles_list[["c2_allsamples"]]$reference_isoform_id)
+nmd_ids_ann <- unique(profiles_list[["c2_allsamples"]]$comparator_isoform_id)
+ctrl_ids_ann <- unique(profiles_list[["c4_allsamples"]]$comparator_isoform_id)
+
+ann_table <- data.frame(
+  Role = c("Reference (non-NMD)", "NMD comparator", "Control comparator"),
+  n = c(length(ref_ids_ann), length(nmd_ids_ann), length(ctrl_ids_ann)),
+  ENST = c(sum(!is_novel_iso(ref_ids_ann)), sum(!is_novel_iso(nmd_ids_ann)),
+            sum(!is_novel_iso(ctrl_ids_ann))),
+  Novel = c(sum(is_novel_iso(ref_ids_ann)), sum(is_novel_iso(nmd_ids_ann)),
+             sum(is_novel_iso(ctrl_ids_ann))),
+  stringsAsFactors = FALSE)
+ann_table$pct_ENST <- round(100 * ann_table$ENST / ann_table$n, 1)
+ann_table$pct_Novel <- round(100 * ann_table$Novel / ann_table$n, 1)
+
+render_dt(ann_table, caption = "Isoform Annotation Status by Role")
+```
+
+Columns: **Role** = isoform role in the paired analysis; **n** = unique
+isoform count; **ENST** = GENCODE-annotated isoforms (ENST prefix);
+**Novel** = novel isoforms identified by long-read sequencing (gene_id.novelN
+suffix); **pct_ENST / pct_Novel** = percentages.
+
+NMD comparators are predominantly novel isoforms
+(`r ann_table$pct_Novel[ann_table$Role == "NMD comparator"]`%), consistent
+with NMD-sensitive transcripts being underrepresented in reference annotations
+due to their rapid degradation in vivo. Reference isoforms are mostly
+GENCODE-annotated (`r ann_table$pct_ENST[ann_table$Role == "Reference (non-NMD)"]`%),
+as expected for dominant, stably expressed transcripts. This distinction is
+important for CDS interpretation: GENCODE isoforms have curated CDS
+annotations, while novel isoforms rely entirely on computational CDS
+prediction (TransDecoder2).
+
 # 2. Splicing Patterns in NMD vs Control Pairs {#sec2-baseline}
 
 This section begins the NMD-specific analysis. We compare structural profiles
