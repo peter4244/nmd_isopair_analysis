@@ -1491,7 +1491,7 @@ save_fig(fig1c, "fig1c_gain_direction_barplot", width = 10, height = 6)
 
 # 3a. Stop Codon Analysis {#sec2b-stop-codons}
 
-The prediction model (Section 3d) identifies downstream EJC count as the strongest
+The prediction model (Section 3f) identifies downstream EJC count as the strongest
 single predictor of NMD status. Here we examine stop codon position in detail
 using gene-matched C2 (NMD) vs C4 (Control) isoform pairs, quantify PTC
 enrichment with a dose-response relationship, and trace how PTCs arise through
@@ -2178,7 +2178,7 @@ nucleotide. The new frame encounters a stop codon at position 22,250,112
 (red triangle) — 406 bp before the normal stop at 22,250,518 (green triangle).
 Four exon-exon junctions remain downstream, triggering NMD.
 
-# 3b. Explaining PTC-Negative NMD {#sec2c-ptc-neg}
+# 3b. Ruling Out Alternative NMD Mechanisms {#sec2c-ptc-neg}
 
 Section 3a characterized PTC-positive NMD isoforms. Here we investigate
 the remaining PTC-negative isoforms through a systematic examination of
@@ -2186,7 +2186,7 @@ their structural properties, beginning with the 3'UTR and 5'UTR boundaries.
 
 ## 3'UTR Length Does Not Independently Predict NMD {#sec2c-3utr}
 
-The prediction model (Section 3d) showed that adding 3'UTR length to the full
+The prediction model (Section 3f) showed that adding 3'UTR length to the full
 model does not improve holdout AUC (step 3:
 `r round(unified$elastic_net$step3$auc_test, 3)` → step 4:
 `r round(unified$elastic_net$step4$auc_test, 3)`), meaning 3'UTR length
@@ -2663,6 +2663,18 @@ PTC-negative NMD comparators have substantially longer predicted 5'UTRs
 references (`r fmt(median(div_ptcneg$utr5_bp_ref))` bp) and Control
 comparators (`r fmt(median(div_c4_all$utr5_bp_comp))` bp). This raises the
 question: why is the 5'UTR so much longer in these isoforms?
+
+
+
+# 3c. The CDS Misprediction Problem {#sec2c-cds-misprediction}
+
+Sections 3a--3b established that PTC-mediated NMD is the dominant mechanism
+and that 3'UTR length is not an independent predictor. But nearly half of
+NMD comparators are PTC-negative under the TransDecoder2 (TD2) CDS
+annotation. Here we trace the cause: TD2 systematically selects the wrong
+reading frame for NMD isoforms, choosing a longer ORF that avoids the PTC.
+The gene's dominant non-NMD isoform provides the biologically correct
+reading frame.
 
 ## Decomposing the 5'UTR Extension: TSS vs CDS Movement
 
@@ -3412,6 +3424,16 @@ reference ATG, used by the gene's dominant isoform, has substantially
 stronger Kozak context and is more likely to be the biologically active
 start codon.
 
+
+
+# 3d. Updated PTC Accounting {#sec2c-accounting}
+
+With the reference-ATG reclassification complete, we can now provide a
+comprehensive accounting of PTC-mediated NMD. The reclassified pairs
+show the same splice event patterns and NMD response magnitudes as the
+originally PTC-positive pairs, confirming they are genuine PTCs that TD2
+failed to identify.
+
 ## PTC-Causing Mechanisms in Reclassified Pairs
 
 The `r fmt(nrow(eff_ptc))` reclassified pairs share the reference ATG — any
@@ -3733,7 +3755,7 @@ meta-analysis logFC (posterior mean averaged across cell types).
 # ── Data provenance ──
 # Source: mashr_isoform_model_2026.3.10.rds → post_mean → meta_logfc (STAGE 5)
 #   Original PTC+: coding_pairs_c2 with comp_has_ptc == TRUE (Section 3b)
-#   Reclassified PTC: eff_ptc (Section 3b ref-ATG tracing)
+#   Reclassified PTC: eff_ptc (Section 3c ref-ATG tracing)
 #   Control: profiles_list[["c4_allsamples"]] (C4 gene-matched pairs)
 # Population: comparator isoforms with mashr logFC available
 
@@ -4009,7 +4031,7 @@ whose stop codon has ≥1 downstream exon-exon junction;
 
 These remaining cases cannot be explained by a single dominant PTC. Neither
 long 3'UTR nor enrichment for NMD-susceptible ORFs distinguishes them from
-control. In Section 3c, we develop a broader framework — ORF competition and
+control. In Section 3e, we develop a broader framework — ORF competition and
 gene architecture — that addresses why NMD response is continuous rather than
 binary.
 
@@ -4052,9 +4074,9 @@ paired isoform IDs; **category** = classification from ref-ATG tracing
 isoform; **n_downstream_ejc** = exon-exon junctions downstream of the
 ref-ATG ORF stop in the comparator.
 
-# 3c. ORF Competition and Gene Architecture {#sec2d-orf-competition}
+# 3e. ORF Competition and Gene Architecture {#sec2d-orf-competition}
 
-The accounting in Section 3b explained individual NMD isoforms through PTC
+The accounting in Section 3d explained individual NMD isoforms through PTC
 identification. Here we investigate a complementary question: why is NMD a
 continuous phenomenon rather than a binary switch? One framework consistent
 with the data is stochastic translation initiation — each ribosomal scanning
@@ -4318,7 +4340,7 @@ genes — is consistent with the first interpretation, but the data do not
 exclude the second.
 
 
-# 3d. Predicting NMD from Isoform Structure {#sec-prediction}
+# 3f. Predicting NMD from Isoform Structure {#sec-prediction}
 
 Can we predict which isoforms trigger NMD from structural features alone?
 We built a combined elastic net model using structural features derived from
@@ -5037,21 +5059,47 @@ fig_nmd_heat <- ggplot(nmd_cm_long,
 save_fig(fig_nmd_heat, "fig_shap_nmd_cluster_heatmap", width = 12, height = 7)
 ```
 
-Each column is an NMD subgroup; each row a surviving model feature. This
-decomposition reveals which structural mechanism drives NMD classification
-for each subpopulation. Clusters dominated by reference-CDS downstream EJC
-represent isoforms where the gene's reference reading frame correctly
-identifies the PTC; clusters with high TD2 downstream EJC represent isoforms
-where TD2 also found the PTC; and clusters with dominant 5'UTR features
-represent isoforms where neither CDS source identified a clear PTC, and the
-model relies on translational regulation features.
+Each column is an NMD subgroup; each row a surviving model feature. The
+clusters can be interpreted as mechanistically distinct NMD subpopulations:
+
+- **Dual-PTC clusters** (high TD2 + Ref downstream EJC): Both CDS sources
+  identify the PTC. These are structurally unambiguous NMD targets.
+- **Ref-CDS-driven clusters** (high Ref EJC, low TD2 EJC): The reference
+  reading frame reveals a PTC that TD2 missed by selecting the wrong ORF.
+  These correspond to the reclassified PTC-negative isoforms from Section 3c.
+- **5'UTR-driven clusters** (low EJC from both sources, elevated uORF/ATG
+  features): Neither CDS source identifies a clear PTC. The model relies on
+  translational regulation features --- these may represent uORF-mediated
+  NMD or isoforms where the PTC mechanism is not captured by either CDS
+  annotation.
+
+## Structural Features vs Sequence: The Remaining Gap
+
+The combined structural model achieves holdout AUC =
+`r round(mc$combined_model$auc_test, 3)`, demonstrating that isoform
+architecture --- primarily PTC identification from two CDS sources ---
+captures the majority of NMD sensitivity variation. However, a preliminary
+CNN model trained on raw transcript sequences alone achieves AUC ~0.73,
+and the structural model itself plateaus at ~0.94. The
+`r round(1 - mc$combined_model$auc_test, 3)` residual may reflect:
+
+- **Sequence-level NMD determinants** not captured by structural features
+  (e.g., specific cis-regulatory elements, RNA secondary structure)
+- **Long 3'UTR NMD** (the "faux UTR" model) where distance to the poly(A)
+  signal, not EJC position, triggers degradation
+- **Stochastic ORF selection** where ribosome scanning dynamics depend on
+  sequence context beyond Kozak consensus
+
+Whether sequence-based models can close or exceed the structural model's
+performance --- particularly for the PTC-absent NMD subpopulation --- is an
+active question for the next phase of this analysis.
 
 # 4. NMD Mechanism Summary {#sec3-accounting}
 
 ```{r sec3-summary-figure, fig.width=10, fig.height=6}
 # ── Data provenance ──
 # Methods: METHODS.md § "Cumulative NMD Mechanism Attribution"
-# Source: coding_pairs_c2 (Section 3a), ref_atg_analysis.rds (Section 3b),
+# Source: coding_pairs_c2 (Section 3a), ref_atg_analysis.rds (Section 3c),
 #   frame walk (fw_c2_allsamples.rds), attribute_ptc_events (analysis_functions.R)
 # Every coding gene-matched NMD pair is classified into one mutually exclusive
 # category. PTC+ pairs use the annotated CDS; PTC- pairs use reference-ATG tracing.
@@ -5163,7 +5211,7 @@ pairs; **%** = percentage of all coding NMD pairs.
 
 Every coding NMD pair is accounted for. PTC-mediated NMD — whether detected
 from the annotated CDS (Section 3a) or revealed by reference-ATG tracing
-(Section 3b) — explains
+(Section 3c) — explains
 `r round(100 * sum(acct$n[acct$group != "Remaining (unexplained)"]) / n_total, 1)`%
 of pairs. The dominant mechanism in both groups is the same:
 **frameshift-causing splice events (primarily exon skipping) that create

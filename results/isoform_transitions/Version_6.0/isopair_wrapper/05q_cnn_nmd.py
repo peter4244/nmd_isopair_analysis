@@ -281,11 +281,13 @@ print(f"  Train AUC: {train_auc:.4f}")
 print(f"  Test AUC:  {test_auc:.4f}")
 
 print(f"\n=== Model Comparison ===")
-print(f"  CNN seq-only (1024 nt):           0.708")
-print(f"  CNN dual-window + junctions:      0.718")
 print(f"  CNN full transcript 9-channel:    {test_auc:.4f}")
-print(f"  ORF landscape elastic net:        0.705")
-print(f"  Unified model:                    0.897")
+# NOTE: Reference benchmarks below are from unified_model.rds and
+# model_comparison.rds. If those models are re-run, update these values
+# or load them dynamically. See FEATURE_DICTIONARY.md for feature definitions.
+# Last verified: 2026-03-27
+print(f"  Unified model (TD2, 11 feat):     0.897")
+print(f"  Combined model (TD2+Ref, 24 feat): 0.940")
 
 # Save predictions
 results_df = df[['isoform_id', 'is_nmd', 'chr', 'tx_length']].copy()
