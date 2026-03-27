@@ -4191,7 +4191,29 @@ fig_kozak <- ggplot(kozak_all, aes(x = group, y = count, fill = group)) +
        x = NULL, y = "Count per transcript") +
   theme(legend.position = "none")
 save_fig(fig_kozak, "fig_sec2d_orf_landscape", width = 10, height = 6)
+```
 
+<details>
+<summary>Click to view tabular data for ORF landscape</summary>
+
+```{r sec2d-orf-landscape-table, echo=FALSE}
+orf_summary <- kozak_all %>%
+  group_by(metric, group) %>%
+  summarise(n = n(),
+            Median = round(median(count, na.rm = TRUE), 1),
+            Q25 = round(quantile(count, 0.25, na.rm = TRUE), 1),
+            Q75 = round(quantile(count, 0.75, na.rm = TRUE), 1),
+            .groups = "drop")
+render_dt(orf_summary, caption = "ORF Landscape: NMD-Susceptible ORFs by Kozak Strength")
+```
+
+Columns: **metric** = ORF selection criterion (Kozak strength + downstream
+EJC); **group** = NMD or Control comparators; **n** = isoforms;
+**Median/Q25/Q75** = count of qualifying ORFs per transcript.
+
+</details>
+
+```{r sec2d-orf-landscape-tests}
 for (var in c("n_k2_ejc", "n_k1plus_ejc", "n_any_ejc")) {
   wt <- wilcox.test(nmd_kozak[[var]], ctrl_kozak[[var]])
   cat(sprintf("  %s: NMD median %g vs Control %g (p = %g)\n",
@@ -4259,6 +4281,27 @@ fig_continuum <- ggplot(gene_logfc, aes(x = gene_type, y = mean_nonnmd_logfc, fi
   theme(legend.position = "none")
 save_fig(fig_continuum, "fig_sec2d_gene_continuum", width = 10, height = 5)
 ```
+
+<details>
+<summary>Click to view tabular data for gene-level NMD continuum</summary>
+
+```{r sec2d-gene-continuum-table, echo=FALSE}
+gene_logfc_summary <- gene_logfc %>%
+  group_by(gene_type) %>%
+  summarise(n = n(),
+            `Median logFC` = round(median(mean_nonnmd_logfc, na.rm = TRUE), 3),
+            `Mean logFC` = round(mean(mean_nonnmd_logfc, na.rm = TRUE), 3),
+            Q25 = round(quantile(mean_nonnmd_logfc, 0.25, na.rm = TRUE), 3),
+            Q75 = round(quantile(mean_nonnmd_logfc, 0.75, na.rm = TRUE), 3),
+            .groups = "drop")
+render_dt(gene_logfc_summary, caption = "Non-NMD Isoform logFC by Gene NMD Status")
+```
+
+Columns: **gene_type** = gene category; **n** = genes; **Median/Mean logFC**
+= mean logFC of non-NMD isoforms per gene (SMG1i vs DMSO); **Q25/Q75** =
+interquartile range.
+
+</details>
 
 Non-NMD isoforms from NMD-harboring genes show a significantly higher logFC
 than those from non-NMD genes (p = `r signif(wt_gene$p.value, 3)`). The
@@ -4734,6 +4777,26 @@ fig_dose <- ggplot(nmd_dose,
 save_fig(fig_dose, "fig_dose_response_combined", width = 10, height = 5)
 ```
 
+<details>
+<summary>Click to view tabular data for dose-response</summary>
+
+```{r sec3d-dose-response-table, echo=FALSE}
+dose_summary <- nmd_dose %>%
+  mutate(score_bin = cut(pred_combined, breaks = seq(0, 1, 0.2),
+                          include.lowest = TRUE)) %>%
+  group_by(score_bin) %>%
+  summarise(n = n(),
+            `Median logFC` = round(median(mean_logFC, na.rm = TRUE), 3),
+            `Mean logFC` = round(mean(mean_logFC, na.rm = TRUE), 3),
+            .groups = "drop")
+render_dt(dose_summary, caption = "NMD Response by Combined Model Score Bin")
+```
+
+Columns: **score_bin** = predicted NMD probability range; **n** = holdout NMD
+isoforms; **Median/Mean logFC** = SMG1i response within that score bin.
+
+</details>
+
 The combined model's predicted probability correlates with actual NMD
 response magnitude (Spearman rho = `r round(rho_combined, 3)`,
 p = `r signif(p_combined, 3)`), confirming that the structural features
@@ -4824,6 +4887,24 @@ fig_shap_bee <- ggplot(shap_plot_df,
        x = "SHAP value (log-odds)", y = NULL)
 save_fig(fig_shap_bee, "fig_shap_beeswarm", width = 10, height = 8)
 ```
+
+<details>
+<summary>Click to view tabular data for SHAP feature importance</summary>
+
+```{r sec3d-shap-importance-table, echo=FALSE}
+shap_importance <- shap_plot_df %>%
+  group_by(Feature) %>%
+  summarise(`Mean |SHAP|` = round(mean(abs(shap_value)), 4),
+            `Median SHAP` = round(median(shap_value), 4),
+            .groups = "drop") %>%
+  arrange(desc(`Mean |SHAP|`))
+render_dt(shap_importance, caption = "SHAP Feature Importance (Holdout Test Set)")
+```
+
+Columns: **Feature** = model variable; **Mean |SHAP|** = mean absolute SHAP
+value (importance ranking); **Median SHAP** = median contribution direction.
+
+</details>
 
 Column definitions for the SHAP beeswarm: each dot is one holdout test set
 isoform. The x-axis shows the SHAP contribution (positive = pushes
@@ -5064,6 +5145,21 @@ save_fig(fig_acct, "fig_sec3_mechanism_accounting", width = 10, height = 6)
 # Verify sum
 stopifnot(sum(acct$n) == n_total)  # accounting must be exhaustive
 ```
+
+<details>
+<summary>Click to view tabular data for mechanism accounting</summary>
+
+```{r sec3-mechanism-table, echo=FALSE}
+acct_display <- acct %>%
+  select(Category = category, Group = group, n, `%` = pct)
+render_dt(acct_display, caption = "NMD Mechanism Accounting")
+```
+
+Columns: **Category** = NMD mechanism category; **Group** = attribution
+source (original PTC, reclassified PTC, or unexplained); **n** = coding NMD
+pairs; **%** = percentage of all coding NMD pairs.
+
+</details>
 
 Every coding NMD pair is accounted for. PTC-mediated NMD — whether detected
 from the annotated CDS (Section 3a) or revealed by reference-ATG tracing
