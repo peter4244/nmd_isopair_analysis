@@ -350,6 +350,7 @@ cds_exons    <- readRDS(file.path(data_dir, "cds_exons.rds"))
 # ── Prediction model objects (used in Sections 3a, 3b, 3d) ──
 unified <- readRDS(file.path(cache_dir, "unified_model.rds"))
 feat_labels <- unified$feature_labels
+mc <- readRDS(file.path(cache_dir, "model_comparison.rds"))
 
 # ── CDS lookup vectors (used throughout the report) ──
 # Build once from cds.rds via build_cds_lookups() (analysis_functions.R)
@@ -1011,6 +1012,13 @@ pw_results <- do.call(rbind, lapply(pw_tests, function(pair) {
              p_value = signif(wt$p.value, 3), stringsAsFactors = FALSE)
 }))
 
+invisible(NULL)  # tables rendered in collapsible block below
+```
+
+<details>
+<summary>Click to view tabular data for transcript length comparison</summary>
+
+```{r sec1-length-tables, echo=FALSE}
 render_dt(len_summary, caption = "Transcript Length Summary by Isoform Role (bp)")
 render_dt(pw_results, caption = "Pairwise Wilcoxon Tests: Transcript Length")
 ```
@@ -1018,6 +1026,8 @@ render_dt(pw_results, caption = "Pairwise Wilcoxon Tests: Transcript Length")
 Columns: **Group** = isoform role; **n** = number of isoforms; **Median**,
 **Q25**, **Q75** = transcript length in bp. Pairwise tests use the
 two-sided Wilcoxon rank-sum test.
+
+</details>
 
 For each multi-isoform gene, the dominant isoform share is computed as
 `100 * max(mean_DMSO_CPM) / sum(mean_DMSO_CPM)` across all expressed
@@ -1126,12 +1136,21 @@ shared_summary <- pct_shared_data |>
   group_by(comparison) |>
   summarise(n = n(), median = round(median(pct_shared), 1),
             mean = round(mean(pct_shared), 1), .groups = "drop")
+invisible(NULL)  # table rendered in collapsible block below
+```
+
+<details>
+<summary>Click to view tabular data for sequence shared summary</summary>
+
+```{r sec1-shared-table, echo=FALSE}
 render_dt(shared_summary, caption = "Table 1a: Sequence Shared Summary")
 ```
 
 Columns: **comparison** = NMD or Control; **n** = number of pairs; **median/mean** =
 median and mean percentage of exonic sequence shared between reference and
 comparator (from `Isopair::quantifyPairDivergence()`).
+
+</details>
 
 ## Splicing Event Enrichment — NMD vs Control
 
@@ -1179,9 +1198,15 @@ enrich_display <- enrichment[, c("event_type", "n_pairs_with_event_NMD", "pct_of
                                  "n_pairs_with_event_Ctrl", "pct_of_pairs_Ctrl",
                                  "fisher_OR", "fisher_p", "direction")]
 enrich_display$fisher_p <- signif(enrich_display$fisher_p, 3)
+write.csv(enrichment, file.path(table_dir, "table1b_event_enrichment.csv"), row.names = FALSE)
+```
+
+<details>
+<summary>Click to view tabular data for splicing event enrichment</summary>
+
+```{r sec1-enrichment-table, echo=FALSE}
 render_dt(enrich_display,
           caption = "Table 1b: Splicing Event Type Enrichment — NMD vs Control")
-write.csv(enrichment, file.path(table_dir, "table1b_event_enrichment.csv"), row.names = FALSE)
 ```
 
 Columns: **event_type** = splicing event type (see Event Type Glossary);
@@ -1191,6 +1216,8 @@ event of this type; **pct_of_pairs_NMD** = percentage of all
 same for Control (C4, `r fmt(n_c4)` pairs); **fisher_OR** = Fisher's exact
 test odds ratio (>1 = NMD-enriched); **fisher_p** = p-value; **direction** =
 Enriched in NMD, Enriched in Control, or Non-significant (p > 0.05).
+
+</details>
 
 ### Splicing Event Prevalence — NMD vs Control
 
@@ -1832,14 +1859,22 @@ ptc_event_summary <- ptc_attr |>
   arrange(mechanism, desc(n))
 ptc_event_summary$pct <- round(100 * ptc_event_summary$n / nrow(ptc_attr), 1)
 
-render_dt(ptc_event_summary, caption = "Table 5a: PTC-Causing Events by Mechanism (NMD)")
 write.csv(ptc_event_summary, file.path(table_dir, "table5a_ptc_causing_events.csv"),
           row.names = FALSE)
+```
+
+<details>
+<summary>Click to view tabular data for PTC-causing events</summary>
+
+```{r sec2b-ptc-event-table, echo=FALSE}
+render_dt(ptc_event_summary, caption = "Table 5a: PTC-Causing Events by Mechanism (NMD)")
 ```
 
 Columns: **mechanism** = Frameshift or In-frame stop; **ptc_causing_event** =
 splice event type that caused the PTC; **n** = number of pairs; **pct** =
 percentage of all `r fmt(nrow(ptc_attr))` attributed PTCs.
+
+</details>
 
 ## PTC-Causing Event Proportions vs Control Baseline
 
@@ -1895,13 +1930,14 @@ write.csv(ptc_evt_df, file.path(table_dir, "table5b_ptc_event_enrichment.csv"),
 ```
 
 Columns: **event_type** = splice event type; **n_ptc_events** = count of
-PTC-causing events of this type; **pct_of_ptc** = % of all
-`r fmt(n_ptc_attr)` attributed PTC-causing events; **n_ctrl_events** = count in
-gene-matched Control (C4) pairs; **pct_ctrl** = % of `r fmt(ctrl_total)` Control
-events; **enrichment** = fold enrichment (% PTC / % Ctrl); **fisher_p** =
-Fisher's exact test p-value (2×2: this event vs others × PTC-causing vs
-Control); **direction** = Enriched/Depleted in PTC-causing, or Non-significant
-(p > 0.05).
+PTC-causing events of this type among NMD pairs; **pct_of_ptc** = % of all
+`r fmt(n_ptc_attr)` attributed PTC-causing events; **n_ctrl_events** = total
+count of events of this type across all C4 pairs (baseline frequency; each
+pair contributes ~2.5 events on average); **pct_ctrl** = % of
+`r fmt(ctrl_total)` total Control events; **enrichment** = fold enrichment
+(% PTC / % Ctrl); **fisher_p** = Fisher's exact test p-value (2x2: this
+event vs others x PTC-causing vs Control); **direction** = Enriched/Depleted
+in PTC-causing, or Non-significant (p > 0.05).
 
 ```{r goal2-fig5b-ptc-event-barplot, fig.width=10, fig.height=6}
 # ── Data provenance ──
@@ -2225,8 +2261,14 @@ tests <- do.call(rbind, lapply(comparisons_list, function(pair) {
     stringsAsFactors = FALSE)
 }))
 
-render_dt(tests, caption = "Table 7: 3'UTR Length Comparisons (Wilcoxon rank-sum test)")
 write.csv(tests, file.path(table_dir, "table7_utr3_wilcoxon.csv"), row.names = FALSE)
+```
+
+<details>
+<summary>Click to view tabular data for 3'UTR length comparisons</summary>
+
+```{r sec2c-utr3-table, echo=FALSE}
+render_dt(tests, caption = "Table 7: 3'UTR Length Comparisons (Wilcoxon rank-sum test)")
 ```
 
 Columns: **group1/group2** = the two groups being compared (see Figure 6 for
@@ -2235,6 +2277,8 @@ group definitions); **n_group1/n_group2** = number of isoforms in each group;
 **median_diff_bp** = difference in medians (group1 − group2);
 **rank_biserial_r** = rank-biserial correlation (effect size; positive =
 group1 longer); **p_value** = Wilcoxon rank-sum test p-value.
+
+</details>
 
 ## Illustrative Example: 3'UTR Measurement Correction (CMAS)
 
@@ -3734,9 +3778,21 @@ dom_iso <- data.frame(isoform_id = names(mean_cpm), mean_cpm = as.numeric(mean_c
 dom_features <- inner_join(dom_iso, orf_tx_sum, by = "isoform_id")
 dom_features$gene_type <- ifelse(dom_features$gene_id %in% nmd_genes_all, "NMD-harboring", "Non-NMD")
 
+# Add transcript length (exonic bp) from structures
+dom_tx_lengths <- sapply(match(dom_features$isoform_id, structures$isoform_id), function(i) {
+  if (is.na(i)) return(NA_integer_)
+  sum(structures$exon_ends[[i]] - structures$exon_starts[[i]] + 1L)
+})
+dom_features$tx_length <- dom_tx_lengths
+
 dom_summary <- dom_features %>%
   group_by(gene_type) %>%
-  summarise(n = n(), median_orfs = median(n_orfs),
+  summarise(n = n(),
+            median_length = median(tx_length, na.rm = TRUE),
+            iqr_length = sprintf("%s\u2013%s",
+              format(quantile(tx_length, 0.25, na.rm = TRUE), big.mark = ","),
+              format(quantile(tx_length, 0.75, na.rm = TRUE), big.mark = ",")),
+            median_orfs = median(n_orfs),
             median_nmd_comp = median(n_nmd_competent),
             median_junctions = median(n_junctions),
             frac_nmd_comp = round(100 * median(n_nmd_competent / pmax(n_orfs, 1)), 1),
@@ -3746,7 +3802,9 @@ render_dt(dom_summary,
   caption = "Table 9a: Dominant Isoform ORF Landscape by Gene NMD Status")
 ```
 
-Column definitions: **median_orfs** = median ORFs per transcript;
+Column definitions: **median_length** = median transcript length (exonic bp);
+**iqr_length** = interquartile range (Q25--Q75) of transcript length;
+**median_orfs** = median ORFs per transcript;
 **median_nmd_comp** = median ORFs with >=1 downstream EJC;
 **median_junctions** = median exon-exon junctions;
 **frac_nmd_comp** = median fraction of ORFs that are NMD-susceptible.
@@ -3894,10 +3952,13 @@ exclude the second.
 # 3d. Predicting NMD from Isoform Structure {#sec-prediction}
 
 Can we predict which isoforms trigger NMD from structural features alone?
-The answer depends critically on how the coding sequence (CDS) is defined.
-TransDecoder2 (TD2) predicts CDS boundaries de novo for each isoform, but
-Sections 3a--3b showed that TD2 systematically selects the wrong reading
-frame for NMD isoforms. Here we compare two CDS strategies head-to-head:
+We built a combined elastic net model using structural features derived from
+two CDS annotation strategies, achieving holdout AUC =
+`r round(mc$combined_model$auc_test, 3)`. Below we present the combined model,
+then decompose it to understand the dependency structure of its features.
+
+The two CDS strategies differ in how they define the reading frame for each
+isoform:
 
 - **TD2 CDS**: Each isoform's own TransDecoder2-predicted CDS boundaries.
   Features (downstream EJCs, 5'UTR, uORFs) computed from these boundaries.
@@ -3912,7 +3973,7 @@ an experimental outcome from sequence-derived predictors.
 
 **Statistical approach:** Elastic net logistic regression (alpha = 0.5) with
 10-fold cross-validation on the training set. Holdout chromosomes 1, 3, 5, 7
-are never used for feature selection or model tuning. All model sets are
+are never used for feature selection or model tuning. All models are
 trained and evaluated on the **same isoform population** (the intersection
 of isoforms with complete TD2 and reference-CDS features), so AUC
 comparisons are not confounded by population differences.
@@ -3929,7 +3990,7 @@ comparisons are not confounded by population differences.
 # Train: non-holdout chromosomes
 # Test: holdout chr 1,3,5,7 with high-similarity cross-split paralogs removed
 
-mc <- readRDS(file.path(cache_dir, "model_comparison.rds"))
+# mc loaded in Section 0 data loading chunk
 
 cat("Matched population:", fmt(mc$metadata$n_complete), "isoforms\n")
 cat("  NMD:", fmt(mc$metadata$n_nmd_train + mc$metadata$n_nmd_test), "\n")
@@ -4042,139 +4103,12 @@ and evaluated on the **same isoform population** --- the intersection of
 isoforms with complete features from both CDS strategies. This ensures AUC
 differences reflect feature quality, not population differences.
 
-## Model Set 1 --- TD2 CDS Annotations
 
-Progressive elastic net models using features computed from each isoform's
-TransDecoder2-predicted CDS boundaries.
+## The Combined Model
 
-```{r sec3a-td2-progressive, fig.width=7, fig.height=7}
-# ── Data provenance ──
-# Source: mc$td2_models (progressive elastic net models)
-# Evaluated on holdout test set (paralog-free)
-
-td2_specs <- list(
-  list(roc = mc$td2_models$step1$roc_test,
-       name = "Step 1: Downstream EJC", color = "#fc8d59"),
-  list(roc = mc$td2_models$step2$roc_test,
-       name = "Step 2: + Start codon context", color = "#91bfdb"),
-  list(roc = mc$td2_models$step3$roc_test,
-       name = "Step 3: + ORF features", color = "#1a1a1a"),
-  list(roc = mc$td2_models$step4$roc_test,
-       name = "Step 4: + 3\u2032UTR length", color = "#b2182b")
-)
-
-roc_td2 <- lapply(td2_specs, function(spec) {
-  auc_val <- as.numeric(auc(spec$roc))
-  data.frame(
-    fpr = 1 - spec$roc$specificities,
-    tpr = spec$roc$sensitivities,
-    model = sprintf("%s (AUC = %.3f)", spec$name, auc_val),
-    stringsAsFactors = FALSE
-  )
-})
-roc_td2_df <- do.call(rbind, roc_td2)
-roc_td2_df$model <- factor(roc_td2_df$model, levels = unique(roc_td2_df$model))
-
-fig_td2_roc <- ggplot(roc_td2_df, aes(x = fpr, y = tpr, color = model)) +
-  geom_abline(linetype = "dashed", color = "grey70") +
-  geom_line(linewidth = 0.9) +
-  scale_color_manual(values = setNames(
-    sapply(td2_specs, `[[`, "color"), levels(roc_td2_df$model))) +
-  coord_equal() +
-  labs(title = "TD2 CDS \u2014 Progressive Model Building",
-       subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s)",
-                          fmt(mc$metadata$n_test_final)),
-       x = "False Positive Rate", y = "True Positive Rate", color = "") +
-  theme(legend.position = c(0.62, 0.18),
-        legend.background = element_rect(fill = "white", color = "grey80"),
-        legend.key.width = unit(1.2, "cm"))
-save_fig(fig_td2_roc, "fig_td2_progressive_roc", width = 7, height = 7)
-```
-
-Using TD2 CDS annotations, stop codon position alone (downstream EJC count)
-achieves AUC = `r round(mc$td2_models$step1$auc_test, 3)`. Adding start
-codon context features increases AUC to
-`r round(mc$td2_models$step2$auc_test, 3)`, and ORF features raise it
-further to `r round(mc$td2_models$step3$auc_test, 3)`. The large
-step 1 \u2192 step 2 jump (+`r round(mc$td2_models$step2$auc_test - mc$td2_models$step1$auc_test, 3)`)
-suggests that 5\u2032UTR features are doing substantial work --- but as we will
-see, much of this work compensates for incorrect PTC calls rather than
-capturing independent biology. Adding 3\u2032UTR length (step 4) provides no
-improvement (AUC = `r round(mc$td2_models$step4$auc_test, 3)`).
-
-## Model Set 2 --- Reference Isoform CDS
-
-The same progressive structure, but features are computed from the gene's
-dominant non-NMD isoform's CDS traced through each target transcript. The
-reference ATG is mapped to the target's exon structure; if exonic, the ORF
-is walked to the first in-frame stop codon, and all features (downstream
-EJCs, 5\u2032UTR, uORFs, 3\u2032UTR) are computed from the resulting CDS boundaries.
-
-```{r sec3a-ref-progressive, fig.width=7, fig.height=7}
-# ── Data provenance ──
-# Source: mc$ref_models (progressive elastic net models)
-# Ref-CDS features from 05t_ref_cds_features.R
-
-ref_specs <- list(
-  list(roc = mc$ref_models$step1$roc_test,
-       name = "Step 1: Downstream EJC", color = "#fc8d59"),
-  list(roc = mc$ref_models$step2$roc_test,
-       name = "Step 2: + Start codon context", color = "#91bfdb"),
-  list(roc = mc$ref_models$step3$roc_test,
-       name = "Step 3: + ORF features", color = "#1a1a1a"),
-  list(roc = mc$ref_models$step4$roc_test,
-       name = "Step 4: + 3\u2032UTR length", color = "#b2182b")
-)
-
-roc_ref <- lapply(ref_specs, function(spec) {
-  auc_val <- as.numeric(auc(spec$roc))
-  data.frame(
-    fpr = 1 - spec$roc$specificities,
-    tpr = spec$roc$sensitivities,
-    model = sprintf("%s (AUC = %.3f)", spec$name, auc_val),
-    stringsAsFactors = FALSE
-  )
-})
-roc_ref_df <- do.call(rbind, roc_ref)
-roc_ref_df$model <- factor(roc_ref_df$model, levels = unique(roc_ref_df$model))
-
-fig_ref_roc <- ggplot(roc_ref_df, aes(x = fpr, y = tpr, color = model)) +
-  geom_abline(linetype = "dashed", color = "grey70") +
-  geom_line(linewidth = 0.9) +
-  scale_color_manual(values = setNames(
-    sapply(ref_specs, `[[`, "color"), levels(roc_ref_df$model))) +
-  coord_equal() +
-  labs(title = "Reference CDS \u2014 Progressive Model Building",
-       subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s)",
-                          fmt(mc$metadata$n_test_final)),
-       x = "False Positive Rate", y = "True Positive Rate", color = "") +
-  theme(legend.position = c(0.62, 0.18),
-        legend.background = element_rect(fill = "white", color = "grey80"),
-        legend.key.width = unit(1.2, "cm"))
-save_fig(fig_ref_roc, "fig_ref_progressive_roc", width = 7, height = 7)
-```
-
-Using reference CDS annotations, a single feature --- the downstream EJC
-count from the reference reading frame --- achieves AUC =
-`r round(mc$ref_models$step1$auc_test, 3)`. This nearly matches the full
-11-feature TD2 model (`r round(mc$td2_models$step3$auc_test, 3)`). Adding
-start codon and ORF features provides only modest improvement (step 3
-AUC = `r round(mc$ref_models$step3$auc_test, 3)`, a gain of
-+`r round(mc$ref_models$step3$auc_test - mc$ref_models$step1$auc_test, 3)`).
-
-The contrast is revealing: TD2 needs 10 additional 5\u2032UTR features to gain
-+`r round(mc$td2_models$step3$auc_test - mc$td2_models$step1$auc_test, 3)` AUC,
-while reference CDS gains only
-+`r round(mc$ref_models$step3$auc_test - mc$ref_models$step1$auc_test, 3)` from
-the same feature categories. The 5\u2032UTR features in the TD2 model are largely
-compensating for incorrect PTC identification, not capturing independent
-biological signal.
-
-## Model Set 3 --- Combined (TD2 + Reference CDS Features)
-
-The elastic net receives all 24 features (12 TD2 + 12 reference CDS). The
-L1 penalty selects which features survive --- revealing whether TD2 and
-reference CDS features are complementary or redundant.
+The elastic net receives all 24 features (12 TD2 + 12 reference CDS)
+and selects which survive via the L1 penalty. This reveals whether TD2
+and reference CDS features are complementary or redundant.
 
 ```{r sec3a-combined-coefficients}
 # ── Data provenance ──
@@ -4187,15 +4121,36 @@ cat(sprintf("  TD2 features surviving: %d\n",
 cat(sprintf("  Ref-CDS features surviving: %d\n",
             sum(mc$combined_coefficients$source == "Ref-CDS")))
 
-coef_display <- mc$combined_coefficients %>%
+# Build full 24-feature table (including zeroed-out features)
+all_features <- mc$feature_sets$combined
+all_coef_df <- data.frame(
+  feature = all_features,
+  source = ifelse(grepl("^ref_", all_features), "Ref-CDS", "TD2"),
+  stringsAsFactors = FALSE
+)
+# Merge with non-zero coefficients; missing = zeroed out by elastic net
+all_coef_df <- all_coef_df %>%
+  left_join(mc$combined_coefficients %>% select(feature, coefficient),
+            by = "feature") %>%
+  mutate(coefficient = replace(coefficient, is.na(coefficient), 0))
+
+coef_display <- all_coef_df %>%
   mutate(
     Feature = ifelse(feature %in% names(mc$feature_labels),
                      mc$feature_labels[feature], feature),
     Coefficient = round(coefficient, 4),
     Source = source
   ) %>%
+  arrange(-abs(Coefficient)) %>%
   select(Feature, Coefficient, Source)
 
+invisible(NULL)  # table rendered in collapsible block below
+```
+
+<details>
+<summary>Click to view tabular data for combined model coefficients</summary>
+
+```{r sec3a-combined-coef-table, echo=FALSE}
 render_dt(coef_display,
           caption = "Table: Combined Model Feature Importance (TD2 + Ref-CDS)")
 ```
@@ -4203,6 +4158,8 @@ render_dt(coef_display,
 Column definitions: **Feature** = model variable (display name);
 **Coefficient** = elastic net coefficient at lambda.min (standardized);
 **Source** = which CDS annotation produced this feature (TD2 or Ref-CDS).
+
+</details>
 
 ```{r sec3a-combined-barplot, fig.width=9, fig.height=7}
 coef_plot <- coef_display %>%
@@ -4217,8 +4174,8 @@ fig_combined_coefs <- ggplot(coef_plot,
   geom_vline(xintercept = 0, color = "grey40", linewidth = 0.5) +
   scale_fill_manual(values = c("TD2" = "#67a9cf", "Ref-CDS" = "#ef8a62")) +
   labs(title = "Combined Model Feature Importance",
-       subtitle = sprintf("Elastic net (alpha = 0.5) \u2014 %d / 24 features survive",
-                          nrow(coef_display)),
+       subtitle = sprintf("Elastic net (alpha = 0.5) \u2014 %d / 24 features with non-zero coefficients",
+                          sum(coef_display$Coefficient != 0)),
        x = "Coefficient (standardized)", y = NULL, fill = "CDS source") +
   theme(legend.position = "bottom")
 save_fig(fig_combined_coefs, "fig_combined_feature_importance", width = 9, height = 7)
@@ -4234,24 +4191,89 @@ sense: reference CDS correctly identifies PTCs in isoforms where TD2 chose
 the wrong reading frame, while TD2 provides PTC information for isoforms
 where the reference ATG is lost.
 
-## Overlapping ROC Comparison
 
-```{r sec3a-roc-comparison, fig.width=8, fig.height=8}
+## Decomposing the Combined Model
+
+To understand the dependency structure of these 24 features, we decompose
+the combined model into subsets stratified by CDS source and feature
+category. All decomposition models use the same train/test split and
+population as the combined model.
+
+### By CDS Source
+
+Restricting to the 11 TD2-only features yields holdout AUC =
+`r round(mc$td2_models$step3$auc_test, 3)`. Restricting to the 11
+reference-CDS-only features yields AUC =
+`r round(mc$ref_models$step3$auc_test, 3)`. Reference-CDS features alone
+slightly outperform TD2, consistent with the PTC misidentification findings
+from Sections 3a--3b: the reference reading frame provides more accurate
+stop codon positions for NMD isoforms.
+
+### By Feature Category: EJC Counts Alone
+
+```{r sec3d-ejc-only-model}
 # ── Data provenance ──
-# Source: mc$td2_models, mc$ref_models, mc$combined_model
+# Source: mc$train, mc$test (same population as all other models in this section)
+# Model: logistic regression with 2 features (TD2 + Ref downstream EJC counts)
+# Purpose: test whether EJC counts alone capture most of the combined model's signal
+
+ejc_fit <- glm(is_nmd ~ downstream_ejc + ref_downstream_ejc,
+               data = mc$train, family = binomial())
+ejc_pred_test <- predict(ejc_fit, mc$test, type = "response")
+ejc_roc_test <- pROC::roc(mc$test$is_nmd, ejc_pred_test, quiet = TRUE)
+ejc_auc_test <- as.numeric(pROC::auc(ejc_roc_test))
+
+cat(sprintf("EJC-only model (2 features): Test AUC = %.4f\n", ejc_auc_test))
+```
+
+Two features alone --- the downstream EJC count from each CDS source ---
+achieve AUC = `r round(ejc_auc_test, 3)`. The remaining 22 5'UTR, uORF,
+and 3'UTR features contribute only
++`r round(mc$combined_model$auc_test - ejc_auc_test, 3)` additional AUC.
+PTC identification is the dominant signal.
+
+### The Compensatory Role of 5'UTR Features
+
+The progressive models (not shown as separate figures) reveal a striking
+asymmetry in how the two CDS sources use 5'UTR features. Starting from EJC
+count alone, TD2-only achieves AUC =
+`r round(mc$td2_models$step1$auc_test, 3)` and gains
++`r round(mc$td2_models$step3$auc_test - mc$td2_models$step1$auc_test, 3)`
+when 5'UTR features are added (reaching
+`r round(mc$td2_models$step3$auc_test, 3)`). Reference-CDS starts higher
+(AUC = `r round(mc$ref_models$step1$auc_test, 3)`) and gains only
++`r round(mc$ref_models$step3$auc_test - mc$ref_models$step1$auc_test, 3)`
+from the same feature categories (reaching
+`r round(mc$ref_models$step3$auc_test, 3)`).
+
+The interpretation: TD2's 5'UTR features compensate for incorrect PTC
+identification. When TD2 selects the wrong reading frame, the resulting
+5'UTR is structurally abnormal in ways that correlate with NMD status ---
+the model learns these correlates as a proxy for the missed PTC. When
+PTC identification is correct (reference CDS), the 5'UTR features are
+largely redundant.
+
+## ROC Comparison
+
+The overlapping ROC compares the combined model against its three
+decompositions: TD2-only features, reference-CDS-only features, and
+EJC counts alone.
+
+```{r sec3d-roc-comparison, fig.width=8, fig.height=8}
+# ── Data provenance ──
+# Source: mc$td2_models$step3, mc$ref_models$step3, mc$combined_model (from
+#   model_comparison.rds), ejc_roc_test (fit in sec3d-ejc-only-model above)
 # All evaluated on the same paralog-free holdout test set
 
 roc_specs <- list(
-  list(roc = mc$td2_models$step1$roc_test,
-       name = "TD2 PTC only", color = "#fc8d59"),
   list(roc = mc$td2_models$step3$roc_test,
-       name = "TD2 unified (11 features)", color = "#91bfdb"),
-  list(roc = mc$ref_models$step1$roc_test,
-       name = "Ref-CDS PTC only", color = "#4393c3"),
+       name = "TD2 CDS model (11 features)", color = "#91bfdb"),
   list(roc = mc$ref_models$step3$roc_test,
-       name = "Ref-CDS unified (11 features)", color = "#b2182b"),
+       name = "Reference CDS model (11 features)", color = "#b2182b"),
+  list(roc = ejc_roc_test,
+       name = "EJC-only model (2 features)", color = "#4393c3"),
   list(roc = mc$combined_model$roc_test,
-       name = "Combined (24 features)", color = "#1a1a1a")
+       name = "Combined model (24 features)", color = "#1a1a1a")
 )
 
 roc_comp <- lapply(roc_specs, function(spec) {
@@ -4275,9 +4297,10 @@ fig_roc_comp <- ggplot(roc_comp_df, aes(x = fpr, y = tpr, color = model)) +
   geom_abline(linetype = "dashed", color = "grey70") +
   geom_line(linewidth = 0.9) +
   scale_color_manual(values = roc_colors) +
-  coord_equal() +
-  labs(title = "NMD Prediction: TD2 vs Reference CDS",
-       subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s, paralog-free)",
+  scale_x_continuous(limits = c(0, 1), expand = c(0.02, 0)) +
+  scale_y_continuous(limits = c(0, 1), expand = c(0.02, 0)) +
+  labs(title = "NMD Prediction: Combined Model and Decompositions",
+       subtitle = sprintf("Holdout test set (N = %s, paralog-free)",
                           fmt(mc$metadata$n_test_final)),
        x = "False Positive Rate", y = "True Positive Rate", color = "") +
   theme(legend.position = c(0.62, 0.22),
@@ -4286,32 +4309,44 @@ fig_roc_comp <- ggplot(roc_comp_df, aes(x = fpr, y = tpr, color = model)) +
 save_fig(fig_roc_comp, "fig_roc_td2_vs_ref", width = 8, height = 8)
 ```
 
-```{r sec3a-auc-summary}
-auc_tbl <- mc$auc_summary %>%
-  transmute(
-    `Model set` = model_set,
-    Step = step,
-    Features = n_features,
-    `Train AUC` = auc_train,
-    `Test AUC` = auc_test
-  )
+<details>
+<summary>Click to view AUC summary table</summary>
 
-render_dt(auc_tbl, caption = "Table: AUC Summary — All Model Variants")
+```{r sec3d-auc-summary, echo=FALSE}
+auc_tbl <- data.frame(
+  Model = c("Combined model (24 features)",
+            "TD2 CDS model (11 features)",
+            "Reference CDS model (11 features)",
+            "EJC-only model (2 features)"),
+  `Test AUC` = round(c(mc$combined_model$auc_test,
+                        mc$td2_models$step3$auc_test,
+                        mc$ref_models$step3$auc_test,
+                        ejc_auc_test), 3),
+  `Train AUC` = round(c(mc$combined_model$auc_train,
+                         mc$td2_models$step3$auc_train,
+                         mc$ref_models$step3$auc_train,
+                         as.numeric(pROC::auc(pROC::roc(mc$train$is_nmd,
+                           predict(ejc_fit, mc$train, type = "response"), quiet = TRUE)))), 3),
+  Features = c(24, 11, 11, 2),
+  check.names = FALSE,
+  stringsAsFactors = FALSE
+)
+render_dt(auc_tbl, caption = "Table: AUC Summary — Combined Model and Decompositions")
 ```
 
-Column definitions: **Model set** = CDS annotation strategy (TD2, Ref-CDS,
-or Combined); **Step** = progressive feature category; **Features** = number
-of predictors; **Train AUC** = AUC on training chromosomes; **Test AUC** =
-AUC on holdout chromosomes (paralog-free).
+Column definitions: **Model** = model name and feature count; **Test AUC** =
+AUC on holdout chromosomes (paralog-free); **Train AUC** = AUC on training
+chromosomes; **Features** = number of predictors.
 
-The key comparison: reference-CDS PTC alone (1 feature, AUC =
-`r round(mc$ref_models$step1$auc_test, 3)`) nearly matches the full
-11-feature TD2 model (AUC = `r round(mc$td2_models$step3$auc_test, 3)`).
-The TD2 model's 5\u2032UTR features were compensating for incorrect PTC calls
-by identifying structural correlates of NMD in the mispredicted 5\u2032UTR.
-When PTC identification is correct (reference CDS), those features add
-little. The combined model (AUC = `r round(mc$combined_model$auc_test, 3)`)
-achieves the best performance by leveraging both CDS sources.
+</details>
+
+The combined model (AUC = `r round(mc$combined_model$auc_test, 3)`)
+achieves the best holdout performance. The EJC-only decomposition (AUC =
+`r round(ejc_auc_test, 3)`) demonstrates that PTC identification from both
+CDS sources captures the majority of the signal. The TD2 CDS model and
+reference CDS model perform comparably when given all 11 features, but
+the reference CDS achieves near-equivalent performance with its EJC count
+alone (AUC = `r round(mc$ref_models$step1$auc_test, 3)`).
 
 ## NMD Response Magnitude
 
@@ -4546,6 +4581,13 @@ nmd_dominant <- shap_nmd_df %>%
 nmd_cluster_summary <- nmd_cluster_summary %>%
   left_join(nmd_dominant, by = "nmd_cluster")
 
+invisible(NULL)  # table rendered in collapsible block below
+```
+
+<details>
+<summary>Click to view tabular data for NMD SHAP clusters</summary>
+
+```{r sec3d-shap-nmd-cluster-table, echo=FALSE}
 render_dt(nmd_cluster_summary, caption = "Table: SHAP Clusters — Holdout NMD Isoforms")
 ```
 
@@ -4556,6 +4598,8 @@ EJC count; **Ref dEJC > 0 (%)** = percentage with non-zero reference
 downstream EJC count; **Mean TD2/Ref dEJC** = mean downstream EJC count from
 each CDS source; **Dominant feature** = feature with largest absolute mean
 SHAP; **Mean SHAP** = that feature's mean SHAP value.
+
+</details>
 
 ```{r sec3d-shap-nmd-heatmap, fig.width=12, fig.height=7}
 # ── Data provenance ──
