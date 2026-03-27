@@ -1420,38 +1420,161 @@ and `expression_data.rds`. Metrics include:
 - **Expression concentration**: Fraction of gene-level DMSO CPM contributed
   by the dominant isoform (highest mean CPM across DMSO samples).
 
-### Unified Predictive Model (Section 2a)
+### Combined Prediction Model: TD2 vs Reference CDS (Section 3d)
 
-An elastic net logistic regression model predicts NMD status from structural
-features. The population is all mashr-classified NMD and non-NMD coding
-isoforms with complete structural features (broader than the paired
-framework). Holdout chromosomes 1, 3, 5, 7 (~26% of data) are never used
-for feature selection or model tuning.
+#### Overview
 
-**Progressive model building:**
+Three model sets compare CDS annotation strategies for predicting NMD status
+from isoform structural features. All models are trained and evaluated on the
+same matched population: the intersection of mashr-classified NMD and non-NMD
+coding isoforms with complete features from both CDS sources. Holdout
+chromosomes 1, 3, 5, 7 are never used for feature selection or model tuning.
 
-1. **Step 1 — Stop codon position**: 4-level categorical predictor from PTC
-   status and downstream EJC count.
-2. **Step 2 — + Start codon context**: Adds 5'UTR features from
-   `scan5UtrFeatures()` (uORF counts, overlapping ORFs, Kozak context).
-3. **Step 3 — + ORF features (unified)**: Adds ORF length, CDS percentage,
-   and frame features.
+Source scripts: `05l_unified_model.R` (TD2 features), `05t_ref_cds_features.R`
+(reference-CDS features), `05u_paralog_annotation.R` (paralog annotation),
+`05v_model_comparison.R` (model fitting) → `analysis_cache/model_comparison.rds`.
 
-Each step uses elastic net (glmnet, alpha = 0.5) with 10-fold
-cross-validation on the training set. AUC is evaluated on both training and
-holdout sets. Complementarity analysis compares stop-codon-only, 5'UTR-only,
-and combined models.
+#### Reference-CDS Feature Construction
+
+For each gene, the dominant non-NMD coding isoform is identified as the
+non-NMD isoform with the highest mean DMSO CPM. This isoform's CDS start
+(ATG) position serves as the reference reading frame anchor for all other
+isoforms in the gene.
+
+**Algorithm** (implemented in `05t_ref_cds_features.R`):
+
+1. **Dominant isoform identification**: For each gene, identify all non-NMD
+   coding isoforms present in the CPM matrix. Compute mean CPM across all
+   DMSO samples. Select the isoform with the highest mean DMSO CPM as the
+   reference.
+
+2. **ATG tracing**: For each target isoform, check if the reference's
+   strand-aware CDS start ATG is exonic (all 3 nucleotides) in the target's
+   exon structure. If exonic, map the ATG to transcript-space and verify
+   the codon is ATG in the target's sequence.
+
+3. **ORF walking**: From the mapped ATG, walk the target's transcript
+   sequence in 3-nucleotide steps until the first in-frame stop codon.
+   Record the ORF length and stop codon position.
+
+4. **Downstream EJC count**: Compute exon-exon junction positions in the
+   target's transcript-space. Count junctions downstream of the stop codon's
+   last nucleotide. Truncate at 5 (values ≥5 set to 5).
+
+5. **5'UTR features**: Construct synthetic CDS metadata using the traced ATG
+   and stop codon positions (mapped back to genomic coordinates via
+   `transcript_to_genomic()`). Call `Isopair::scan5UtrFeatures()` with the
+   target's exon structure, synthetic CDS, and transcript sequence. This
+   produces ATG density, strong Kozak count, orphan ATG count, uORF counts
+   (overlapping, in-frame, out-of-frame), longest uORF, ORF coverage, and
+   stop density — all computed relative to the reference CDS boundaries.
+
+6. **3'UTR length**: Exonic basepairs from the traced stop codon to the 3'
+   transcript end, log-transformed (log1p). Uses the same strand-aware
+   formula as the TD2 3'UTR computation.
+
+**Coordinate conventions**: `cds_start < cds_stop` (genomic order). For +
+strand: ATG at `cds_start`, stop codon 3' end at `cds_stop`. For - strand:
+stop codon 3' end at `cds_start`, ATG at `cds_stop`. The
+`transcript_to_genomic()` function handles strand-aware mapping of the stop
+codon's last transcript-space position back to the correct genomic coordinate.
+
+**Edge cases**: Isoforms where the reference ATG is not exonic receive NA for
+all reference-CDS features. Isoforms that ARE the reference receive consistent
+features (self-reference validation). Genes with no non-NMD coding isoform
+have no reference and receive NA.
+
+Output: `analysis_cache/ref_cds_features_all.rds`.
+
+#### Paralog Annotation and Test Set Filtering
+
+Genes with high-similarity paralogs on opposite sides of the train/test
+chromosome split pose a data leakage risk. Paralog pairs are queried from
+Ensembl via biomaRt (`ensembl_gene_id`, `hsapiens_paralog_ensembl_gene`,
+`hsapiens_paralog_perc_id`). Three filters are applied sequentially:
+
+1. **Both expressed**: Gene and paralog must both be in the classified
+   expression dataset.
+2. **High similarity**: Paralog protein sequence identity ≥ 80%.
+3. **Cross-split**: Gene and paralog on opposite sides of the holdout
+   chromosome boundary (one on chr 1/3/5/7, one on a training chromosome).
+
+Only holdout-side genes from cross-split pairs are removed from the test set.
+Training data is not modified.
+
+Source script: `05u_paralog_annotation.R` →
+`analysis_cache/paralog_genes.rds`.
+
+#### TD2 Feature Construction
+
+TD2 features are computed from each isoform's TransDecoder2-predicted CDS
+boundaries, as in the original unified model:
+
+- **Downstream EJC count**: From `ptc.rds` (`n_downstream_ejcs`, truncated
+  at 5).
+- **5'UTR features**: From `utr5_features_all.rds` (ATG density/count,
+  strong Kozak, orphan ATG, uORF counts, ORF coverage, stop density).
+- **3'UTR length**: Exonic bp from `cds_stop` to 3' transcript end (log1p).
 
 Source script: `05l_unified_model.R` → `analysis_cache/unified_model.rds`.
 
-### Dose-Response Analysis (Section 2d)
+#### Model Sets
 
-The unified model's predicted NMD probability is tested for correlation with
+All three model sets use elastic net logistic regression (glmnet, alpha = 0.5,
+10-fold cross-validation, `type.measure = "auc"`). Step 1 (single feature)
+uses standard logistic regression. Features are centered and scaled using
+training set statistics; the same scaling parameters are applied to the test
+set. `set.seed(42)` is called before each `cv.glmnet` fit.
+
+**Model Set 1 — TD2 CDS** (progressive):
+- Step 1: `downstream_ejc` (1 feature)
+- Step 2: + `atg_density`, `atg_count`, `atg_strong_kozak` (4 features)
+- Step 3: + `uorf_count_overlapping`, `uorf_longest_nt`, `uorf_count_inframe`,
+  `uorf_count_outframe`, `utr5_orf_coverage`, `stop_density`,
+  `atg_orphan_count` (11 features)
+- Step 4: + `log_utr3_length` (12 features)
+
+**Model Set 2 — Reference CDS** (progressive, same structure):
+- Steps 1–4 use the `ref_` prefixed equivalents of the same features.
+
+**Model Set 3 — Combined**:
+- All 24 features (12 TD2 + 12 reference CDS) provided to a single elastic
+  net. The L1 penalty selects which features survive, revealing complementarity
+  vs redundancy between CDS sources.
+
+AUC is evaluated on the paralog-free holdout test set for all models.
+
+#### SHAP-Based Isoform Clustering
+
+SHAP (SHapley Additive exPlanations) values decompose each isoform's
+predicted log-odds into per-feature contributions. For a linear model
+(elastic net logistic regression), SHAP values have a closed-form solution:
+
+    SHAP_j(i) = beta_j × x_j,scaled(i)
+
+where `beta_j` is the standardized coefficient at `lambda.min` and
+`x_j,scaled(i)` is the centered/scaled feature value for isoform i. Features
+with zero coefficients have zero SHAP values.
+
+**All-isoform clustering**: K-means clustering is applied to the SHAP matrix
+(non-zero features only) of the full matched population. Optimal k is selected
+by silhouette score (sampled to 5,000 isoforms for computational efficiency)
+over k = 2..8.
+
+**NMD-only clustering**: The same procedure is repeated on NMD isoforms only,
+to identify mechanistically distinct subpopulations within the NMD class.
+Cluster profiles are characterized by mean SHAP values, downstream EJC
+patterns from both CDS sources, and predicted probabilities.
+
+Visualization: cluster-mean SHAP heatmaps and beeswarm summary plots.
+
+#### Dose-Response Analysis
+
+The combined model's predicted NMD probability is tested for correlation with
 actual NMD response magnitude. Raw limma logFC values (per-cell-type
 unshrunk estimates from 6 cell types: AT, DD, DD_ALI, DO, FB, MV) are
 averaged per isoform to produce a mean logFC. Spearman correlation between
-predicted probability and mean logFC is computed for all NMD isoforms, and
-separately for PTC-positive and PTC-negative subsets.
+predicted probability and mean logFC is computed for holdout NMD isoforms.
 
 ### uORF ATG Position Sharing (Section 3)
 

@@ -204,7 +204,7 @@ data pipeline is:
 
 4. **This report (05)**: Loads profiles from step 2, re-applies gene-matching
    (step 3), loads cached analysis results, and verifies consistency. All
-   downstream analyses use gene-matched profiles exclusively.
+   most downstream analyses use gene-matched profiles exclusively.
 
 ```{r flowchart-data, include=FALSE}
 # ── Gather numbers for the flowchart ──
@@ -347,6 +347,10 @@ ue_mapping   <- readRDS(file.path(data_dir, "isoform_union_mapping.rds"))
 annotated_ue <- readRDS(file.path(data_dir, "annotated_ue.rds"))
 cds_exons    <- readRDS(file.path(data_dir, "cds_exons.rds"))
 
+# ── Prediction model objects (used in Sections 3a, 3b, 3d) ──
+unified <- readRDS(file.path(cache_dir, "unified_model.rds"))
+feat_labels <- unified$feature_labels
+
 # ── CDS lookup vectors (used throughout the report) ──
 # Build once from cds.rds via build_cds_lookups() (analysis_functions.R)
 cds_lookups <- build_cds_lookups(cds)
@@ -469,7 +473,7 @@ div_c2 <- set_results[["c2_allsamples"]]$divergence
 div_c4 <- set_results[["c4_allsamples"]]$divergence
 ```
 
-```{r verify-cache-consistency}
+```{r verify-cache-consistency, include=FALSE}
 # ==============================================================================
 # STAGE 4: Verify cached analysis objects match gene-matched profiles
 # ==============================================================================
@@ -529,7 +533,7 @@ if (!all(verification_df$ptc_subset_ok)) {
 # ── mashr meta-analysis logFC ──
 # Source: mashr model fit on isocall DIE (6 conditions).
 # PosteriorMean averaged across 5 main conditions (excluding DD_ALI).
-# Used in Section 3b to characterize NMD response magnitude.
+# Used in Section 3a to characterize NMD response magnitude.
 mashr_model_path <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/mashr_isoform_model_2026.3.10.rds"
 mashr_model <- readRDS(mashr_model_path)
 post_mean <- ashr::get_pm(mashr_model)
@@ -560,10 +564,6 @@ pf_data <- readRDS(file.path(cache_dir, "productive_frameshift_allsamples.rds"))
 render_dt(gene_match_df, caption = "Gene-Matching: Before and After")
 render_dt(verification_df, caption = "Cache Consistency Check")
 ```
-
-**Data dimensions:**
-`r sprintf("Gene-matched profile keys: %d | C2 all_samples: %s pairs | C4 all_samples: %s pairs | PTC: %s isoforms | CDS: %s isoforms | Meta-analysis logFC: %s isoforms | C4 protein comparison: %s pairs | Productive frameshifts: %s pairs", length(profiles_list), fmt(nrow(profiles_list[["c2_allsamples"]])), fmt(nrow(profiles_list[["c4_allsamples"]])), fmt(nrow(ptc)), fmt(nrow(cds)), fmt(nrow(meta_logfc)), fmt(nrow(c4_protein$comparison)), fmt(nrow(pf_data$characterization)))`
-
 
 # Event Type Glossary {.tabset}
 
@@ -866,7 +866,7 @@ are excluded from this count so that the distribution reflects baseline
 transcriptional diversity, not NMD-driven variation. Both coding and
 non-coding isoforms are included.
 
-## Expression Concentration and Isoform Roles
+## Expression Level of Reference and Comparator Isoforms
 
 ```{r sec1-expression-concentration}
 # ── Data provenance ──
@@ -951,7 +951,7 @@ cpm_compare$condition <- factor(cpm_compare$condition, levels = c("DMSO", "SMG1i
 fig_cpm <- ggplot(cpm_compare, aes(x = group, y = log10(cpm + 1), fill = condition)) +
   geom_boxplot(outlier.size = 0.3, alpha = 0.7, position = position_dodge(width = 0.8)) +
   scale_fill_manual(values = c("DMSO" = "#4393c3", "SMG1i" = "#ef8a62")) +
-  labs(title = "Expression Level by Isoform Role and Treatment",
+  labs(title = "Expression Level: Reference, NMD Comparator, and Control Comparator",
        subtitle = sprintf("Reference: %s | NMD comp: %s | Control comp: %s isoforms",
                           fmt(length(cpm_ref_dmso)), fmt(length(cpm_nmd_dmso)),
                           fmt(length(cpm_ctrl_dmso))),
@@ -981,7 +981,7 @@ fig_len <- ggplot(len_compare, aes(x = group, y = length, fill = group)) +
                                 "Control comparator" = "#67a9cf",
                                 "NMD comparator" = "#ef8a62")) +
   scale_y_log10(labels = scales::comma) +
-  labs(title = "Transcript Length by Isoform Role",
+  labs(title = "Transcript Length: Reference, NMD Comparator, and Control Comparator",
        subtitle = sprintf("Reference: %s | NMD comp: %s | Control comp: %s isoforms",
                           fmt(sum(ref_ids_c2 %in% names(tx_lengths_all))),
                           fmt(sum(comp_ids_c2 %in% names(tx_lengths_all))),
@@ -1392,369 +1392,9 @@ fig1c <- ggplot(bar1c, aes(x = event_type, y = pct_gain, fill = comparison)) +
 save_fig(fig1c, "fig1c_gain_direction_barplot", width = 10, height = 6)
 ```
 
-# 3a. Predicting NMD from Isoform Structure — The Unified Model {#sec2a-unified}
+# 3a. Stop Codon Analysis {#sec2b-stop-codons}
 
-Can we predict which isoforms trigger NMD from structural features alone?
-We build a model progressively, adding feature categories and measuring
-improvement. This overview presents the unified model; subsequent sections
-drill into each feature category.
-
-**Data source:** All mashr-classified NMD and non-NMD coding isoforms with
-complete structural features (broader than the paired framework). The model
-asks "can structural features predict NMD status?" — an isoform-level
-question, not a pair-level question. NMD status is defined empirically from
-the observed SMG1i response (mashr posterior logFC and lfsr), not from
-structural features — the model is predicting an experimental outcome from
-sequence-derived predictors.
-
-**Statistical approach:** Elastic net logistic regression (alpha = 0.5) with
-10-fold cross-validation on the training set. Holdout chromosomes 1, 3, 5, 7
-(~26% of data) are never used for feature selection or model tuning.
-
-## Model Features
-
-The table below describes each structural feature provided to the model, its
-definition, and the biological category it belongs to.
-
-```{r sec2a-feature-table}
-feature_desc <- data.frame(
-  Feature = c(
-    "Downstream EJC count",
-    "Overlapping uORF count",
-    "Longest uORF (nt)",
-    "In-frame uORF count",
-    "Out-of-frame uORF count",
-    "5\u2032UTR ATG density",
-    "5\u2032UTR ATG count",
-    "Strong Kozak ATG count",
-    "Orphan ATG count",
-    "5\u2032UTR ORF coverage",
-    "5\u2032UTR stop density",
-    "3\u2032UTR length (log bp)"
-  ),
-  Category = c(
-    "Stop codon position",
-    "Upstream ORF",
-    "Upstream ORF",
-    "Upstream ORF",
-    "Upstream ORF",
-    "Start codon context",
-    "Start codon context",
-    "Start codon context",
-    "Start codon context",
-    "Start codon context",
-    "Start codon context",
-    "3\u2032UTR"
-  ),
-  Type = c(
-    "Continuous (truncated at 5)",
-    "Count",
-    "Continuous",
-    "Count",
-    "Count",
-    "Continuous",
-    "Count",
-    "Count",
-    "Count",
-    "Continuous (0\u2013100%)",
-    "Continuous",
-    "Continuous"
-  ),
-  Description = c(
-    "Number of exon-exon junctions downstream of the stop codon. Truncated at 5 (values \u22655 are set to 5). Higher values place the stop codon further upstream of splice junctions.",
-    "Number of upstream ORFs whose reading frame extends past the annotated CDS start codon, overlapping the main coding sequence.",
-    "Length in nucleotides of the longest uORF in the 5\u2032UTR. Longer uORFs may compete more effectively with the main CDS for ribosomal initiation.",
-    "Number of uORFs in the same reading frame as the main CDS. In-frame uORFs can produce N-terminally extended or truncated protein variants.",
-    "Number of uORFs in a different reading frame from the main CDS. Out-of-frame uORFs produce peptides unrelated to the main protein and may regulate translation reinitiation.",
-    "Number of ATG codons per 100 bp of 5\u2032UTR. Higher density reflects a more complex translational initiation landscape.",
-    "Total number of ATG codons in the 5\u2032UTR, each a potential site of ribosomal initiation.",
-    "Number of 5\u2032UTR ATGs matching a strong Kozak consensus (favorable nucleotides at -3 and +4). These compete most effectively with the main CDS start codon.",
-    "Number of 5\u2032UTR ATGs not associated with any predicted ORF (no downstream in-frame stop codon within the 5\u2032UTR). These initiate translation that reads through into the CDS.",
-    "Percentage of the 5\u2032UTR spanned by predicted ORFs. High coverage indicates extensive upstream translational activity.",
-    "Number of stop codons (all three frames) per 100 bp of 5\u2032UTR. Higher density limits uORF length and may facilitate translation reinitiation at the main CDS.",
-    "Log-transformed exonic basepairs from the stop codon to the 3\u2032 transcript end (log1p). Tests whether 3\u2032UTR length predicts NMD independently of stop codon position."
-  ),
-  stringsAsFactors = FALSE
-)
-
-render_dt(feature_desc, caption = "Table: Model Feature Definitions")
-```
-
-Column definitions: **Feature** = display name used throughout the report;
-**Category** = biological domain (stop codon position, start codon context,
-or upstream ORF); **Type** = data type and scale; **Description** = what the
-feature measures and how it relates to translational regulation.
-
-```{r sec2a-load-model}
-# ── Data provenance ──
-# Methods: METHODS.md § "Publication Report Methods > Unified Predictive Model"
-# Source: 05l_unified_model.R → unified_model.rds
-# Population: ALL mashr-classified NMD/non-NMD coding isoforms with complete
-#   structural features (PTC from ptc.rds, 5'UTR from utr5_features_all.rds)
-# Train/test: holdout chr 1, 3, 5, 7 (~26%)
-
-unified <- readRDS(file.path(cache_dir, "unified_model.rds"))
-
-cat("Population:", fmt(unified$metadata$population),
-    "isoforms with complete features\n")
-cat("NMD:", sum(unified$df$is_nmd),
-    "| Non-NMD:", sum(!unified$df$is_nmd), "\n")
-cat("Holdout chromosomes:", paste(unified$metadata$holdout_chrs, collapse = ", "), "\n\n")
-
-# Feature name mapping for display
-feat_labels <- unified$feature_labels
-```
-
-## Progressive ROC Curves
-
-```{r sec2a-progressive-roc, fig.width=7, fig.height=7}
-# ── Data provenance ──
-# Source: unified$elastic_net (elastic net models fit on training data)
-# ROC curves from stored roc_test objects (holdout predictions)
-
-en_models <- list(
-  list(roc = unified$elastic_net$step1$roc_test,
-       name = "Step 1: Stop codon position", color = "#fc8d59"),
-  list(roc = unified$elastic_net$step2$roc_test,
-       name = "Step 2: + Start codon context", color = "#91bfdb"),
-  list(roc = unified$elastic_net$step3$roc_test,
-       name = "Step 3: + ORF features (unified)", color = "#1a1a1a"),
-  list(roc = unified$elastic_net$step4$roc_test,
-       name = "Step 4: + 3'UTR length", color = "#b2182b")
-)
-
-roc_curves <- lapply(en_models, function(spec) {
-  auc_val <- as.numeric(auc(spec$roc))
-  data.frame(
-    fpr = 1 - spec$roc$specificities,
-    tpr = spec$roc$sensitivities,
-    model = sprintf("%s (AUC = %.3f)", spec$name, auc_val),
-    stringsAsFactors = FALSE
-  )
-})
-roc_all <- do.call(rbind, roc_curves)
-roc_all$model <- factor(roc_all$model, levels = unique(roc_all$model))
-
-model_colors <- setNames(
-  sapply(en_models, `[[`, "color"),
-  levels(roc_all$model)
-)
-
-fig_roc <- ggplot(roc_all, aes(x = fpr, y = tpr, color = model)) +
-  geom_abline(linetype = "dashed", color = "grey70") +
-  geom_line(linewidth = 0.9) +
-  scale_color_manual(values = model_colors) +
-  coord_equal() +
-  labs(title = "Holdout ROC — Progressive Model Building",
-       subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s)",
-                          fmt(unified$elastic_net$step3$n_test)),
-       x = "False Positive Rate", y = "True Positive Rate",
-       color = "") +
-  theme(legend.position = c(0.62, 0.18),
-        legend.background = element_rect(fill = "white", color = "grey80"),
-        legend.key.width = unit(1.2, "cm"))
-save_fig(fig_roc, "fig_progressive_roc", width = 7, height = 7)
-```
-
-Each curve represents a progressive model evaluated on the holdout
-chromosomes. Stop codon position alone (downstream EJC count, truncated
-at 5) achieves meaningful discrimination (AUC =
-`r round(unified$elastic_net$step1$auc_test, 3)`). Adding start codon
-features produces a smooth curve with substantially improved sensitivity
-across all specificity levels. ORF features (step 3, black) provide further
-gains. Adding 3'UTR length (step 4, red) does not improve holdout AUC
-(step 3: `r round(unified$elastic_net$step3$auc_test, 3)` → step 4:
-`r round(unified$elastic_net$step4$auc_test, 3)`), indicating that 3'UTR
-length carries little independent predictive information beyond stop codon
-position. Similarly, transcript length (tested separately) has a significant
-marginal association with NMD (longer transcripts = less NMD, p < 1e-47) but
-does not improve model AUC when added to the full feature set — junction
-architecture subsumes the information in transcript length.
-
-## Feature Importance
-
-```{r sec2a-coefficients}
-# ── Data provenance ──
-# Source: unified$elastic_net$step4$cv_fit (elastic net, unified + 3'UTR)
-# Non-zero coefficients at lambda.min, sorted by absolute magnitude
-# Uses step4 so that 3'UTR length is included (its near-zero coefficient
-# demonstrates redundancy with downstream EJC count).
-
-en_fit <- unified$elastic_net$step4$cv_fit
-coefs <- as.matrix(coef(en_fit, s = "lambda.min"))
-nonzero <- coefs[coefs[, 1] != 0 & rownames(coefs) != "(Intercept)", , drop = FALSE]
-
-coef_table <- data.frame(
-  r_name = rownames(nonzero),
-  Coefficient = nonzero[, 1],
-  stringsAsFactors = FALSE
-) %>%
-  mutate(
-    Feature = ifelse(r_name %in% names(feat_labels),
-                     feat_labels[r_name], r_name),
-    `Abs. Coefficient` = abs(Coefficient)
-  ) %>%
-  arrange(-`Abs. Coefficient`) %>%
-  transmute(Feature, Coefficient = round(Coefficient, 4))
-
-render_dt(coef_table, caption = "Table: Elastic Net Feature Importance (All Features Including 3'UTR)")
-```
-
-Column definitions: **Feature** = model variable (display name);
-**Coefficient** = elastic net coefficient at lambda.min (standardized
-features). Positive coefficients increase predicted NMD probability;
-negative coefficients decrease it. Features with zero coefficients are
-excluded by the elastic net penalty.
-
-```{r sec2a-coef-barplot, fig.width=8, fig.height=5}
-# ── Data provenance ──
-# Source: coef_table (computed above from unified elastic net step 3)
-
-coef_plot_df <- coef_table %>%
-  mutate(
-    Feature = factor(Feature, levels = rev(Feature)),
-    Direction = ifelse(Coefficient > 0, "Promotes NMD", "Protects from NMD")
-  )
-
-fig_coefs <- ggplot(coef_plot_df, aes(x = Coefficient, y = Feature, fill = Direction)) +
-  geom_col(alpha = 0.85, width = 0.7) +
-  geom_vline(xintercept = 0, color = "grey40", linewidth = 0.5) +
-  scale_fill_manual(values = c("Promotes NMD" = "#ef8a62", "Protects from NMD" = "#67a9cf")) +
-  labs(title = "Elastic Net Feature Importance (All Features Including 3'UTR)",
-       subtitle = "Standardized coefficients at lambda.min — holdout evaluation",
-       x = "Coefficient (standardized)", y = NULL, fill = NULL) +
-  theme(legend.position = "bottom")
-save_fig(fig_coefs, "fig_feature_importance", width = 8, height = 5)
-```
-
-## Complementarity: Stop Codon vs Start Codon Features
-
-```{r sec2a-complementarity}
-# Stop-codon-only vs 5'UTR-only vs combined vs +3'UTR
-comp_df <- data.frame(
-  Model = c("Stop codon only", "5'UTR only", "Combined (unified)",
-            "Unified + 3'UTR length"),
-  `Train AUC` = round(c(
-    unified$elastic_net$step1$auc_train,
-    unified$elastic_net$utr5_only$auc_train,
-    unified$elastic_net$step3$auc_train,
-    unified$elastic_net$step4$auc_train
-  ), 3),
-  `Test AUC` = round(c(
-    unified$elastic_net$step1$auc_test,
-    unified$elastic_net$utr5_only$auc_test,
-    unified$elastic_net$step3$auc_test,
-    unified$elastic_net$step4$auc_test
-  ), 3),
-  check.names = FALSE
-)
-render_dt(comp_df, caption = "Complementarity: Feature Sets Alone vs Combined")
-```
-
-Column definitions: **Model** = feature set used; **Train AUC** = AUC on
-training chromosomes; **Test AUC** = AUC on holdout chromosomes (1, 3, 5, 7).
-
-Stop codon and start codon features are complementary, not redundant. Each
-achieves comparable AUC alone (~0.70–0.72), but combined they reach
-`r round(unified$elastic_net$step3$auc_test, 3)`. Adding 3'UTR length on
-top of the unified model provides no further improvement
-(`r round(unified$elastic_net$step4$auc_test, 3)`), confirming that any
-association between 3'UTR length and NMD is fully captured by downstream
-EJC count. PTC and uORF mechanisms operate through different structural
-pathways to trigger NMD; 3'UTR length is not an independent pathway.
-
-## NMD Response Magnitude Correlates with Predicted Probability
-
-```{r sec2d-load-limma}
-# ── Data provenance ──
-# Source: limma DE files from /Users/petecastaldi/claude_projects/nmd/isocall_dge/limma/yul/
-# Raw unshrunk logFC per cell type — independent estimates (no mashr shrinkage)
-# Used as response variable for dose-response analysis
-
-limma_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/limma/yul"
-limma_cts <- c(AT = "at", DD = "dd", DD_ALI = "ddali", DO = "do", FB = "fb", MV = "mv")
-
-limma_logfc <- lapply(names(limma_cts), function(ct) {
-  f <- file.path(limma_dir, sprintf("nmd_dge_%s_2026.3.3.csv", limma_cts[ct]))
-  de <- read.csv(f, stringsAsFactors = FALSE)
-  # Use transcript_id column
-  id_col <- if ("transcript_id" %in% names(de)) "transcript_id" else "txid"
-  data.frame(
-    isoform_id = de[[id_col]],
-    cell_type = ct,
-    logFC = de$logFC,
-    stringsAsFactors = FALSE
-  )
-})
-limma_long <- do.call(rbind, limma_logfc)
-
-# Mean logFC per isoform (across cell types)
-mean_logfc <- limma_long %>%
-  group_by(isoform_id) %>%
-  summarise(
-    mean_logFC = mean(logFC, na.rm = TRUE),
-    n_cts = n(),
-    .groups = "drop"
-  )
-
-# Merge with unified model scores (NMD isoforms only)
-nmd_scored <- unified$scored_isoforms %>%
-  filter(is_nmd == 1) %>%
-  inner_join(mean_logfc, by = "isoform_id")
-
-cat("NMD isoforms with both model scores and limma logFC:", nrow(nmd_scored), "\n")
-cat("Mean logFC (NMD isoforms):", round(mean(nmd_scored$mean_logFC), 3), "\n")
-```
-
-## Unified Model Score vs NMD Response Magnitude
-
-```{r sec2d-scatter, fig.width=10, fig.height=5}
-# Spearman correlation
-rho_all <- cor(nmd_scored$pred_prob, nmd_scored$mean_logFC, method = "spearman")
-p_all <- cor.test(nmd_scored$pred_prob, nmd_scored$mean_logFC, method = "spearman")$p.value
-
-# Split by PTC status for side-by-side
-ptc_status <- ptc %>%
-  filter(isoform_id %in% nmd_scored$isoform_id) %>%
-  select(isoform_id, has_ptc)
-
-nmd_scored_ptc <- nmd_scored %>%
-  inner_join(ptc_status, by = "isoform_id") %>%
-  mutate(PTC = ifelse(has_ptc, "PTC+", "PTC\u2212"))
-
-rho_ptcpos <- with(nmd_scored_ptc[nmd_scored_ptc$has_ptc == TRUE, ],
-                    cor(pred_prob, mean_logFC, method = "spearman"))
-rho_ptcneg <- with(nmd_scored_ptc[nmd_scored_ptc$has_ptc == FALSE, ],
-                    cor(pred_prob, mean_logFC, method = "spearman"))
-
-fig_dose <- ggplot(nmd_scored_ptc,
-                   aes(x = pred_prob, y = mean_logFC, color = PTC)) +
-  geom_point(alpha = 0.15, size = 0.8) +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1) +
-  facet_wrap(~PTC, scales = "free_x") +
-  scale_color_manual(values = c("PTC+" = "#ef8a62", "PTC\u2212" = "#67a9cf")) +
-  labs(title = "Unified Model Score vs NMD Response Magnitude",
-       subtitle = sprintf("All NMD: rho = %.3f | PTC+: %.3f | PTC\u2212: %.3f",
-                          rho_all, rho_ptcpos, rho_ptcneg),
-       x = "Predicted NMD probability (unified model)",
-       y = "Mean logFC (limma, across cell types)",
-       color = "") +
-  theme(legend.position = "none")
-save_fig(fig_dose, "fig_dose_response_unified", width = 10, height = 5)
-```
-
-NMD is a continuous response, not a binary switch. The unified model's
-predicted probability correlates with actual NMD response magnitude
-(Spearman rho = `r round(rho_all, 3)`, p = `r signif(p_all, 3)`). This
-holds for both PTC-positive isoforms (where stop codon position determines
-response strength) and PTC-negative isoforms (where 5'UTR features predict
-response magnitude).
-
-
-
-# 3b. Stop Codon Analysis {#sec2b-stop-codons}
-
-The unified model (Section 3a) identifies downstream EJC count as the strongest
+The prediction model (Section 3d) identifies downstream EJC count as the strongest
 single predictor of NMD status. Here we examine stop codon position in detail
 using gene-matched C2 (NMD) vs C4 (Control) isoform pairs, quantify PTC
 enrichment with a dose-response relationship, and trace how PTCs arise through
@@ -1990,7 +1630,7 @@ PTCs in NMD-responsive isoforms arise through three distinct splicing mechanisms
 #
 # For each PTC+ NMD comparator, identify the PTC-CAUSING splice event using
 # the shared three-mechanism attribution function. This is the SAME code used
-# for reclassified PTC-negative pairs in Section 3c.
+# for reclassified PTC-negative pairs in Section 3b.
 #
 # Strand-aware PTC position:
 #   + strand: PTC = cds_stop (larger genomic coordinate = 3' end of CDS)
@@ -2033,7 +1673,7 @@ names(ptc_genomic_pos) <- ptc_plus$comparator_isoform_id
 # Build is_frameshift lookup
 is_fs_lookup <- setNames(ptc_plus$is_frameshift_cat, ptc_plus$comparator_isoform_id)
 
-# Use shared attribution function (same as Section 3c reclassified pairs)
+# Use shared attribution function (same as Section 3b reclassified pairs)
 ptc_events_df <- attribute_ptc_events(
   pairs = ptc_plus[, c("comparator_isoform_id", "reference_isoform_id")],
   fw_events = fw_c2$events,
@@ -2124,33 +1764,54 @@ sankey_agg <- all_attr |>
   group_by(event_short, mechanism) |>
   summarise(freq = n(), .groups = "drop")
 
-# Build networkD3 data structures
-nodes_vec <- unique(c(sankey_agg$event_short, sankey_agg$mechanism))
-nodes <- data.frame(name = nodes_vec, stringsAsFactors = FALSE)
-
-links <- data.frame(
-  source = match(sankey_agg$event_short, nodes_vec) - 1L,
-  target = match(sankey_agg$mechanism, nodes_vec) - 1L,
-  value  = sankey_agg$freq
-)
-
-# Node colors: mechanism nodes colored, event types grey
+# Interactive Sankey (HTML only)
 mech_colors <- c("Frameshift" = "#d6604d",
                  "In-frame stop" = "#4393c3",
                  "3'UTR splice" = "#66c2a5")
-node_colors <- ifelse(nodes$name %in% names(mech_colors),
-                      mech_colors[nodes$name], "#bdbdbd")
 
+nodes_vec <- unique(c(sankey_agg$event_short, sankey_agg$mechanism))
+nodes_sankey <- data.frame(name = nodes_vec, stringsAsFactors = FALSE)
+links_sankey <- data.frame(
+  source = match(sankey_agg$event_short, nodes_vec) - 1L,
+  target = match(sankey_agg$mechanism, nodes_vec) - 1L,
+  value  = sankey_agg$freq)
+node_colors <- ifelse(nodes_sankey$name %in% names(mech_colors),
+                      mech_colors[nodes_sankey$name], "#bdbdbd")
 color_scale <- paste0(
   'd3.scaleOrdinal().domain([',
-  paste0('"', nodes$name, '"', collapse = ','), ']).range([',
+  paste0('"', nodes_sankey$name, '"', collapse = ','), ']).range([',
   paste0('"', node_colors, '"', collapse = ','), '])')
-
 networkD3::sankeyNetwork(
-  Links = links, Nodes = nodes,
+  Links = links_sankey, Nodes = nodes_sankey,
   Source = "source", Target = "target", Value = "value",
   NodeID = "name", fontSize = 14, nodeWidth = 30, nodePadding = 15,
   colourScale = color_scale, sinksRight = TRUE)
+
+# Static stacked bar chart (saves as PNG/PDF for paper)
+
+# Order event types by total frequency
+evt_totals <- sankey_agg %>%
+  group_by(event_short) %>%
+  summarise(total = sum(freq), .groups = "drop") %>%
+  arrange(total)
+sankey_agg$event_short <- factor(sankey_agg$event_short, levels = evt_totals$event_short)
+sankey_agg$mechanism <- factor(sankey_agg$mechanism,
+  levels = c("Frameshift", "In-frame stop", "3'UTR splice"))
+
+fig_sankey_ptcpos <- ggplot(sankey_agg,
+    aes(x = freq, y = event_short, fill = mechanism)) +
+  geom_col(alpha = 0.85, width = 0.7) +
+  geom_text(aes(label = ifelse(freq >= 10, fmt(freq), "")),
+            position = position_stack(vjust = 0.5), size = 3.8, color = "white",
+            fontface = "bold") +
+  scale_fill_manual(values = mech_colors) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "PTC-Causing Splice Events (PTC+ Pairs)",
+       subtitle = sprintf("%s attributed pairs | Stacked by mechanism",
+                          fmt(sum(sankey_agg$freq))),
+       x = "Number of pairs", y = NULL, fill = "Mechanism") +
+  theme(legend.position = "bottom", text = element_text(size = 14))
+save_fig(fig_sankey_ptcpos, "fig_sankey_ptcpos", width = 10, height = 7)
 ```
 
 **Frameshift** (red; `r fmt(sum(all_attr$mechanism == "Frameshift"))` pairs),
@@ -2352,15 +2013,15 @@ nucleotide. The new frame encounters a stop codon at position 22,250,112
 (red triangle) — 406 bp before the normal stop at 22,250,518 (green triangle).
 Four exon-exon junctions remain downstream, triggering NMD.
 
-# 3c. Explaining PTC-Negative NMD {#sec2c-ptc-neg}
+# 3b. Explaining PTC-Negative NMD {#sec2c-ptc-neg}
 
-Section 3b characterized PTC-positive NMD isoforms. Here we investigate
+Section 3a characterized PTC-positive NMD isoforms. Here we investigate
 the remaining PTC-negative isoforms through a systematic examination of
 their structural properties, beginning with the 3'UTR and 5'UTR boundaries.
 
 ## 3'UTR Length Does Not Independently Predict NMD {#sec2c-3utr}
 
-The unified model (Section 3a) showed that adding 3'UTR length to the full
+The prediction model (Section 3d) showed that adding 3'UTR length to the full
 model does not improve holdout AUC (step 3:
 `r round(unified$elastic_net$step3$auc_test, 3)` → step 4:
 `r round(unified$elastic_net$step4$auc_test, 3)`), meaning 3'UTR length
@@ -3455,7 +3116,7 @@ start codon.
 The `r fmt(nrow(eff_ptc))` reclassified pairs share the reference ATG — any
 PTC must arise from splice events between the ATG and the premature stop.
 We attribute PTC-causing events using the same three-mechanism framework as
-Section 3b (see METHODS.md § "PTC-Causing Event Attribution"):
+Section 3a (see METHODS.md § "PTC-Causing Event Attribution"):
 
 1. **Frameshift**: `analyzeFrameWalk()` identifies splice events between the
    shared ATG and the premature stop that shift the reading frame
@@ -3470,13 +3131,13 @@ Section 3b (see METHODS.md § "PTC-Causing Event Attribution"):
 # Population: reclassified effectively-PTC pairs (originally PTC-)
 # Methods: METHODS.md § "PTC-Causing Event Attribution"
 # Three-mechanism attribution using same analyzeFrameWalk() + coordinate
-# containment approach as Section 3b. All three mechanisms (frameshift,
+# containment approach as Section 3a. All three mechanisms (frameshift,
 # in-frame stop, 3'UTR splice) apply to the reclassified population.
 
 reclass_attr <- c2_ref[c2_ref$category == "effectively_ptc" & !c2_ref$original_ptc, ]
 reclass_attr <- reclass_attr[!is.na(reclass_attr$attr_mechanism), ]
 
-# Build attribution table matching Section 3b format
+# Build attribution table matching Section 3a format
 attr_df <- reclass_attr %>%
   filter(attr_mechanism != "unresolved") %>%
   group_by(attr_mechanism, attr_event) %>%
@@ -3501,29 +3162,52 @@ sankey_agg <- attr_df %>%
   group_by(event_short, attr_mechanism) %>%
   summarise(freq = sum(n), .groups = "drop")
 
-nodes_vec <- unique(c(sankey_agg$event_short, sankey_agg$attr_mechanism))
-nodes <- data.frame(name = nodes_vec, stringsAsFactors = FALSE)
+mech_colors_reclass <- c("Frameshift" = "#d6604d",
+                          "In-frame stop" = "#4393c3",
+                          "3'UTR splice" = "#66c2a5")
 
-links <- data.frame(
-  source = match(sankey_agg$event_short, nodes_vec) - 1L,
-  target = match(sankey_agg$attr_mechanism, nodes_vec) - 1L,
-  value  = sankey_agg$freq
-)
-
-mech_colors <- c("Frameshift" = "#d6604d", "In-frame stop" = "#4393c3")
-node_colors <- ifelse(nodes$name %in% names(mech_colors),
-                      mech_colors[nodes$name], "#bdbdbd")
-
-color_scale <- paste0(
+# Interactive Sankey (HTML only)
+nodes_vec_r <- unique(c(sankey_agg$event_short, sankey_agg$attr_mechanism))
+nodes_r <- data.frame(name = nodes_vec_r, stringsAsFactors = FALSE)
+links_r <- data.frame(
+  source = match(sankey_agg$event_short, nodes_vec_r) - 1L,
+  target = match(sankey_agg$attr_mechanism, nodes_vec_r) - 1L,
+  value  = sankey_agg$freq)
+node_colors_r <- ifelse(nodes_r$name %in% names(mech_colors_reclass),
+                         mech_colors_reclass[nodes_r$name], "#bdbdbd")
+color_scale_r <- paste0(
   'd3.scaleOrdinal().domain([',
-  paste0('"', nodes$name, '"', collapse = ','), ']).range([',
-  paste0('"', node_colors, '"', collapse = ','), '])')
-
+  paste0('"', nodes_r$name, '"', collapse = ','), ']).range([',
+  paste0('"', node_colors_r, '"', collapse = ','), '])')
 networkD3::sankeyNetwork(
-  Links = links, Nodes = nodes,
+  Links = links_r, Nodes = nodes_r,
   Source = "source", Target = "target", Value = "value",
   NodeID = "name", fontSize = 14, nodeWidth = 30, nodePadding = 15,
-  colourScale = color_scale, sinksRight = TRUE)
+  colourScale = color_scale_r, sinksRight = TRUE)
+
+# Static stacked bar chart (saves as PNG/PDF for paper)
+evt_totals_r <- sankey_agg %>%
+  group_by(event_short) %>%
+  summarise(total = sum(freq), .groups = "drop") %>%
+  arrange(total)
+sankey_agg$event_short <- factor(sankey_agg$event_short, levels = evt_totals_r$event_short)
+sankey_agg$attr_mechanism <- factor(sankey_agg$attr_mechanism,
+  levels = c("Frameshift", "In-frame stop", "3'UTR splice"))
+
+fig_sankey_reclass <- ggplot(sankey_agg,
+    aes(x = freq, y = event_short, fill = attr_mechanism)) +
+  geom_col(alpha = 0.85, width = 0.7) +
+  geom_text(aes(label = ifelse(freq >= 10, fmt(freq), "")),
+            position = position_stack(vjust = 0.5), size = 3.8, color = "white",
+            fontface = "bold") +
+  scale_fill_manual(values = mech_colors_reclass) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.05))) +
+  labs(title = "PTC-Causing Splice Events (Reclassified Pairs)",
+       subtitle = sprintf("%s attributed pairs | Stacked by mechanism",
+                          fmt(sum(sankey_agg$freq))),
+       x = "Number of pairs", y = NULL, fill = "Mechanism") +
+  theme(legend.position = "bottom", text = element_text(size = 14))
+save_fig(fig_sankey_reclass, "fig_sankey_reclass", width = 10, height = 7)
 ```
 
 **Frameshift** (red; `r fmt(n_attr_fs)` pairs,
@@ -3539,7 +3223,7 @@ directly attributed; `r fmt(n_attr_unres)` remain unresolved
 have truncated ORFs (frameshift or in-frame stop), but a subset use the same
 3'UTR splice mechanism seen in the original PTC+ group.
 
-The event type distribution mirrors Section 3b: SE dominates both
+The event type distribution mirrors Section 3a: SE dominates both
 mechanisms, followed by A3SS and A5SS for frameshifts. This confirms that
 the reclassified pairs arise from the same biological processes as the
 original PTC+ pairs — the difference is purely which CDS the prediction
@@ -3699,7 +3383,7 @@ meta-analysis logFC (posterior mean averaged across cell types).
 # ── Data provenance ──
 # Source: mashr_isoform_model_2026.3.10.rds → post_mean → meta_logfc (STAGE 5)
 #   Original PTC+: coding_pairs_c2 with comp_has_ptc == TRUE (Section 3b)
-#   Reclassified PTC: eff_ptc (Section 3c ref-ATG tracing)
+#   Reclassified PTC: eff_ptc (Section 3b ref-ATG tracing)
 #   Control: profiles_list[["c4_allsamples"]] (C4 gene-matched pairs)
 # Population: comparator isoforms with mashr logFC available
 
@@ -3955,7 +3639,7 @@ whose stop codon has ≥1 downstream exon-exon junction;
 
 These remaining cases cannot be explained by a single dominant PTC. Neither
 long 3'UTR nor enrichment for NMD-susceptible ORFs distinguishes them from
-control. In Section 3d, we develop a broader framework — ORF competition and
+control. In Section 3c, we develop a broader framework — ORF competition and
 gene architecture — that addresses why NMD response is continuous rather than
 binary.
 
@@ -3998,9 +3682,9 @@ paired isoform IDs; **category** = classification from ref-ATG tracing
 isoform; **n_downstream_ejc** = exon-exon junctions downstream of the
 ref-ATG ORF stop in the comparator.
 
-# 3d. ORF Competition and Gene Architecture {#sec2d-orf-competition}
+# 3c. ORF Competition and Gene Architecture {#sec2d-orf-competition}
 
-The accounting in Section 3c explained individual NMD isoforms through PTC
+The accounting in Section 3b explained individual NMD isoforms through PTC
 identification. Here we investigate a complementary question: why is NMD a
 continuous phenomenon rather than a binary switch? One framework consistent
 with the data is stochastic translation initiation — each ribosomal scanning
@@ -4207,220 +3891,716 @@ genes — is consistent with the first interpretation, but the data do not
 exclude the second.
 
 
-# 3e. Revisiting Prediction: CDS-Independent NMD Model {#sec3e-model2}
+# 3d. Predicting NMD from Isoform Structure {#sec-prediction}
 
-Section 3a showed that a model using TransDecoder2 (TD2) CDS-derived features
-achieves AUC ~0.90 for NMD prediction. However, Sections 3b–3c revealed that
-TD2 systematically selects the wrong CDS for NMD isoforms — choosing a longer
-ORF that avoids the PTC. This means the model's features (downstream EJC count,
-5'UTR length, uORF counts) are computed from incorrect CDS boundaries for ~40%
-of NMD isoforms. Here we ask: **can NMD be predicted without relying on the
-NMD isoform's own CDS annotation?**
+Can we predict which isoforms trigger NMD from structural features alone?
+The answer depends critically on how the coding sequence (CDS) is defined.
+TransDecoder2 (TD2) predicts CDS boundaries de novo for each isoform, but
+Sections 3a--3b showed that TD2 systematically selects the wrong reading
+frame for NMD isoforms. Here we compare two CDS strategies head-to-head:
 
-The strategy: instead of using each isoform's TD2-predicted CDS, use the
-gene's dominant non-NMD isoform (the reference) as the CDS anchor.
-The reference-ATG tracing from Section 3c already computed downstream EJC
-counts from the reference reading frame — we repurpose this as a model
-feature.
+- **TD2 CDS**: Each isoform's own TransDecoder2-predicted CDS boundaries.
+  Features (downstream EJCs, 5'UTR, uORFs) computed from these boundaries.
+- **Reference CDS**: The dominant non-NMD isoform's CDS used as the reading
+  frame anchor for every isoform in the gene. The reference ATG is traced
+  through each target isoform's transcript, and features are computed from
+  the resulting CDS boundaries.
 
-```{r sec3e-model2, fig.width=10, fig.height=6}
+NMD status is defined empirically from the observed SMG1i response (mashr
+posterior logFC and lfsr), not from structural features --- the model predicts
+an experimental outcome from sequence-derived predictors.
+
+**Statistical approach:** Elastic net logistic regression (alpha = 0.5) with
+10-fold cross-validation on the training set. Holdout chromosomes 1, 3, 5, 7
+are never used for feature selection or model tuning. All model sets are
+trained and evaluated on the **same isoform population** (the intersection
+of isoforms with complete TD2 and reference-CDS features), so AUC
+comparisons are not confounded by population differences.
+
+```{r sec3a-load-models}
 # ── Data provenance ──
-# Methods: METHODS.md § "Reference-ATG Tracing (PTC-Negative Reclassification)"
-# Source: unified_model.rds (original model features + NMD labels),
-#   ref_atg_analysis.rds (ref-ATG traced downstream EJC counts)
-# Population: gene-matched coding isoform pairs with ref-ATG data available
-# (subset of the full model population; includes both NMD and non-NMD isoforms)
+# Methods: METHODS.md § "Combined Prediction Model"
+# Source: 05v_model_comparison.R → model_comparison.rds
+#   Built from: 05l_unified_model.R (TD2 features),
+#               05t_ref_cds_features.R (ref-CDS features),
+#               05u_paralog_annotation.R (paralog leakage filtering)
+# Population: intersection of classified coding isoforms with BOTH
+#   complete TD2 features AND complete ref-CDS features
+# Train: non-holdout chromosomes
+# Test: holdout chr 1,3,5,7 with high-similarity cross-split paralogs removed
 
-library(pROC)
+mc <- readRDS(file.path(cache_dir, "model_comparison.rds"))
 
-# Build ref-ATG features for all paired isoforms (C2 + C4)
-c2_refatg <- ref_atg$c2[, c("comparator_isoform_id", "n_downstream_ejc",
-                              "ref_orf_length", "comp_orf_length_from_ref_atg",
-                              "ref_atg_exonic_in_comp", "category")]
-c4_refatg <- ref_atg$c4[, c("comparator_isoform_id", "n_downstream_ejc",
-                              "ref_orf_length", "comp_orf_length_from_ref_atg",
-                              "ref_atg_exonic_in_comp", "category")]
-names(c2_refatg)[1] <- "isoform_id"; names(c4_refatg)[1] <- "isoform_id"
-names(c2_refatg)[2] <- "dejc_refatg"; names(c4_refatg)[2] <- "dejc_refatg"
-all_refatg <- rbind(c2_refatg, c4_refatg)
-all_refatg <- all_refatg[!duplicated(all_refatg$isoform_id), ]
+cat("Matched population:", fmt(mc$metadata$n_complete), "isoforms\n")
+cat("  NMD:", fmt(mc$metadata$n_nmd_train + mc$metadata$n_nmd_test), "\n")
+cat("  Non-NMD:", fmt(mc$metadata$n_complete -
+    mc$metadata$n_nmd_train - mc$metadata$n_nmd_test), "\n")
+cat("Train:", fmt(mc$metadata$n_train), "| Test:", fmt(mc$metadata$n_test_final), "\n")
+cat("Paralog genes removed from test:", mc$metadata$n_paralog_removed_genes,
+    "(", fmt(mc$metadata$n_paralog_removed_isoforms), "isoforms)\n")
 
-# Merge with original model data
-model_df <- unified$df
-model2 <- merge(model_df, all_refatg, by = "isoform_id")
-model2$dejc_refatg_trunc <- pmin(model2$dejc_refatg, 5L)
-model2$orf_truncated <- as.integer(
-  !is.na(model2$ref_orf_length) & !is.na(model2$comp_orf_length_from_ref_atg) &
-    model2$comp_orf_length_from_ref_atg < model2$ref_orf_length)
-model2$ref_atg_lost <- as.integer(
-  !is.na(model2$ref_atg_exonic_in_comp) & !model2$ref_atg_exonic_in_comp)
-
-# Remove rows with NA in key variables
-model2_complete <- model2[!is.na(model2$dejc_refatg_trunc) & !is.na(model2$is_nmd), ]
-y <- model2_complete$is_nmd
-
-cat(sprintf("Model 2 population: %s isoforms (%s NMD, %s non-NMD)\n",
-            fmt(nrow(model2_complete)), fmt(sum(y)), fmt(sum(y == 0))))
-
-# --- Model 1a: Original TD2 features on this subset ---
-orig_feats <- c("downstream_ejc", "atg_count", "atg_density", "atg_strong_kozak",
-                 "atg_orphan_count", "uorf_count_overlapping", "uorf_count_inframe",
-                 "uorf_count_outframe", "utr5_orf_coverage", "stop_density", "log_utr3_length")
-set.seed(42)
-cv_1a <- cv.glmnet(as.matrix(model2_complete[, orig_feats]), y,
-                    family = "binomial", type.measure = "auc", nfolds = 10, alpha = 0.5)
-auc_1a <- round(max(cv_1a$cvm), 4)
-
-# --- Model 2a: Ref-ATG downstream EJC only (1 feature, CDS-independent) ---
-m_2a <- glm(is_nmd ~ dejc_refatg_trunc, data = model2_complete, family = binomial)
-pred_2a_vec <- as.numeric(predict(m_2a, type = "response"))
-auc_2a <- round(as.numeric(pROC::auc(pROC::roc(y, pred_2a_vec, quiet = TRUE))), 4)
-
-# --- Model 2b: Ref-ATG EJC + ORF truncation + ATG lost (3 features) ---
-m_2b <- glm(is_nmd ~ dejc_refatg_trunc + orf_truncated + ref_atg_lost,
-             data = model2_complete, family = binomial)
-auc_2b <- round(as.numeric(pROC::auc(pROC::roc(y, as.numeric(predict(m_2b, newdata = model2_complete, type = "response")), quiet = TRUE))), 4)
-
-# --- Model 2c: Ref-ATG + 5'UTR features (test if 5'UTR adds anything) ---
-combo_feats <- c("dejc_refatg_trunc", "atg_count", "atg_density", "atg_strong_kozak",
-                  "uorf_count_overlapping", "utr5_orf_coverage", "stop_density")
-cv_2c <- cv.glmnet(as.matrix(model2_complete[, combo_feats]), y,
-                    family = "binomial", type.measure = "auc", nfolds = 10, alpha = 0.5)
-auc_2c <- round(max(cv_2c$cvm), 4)
-
-# --- Summary table ---
-model_summary <- data.frame(
-  Model = c("1a: TD2 CDS (11 features)",
-            "2a: Ref-ATG EJC only (1 feature)",
-            "2b: Ref-ATG + truncation + ATG lost (3 features)",
-            "2c: Ref-ATG + 5'UTR features (7 features)"),
-  AUC = c(auc_1a, auc_2a, auc_2b, auc_2c),
-  Features = c(length(orig_feats), 1, 3, length(combo_feats)),
-  CDS_dependent = c("Yes", "No", "No", "Partial (5'UTR from TD2)"),
-  stringsAsFactors = FALSE)
-
-render_dt(model_summary, caption = "NMD Prediction: TD2-Dependent vs CDS-Independent Models")
-
-# --- ROC curves ---
-pred_1a <- as.numeric(predict(cv_1a, newx = as.matrix(model2_complete[, orig_feats]),
-                               s = "lambda.min", type = "response"))
-roc_1a <- pROC::roc(y, pred_1a, quiet = TRUE)
-roc_2a <- pROC::roc(y, pred_2a_vec, quiet = TRUE)
-
-roc_df <- rbind(
-  data.frame(sensitivity = roc_1a$sensitivities, specificity = 1 - roc_1a$specificities,
-             model = sprintf("1a: TD2 CDS (AUC = %s)", auc_1a)),
-  data.frame(sensitivity = roc_2a$sensitivities, specificity = 1 - roc_2a$specificities,
-             model = sprintf("2a: Ref-ATG EJC (AUC = %s)", auc_2a)))
-
-fig_roc2 <- ggplot(roc_df, aes(x = specificity, y = sensitivity, color = model)) +
-  geom_line(linewidth = 1) +
-  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "grey60") +
-  scale_color_manual(values = c("#4393c3", "#d6604d")) +
-  labs(title = "NMD Prediction: CDS-Dependent vs CDS-Independent",
-       subtitle = sprintf("n = %s isoforms (%s NMD, %s non-NMD)",
-                          fmt(nrow(model2_complete)), fmt(sum(y)), fmt(sum(y == 0))),
-       x = "1 - Specificity", y = "Sensitivity", color = NULL) +
-  theme(legend.position = c(0.6, 0.2))
-save_fig(fig_roc2, "fig_sec3e_roc_model2", width = 8, height = 7)
-
-# --- Sensitivity by subgroup ---
-reclass_ids <- ref_atg$c2$comparator_isoform_id[
-  ref_atg$c2$category == "effectively_ptc" & !ref_atg$c2$original_ptc]
-orig_ptc_ids <- ref_atg$c2$comparator_isoform_id[ref_atg$c2$original_ptc]
-
-sens_rows <- list()
-for (g in list(
-  list("Original PTC+", orig_ptc_ids),
-  list("Reclassified PTC", reclass_ids),
-  list("All NMD", model2_complete$isoform_id[y == 1]),
-  list("Non-NMD", model2_complete$isoform_id[y == 0]))) {
-  s <- model2_complete[model2_complete$isoform_id %in% g[[2]], ]
-  if (nrow(s) == 0) next
-  p1a <- as.numeric(predict(cv_1a, newx = as.matrix(s[, orig_feats]),
-                             s = "lambda.min", type = "response"))
-  p2a <- as.numeric(predict(m_2a, newdata = s, type = "response"))
-  sens_rows[[length(sens_rows) + 1]] <- data.frame(
-    Group = g[[1]], n = nrow(s),
-    `Model 1a (TD2)` = sprintf("%.1f%%", 100 * mean(p1a > 0.5)),
-    `Model 2a (Ref-ATG)` = sprintf("%.1f%%", 100 * mean(p2a > 0.5)),
-    check.names = FALSE, stringsAsFactors = FALSE)
-}
-sens_df <- do.call(rbind, sens_rows)
-render_dt(sens_df, caption = "Sensitivity (>0.5 threshold) by Isoform Group")
+# unified and feat_labels loaded in Section 0 data loading chunk
 ```
 
-Columns for the AUC table: **Model** = model name and feature count;
-**AUC** = cross-validated AUC (10-fold, elastic net for multi-feature models,
-logistic regression for single-feature); **Features** = number of predictors;
-**CDS_dependent** = whether the model requires the NMD isoform's own CDS
-annotation.
+## Model Features
 
-Columns for the sensitivity table: **Group** = isoform subgroup;
-**n** = number of isoforms in the model population;
-**Model 1a / Model 2a** = sensitivity at 0.5 probability threshold.
+Each feature is computed twice --- once from the TD2-predicted CDS and once
+from the reference isoform's CDS traced through the target transcript. The
+table below describes each feature and its CDS source.
 
-A single CDS-independent feature — the downstream EJC count computed from the
-reference isoform's ATG — achieves AUC `r auc_2a`, within
-`r auc_1a - auc_2a` of the 11-feature TD2-dependent model (`r auc_1a`).
-Adding TD2-derived 5'UTR features improves AUC by only
-`r auc_2c - auc_2a` (Model 2c: `r auc_2c`), suggesting that the apparent
-importance of 5'UTR features in Model 1a reflects compensation for inaccurate
-CDS calls rather than independent biological signal.
+```{r sec3a-feature-table}
+feature_desc <- data.frame(
+  Feature = c(
+    "Downstream EJC count",
+    "5\u2032UTR ATG density",
+    "5\u2032UTR ATG count",
+    "Strong Kozak ATG count",
+    "Orphan ATG count",
+    "Overlapping uORF count",
+    "Longest uORF (nt)",
+    "In-frame uORF count",
+    "Out-of-frame uORF count",
+    "5\u2032UTR ORF coverage",
+    "5\u2032UTR stop density",
+    "3\u2032UTR length (log bp)"
+  ),
+  Category = c(
+    "Stop codon position",
+    "Start codon context",
+    "Start codon context",
+    "Start codon context",
+    "Start codon context",
+    "Upstream ORF",
+    "Upstream ORF",
+    "Upstream ORF",
+    "Upstream ORF",
+    "Start codon context",
+    "Start codon context",
+    "3\u2032UTR"
+  ),
+  CDS_source = c(rep("Both", 12)),
+  Description = c(
+    "Number of exon-exon junctions downstream of the stop codon (truncated at 5).",
+    "ATG codons per 100 bp of 5\u2032UTR.",
+    "Total ATG codons in the 5\u2032UTR.",
+    "5\u2032UTR ATGs matching strong Kozak consensus (-3 and +4).",
+    "5\u2032UTR ATGs not associated with any predicted ORF.",
+    "uORFs extending past the CDS start codon.",
+    "Length of the longest 5\u2032UTR ORF (nt).",
+    "uORFs in the same reading frame as the main CDS.",
+    "uORFs in a different reading frame from the main CDS.",
+    "Percentage of 5\u2032UTR spanned by predicted ORFs.",
+    "Stop codons (all frames) per 100 bp of 5\u2032UTR.",
+    "Log-transformed exonic bp from stop codon to 3\u2032 transcript end."
+  ),
+  stringsAsFactors = FALSE
+)
 
-The sensitivity breakdown reveals the source of Model 1a's advantage: it
-captures original PTC+ pairs well (their TD2 CDS correctly identifies the
-PTC) but misses reclassified pairs entirely. Model 2a reverses this pattern —
-high sensitivity for reclassified pairs where TD2 selected the wrong CDS.
-The biological driver of NMD prediction is PTC identification, and the most
-accurate PTCs come from the gene's reference reading frame, not from
-de novo CDS prediction on the NMD isoform.
+render_dt(feature_desc, caption = "Table: Model Feature Definitions")
+```
 
-## Ref-ATG Model Score vs NMD Response Magnitude
+Column definitions: **Feature** = display name; **Category** = biological
+domain; **CDS_source** = both TD2 and reference CDS versions are computed
+for each feature; **Description** = what the feature measures.
 
-```{r sec3e-dose-response, fig.width=10, fig.height=5}
+## Dataset Construction
+
+```{r sec3a-dataset-table}
+dataset_desc <- data.frame(
+  Dataset = c("Training", "Test"),
+  Chromosomes = c("2, 4, 6, 8\u201322, X", "1, 3, 5, 7"),
+  Population = c(
+    "Ref-CDS available, complete features",
+    "Ref-CDS available, complete features, paralog genes removed"
+  ),
+  N_isoforms = c(fmt(mc$metadata$n_train), fmt(mc$metadata$n_test_final)),
+  N_NMD = c(fmt(mc$metadata$n_nmd_train), fmt(mc$metadata$n_nmd_test)),
+  Purpose = c("Model fitting (10-fold CV)", "All evaluation"),
+  stringsAsFactors = FALSE
+)
+
+render_dt(dataset_desc, caption = "Table: Train/Test Dataset Construction")
+```
+
+Column definitions: **Dataset** = partition name; **Chromosomes** = which
+chromosomes contribute; **Population** = inclusion criteria; **N_isoforms**
+= total isoforms; **N_NMD** = NMD-classified isoforms; **Purpose** = how
+the partition is used.
+
+**Paralog removal:** Genes with a high-similarity expressed paralog
+(protein identity \u2265 80%) on the opposite side of the train/test split are
+removed from the test set only. This prevents data leakage from
+structurally similar gene family members.
+`r mc$metadata$n_paralog_removed_genes` genes
+(`r fmt(mc$metadata$n_paralog_removed_isoforms)` isoforms) were removed,
+representing
+`r round(100 * mc$metadata$n_paralog_removed_isoforms / mc$metadata$n_test_before_paralog, 1)`%
+of the holdout set.
+
+**Population constraint:** Both TD2 and reference-CDS models are trained
+and evaluated on the **same isoform population** --- the intersection of
+isoforms with complete features from both CDS strategies. This ensures AUC
+differences reflect feature quality, not population differences.
+
+## Model Set 1 --- TD2 CDS Annotations
+
+Progressive elastic net models using features computed from each isoform's
+TransDecoder2-predicted CDS boundaries.
+
+```{r sec3a-td2-progressive, fig.width=7, fig.height=7}
 # ── Data provenance ──
-# Source: model2_complete (ref-ATG model from sec3e-model2),
-#   mean_logfc (limma logFC computed in sec2d-load-limma, reused here)
-# Population: NMD isoforms with both ref-ATG model score and limma logFC
+# Source: mc$td2_models (progressive elastic net models)
+# Evaluated on holdout test set (paralog-free)
 
-# Predict ref-ATG model scores for NMD isoforms
-nmd_model2 <- model2_complete[model2_complete$is_nmd == 1, ]
-nmd_model2$pred_2a <- as.numeric(predict(m_2a, newdata = nmd_model2, type = "response"))
+td2_specs <- list(
+  list(roc = mc$td2_models$step1$roc_test,
+       name = "Step 1: Downstream EJC", color = "#fc8d59"),
+  list(roc = mc$td2_models$step2$roc_test,
+       name = "Step 2: + Start codon context", color = "#91bfdb"),
+  list(roc = mc$td2_models$step3$roc_test,
+       name = "Step 3: + ORF features", color = "#1a1a1a"),
+  list(roc = mc$td2_models$step4$roc_test,
+       name = "Step 4: + 3\u2032UTR length", color = "#b2182b")
+)
 
-# Reuse mean_logfc from Section 3a (already computed from limma DE files)
-nmd_model2_scored <- nmd_model2 %>%
+roc_td2 <- lapply(td2_specs, function(spec) {
+  auc_val <- as.numeric(auc(spec$roc))
+  data.frame(
+    fpr = 1 - spec$roc$specificities,
+    tpr = spec$roc$sensitivities,
+    model = sprintf("%s (AUC = %.3f)", spec$name, auc_val),
+    stringsAsFactors = FALSE
+  )
+})
+roc_td2_df <- do.call(rbind, roc_td2)
+roc_td2_df$model <- factor(roc_td2_df$model, levels = unique(roc_td2_df$model))
+
+fig_td2_roc <- ggplot(roc_td2_df, aes(x = fpr, y = tpr, color = model)) +
+  geom_abline(linetype = "dashed", color = "grey70") +
+  geom_line(linewidth = 0.9) +
+  scale_color_manual(values = setNames(
+    sapply(td2_specs, `[[`, "color"), levels(roc_td2_df$model))) +
+  coord_equal() +
+  labs(title = "TD2 CDS \u2014 Progressive Model Building",
+       subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s)",
+                          fmt(mc$metadata$n_test_final)),
+       x = "False Positive Rate", y = "True Positive Rate", color = "") +
+  theme(legend.position = c(0.62, 0.18),
+        legend.background = element_rect(fill = "white", color = "grey80"),
+        legend.key.width = unit(1.2, "cm"))
+save_fig(fig_td2_roc, "fig_td2_progressive_roc", width = 7, height = 7)
+```
+
+Using TD2 CDS annotations, stop codon position alone (downstream EJC count)
+achieves AUC = `r round(mc$td2_models$step1$auc_test, 3)`. Adding start
+codon context features increases AUC to
+`r round(mc$td2_models$step2$auc_test, 3)`, and ORF features raise it
+further to `r round(mc$td2_models$step3$auc_test, 3)`. The large
+step 1 \u2192 step 2 jump (+`r round(mc$td2_models$step2$auc_test - mc$td2_models$step1$auc_test, 3)`)
+suggests that 5\u2032UTR features are doing substantial work --- but as we will
+see, much of this work compensates for incorrect PTC calls rather than
+capturing independent biology. Adding 3\u2032UTR length (step 4) provides no
+improvement (AUC = `r round(mc$td2_models$step4$auc_test, 3)`).
+
+## Model Set 2 --- Reference Isoform CDS
+
+The same progressive structure, but features are computed from the gene's
+dominant non-NMD isoform's CDS traced through each target transcript. The
+reference ATG is mapped to the target's exon structure; if exonic, the ORF
+is walked to the first in-frame stop codon, and all features (downstream
+EJCs, 5\u2032UTR, uORFs, 3\u2032UTR) are computed from the resulting CDS boundaries.
+
+```{r sec3a-ref-progressive, fig.width=7, fig.height=7}
+# ── Data provenance ──
+# Source: mc$ref_models (progressive elastic net models)
+# Ref-CDS features from 05t_ref_cds_features.R
+
+ref_specs <- list(
+  list(roc = mc$ref_models$step1$roc_test,
+       name = "Step 1: Downstream EJC", color = "#fc8d59"),
+  list(roc = mc$ref_models$step2$roc_test,
+       name = "Step 2: + Start codon context", color = "#91bfdb"),
+  list(roc = mc$ref_models$step3$roc_test,
+       name = "Step 3: + ORF features", color = "#1a1a1a"),
+  list(roc = mc$ref_models$step4$roc_test,
+       name = "Step 4: + 3\u2032UTR length", color = "#b2182b")
+)
+
+roc_ref <- lapply(ref_specs, function(spec) {
+  auc_val <- as.numeric(auc(spec$roc))
+  data.frame(
+    fpr = 1 - spec$roc$specificities,
+    tpr = spec$roc$sensitivities,
+    model = sprintf("%s (AUC = %.3f)", spec$name, auc_val),
+    stringsAsFactors = FALSE
+  )
+})
+roc_ref_df <- do.call(rbind, roc_ref)
+roc_ref_df$model <- factor(roc_ref_df$model, levels = unique(roc_ref_df$model))
+
+fig_ref_roc <- ggplot(roc_ref_df, aes(x = fpr, y = tpr, color = model)) +
+  geom_abline(linetype = "dashed", color = "grey70") +
+  geom_line(linewidth = 0.9) +
+  scale_color_manual(values = setNames(
+    sapply(ref_specs, `[[`, "color"), levels(roc_ref_df$model))) +
+  coord_equal() +
+  labs(title = "Reference CDS \u2014 Progressive Model Building",
+       subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s)",
+                          fmt(mc$metadata$n_test_final)),
+       x = "False Positive Rate", y = "True Positive Rate", color = "") +
+  theme(legend.position = c(0.62, 0.18),
+        legend.background = element_rect(fill = "white", color = "grey80"),
+        legend.key.width = unit(1.2, "cm"))
+save_fig(fig_ref_roc, "fig_ref_progressive_roc", width = 7, height = 7)
+```
+
+Using reference CDS annotations, a single feature --- the downstream EJC
+count from the reference reading frame --- achieves AUC =
+`r round(mc$ref_models$step1$auc_test, 3)`. This nearly matches the full
+11-feature TD2 model (`r round(mc$td2_models$step3$auc_test, 3)`). Adding
+start codon and ORF features provides only modest improvement (step 3
+AUC = `r round(mc$ref_models$step3$auc_test, 3)`, a gain of
++`r round(mc$ref_models$step3$auc_test - mc$ref_models$step1$auc_test, 3)`).
+
+The contrast is revealing: TD2 needs 10 additional 5\u2032UTR features to gain
++`r round(mc$td2_models$step3$auc_test - mc$td2_models$step1$auc_test, 3)` AUC,
+while reference CDS gains only
++`r round(mc$ref_models$step3$auc_test - mc$ref_models$step1$auc_test, 3)` from
+the same feature categories. The 5\u2032UTR features in the TD2 model are largely
+compensating for incorrect PTC identification, not capturing independent
+biological signal.
+
+## Model Set 3 --- Combined (TD2 + Reference CDS Features)
+
+The elastic net receives all 24 features (12 TD2 + 12 reference CDS). The
+L1 penalty selects which features survive --- revealing whether TD2 and
+reference CDS features are complementary or redundant.
+
+```{r sec3a-combined-coefficients}
+# ── Data provenance ──
+# Source: mc$combined_model (elastic net with all 24 features)
+# mc$combined_coefficients (non-zero coefficients with CDS source tag)
+
+cat(sprintf("Combined model test AUC: %.4f\n", mc$combined_model$auc_test))
+cat(sprintf("  TD2 features surviving: %d\n",
+            sum(mc$combined_coefficients$source == "TD2")))
+cat(sprintf("  Ref-CDS features surviving: %d\n",
+            sum(mc$combined_coefficients$source == "Ref-CDS")))
+
+coef_display <- mc$combined_coefficients %>%
+  mutate(
+    Feature = ifelse(feature %in% names(mc$feature_labels),
+                     mc$feature_labels[feature], feature),
+    Coefficient = round(coefficient, 4),
+    Source = source
+  ) %>%
+  select(Feature, Coefficient, Source)
+
+render_dt(coef_display,
+          caption = "Table: Combined Model Feature Importance (TD2 + Ref-CDS)")
+```
+
+Column definitions: **Feature** = model variable (display name);
+**Coefficient** = elastic net coefficient at lambda.min (standardized);
+**Source** = which CDS annotation produced this feature (TD2 or Ref-CDS).
+
+```{r sec3a-combined-barplot, fig.width=9, fig.height=7}
+coef_plot <- coef_display %>%
+  mutate(
+    Feature = factor(Feature, levels = rev(Feature)),
+    Direction = ifelse(Coefficient > 0, "Promotes NMD", "Protects from NMD")
+  )
+
+fig_combined_coefs <- ggplot(coef_plot,
+    aes(x = Coefficient, y = Feature, fill = Source)) +
+  geom_col(alpha = 0.85, width = 0.7) +
+  geom_vline(xintercept = 0, color = "grey40", linewidth = 0.5) +
+  scale_fill_manual(values = c("TD2" = "#67a9cf", "Ref-CDS" = "#ef8a62")) +
+  labs(title = "Combined Model Feature Importance",
+       subtitle = sprintf("Elastic net (alpha = 0.5) \u2014 %d / 24 features survive",
+                          nrow(coef_display)),
+       x = "Coefficient (standardized)", y = NULL, fill = "CDS source") +
+  theme(legend.position = "bottom")
+save_fig(fig_combined_coefs, "fig_combined_feature_importance", width = 9, height = 7)
+```
+
+Both CDS sources contribute to the combined model
+(`r sum(mc$combined_coefficients$source == "TD2")` TD2 and
+`r sum(mc$combined_coefficients$source == "Ref-CDS")` reference CDS features
+survive). The two strongest features are the downstream EJC counts from each
+CDS source --- both retained with comparable coefficients --- indicating they
+capture partially non-overlapping PTC information. This makes biological
+sense: reference CDS correctly identifies PTCs in isoforms where TD2 chose
+the wrong reading frame, while TD2 provides PTC information for isoforms
+where the reference ATG is lost.
+
+## Overlapping ROC Comparison
+
+```{r sec3a-roc-comparison, fig.width=8, fig.height=8}
+# ── Data provenance ──
+# Source: mc$td2_models, mc$ref_models, mc$combined_model
+# All evaluated on the same paralog-free holdout test set
+
+roc_specs <- list(
+  list(roc = mc$td2_models$step1$roc_test,
+       name = "TD2 PTC only", color = "#fc8d59"),
+  list(roc = mc$td2_models$step3$roc_test,
+       name = "TD2 unified (11 features)", color = "#91bfdb"),
+  list(roc = mc$ref_models$step1$roc_test,
+       name = "Ref-CDS PTC only", color = "#4393c3"),
+  list(roc = mc$ref_models$step3$roc_test,
+       name = "Ref-CDS unified (11 features)", color = "#b2182b"),
+  list(roc = mc$combined_model$roc_test,
+       name = "Combined (24 features)", color = "#1a1a1a")
+)
+
+roc_comp <- lapply(roc_specs, function(spec) {
+  auc_val <- as.numeric(auc(spec$roc))
+  data.frame(
+    fpr = 1 - spec$roc$specificities,
+    tpr = spec$roc$sensitivities,
+    model = sprintf("%s (AUC = %.3f)", spec$name, auc_val),
+    stringsAsFactors = FALSE
+  )
+})
+roc_comp_df <- do.call(rbind, roc_comp)
+roc_comp_df$model <- factor(roc_comp_df$model, levels = unique(roc_comp_df$model))
+
+roc_colors <- setNames(
+  sapply(roc_specs, `[[`, "color"),
+  levels(roc_comp_df$model)
+)
+
+fig_roc_comp <- ggplot(roc_comp_df, aes(x = fpr, y = tpr, color = model)) +
+  geom_abline(linetype = "dashed", color = "grey70") +
+  geom_line(linewidth = 0.9) +
+  scale_color_manual(values = roc_colors) +
+  coord_equal() +
+  labs(title = "NMD Prediction: TD2 vs Reference CDS",
+       subtitle = sprintf("Holdout: chr 1, 3, 5, 7 (N = %s, paralog-free)",
+                          fmt(mc$metadata$n_test_final)),
+       x = "False Positive Rate", y = "True Positive Rate", color = "") +
+  theme(legend.position = c(0.62, 0.22),
+        legend.background = element_rect(fill = "white", color = "grey80"),
+        legend.key.width = unit(1.2, "cm"))
+save_fig(fig_roc_comp, "fig_roc_td2_vs_ref", width = 8, height = 8)
+```
+
+```{r sec3a-auc-summary}
+auc_tbl <- mc$auc_summary %>%
+  transmute(
+    `Model set` = model_set,
+    Step = step,
+    Features = n_features,
+    `Train AUC` = auc_train,
+    `Test AUC` = auc_test
+  )
+
+render_dt(auc_tbl, caption = "Table: AUC Summary — All Model Variants")
+```
+
+Column definitions: **Model set** = CDS annotation strategy (TD2, Ref-CDS,
+or Combined); **Step** = progressive feature category; **Features** = number
+of predictors; **Train AUC** = AUC on training chromosomes; **Test AUC** =
+AUC on holdout chromosomes (paralog-free).
+
+The key comparison: reference-CDS PTC alone (1 feature, AUC =
+`r round(mc$ref_models$step1$auc_test, 3)`) nearly matches the full
+11-feature TD2 model (AUC = `r round(mc$td2_models$step3$auc_test, 3)`).
+The TD2 model's 5\u2032UTR features were compensating for incorrect PTC calls
+by identifying structural correlates of NMD in the mispredicted 5\u2032UTR.
+When PTC identification is correct (reference CDS), those features add
+little. The combined model (AUC = `r round(mc$combined_model$auc_test, 3)`)
+achieves the best performance by leveraging both CDS sources.
+
+## NMD Response Magnitude
+
+```{r sec3a-load-limma}
+# ── Data provenance ──
+# Source: limma DE files from /Users/petecastaldi/claude_projects/nmd/isocall_dge/limma/yul/
+# Raw unshrunk logFC per cell type — independent estimates (no mashr shrinkage)
+
+limma_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/limma/yul"
+limma_cts <- c(AT = "at", DD = "dd", DD_ALI = "ddali", DO = "do", FB = "fb", MV = "mv")
+
+limma_logfc <- lapply(names(limma_cts), function(ct) {
+  f <- file.path(limma_dir, sprintf("nmd_dge_%s_2026.3.3.csv", limma_cts[ct]))
+  de <- read.csv(f, stringsAsFactors = FALSE)
+  id_col <- if ("transcript_id" %in% names(de)) "transcript_id" else "txid"
+  data.frame(
+    isoform_id = de[[id_col]],
+    cell_type = ct,
+    logFC = de$logFC,
+    stringsAsFactors = FALSE
+  )
+})
+limma_long <- do.call(rbind, limma_logfc)
+
+mean_logfc <- limma_long %>%
+  group_by(isoform_id) %>%
+  summarise(
+    mean_logFC = mean(logFC, na.rm = TRUE),
+    n_cts = n(),
+    .groups = "drop"
+  )
+```
+
+```{r sec3a-dose-response, fig.width=10, fig.height=5}
+# Score NMD isoforms with the combined model
+nmd_test <- mc$test[mc$test$is_nmd == 1, ]
+nmd_test$pred_combined <- mc$combined_model$pred_test[
+  match(nmd_test$isoform_id,
+        mc$test$isoform_id)]
+
+nmd_dose <- nmd_test %>%
   inner_join(mean_logfc, by = "isoform_id")
 
-rho_2a <- cor(nmd_model2_scored$pred_2a, nmd_model2_scored$mean_logFC,
-               method = "spearman", use = "complete.obs")
-p_2a <- cor.test(nmd_model2_scored$pred_2a, nmd_model2_scored$mean_logFC,
-                  method = "spearman")$p.value
+rho_combined <- cor(nmd_dose$pred_combined, nmd_dose$mean_logFC,
+                     method = "spearman", use = "complete.obs")
+p_combined <- cor.test(nmd_dose$pred_combined, nmd_dose$mean_logFC,
+                        method = "spearman")$p.value
 
-fig_dose2 <- ggplot(nmd_model2_scored,
-                     aes(x = pred_2a, y = mean_logFC)) +
-  geom_point(alpha = 0.15, size = 0.8, color = "#d6604d") +
-  geom_smooth(method = "lm", se = TRUE, linewidth = 1, color = "#d6604d") +
-  labs(title = "Ref-ATG Model Score vs NMD Response Magnitude",
-       subtitle = sprintf("n = %s NMD isoforms | Spearman rho = %.3f, p = %s",
-                          fmt(nrow(nmd_model2_scored)), rho_2a, signif(p_2a, 3)),
-       x = "Predicted NMD probability (ref-ATG model)",
+fig_dose <- ggplot(nmd_dose,
+                   aes(x = pred_combined, y = mean_logFC)) +
+  geom_point(alpha = 0.15, size = 0.8, color = "#1a1a1a") +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 1, color = "#1a1a1a") +
+  labs(title = "Combined Model Score vs NMD Response Magnitude",
+       subtitle = sprintf("Holdout NMD isoforms (n = %s) | Spearman rho = %.3f, p = %s",
+                          fmt(nrow(nmd_dose)), rho_combined,
+                          signif(p_combined, 3)),
+       x = "Predicted NMD probability (combined model)",
        y = "Mean logFC (limma, across cell types)")
-save_fig(fig_dose2, "fig_sec3e_dose_response_refatg", width = 10, height = 5)
+save_fig(fig_dose, "fig_dose_response_combined", width = 10, height = 5)
 ```
 
-The ref-ATG model's predicted probability also correlates with NMD response
-magnitude (Spearman rho = `r round(rho_2a, 3)`, p = `r signif(p_2a, 3)`),
-confirming that the CDS-independent PTC feature captures the continuous nature
-of NMD --- isoforms with more downstream EJCs from the reference reading
-frame show stronger SMG1i rescue.
+The combined model's predicted probability correlates with actual NMD
+response magnitude (Spearman rho = `r round(rho_combined, 3)`,
+p = `r signif(p_combined, 3)`), confirming that the structural features
+capture the continuous nature of NMD --- isoforms with stronger structural
+signals show greater SMG1i rescue.
+
+## SHAP-Based Isoform Clustering
+
+The combined model uses 24 features, but different isoforms may be classified
+as NMD through different structural mechanisms. SHAP (SHapley Additive
+exPlanations) values decompose each isoform's predicted log-odds into
+per-feature contributions, revealing which features drive each prediction.
+For a linear model (elastic net), SHAP values have a closed-form solution:
+SHAP~j~(i) = beta~j~ * x~j,scaled~(i), where beta~j~ is the standardized
+coefficient and x~j,scaled~(i) is the centered/scaled feature value.
+
+All SHAP analyses use the **holdout test set** (N =
+`r fmt(mc$metadata$n_test_final)` isoforms on chromosomes 1, 3, 5, 7,
+paralog-free) --- the same population used for model evaluation.
+
+```{r sec3d-shap-compute}
+# ── Data provenance ──
+# Source: mc$combined_model (elastic net with 24 features)
+# SHAP for linear models: phi_j = beta_j * x_j_scaled
+# Population: holdout test set (mc$test) — same as ROC evaluation
+
+# Get coefficients at lambda.min
+all_coefs <- as.matrix(coef(mc$combined_model$cv_fit, s = "lambda.min"))
+beta <- all_coefs[-1, 1]  # exclude intercept
+
+# Build scaled feature matrix for the TEST SET
+features <- mc$feature_sets$combined
+x_test_shap <- as.matrix(mc$test[, features])
+x_test_shap_s <- scale(x_test_shap,
+                   center = mc$combined_model$scaling$means,
+                   scale = mc$combined_model$scaling$sds)
+x_test_shap_s[is.na(x_test_shap_s)] <- 0
+
+# SHAP values (log-odds scale)
+shap_matrix <- sweep(x_test_shap_s, 2, beta, "*")
+
+# Keep only non-zero features
+nonzero_mask <- beta != 0
+shap_nz <- shap_matrix[, nonzero_mask, drop = FALSE]
+
+cat("SHAP matrix:", nrow(shap_nz), "isoforms x", ncol(shap_nz), "features\n")
+cat("Features with non-zero SHAP:", sum(nonzero_mask), "\n")
+```
+
+```{r sec3d-shap-beeswarm, fig.width=10, fig.height=8}
+# ── Data provenance ──
+# Source: shap_nz (SHAP values for holdout test set from sec3d-shap-compute)
+
+feat_labels_shap <- mc$feature_labels
+n_plot <- nrow(mc$test)
+
+shap_long <- as.data.frame(shap_nz) %>%
+  mutate(row_id = seq_len(n())) %>%
+  tidyr::pivot_longer(-row_id, names_to = "feature", values_to = "shap_value")
+
+raw_vals <- as.data.frame(x_test_shap_s[, nonzero_mask, drop = FALSE]) %>%
+  mutate(row_id = seq_len(n())) %>%
+  tidyr::pivot_longer(-row_id, names_to = "feature", values_to = "feature_value")
+
+shap_plot_df <- shap_long %>%
+  left_join(raw_vals, by = c("row_id", "feature")) %>%
+  mutate(
+    Feature = ifelse(feature %in% names(feat_labels_shap),
+                      feat_labels_shap[feature], feature)
+  )
+
+feat_order <- shap_plot_df %>%
+  group_by(Feature) %>%
+  summarise(mean_abs_shap = mean(abs(shap_value)), .groups = "drop") %>%
+  arrange(mean_abs_shap) %>%
+  pull(Feature)
+shap_plot_df$Feature <- factor(shap_plot_df$Feature, levels = feat_order)
+shap_plot_df$feature_value_clipped <- pmin(pmax(shap_plot_df$feature_value, -3), 3)
+
+fig_shap_bee <- ggplot(shap_plot_df,
+    aes(x = shap_value, y = Feature, color = feature_value_clipped)) +
+  geom_jitter(height = 0.25, width = 0, alpha = 0.15, size = 0.25) +
+  scale_color_gradient2(low = "#2166ac", mid = "#f7f7f7", high = "#b2182b",
+                         midpoint = 0, name = "Feature value\n(standardized)") +
+  geom_vline(xintercept = 0, color = "grey40", linewidth = 0.3) +
+  labs(title = "SHAP Summary — Combined Model",
+       subtitle = sprintf("Holdout test set (N = %s)", fmt(n_plot)),
+       x = "SHAP value (log-odds)", y = NULL)
+save_fig(fig_shap_bee, "fig_shap_beeswarm", width = 10, height = 8)
+```
+
+Column definitions for the SHAP beeswarm: each dot is one holdout test set
+isoform. The x-axis shows the SHAP contribution (positive = pushes
+prediction toward NMD); color indicates the standardized feature value
+(red = high, blue = low). Features are ordered by mean absolute SHAP (most
+important at top). Feature values are clipped to [-3, 3] standard deviations
+for the color scale
+(`r sum(abs(shap_plot_df$feature_value) > 3)` values clipped).
+
+## NMD-Only SHAP Clustering
+
+To identify **structural subgroups within NMD isoforms**, we cluster the
+SHAP profiles of holdout NMD isoforms only. This asks: among isoforms that
+*are* NMD-sensitive, which features drive the prediction, and are there
+mechanistically distinct subpopulations?
+
+```{r sec3d-shap-nmd-only}
+# ── Data provenance ──
+# Source: shap_nz (SHAP values from sec3d-shap-compute, holdout test set)
+# Population: NMD isoforms only (is_nmd == 1) from the holdout test set
+# Clustering: k-means on non-zero SHAP features, optimal k by silhouette
+
+library(cluster)
+
+nmd_mask <- mc$test$is_nmd == 1
+shap_nmd <- shap_nz[nmd_mask, , drop = FALSE]
+cat("Holdout NMD isoforms for clustering:", nrow(shap_nmd), "\n")
+
+set.seed(42)
+sil_nmd <- sapply(2:8, function(k) {
+  km <- kmeans(shap_nmd, centers = k, nstart = 25, iter.max = 50)
+  mean(silhouette(km$cluster, dist(shap_nmd))[, 3])
+})
+best_k_nmd <- which.max(sil_nmd) + 1
+cat("Silhouette scores (k=2..8):", round(sil_nmd, 3), "\n")
+cat("Best k:", best_k_nmd, "\n")
+
+km_nmd <- kmeans(shap_nmd, centers = best_k_nmd, nstart = 50, iter.max = 100)
+
+nmd_subset <- mc$test[nmd_mask, ]
+nmd_subset$nmd_cluster <- km_nmd$cluster
+```
+
+```{r sec3d-shap-nmd-cluster-summary}
+# ── Data provenance ──
+# Source: nmd_subset (holdout NMD isoforms with cluster assignments)
+# Features: shap_nmd (SHAP matrix restricted to holdout NMD isoforms)
+
+nmd_cluster_summary <- nmd_subset %>%
+  mutate(pred_prob = mc$combined_model$pred_test[
+    match(isoform_id, mc$test$isoform_id)]) %>%
+  group_by(nmd_cluster) %>%
+  summarise(
+    N = n(),
+    `Mean pred. prob.` = round(mean(pred_prob, na.rm = TRUE), 3),
+    `TD2 dEJC > 0 (%)` = round(100 * mean(downstream_ejc > 0), 1),
+    `Ref dEJC > 0 (%)` = round(100 * mean(ref_downstream_ejc > 0), 1),
+    `Mean TD2 dEJC` = round(mean(downstream_ejc), 2),
+    `Mean Ref dEJC` = round(mean(ref_downstream_ejc), 2),
+    .groups = "drop"
+  ) %>%
+  arrange(nmd_cluster)
+
+shap_nmd_df <- as.data.frame(shap_nmd)
+shap_nmd_df$nmd_cluster <- km_nmd$cluster
+
+nmd_dominant <- shap_nmd_df %>%
+  group_by(nmd_cluster) %>%
+  summarise(across(everything(), mean), .groups = "drop") %>%
+  tidyr::pivot_longer(-nmd_cluster, names_to = "feature", values_to = "mean_shap") %>%
+  group_by(nmd_cluster) %>%
+  slice_max(abs(mean_shap), n = 1) %>%
+  ungroup() %>%
+  mutate(
+    `Dominant feature` = ifelse(feature %in% names(mc$feature_labels),
+                                 mc$feature_labels[feature], feature),
+    `Mean SHAP` = round(mean_shap, 3)
+  ) %>%
+  select(nmd_cluster, `Dominant feature`, `Mean SHAP`)
+
+nmd_cluster_summary <- nmd_cluster_summary %>%
+  left_join(nmd_dominant, by = "nmd_cluster")
+
+render_dt(nmd_cluster_summary, caption = "Table: SHAP Clusters — Holdout NMD Isoforms")
+```
+
+Column definitions: **nmd_cluster** = cluster ID; **N** = holdout NMD
+isoforms in cluster; **Mean pred. prob.** = mean combined model predicted
+probability; **TD2 dEJC > 0 (%)** = percentage with non-zero TD2 downstream
+EJC count; **Ref dEJC > 0 (%)** = percentage with non-zero reference
+downstream EJC count; **Mean TD2/Ref dEJC** = mean downstream EJC count from
+each CDS source; **Dominant feature** = feature with largest absolute mean
+SHAP; **Mean SHAP** = that feature's mean SHAP value.
+
+```{r sec3d-shap-nmd-heatmap, fig.width=12, fig.height=7}
+# ── Data provenance ──
+# Source: shap_nmd_df (holdout NMD-only SHAP values with cluster assignments)
+
+nmd_cluster_means <- shap_nmd_df %>%
+  group_by(nmd_cluster) %>%
+  summarise(across(everything(), mean), .groups = "drop")
+
+nmd_cm_long <- nmd_cluster_means %>%
+  tidyr::pivot_longer(-nmd_cluster, names_to = "feature", values_to = "mean_shap") %>%
+  mutate(
+    Feature = ifelse(feature %in% names(mc$feature_labels),
+                      mc$feature_labels[feature], feature),
+    Feature = factor(Feature, levels = rev(unique(Feature)))
+  )
+
+fig_nmd_heat <- ggplot(nmd_cm_long,
+    aes(x = factor(nmd_cluster), y = Feature, fill = mean_shap)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#b2182b",
+                        midpoint = 0, name = "Mean SHAP\n(log-odds)") +
+  labs(title = "SHAP Cluster Profiles — Holdout NMD Isoforms",
+       subtitle = sprintf("%d clusters, %s holdout NMD isoforms",
+                          best_k_nmd, fmt(nrow(shap_nmd))),
+       x = "Cluster", y = NULL) +
+  theme(axis.text.y = element_text(size = 9))
+save_fig(fig_nmd_heat, "fig_shap_nmd_cluster_heatmap", width = 12, height = 7)
+```
+
+Each column is an NMD subgroup; each row a surviving model feature. This
+decomposition reveals which structural mechanism drives NMD classification
+for each subpopulation. Clusters dominated by reference-CDS downstream EJC
+represent isoforms where the gene's reference reading frame correctly
+identifies the PTC; clusters with high TD2 downstream EJC represent isoforms
+where TD2 also found the PTC; and clusters with dominant 5'UTR features
+represent isoforms where neither CDS source identified a clear PTC, and the
+model relies on translational regulation features.
 
 # 4. NMD Mechanism Summary {#sec3-accounting}
 
 ```{r sec3-summary-figure, fig.width=10, fig.height=6}
 # ── Data provenance ──
 # Methods: METHODS.md § "Cumulative NMD Mechanism Attribution"
-# Source: coding_pairs_c2 (Section 3b), ref_atg_analysis.rds (Section 3c),
+# Source: coding_pairs_c2 (Section 3a), ref_atg_analysis.rds (Section 3b),
 #   frame walk (fw_c2_allsamples.rds), attribute_ptc_events (analysis_functions.R)
 # Every coding gene-matched NMD pair is classified into one mutually exclusive
 # category. PTC+ pairs use the annotated CDS; PTC- pairs use reference-ATG tracing.
@@ -4516,8 +4696,8 @@ stopifnot(sum(acct$n) == n_total)  # accounting must be exhaustive
 ```
 
 Every coding NMD pair is accounted for. PTC-mediated NMD — whether detected
-from the annotated CDS (Section 3b) or revealed by reference-ATG tracing
-(Section 3c) — explains
+from the annotated CDS (Section 3a) or revealed by reference-ATG tracing
+(Section 3b) — explains
 `r round(100 * sum(acct$n[acct$group != "Remaining (unexplained)"]) / n_total, 1)`%
 of pairs. The dominant mechanism in both groups is the same:
 **frameshift-causing splice events (primarily exon skipping) that create

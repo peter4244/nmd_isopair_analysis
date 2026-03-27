@@ -132,9 +132,11 @@ build_intron_arrows <- function(exon_starts, exon_ends, y_center, strand,
   )
 
   # Directional arrows within each intron
+  # Scale chevron spacing per-intron so every intron gets at least one chevron.
+  # Target: ~3 chevrons per intron, arm_width = 15% of intron length.
+  # Minimum intron length for any chevron: 10% of mean exon width.
   total_range <- max(ee) - min(es)
-  spacing <- max(total_range * 0.03, 200)
-  arm_width <- spacing * 0.3
+  min_intron_for_chev <- total_range * 0.02  # very short introns get no chevron
 
   ax <- numeric(0); axend <- numeric(0)
   ay <- numeric(0); ayend <- numeric(0)
@@ -143,9 +145,11 @@ build_intron_arrows <- function(exon_starts, exon_ends, y_center, strand,
     intron_start <- ee[i]
     intron_end   <- es[i + 1L]
     intron_len   <- intron_end - intron_start
-    if (intron_len < arm_width * 3) next
+    if (intron_len < min_intron_for_chev) next
 
-    n_chev <- max(1L, floor(intron_len / spacing))
+    # Scale spacing and arm width to this intron's length
+    n_chev <- max(1L, min(5L, round(intron_len / (total_range * 0.03 + 1))))
+    arm_width <- intron_len * 0.08
     step <- intron_len / (n_chev + 1)
     positions <- intron_start + step * seq_len(n_chev)
 
