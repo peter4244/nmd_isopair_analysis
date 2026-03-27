@@ -1434,17 +1434,8 @@ for (i in seq_len(nrow(gl_display))) {
   }
 }
 
-render_dt(gl_display, caption = "Table 1c: Gain/Loss Events by Type — NMD vs Control")
 write.csv(gl_display, file.path(table_dir, "table1c_gain_loss_events.csv"), row.names = FALSE)
 ```
-
-Columns: **event_type** = splicing event type; **n_NMD_GAIN/n_NMD_LOSS** =
-count of NMD events with GAIN/LOSS direction (from comparator's perspective);
-**pct_NMD_GAIN** = percentage of NMD events of that type with GAIN direction;
-**n_Control_GAIN/n_Control_LOSS/pct_Control_GAIN** = same for Control;
-**fisher_p** = Fisher's exact test p-value comparing GAIN/LOSS ratio between
-NMD and Control; **direction_diff** = "More GAIN in NMD", "More LOSS in NMD",
-or "Non-significant" (p > 0.05).
 
 ### GAIN Direction by Event Type — NMD vs Control
 
@@ -1488,6 +1479,24 @@ fig1c <- ggplot(bar1c, aes(x = event_type, y = pct_gain, fill = comparison)) +
 
 save_fig(fig1c, "fig1c_gain_direction_barplot", width = 10, height = 6)
 ```
+
+<details>
+
+<summary>Click to view tabular data for gain/loss direction by event type</summary>
+
+```{r sec2-gain-loss-table, echo=FALSE}
+render_dt(gl_display, caption = "Table 1c: Gain/Loss Events by Type — NMD vs Control")
+```
+
+Columns: **event_type** = splicing event type; **n_NMD_GAIN/n_NMD_LOSS** =
+count of NMD events with GAIN/LOSS direction (from comparator's perspective);
+**pct_NMD_GAIN** = percentage of NMD events of that type with GAIN direction;
+**n_Control_GAIN/n_Control_LOSS/pct_Control_GAIN** = same for Control;
+**fisher_p** = Fisher's exact test p-value comparing GAIN/LOSS ratio between
+NMD and Control; **direction_diff** = "More GAIN in NMD", "More LOSS in NMD",
+or "Non-significant" (p > 0.05).
+
+</details>
 
 # 3a. Stop Codon Analysis {#sec2b-stop-codons}
 
@@ -1977,6 +1986,27 @@ pairs where a downstream splice event repositions an EJC, making the shared
 stop codon premature).
 `r { n_same_stop_unresolved_in_goal2 <- sum(ptc_events_df$attribution == "unresolved" & ptc_events_df$comparator_isoform_id %in% same_stop_comp_ids); n_diffstop_unresolved <- n_unresolved - n_same_stop_unresolved_in_goal2; n_same_no_event <- nrow(same_stop_sankey) - n_same_stop_attributed; paste0(fmt(nrow(all_attr)), " of ", fmt(nrow(ptc_plus)), " PTC+ pairs shown (", fmt(n_diffstop_unresolved), " unresolved diff-stop and ", fmt(n_same_no_event), " same-stop pairs without identifiable events excluded).") }`
 
+<details>
+
+<summary>Click to view tabular data for PTC-causing events (Sankey)</summary>
+
+```{r sec2b-ptc-event-table, echo=FALSE}
+# ptc_event_summary computed in the chunk below (goal2-fig5-summary)
+# Precompute here so table is available in the details block
+ptc_event_summary_sankey <- ptc_attr |>
+  group_by(mechanism, ptc_causing_event) |>
+  summarise(n = n(), .groups = "drop") |>
+  arrange(mechanism, desc(n))
+ptc_event_summary_sankey$pct <- round(100 * ptc_event_summary_sankey$n / nrow(ptc_attr), 1)
+render_dt(ptc_event_summary_sankey, caption = "Table 5a: PTC-Causing Events by Mechanism (NMD)")
+```
+
+Columns: **mechanism** = Frameshift, In-frame stop, or 3'UTR splice;
+**ptc_causing_event** = splice event type that caused the PTC; **n** = number
+of pairs; **pct** = percentage of all `r fmt(nrow(ptc_attr))` attributed PTCs.
+
+</details>
+
 ## PTC-Causing Events by Mechanism
 
 ```{r goal2-fig5-summary}
@@ -1991,19 +2021,6 @@ ptc_event_summary$pct <- round(100 * ptc_event_summary$n / nrow(ptc_attr), 1)
 write.csv(ptc_event_summary, file.path(table_dir, "table5a_ptc_causing_events.csv"),
           row.names = FALSE)
 ```
-
-<details>
-<summary>Click to view tabular data for PTC-causing events</summary>
-
-```{r sec2b-ptc-event-table, echo=FALSE}
-render_dt(ptc_event_summary, caption = "Table 5a: PTC-Causing Events by Mechanism (NMD)")
-```
-
-Columns: **mechanism** = Frameshift or In-frame stop; **ptc_causing_event** =
-splice event type that caused the PTC; **n** = number of pairs; **pct** =
-percentage of all `r fmt(nrow(ptc_attr))` attributed PTCs.
-
-</details>
 
 ## PTC-Causing Event Proportions vs Control Baseline
 
@@ -2053,20 +2070,9 @@ for (i in seq_len(nrow(ptc_evt_df))) {
   }
 }
 
-render_dt(ptc_evt_df, caption = "Table 5b: PTC-Causing Events (NMD) vs All Events (Control)")
 write.csv(ptc_evt_df, file.path(table_dir, "table5b_ptc_event_enrichment.csv"),
           row.names = FALSE)
 ```
-
-Columns: **event_type** = splice event type; **n_ptc_events** = count of
-PTC-causing events of this type among NMD pairs; **pct_of_ptc** = % of all
-`r fmt(n_ptc_attr)` attributed PTC-causing events; **n_ctrl_events** = total
-count of events of this type across all C4 pairs (baseline frequency; each
-pair contributes ~2.5 events on average); **pct_ctrl** = % of
-`r fmt(ctrl_total)` total Control events; **enrichment** = fold enrichment
-(% PTC / % Ctrl); **fisher_p** = Fisher's exact test p-value (2x2: this
-event vs others x PTC-causing vs Control); **direction** = Enriched/Depleted
-in PTC-causing, or Non-significant (p > 0.05).
 
 ```{r goal2-fig5b-ptc-event-barplot, fig.width=10, fig.height=6}
 # ── Data provenance ──
@@ -2107,6 +2113,25 @@ fig_ptc_events <- ggplot(bar_df, aes(x = event_type, y = pct, fill = source)) +
 save_fig(fig_ptc_events, "fig5b_ptc_event_proportions", width = 10, height = 6)
 ```
 
+<details>
+
+<summary>Click to view tabular data for PTC event enrichment vs control</summary>
+
+```{r sec2b-ptc-enrichment-table, echo=FALSE}
+render_dt(ptc_evt_df, caption = "Table 5b: PTC-Causing Events (NMD) vs All Events (Control)")
+```
+
+Columns: **event_type** = splice event type; **n_ptc_events** = count of
+PTC-causing events of this type among NMD pairs; **pct_of_ptc** = % of all
+`r fmt(n_ptc_attr)` attributed PTC-causing events; **n_ctrl_events** = total
+count of events of this type across all C4 pairs (baseline frequency; each
+pair contributes ~2.5 events on average); **pct_ctrl** = % of
+`r fmt(ctrl_total)` total Control events; **enrichment** = fold enrichment
+(% PTC / % Ctrl); **fisher_p** = Fisher's exact test p-value (2x2: this
+event vs others x PTC-causing vs Control); **direction** = Enriched/Depleted
+in PTC-causing, or Non-significant (p > 0.05).
+
+</details>
 
 ## Illustrative Example: Skipped Exon → Frameshift → PTC (POLR3D)
 
@@ -2359,8 +2384,6 @@ fig6 <- ggplot(utr3_data, aes(x = utr3_bp, fill = group)) +
        x = "3'UTR length (bp, log scale)", y = "Density", fill = "")
 save_fig(fig6, "fig7_utr3_length_density", width = 10, height = 6)
 ```
-
-## 3'UTR Length Comparisons (Wilcoxon)
 
 ```{r goal3-table6-utr3-tests}
 grps <- split(utr3_data$utr3_bp, utr3_data$group)
