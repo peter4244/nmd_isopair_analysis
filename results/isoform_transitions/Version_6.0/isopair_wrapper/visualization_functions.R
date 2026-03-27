@@ -118,7 +118,9 @@ build_ucsc_track <- function(exon_starts, exon_ends, y_center, strand,
 #' @param arrow_size Numeric; half-height of arrowheads in y-units
 #' @return List with $lines (data.frame) and $arrows (data.frame)
 build_intron_arrows <- function(exon_starts, exon_ends, y_center, strand,
-                                 arrow_size = 0.06) {
+                                 arrow_size = 0.06,
+                                 chev_spacing = NULL,
+                                 chev_arm_width = NULL) {
   ord <- order(exon_starts)
   es <- exon_starts[ord]
   ee <- exon_ends[ord]
@@ -131,12 +133,15 @@ build_intron_arrows <- function(exon_starts, exon_ends, y_center, strand,
     y = y_center, yend = y_center
   )
 
-  # Directional arrows within each intron
-  # Scale chevron spacing per-intron so every intron gets at least one chevron.
-  # Target: ~3 chevrons per intron, arm_width = 15% of intron length.
-  # Minimum intron length for any chevron: 10% of mean exon width.
-  total_range <- max(ee) - min(es)
-  min_intron_for_chev <- total_range * 0.02  # very short introns get no chevron
+  # Use figure-level chevron parameters if provided; otherwise compute locally
+  if (is.null(chev_spacing) || is.null(chev_arm_width)) {
+    total_range <- max(ee) - min(es)
+    chev_spacing <- total_range * 0.06
+    chev_arm_width <- chev_spacing * 0.4
+  }
+
+  # Minimum intron length: must fit at least one chevron (arm + margins)
+  min_intron <- chev_arm_width * 3
 
   ax <- numeric(0); axend <- numeric(0)
   ay <- numeric(0); ayend <- numeric(0)
@@ -145,21 +150,20 @@ build_intron_arrows <- function(exon_starts, exon_ends, y_center, strand,
     intron_start <- ee[i]
     intron_end   <- es[i + 1L]
     intron_len   <- intron_end - intron_start
-    if (intron_len < min_intron_for_chev) next
+    if (intron_len < min_intron) next
 
-    # Scale spacing and arm width to this intron's length
-    n_chev <- max(1L, min(5L, round(intron_len / (total_range * 0.03 + 1))))
-    arm_width <- intron_len * 0.08
+    # Number of chevrons: at least 1, spaced by chev_spacing
+    n_chev <- max(1L, floor(intron_len / chev_spacing))
     step <- intron_len / (n_chev + 1)
     positions <- intron_start + step * seq_len(n_chev)
 
     for (cx in positions) {
       if (strand == "+") {
-        ax    <- c(ax,    cx - arm_width, cx - arm_width)
-        axend <- c(axend, cx,             cx)
+        ax    <- c(ax,    cx - chev_arm_width, cx - chev_arm_width)
+        axend <- c(axend, cx,                  cx)
       } else {
-        ax    <- c(ax,    cx + arm_width, cx + arm_width)
-        axend <- c(axend, cx,             cx)
+        ax    <- c(ax,    cx + chev_arm_width, cx + chev_arm_width)
+        axend <- c(axend, cx,                  cx)
       }
       ay    <- c(ay,    y_center + arrow_size, y_center - arrow_size)
       ayend <- c(ayend, y_center,              y_center)
@@ -246,9 +250,19 @@ plot_ucsc_pair <- function(ref_starts, ref_ends,
     cbind(comp_track, track = "comp")
   )
 
-  # Build intron data
-  ref_introns  <- build_intron_arrows(ref_starts, ref_ends, ref_y, strand)
-  comp_introns <- build_intron_arrows(comp_starts, comp_ends, comp_y, strand)
+  # Build intron data — compute figure-level chevron parameters so all
+  # chevrons in the figure have identical size and spacing
+  all_coords <- c(ref_starts, ref_ends, comp_starts, comp_ends)
+  fig_range <- max(all_coords) - min(all_coords)
+  fig_chev_spacing <- fig_range * 0.06
+  fig_chev_arm <- fig_chev_spacing * 0.4
+
+  ref_introns  <- build_intron_arrows(ref_starts, ref_ends, ref_y, strand,
+                                       chev_spacing = fig_chev_spacing,
+                                       chev_arm_width = fig_chev_arm)
+  comp_introns <- build_intron_arrows(comp_starts, comp_ends, comp_y, strand,
+                                       chev_spacing = fig_chev_spacing,
+                                       chev_arm_width = fig_chev_arm)
   all_lines  <- rbind(ref_introns$lines, comp_introns$lines)
   all_arrows <- rbind(ref_introns$arrows, comp_introns$arrows)
 
