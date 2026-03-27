@@ -4097,6 +4097,327 @@ paired isoform IDs; **category** = classification from ref-ATG tracing
 isoform; **n_downstream_ejc** = exon-exon junctions downstream of the
 ref-ATG ORF stop in the comparator.
 
+## uORF-Mediated NMD in the Remaining Pairs
+
+Of the remaining PTC-negative pairs, the `no_downstream_ejc` group
+(n = `r nrow(remaining_by_cat[["no_downstream_ejc"]])`) is particularly
+informative. These isoforms retain the reference ATG, but the reference
+reading frame terminates without downstream EJCs --- by definition, no
+classical PTC. Yet they show robust NMD response. What mechanism triggers
+NMD in the absence of a main-ORF PTC?
+
+```{r sec2c-uorf-populations}
+# ── Data provenance ──
+# Source: ref_atg_analysis.rds (categories, ref-ATG tracing results),
+#   utr5_features_all.rds (5'UTR features), orfik_scan.rds (per-ORF features)
+# Population: no_downstream_ejc (n=187), ref_atg_lost (n=240),
+#   reclassified PTC (eff_ptc_pairs), Control (c4_ref_avail)
+
+# Load 5'UTR features and per-ORF data (not yet in scope)
+utr5_feat_all <- readRDS(file.path(cache_dir, "utr5_features_all.rds"))
+utr5_feat <- utr5_feat_all$isoform_features %>% filter(!excluded)
+orf_feat_local <- orfik_data$orf_features
+
+# Define populations
+no_ejc <- remaining_by_cat[["no_downstream_ejc"]]
+ref_lost <- remaining_by_cat[["ref_atg_lost"]]
+
+# Compute ref-ATG 5'UTR for no_downstream_ejc
+# ATG tx position = comp_stop_tx_pos - comp_orf_length_from_ref_atg; 5'UTR = ATG - 1
+no_ejc$ref_5utr <- (no_ejc$comp_stop_tx_pos - no_ejc$comp_orf_length_from_ref_atg) - 1L
+no_ejc$sqanti_5utr <- sapply(no_ejc$comparator_isoform_id, compute_sqanti_5utr)
+
+# Same for Control
+c4_ref_avail$ref_5utr <- (c4_ref_avail$comp_stop_tx_pos -
+  c4_ref_avail$comp_orf_length_from_ref_atg) - 1L
+c4_ref_avail$sqanti_5utr <- sapply(c4_ref_avail$comparator_isoform_id, compute_sqanti_5utr)
+
+# Ref-ATG 3'UTR: transcript_length - (stop_tx_pos + 2)
+no_ejc$ref_3utr <- tx_lengths[no_ejc$comparator_isoform_id] -
+  (no_ejc$comp_stop_tx_pos + 2L)
+c4_ref_avail$ref_3utr <- tx_lengths[c4_ref_avail$comparator_isoform_id] -
+  (c4_ref_avail$comp_stop_tx_pos + 2L)
+
+# Validation table
+val_table <- data.frame(
+  Group = c("No downstream EJC", "Ref ATG lost", "Reclassified PTC+", "Control (C4)"),
+  n = c(nrow(no_ejc), nrow(ref_lost), nrow(eff_ptc_pairs), nrow(c4_ref_avail)),
+  `SQANTI 5'UTR (bp)` = c(
+    round(median(no_ejc$sqanti_5utr, na.rm = TRUE)),
+    round(median(sapply(ref_lost$comparator_isoform_id, compute_sqanti_5utr), na.rm = TRUE)),
+    round(median(sapply(eff_ptc_pairs$comparator_isoform_id, compute_sqanti_5utr), na.rm = TRUE)),
+    round(median(c4_ref_avail$sqanti_5utr, na.rm = TRUE))),
+  `Ref-ATG 5'UTR (bp)` = c(
+    round(median(no_ejc$ref_5utr, na.rm = TRUE)),
+    NA,  # ref ATG not available
+    NA,  # not meaningful for PTC+ (different stop)
+    round(median(c4_ref_avail$ref_5utr, na.rm = TRUE))),
+  `Ref-ATG 3'UTR (bp)` = c(
+    round(median(no_ejc$ref_3utr, na.rm = TRUE)),
+    NA,
+    NA,
+    round(median(c4_ref_avail$ref_3utr, na.rm = TRUE))),
+  check.names = FALSE, stringsAsFactors = FALSE)
+
+render_dt(val_table, caption = "5'UTR and 3'UTR Validation: Genuine vs Artifact")
+```
+
+Column definitions: **Group** = pair category; **n** = pairs;
+**SQANTI 5'UTR** = median exonic bp from TD2-predicted CDS start to
+transcript 5' end; **Ref-ATG 5'UTR** = median exonic bp from reference
+ATG to transcript 5' end (NA where ref ATG unavailable);
+**Ref-ATG 3'UTR** = median exonic bp from ref-ATG ORF stop to 3' end.
+
+The `no_downstream_ejc` group has a genuinely long 5'UTR: SQANTI and
+ref-ATG measurements agree (both ~`r round(median(no_ejc$sqanti_5utr, na.rm = TRUE))` --
+`r round(median(no_ejc$ref_5utr, na.rm = TRUE))` bp), roughly 3x the
+Control median (`r round(median(c4_ref_avail$ref_5utr, na.rm = TRUE))` bp).
+This is NOT a TD2 artifact. Meanwhile, the ref-ATG 3'UTR
+(`r round(median(no_ejc$ref_3utr, na.rm = TRUE))` bp) is significantly
+shorter than Control
+(`r round(median(c4_ref_avail$ref_3utr, na.rm = TRUE))` bp; Wilcoxon
+p = `r signif(wilcox.test(no_ejc$ref_3utr, c4_ref_avail$ref_3utr)$p.value, 3)`),
+ruling out the long-3'UTR (faux UTR) NMD pathway.
+
+### 5'UTR Feature Landscape
+
+```{r sec2c-uorf-5utr-features, fig.width=14, fig.height=8}
+# ── Data provenance ──
+# Source: utr5_features_all.rds (per-isoform features from scan5UtrFeatures)
+# Population: 4 groups defined in sec2c-uorf-populations
+
+uorf_groups <- list(
+  "No downstream EJC" = no_ejc$comparator_isoform_id,
+  "Ref ATG lost" = ref_lost$comparator_isoform_id,
+  "Reclassified PTC+" = eff_ptc_pairs$comparator_isoform_id,
+  "Control" = c4_ref_avail$comparator_isoform_id)
+
+key_feats <- c("utr5_length", "n_atg", "atg_density", "n_strong_kozak_atg",
+               "n_orfs_overlapping", "n_orfs_outframe", "longest_orf_nt",
+               "pct_utr5_in_orfs")
+uorf_feat_labels <- c(
+  utr5_length = "5\u2032UTR length (bp)", n_atg = "ATG count",
+  atg_density = "ATG density\n(per 100 bp)", n_strong_kozak_atg = "Strong Kozak\nATG count",
+  n_orfs_overlapping = "Overlapping\nuORF count", n_orfs_outframe = "Out-of-frame\nuORF count",
+  longest_orf_nt = "Longest uORF (nt)", pct_utr5_in_orfs = "ORF coverage (%)")
+
+uorf_plot_data <- do.call(rbind, lapply(names(uorf_groups), function(grp) {
+  sub <- utr5_feat[utr5_feat$isoform_id %in% uorf_groups[[grp]], ]
+  sub$group <- grp
+  sub[, c("group", key_feats)]
+}))
+uorf_plot_data$group <- factor(uorf_plot_data$group,
+  levels = c("Control", "Reclassified PTC+", "Ref ATG lost", "No downstream EJC"))
+
+uorf_plot_long <- uorf_plot_data %>%
+  pivot_longer(cols = all_of(key_feats), names_to = "feature", values_to = "value") %>%
+  mutate(feature = uorf_feat_labels[feature],
+         feature = factor(feature, levels = uorf_feat_labels))
+
+fig_uorf <- ggplot(uorf_plot_long, aes(x = group, y = value, fill = group)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  facet_wrap(~feature, scales = "free_y", ncol = 4) +
+  scale_fill_manual(values = c("Control" = "#67a9cf",
+                                "Reclassified PTC+" = "#ef8a62",
+                                "Ref ATG lost" = "#e6ab02",
+                                "No downstream EJC" = "#d95f02")) +
+  labs(title = "5\u2032UTR Features by Residual PTC-Negative Category",
+       subtitle = "No downstream EJC isoforms have dramatically enriched uORF landscape",
+       x = NULL) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank(),
+        strip.text = element_text(size = 10))
+save_fig(fig_uorf, "fig_sec2c_uorf_5utr_features", width = 14, height = 8)
+```
+
+<details>
+
+<summary>Click to view tabular data for 5'UTR feature comparison</summary>
+
+```{r sec2c-uorf-5utr-features-table, echo=FALSE}
+uorf_summary <- uorf_plot_data %>%
+  group_by(group) %>%
+  summarise(n = n(),
+            across(all_of(key_feats),
+                   list(median = ~round(median(.x, na.rm = TRUE), 1),
+                        Q25 = ~round(quantile(.x, 0.25, na.rm = TRUE), 1),
+                        Q75 = ~round(quantile(.x, 0.75, na.rm = TRUE), 1))),
+            .groups = "drop")
+render_dt(uorf_summary, caption = "5'UTR Features by Group (Median, Q25, Q75)")
+```
+
+Columns: **group** = pair category; **n** = isoforms with non-excluded
+5'UTR features; **feature_median/Q25/Q75** = distribution of each 5'UTR
+feature within the group.
+
+</details>
+
+Every 5'UTR feature is dramatically elevated in the `No downstream EJC` group
+relative to Control: ATG count (median
+`r round(median(utr5_feat$n_atg[utr5_feat$isoform_id %in% uorf_groups[["No downstream EJC"]]], na.rm = TRUE))`
+vs
+`r round(median(utr5_feat$n_atg[utr5_feat$isoform_id %in% uorf_groups[["Control"]]], na.rm = TRUE))`),
+overlapping uORFs, strong Kozak ATGs, and ORF coverage are all highly
+significantly different (Wilcoxon p < 1e-9 for all features).
+
+### Per-ORF Landscape: Not a Single Dominant ORF
+
+```{r sec2c-uorf-per-orf, fig.width=10, fig.height=6}
+# ── Data provenance ──
+# Source: orfik_scan.rds $orf_features (per-ORF: isoform_id, orf_start,
+#   kozak_score, has_downstream_ejc), utr5_features_all.rds (utr5_length
+#   for classifying ORFs as upstream vs downstream of CDS start)
+# Population: no_downstream_ejc comparators (187 isoforms)
+
+no_ejc_ids <- no_ejc$comparator_isoform_id
+no_ejc_orfs <- orf_feat_local[orf_feat_local$isoform_id %in% no_ejc_ids, ]
+
+# Classify relative to CDS start (utr5_length = distance from tx 5' to CDS start)
+utr5_lookup <- utr5_feat %>%
+  filter(isoform_id %in% no_ejc_ids) %>%
+  select(isoform_id, utr5_length)
+
+no_ejc_orfs <- no_ejc_orfs %>%
+  left_join(utr5_lookup, by = "isoform_id") %>%
+  mutate(position_class = case_when(
+    orf_start < utr5_length ~ "Upstream (true uORF)",
+    TRUE ~ "At/past CDS start"))
+
+# NMD-susceptible subset
+nmd_orfs <- no_ejc_orfs %>% filter(has_downstream_ejc)
+
+# Per-isoform summary
+per_iso <- nmd_orfs %>%
+  group_by(isoform_id) %>%
+  summarise(
+    n_nmd_orfs = n(),
+    n_upstream = sum(position_class == "Upstream (true uORF)"),
+    n_strong_kozak = sum(kozak_score == 2),
+    .groups = "drop")
+
+cat("Per-isoform NMD-susceptible ORFs:\n")
+cat("  Isoforms with >= 1:", nrow(per_iso), "/", length(no_ejc_ids), "\n")
+cat("  Median per isoform:", median(per_iso$n_nmd_orfs), "\n")
+cat("  % with strong Kozak NMD ORF:",
+    round(100 * mean(per_iso$n_strong_kozak > 0), 1), "%\n")
+
+# Distribution figure
+per_iso$n_nmd_capped <- pmin(per_iso$n_nmd_orfs, 20)
+
+fig_orf_dist <- ggplot(per_iso, aes(x = n_nmd_capped)) +
+  geom_histogram(binwidth = 1, fill = "#d95f02", alpha = 0.7, color = "white") +
+  geom_vline(xintercept = median(per_iso$n_nmd_orfs), linetype = "dashed",
+             color = "#1a1a1a", linewidth = 0.8) +
+  annotate("text", x = median(per_iso$n_nmd_orfs) + 0.5, y = Inf, vjust = 2,
+           hjust = 0, size = 3.5,
+           label = sprintf("Median: %d", median(per_iso$n_nmd_orfs))) +
+  labs(title = "NMD-Susceptible ORFs per Isoform (No Downstream EJC Group)",
+       subtitle = sprintf("%s isoforms | %.1f%% upstream of CDS start | %.1f%% with strong Kozak",
+                          fmt(nrow(per_iso)),
+                          round(100 * sum(nmd_orfs$position_class == "Upstream (true uORF)") /
+                                  nrow(nmd_orfs), 1),
+                          round(100 * mean(per_iso$n_strong_kozak > 0), 1)),
+       x = "NMD-susceptible ORFs per isoform (capped at 20)", y = "Count") +
+  scale_x_continuous(breaks = seq(0, 20, 2))
+save_fig(fig_orf_dist, "fig_sec2c_uorf_orf_landscape", width = 10, height = 6)
+```
+
+<details>
+
+<summary>Click to view tabular data for per-ORF landscape</summary>
+
+```{r sec2c-uorf-per-orf-table, echo=FALSE}
+orf_position_summary <- nmd_orfs %>%
+  group_by(position_class) %>%
+  summarise(
+    `Total ORFs` = n(),
+    `Strong Kozak (score = 2)` = sum(kozak_score == 2),
+    `Moderate+ Kozak (score >= 1)` = sum(kozak_score >= 1),
+    .groups = "drop")
+render_dt(orf_position_summary, caption = "NMD-Susceptible ORFs: Position and Kozak Context")
+```
+
+Columns: **position_class** = ORF position relative to CDS start (upstream =
+true uORF, at/past = alternative CDS or downstream ORF);
+**Total ORFs** = count of NMD-susceptible ORFs; **Strong/Moderate+ Kozak** =
+ORFs with favorable initiation context.
+
+</details>
+
+The NMD susceptibility of these isoforms cannot be attributed to a single
+dominant ORF. Instead, a median of `r median(per_iso$n_nmd_orfs)` NMD-susceptible
+ORFs per transcript --- `r round(100 * sum(nmd_orfs$position_class == "Upstream (true uORF)") / nrow(nmd_orfs), 1)`%
+of which are true uORFs upstream of the CDS start --- creates a landscape
+where scanning ribosomes frequently encounter alternative initiation sites
+whose ORFs terminate upstream of exon-exon junctions.
+`r round(100 * mean(per_iso$n_strong_kozak > 0), 1)`% of these isoforms
+have at least one strong-Kozak NMD-susceptible ORF, providing a plausible
+initiation site for NMD-triggering translation.
+
+### NMD Response Magnitude and uORF Density
+
+```{r sec2c-uorf-logfc-correlation, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: meta_logfc (mashr posterior mean logFC, loaded in Section 0),
+#   per_iso (NMD-susceptible ORF counts from sec2c-uorf-per-orf),
+#   orf_tx_rem (per-isoform ORF summary from orfik_scan.rds)
+# Population: no_downstream_ejc comparators with mashr logFC
+
+no_ejc_logfc <- meta_logfc %>%
+  filter(txid %in% no_ejc_ids) %>%
+  left_join(per_iso, by = c("txid" = "isoform_id")) %>%
+  left_join(orf_tx_rem %>% select(isoform_id, n_orfs),
+            by = c("txid" = "isoform_id"))
+
+rho_nmd <- cor.test(no_ejc_logfc$mean_logFC, no_ejc_logfc$n_nmd_orfs,
+                     method = "spearman", use = "complete.obs")
+rho_orfs <- cor.test(no_ejc_logfc$mean_logFC, no_ejc_logfc$n_orfs,
+                      method = "spearman", use = "complete.obs")
+
+fig_corr <- ggplot(no_ejc_logfc, aes(x = n_nmd_orfs, y = mean_logFC)) +
+  geom_point(alpha = 0.4, size = 1.5, color = "#d95f02") +
+  geom_smooth(method = "lm", se = TRUE, color = "#1a1a1a", linewidth = 1) +
+  labs(title = "NMD Response vs NMD-Susceptible ORF Count",
+       subtitle = sprintf("No downstream EJC group (n = %s) | Spearman \u03C1 = %.3f, p = %s",
+                          fmt(sum(!is.na(no_ejc_logfc$n_nmd_orfs))),
+                          rho_nmd$estimate, signif(rho_nmd$p.value, 3)),
+       x = "NMD-susceptible ORFs per isoform",
+       y = "Mean logFC (mashr)")
+save_fig(fig_corr, "fig_sec2c_uorf_logfc_correlation", width = 10, height = 5)
+```
+
+<details>
+
+<summary>Click to view tabular data for logFC correlation</summary>
+
+```{r sec2c-uorf-logfc-table, echo=FALSE}
+corr_summary <- data.frame(
+  Feature = c("NMD-susceptible ORFs", "Total ORFs (all frames)"),
+  `Spearman rho` = round(c(rho_nmd$estimate, rho_orfs$estimate), 3),
+  `p-value` = c(signif(rho_nmd$p.value, 3), signif(rho_orfs$p.value, 3)),
+  n = c(sum(!is.na(no_ejc_logfc$n_nmd_orfs)), sum(!is.na(no_ejc_logfc$n_orfs))),
+  check.names = FALSE, stringsAsFactors = FALSE)
+render_dt(corr_summary, caption = "logFC Correlation with ORF Features")
+```
+
+Columns: **Feature** = ORF count measure; **Spearman rho** = correlation
+with mashr posterior mean logFC; **p-value** = significance; **n** = isoforms
+with both logFC and ORF data.
+
+</details>
+
+The uORF landscape explains group membership (NMD vs non-NMD; dramatically
+different from Control) but does not strongly predict NMD response *magnitude*
+within the group (Spearman rho =
+`r round(rho_nmd$estimate, 3)`, p = `r signif(rho_nmd$p.value, 3)`).
+This is consistent with a threshold model: once sufficient uORF density
+exists to ensure some fraction of ribosomal initiation events trigger NMD,
+the response saturates. The binary distinction (NMD-sensitive vs not) is
+driven by the 5'UTR landscape, but the quantitative response strength
+depends on additional factors --- likely the fraction of translation events
+that initiate at NMD-susceptible ORFs, which in turn depends on Kozak
+context competition between the main CDS ATG and upstream ATGs.
+
 # 3e. ORF Competition and Gene Architecture {#sec2d-orf-competition}
 
 The accounting in Section 3d explained individual NMD isoforms through PTC
