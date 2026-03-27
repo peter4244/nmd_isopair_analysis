@@ -1602,6 +1602,28 @@ fig1 <- ggplot(stop_dist_all, aes(x = ptc_distance, fill = comparison)) +
 save_fig(fig1, "fig2_stop_codon_distance")
 ```
 
+<details>
+<summary>Click to view tabular data for stop codon distance</summary>
+
+```{r sec2a-stop-dist-table, echo=FALSE}
+dist_summary <- stop_dist_all %>%
+  group_by(comparison) %>%
+  summarise(n = n(),
+            `Median distance (nt)` = round(median(ptc_distance, na.rm = TRUE)),
+            Q25 = round(quantile(ptc_distance, 0.25, na.rm = TRUE)),
+            Q75 = round(quantile(ptc_distance, 0.75, na.rm = TRUE)),
+            `% with PTC (distance > 50 nt)` = round(100 * mean(has_ptc, na.rm = TRUE), 1),
+            .groups = "drop")
+render_dt(dist_summary, caption = "Stop Codon Distance to Last EJC")
+```
+
+Columns: **comparison** = NMD or Control; **n** = comparator isoforms with
+annotated stop + EJC; **Median distance** = nucleotides from stop to last
+EJC; **Q25/Q75** = interquartile range; **% with PTC** = fraction with
+stop codon > 50 nt upstream of last EJC.
+
+</details>
+
 ## NMD Response vs Stop Codon Distance
 
 ```{r goal1-fig2-logfc-dist, fig.width=8, fig.height=5}
@@ -1642,14 +1664,31 @@ fig2 <- ggplot(nmd_logfc_dist, aes(x = ptc_distance, y = mean_logFC)) +
        y = "Mean logFC (mashr)")
 save_fig(fig2, "fig3_nmd_response_vs_distance")
 
-# Correlation summary
 cor_test <- cor.test(nmd_logfc_dist$ptc_distance, nmd_logfc_dist$mean_logFC,
                       method = "spearman")
-kable(data.frame(n = nrow(nmd_logfc_dist),
-                 spearman_rho = round(cor_test$estimate, 3),
-                 p_value = cor_test$p.value),
-      caption = "Spearman correlation: Stop-to-EJC distance vs mean logFC")
 ```
+
+<details>
+<summary>Click to view tabular data for logFC vs distance</summary>
+
+```{r sec2a-logfc-dist-table, echo=FALSE}
+dist_bins <- nmd_logfc_dist %>%
+  mutate(dist_bin = cut(ptc_distance, breaks = c(0, 50, 200, 500, Inf),
+                         labels = c("0\u201350", "51\u2013200", "201\u2013500", ">500"))) %>%
+  group_by(dist_bin) %>%
+  summarise(n = n(),
+            `Median logFC` = round(median(mean_logFC, na.rm = TRUE), 3),
+            `Mean logFC` = round(mean(mean_logFC, na.rm = TRUE), 3),
+            .groups = "drop")
+render_dt(dist_bins, caption = "Mean logFC by Stop Codon Distance Bin")
+```
+
+Columns: **dist_bin** = distance range (nt from stop codon to last EJC);
+**n** = NMD comparators; **Median/Mean logFC** = mashr posterior mean
+(SMG1i vs DMSO). Overall Spearman rho =
+`r round(cor_test$estimate, 3)`, p = `r signif(cor_test$p.value, 3)`.
+
+</details>
 
 ## NMD Strength by Downstream EJC Count
 
@@ -1685,6 +1724,26 @@ fig3 <- ggplot(as_ptc_pos, aes(x = ejc_bin, y = logFC)) +
        x = "Number of Downstream EJCs", y = "Mean logFC (mashr)")
 save_fig(fig3, "fig4_ejc_vs_nmd_strength", width = 9)
 ```
+
+<details>
+<summary>Click to view tabular data for EJC count vs NMD response</summary>
+
+```{r sec2a-ejc-strength-table, echo=FALSE}
+ejc_summary <- as_ptc_pos %>%
+  group_by(ejc_bin) %>%
+  summarise(n = n(),
+            `Median logFC` = round(median(logFC, na.rm = TRUE), 3),
+            Q25 = round(quantile(logFC, 0.25, na.rm = TRUE), 3),
+            Q75 = round(quantile(logFC, 0.75, na.rm = TRUE), 3),
+            .groups = "drop")
+render_dt(ejc_summary, caption = "NMD Response by Downstream EJC Count")
+```
+
+Columns: **ejc_bin** = downstream EJC count category (7+ = 7 or more);
+**n** = PTC-positive NMD comparators; **Median logFC** = mashr posterior
+mean (SMG1i vs DMSO); **Q25/Q75** = interquartile range.
+
+</details>
 
 ## PTC Rates Across Cell Types
 
