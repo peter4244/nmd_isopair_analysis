@@ -2639,6 +2639,25 @@ fig_utr5 <- ggplot(utr5_data[utr5_data$utr5 > 0, ], aes(x = utr5, fill = group))
 save_fig(fig_utr5, "fig_sec2c_utr5_length", width = 10, height = 5)
 ```
 
+<details>
+<summary>Click to view tabular data for 5'UTR length comparison</summary>
+
+```{r sec2c-utr5-length-table, echo=FALSE}
+utr5_summary <- utr5_data %>%
+  group_by(group) %>%
+  summarise(n = n(),
+            `Median (bp)` = round(median(utr5, na.rm = TRUE)),
+            Q25 = round(quantile(utr5, 0.25, na.rm = TRUE)),
+            Q75 = round(quantile(utr5, 0.75, na.rm = TRUE)),
+            .groups = "drop")
+render_dt(utr5_summary, caption = "5'UTR Length by Group")
+```
+
+Columns: **group** = isoform category; **n** = isoforms; **Median/Q25/Q75** =
+5'UTR length in bp.
+
+</details>
+
 PTC-negative NMD comparators have substantially longer predicted 5'UTRs
 (median `r fmt(median(div_ptcneg$utr5_bp_comp))` bp) than both their paired
 references (`r fmt(median(div_ptcneg$utr5_bp_ref))` bp) and Control
@@ -2822,7 +2841,28 @@ fig_exonic <- ggplot(exonic_data, aes(x = group, y = shift_trunc, fill = group))
        x = NULL, y = "Exonic bp", fill = NULL) +
   theme(legend.position = "none")
 save_fig(fig_exonic, "fig_sec2c_exonic_5utr", width = 10, height = 5)
+```
 
+<details>
+<summary>Click to view tabular data for exonic 5'UTR shifts</summary>
+
+```{r sec2c-exonic-5utr-table, echo=FALSE}
+exonic_summary <- exonic_data %>%
+  group_by(group) %>%
+  summarise(n = n(),
+            `Median shift (bp)` = round(median(shift, na.rm = TRUE)),
+            Q25 = round(quantile(shift, 0.25, na.rm = TRUE)),
+            Q75 = round(quantile(shift, 0.75, na.rm = TRUE)),
+            .groups = "drop")
+render_dt(exonic_summary, caption = "Exonic 5'UTR Shift by Group")
+```
+
+Columns: **group** = isoform category; **n** = pairs; **Median shift/Q25/Q75**
+= exonic bp difference between comparator and reference 5'UTR.
+
+</details>
+
+```{r sec2c-genomic-shifts-chunk}
 # --- Figure 2: Genomic boundary shifts ---
 genomic_data <- rbind(
   data.frame(group = "NMD PTC\u2212",
@@ -2858,6 +2898,25 @@ fig_genomic <- ggplot(genomic_data, aes(x = group, y = shift_trunc, fill = group
   theme(legend.position = "none")
 save_fig(fig_genomic, "fig_sec2c_genomic_shifts", width = 10, height = 5)
 ```
+
+<details>
+<summary>Click to view tabular data for genomic boundary shifts</summary>
+
+```{r sec2c-genomic-shifts-table, echo=FALSE}
+genomic_summary <- genomic_data %>%
+  group_by(group, panel) %>%
+  summarise(n = n(),
+            `Median shift (bp)` = round(median(shift, na.rm = TRUE)),
+            Q25 = round(quantile(shift, 0.25, na.rm = TRUE)),
+            Q75 = round(quantile(shift, 0.75, na.rm = TRUE)),
+            .groups = "drop")
+render_dt(genomic_summary, caption = "Genomic Boundary Shifts by Group and Type")
+```
+
+Columns: **group** = isoform category; **panel** = boundary type (5' or 3');
+**n** = pairs; **Median shift/Q25/Q75** = genomic bp difference.
+
+</details>
 
 Exonic figure truncated at ±5,000 bp (`r fmt(n_trunc_exonic)` values clipped);
 genomic figure truncated at ±50,000 bp (`r fmt(n_trunc_genomic)` values
@@ -2947,6 +3006,33 @@ fig_ratio <- ggplot(atg_avail, aes(x = orf_ratio)) +
 save_fig(fig_ratio, "fig_sec2c_ref_atg_orf_ratio", width = 10, height = 5)
 ```
 
+<details>
+<summary>Click to view tabular data for ORF length ratio</summary>
+
+```{r sec2c-orf-ratio-table, echo=FALSE}
+ratio_summary <- data.frame(
+  Statistic = c("Pairs with ref ATG available", "Median ORF ratio (comp/ref)",
+                "Q25", "Q75", "Truncated (ratio < 1)", "Same length (ratio = 1)",
+                "Extended (ratio > 1)"),
+  Value = c(fmt(sum(!is.na(atg_avail$orf_ratio))),
+            round(median(atg_avail$orf_ratio, na.rm = TRUE), 3),
+            round(quantile(atg_avail$orf_ratio, 0.25, na.rm = TRUE), 3),
+            round(quantile(atg_avail$orf_ratio, 0.75, na.rm = TRUE), 3),
+            sprintf("%s (%.1f%%)", fmt(sum(atg_avail$orf_ratio < 1, na.rm = TRUE)),
+                    100 * mean(atg_avail$orf_ratio < 1, na.rm = TRUE)),
+            sprintf("%s (%.1f%%)", fmt(sum(atg_avail$orf_ratio == 1, na.rm = TRUE)),
+                    100 * mean(atg_avail$orf_ratio == 1, na.rm = TRUE)),
+            sprintf("%s (%.1f%%)", fmt(sum(atg_avail$orf_ratio > 1, na.rm = TRUE)),
+                    100 * mean(atg_avail$orf_ratio > 1, na.rm = TRUE))),
+  stringsAsFactors = FALSE)
+render_dt(ratio_summary, caption = "ORF Length Ratio (Comparator / Reference)")
+```
+
+Columns: **Statistic** = measure; **Value** = computed from reference-ATG
+ORF tracing of PTC-negative NMD comparators.
+
+</details>
+
 ```{r sec2c-reclassification}
 # Reclassification of all PTC-negative pairs
 reclass_tab <- ptc_neg_ref %>%
@@ -2999,6 +3085,25 @@ fig_lengths <- ggplot(length_df, aes(x = length_nt, fill = ORF)) +
        x = "ORF length (nt, log scale)", y = "Density", fill = NULL)
 save_fig(fig_lengths, "fig_sec2c_td2_vs_refatg_length", width = 10, height = 5)
 ```
+
+<details>
+<summary>Click to view tabular data for TD2 vs ref-ATG ORF lengths</summary>
+
+```{r sec2c-td2-refatg-table, echo=FALSE}
+length_summary <- length_df %>%
+  group_by(ORF) %>%
+  summarise(n = n(),
+            `Median length (nt)` = round(median(length_nt, na.rm = TRUE)),
+            Q25 = round(quantile(length_nt, 0.25, na.rm = TRUE)),
+            Q75 = round(quantile(length_nt, 0.75, na.rm = TRUE)),
+            .groups = "drop")
+render_dt(length_summary, caption = "ORF Length: TD2-Predicted vs Reference-ATG-Based")
+```
+
+Columns: **ORF** = CDS source (TD2 or Reference ATG); **n** = isoforms;
+**Median length/Q25/Q75** = ORF length in nucleotides.
+
+</details>
 
 Among the `r fmt(nrow(eff_ptc))` reclassified pairs, TD2 selected a longer ORF
 in `r pct_td2_longer`% of cases (median
@@ -3266,7 +3371,30 @@ fig_kozak <- ggplot(koz_df, aes(x = ATG_source, y = score, fill = ATG_source)) +
        x = NULL, y = "Kozak PWM score") +
   theme(legend.position = "none", text = element_text(size = 14))
 save_fig(fig_kozak, "fig_sec2c_kozak_ref_vs_td2", width = 10, height = 5)
+```
 
+<details>
+<summary>Click to view tabular data for Kozak score comparison</summary>
+
+```{r sec2c-kozak-score-table, echo=FALSE}
+kozak_summary <- koz_df %>%
+  group_by(ATG_source) %>%
+  summarise(n = n(),
+            `Median score` = round(median(score, na.rm = TRUE), 2),
+            `Mean score` = round(mean(score, na.rm = TRUE), 2),
+            Q25 = round(quantile(score, 0.25, na.rm = TRUE), 2),
+            Q75 = round(quantile(score, 0.75, na.rm = TRUE), 2),
+            .groups = "drop")
+render_dt(kozak_summary, caption = "Kozak PWM Score by ATG Source")
+```
+
+Columns: **ATG_source** = CDS annotation source; **n** = isoforms;
+**Median/Mean score** = Kozak position weight matrix score; **Q25/Q75** =
+quartiles.
+
+</details>
+
+```{r sec2c-kozak-comparison-stats}
 ref_median <- round(median(ref_pwm[koz_valid]), 1)
 td2_median <- round(median(td2_pwm[koz_valid]), 1)
 pct_ref_higher <- round(100 * mean(ref_pwm[koz_valid] > td2_pwm[koz_valid]), 1)
@@ -3383,6 +3511,23 @@ fig_sankey_reclass <- ggplot(sankey_agg,
 save_fig(fig_sankey_reclass, "fig_sankey_reclass", width = 10, height = 7)
 ```
 
+<details>
+<summary>Click to view tabular data for reclassified pair Sankey</summary>
+
+```{r sec2c-sankey-reclass-table, echo=FALSE}
+sankey_table <- sankey_agg %>%
+  select(event_short, attr_mechanism, freq) %>%
+  arrange(desc(freq)) %>%
+  mutate(pct = round(100 * freq / sum(freq), 1))
+render_dt(sankey_table, caption = "Reclassified Pair Attribution: Event Type x Mechanism")
+```
+
+Columns: **event_short** = splice event type; **attr_mechanism** =
+PTC-causing mechanism; **freq** = pairs; **pct** = percentage of reclassified
+pairs.
+
+</details>
+
 **Frameshift** (red; `r fmt(n_attr_fs)` pairs,
 `r round(100 * n_attr_fs / n_attr_total, 1)`%), **In-frame stop** (blue;
 `r fmt(n_attr_ifs)`, `r round(100 * n_attr_ifs / n_attr_total, 1)`%),
@@ -3485,6 +3630,22 @@ fig_events <- ggplot(all_evt, aes(x = event_type, y = pct, fill = group)) +
 save_fig(fig_events, "fig_sec2c_reclass_events", width = 10, height = 6)
 ```
 
+<details>
+<summary>Click to view tabular data for reclassified event proportions</summary>
+
+```{r sec2c-reclass-events-table, echo=FALSE}
+reclass_evt_summary <- all_evt %>%
+  select(event_type, group, pct) %>%
+  arrange(group, desc(pct))
+render_dt(reclass_evt_summary, caption = "Splicing Event Proportions: Reclassified NMD vs Control")
+```
+
+Columns: **event_type** = splice event; **group** = pair category
+(Reclassified PTC, Original PTC+, or Control); **pct** = percentage of
+events within the group.
+
+</details>
+
 ```{r sec2c-frameshift-comparison, fig.width=10, fig.height=6}
 # ── Data provenance ──
 # Source: profiles_list C2 (PTC-negative) and C4 (Control)
@@ -3548,6 +3709,22 @@ fig_fs <- ggplot(fs_bar, aes(x = event_type, y = pct_frameshift, fill = group)) 
 save_fig(fig_fs, "fig_sec2c_frameshift_rate", width = 10, height = 6)
 ```
 
+<details>
+<summary>Click to view tabular data for frameshift rates</summary>
+
+```{r sec2c-frameshift-rate-table, echo=FALSE}
+fs_summary <- fs_all %>%
+  select(event_type, group, n_events, n_frameshift, pct_frameshift) %>%
+  arrange(group, desc(pct_frameshift))
+render_dt(fs_summary, caption = "Frameshift Rate by Event Type and Group")
+```
+
+Columns: **event_type** = splice event; **group** = pair category;
+**n_events** = total events of this type; **n_frameshift** = events causing
+a reading frame shift; **pct_frameshift** = percentage.
+
+</details>
+
 If the reclassified pairs are truly PTC-positive, their NMD response should
 match the original PTC+ group. We test this directly using the mashr
 meta-analysis logFC (posterior mean averaged across cell types).
@@ -3592,6 +3769,26 @@ fig_logfc_val <- ggplot(logfc_groups, aes(x = group, y = mean_logFC, fill = grou
   theme(legend.position = "none")
 save_fig(fig_logfc_val, "fig_sec2c_logfc_validation", width = 8, height = 5)
 ```
+
+<details>
+<summary>Click to view tabular data for logFC validation by group</summary>
+
+```{r sec2c-logfc-validation-table, echo=FALSE}
+logfc_summary <- logfc_groups %>%
+  group_by(group) %>%
+  summarise(n = n(),
+            `Median logFC` = round(median(mean_logFC, na.rm = TRUE), 3),
+            `Mean logFC` = round(mean(mean_logFC, na.rm = TRUE), 3),
+            Q25 = round(quantile(mean_logFC, 0.25, na.rm = TRUE), 3),
+            Q75 = round(quantile(mean_logFC, 0.75, na.rm = TRUE), 3),
+            .groups = "drop")
+render_dt(logfc_summary, caption = "NMD Response (logFC) by Reclassification Group")
+```
+
+Columns: **group** = isoform category; **n** = isoforms; **Median/Mean logFC**
+= mashr posterior mean (SMG1i vs DMSO); **Q25/Q75** = interquartile range.
+
+</details>
 
 The Original PTC+ and Reclassified PTC groups are virtually indistinguishable
 in NMD response magnitude (median logFC
