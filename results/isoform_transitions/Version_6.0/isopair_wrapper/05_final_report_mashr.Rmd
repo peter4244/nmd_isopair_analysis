@@ -852,6 +852,31 @@ fig_iso_count <- ggplot(iso_per_gene, aes(x = n_isoforms)) +
 save_fig(fig_iso_count, "fig0a_isoform_count_distribution")
 ```
 
+<details>
+<summary>Click to view tabular data for isoform count distribution</summary>
+
+```{r sec1-isocount-table, echo=FALSE}
+iso_summary <- data.frame(
+  Statistic = c("Genes", "Median isoforms/gene", "Mean isoforms/gene",
+                "Q25", "Q75", "Max",
+                "Genes with \u2265 2 isoforms", "Genes with \u2265 5 isoforms"),
+  Value = c(fmt(nrow(iso_per_gene)),
+            median(iso_per_gene$n_isoforms),
+            round(mean(iso_per_gene$n_isoforms), 1),
+            quantile(iso_per_gene$n_isoforms, 0.25),
+            quantile(iso_per_gene$n_isoforms, 0.75),
+            max(iso_per_gene$n_isoforms),
+            fmt(sum(iso_per_gene$n_isoforms >= 2)),
+            fmt(sum(iso_per_gene$n_isoforms >= 5))),
+  stringsAsFactors = FALSE)
+render_dt(iso_summary, caption = "Isoform Count Distribution Summary")
+```
+
+Columns: **Statistic** = summary measure; **Value** = computed value across
+gene-matched pair genes (non-NMD expressed isoforms only).
+
+</details>
+
 An "expressed isoform" is one that passed the condition-stratified 5%
 isoform proportion filter applied during data preparation
 (`01_prepare_data_mashr.R`): for each gene, an isoform is retained if it
@@ -909,7 +934,29 @@ fig_conc <- ggplot(dominant_fraction, aes(x = dominant_pct)) +
        x = "Dominant isoform expression share (%)", y = "Number of genes") +
   scale_x_continuous(breaks = seq(0, 100, 20))
 save_fig(fig_conc, "fig_sec1_expression_concentration", width = 10, height = 5)
+```
 
+<details>
+<summary>Click to view tabular data for expression concentration</summary>
+
+```{r sec1-concentration-table, echo=FALSE}
+conc_summary <- data.frame(
+  Statistic = c("Multi-isoform genes", "Median dominant share (%)",
+                "Genes with > 50% share", "Genes with > 80% share"),
+  Value = c(fmt(nrow(dominant_fraction)),
+            round(med_dom_pct, 1),
+            sprintf("%s (%.1f%%)", fmt(sum(dominant_fraction$dominant_pct > 50)), pct_gt50),
+            sprintf("%s (%.1f%%)", fmt(sum(dominant_fraction$dominant_pct > 80)), pct_gt80)),
+  stringsAsFactors = FALSE)
+render_dt(conc_summary, caption = "Expression Concentration Summary")
+```
+
+Columns: **Statistic** = summary measure; **Value** = computed from DMSO
+mean CPM across multi-isoform genes in the gene-matched pair set.
+
+</details>
+
+```{r sec1-expression-cpm}
 # --- CPM comparison: reference, NMD comparator, Control comparator ---
 # Compute mean DMSO CPM for reference, NMD comp, and Control comp isoforms
 ref_ids_c2 <- unique(profiles_list[["c2_allsamples"]]$reference_isoform_id)
@@ -959,7 +1006,30 @@ fig_cpm <- ggplot(cpm_compare, aes(x = group, y = log10(cpm + 1), fill = conditi
        x = NULL, y = "log10(mean CPM + 1)", fill = "Treatment") +
   theme(legend.position = "bottom")
 save_fig(fig_cpm, "fig_sec1_cpm_by_role", width = 10, height = 5)
+```
 
+<details>
+<summary>Click to view tabular data for expression by role and treatment</summary>
+
+```{r sec1-cpm-role-table, echo=FALSE}
+cpm_summary <- cpm_compare %>%
+  group_by(group, condition) %>%
+  summarise(n = n(),
+            `Median log10(CPM+1)` = round(median(log10(cpm + 1)), 2),
+            Q25 = round(quantile(log10(cpm + 1), 0.25), 2),
+            Q75 = round(quantile(log10(cpm + 1), 0.75), 2),
+            .groups = "drop")
+render_dt(cpm_summary, caption = "Expression Level by Role and Treatment")
+```
+
+Columns: **group** = isoform role (Reference, NMD comparator, Control
+comparator); **condition** = DMSO or SMG1i; **n** = isoforms;
+**Median log10(CPM+1)** = median expression on log10 scale; **Q25/Q75** =
+interquartile range.
+
+</details>
+
+```{r sec1-expression-length}
 # --- Transcript length comparison ---
 tx_lengths_all <- setNames(
   sapply(seq_len(nrow(structures)), function(i)
