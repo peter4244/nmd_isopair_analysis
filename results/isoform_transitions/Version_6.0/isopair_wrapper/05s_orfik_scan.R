@@ -103,9 +103,12 @@ for (i in seq_len(nrow(target_structs))) {
 cat("  Computing features for each ORF...\n")
 t0 <- proc.time()
 
-# ORFik findORFs returns one element per input sequence, indexed numerically
-# Map back to transcript names
-names(orfs) <- names(target_seqs)[seq_along(orfs)]
+# ORFik findORFs returns a CompressedIRangesList that DROPS transcripts with
+# zero ORFs. The names are the original numeric indices (as strings) into the
+# input DNAStringSet. Use these indices to map back to transcript names.
+# BUG FIX: seq_along(orfs) gives 1:length(orfs), which misaligns when
+# transcripts are dropped. Use as.integer(names(orfs)) instead.
+names(orfs) <- names(target_seqs)[as.integer(names(orfs))]
 
 feature_rows <- vector("list", length(orfs))
 tx_names <- names(orfs)
@@ -155,10 +158,9 @@ for (tx_idx in seq_along(orfs)) {
       start_codon[j] <- NA_character_
     }
 
-    # Stop codon (3 nt after the ORF end, since ORFik excludes stop from range)
-    stop_pos <- oe + 1L
-    if (stop_pos >= 1L && stop_pos + 2L <= tx_len) {
-      stop_codon[j] <- as.character(subseq(tx_seq, stop_pos, stop_pos + 2L))
+    # Stop codon: last 3 nt of the ORF (ORFik includes the stop codon in the range)
+    if (oe >= 3L && oe <= tx_len) {
+      stop_codon[j] <- as.character(subseq(tx_seq, oe - 2L, oe))
     } else {
       stop_codon[j] <- NA_character_
     }
@@ -184,9 +186,8 @@ for (tx_idx in seq_along(orfs)) {
     n_upstream_atgs[j] <- sum(all_atg_pos < os)
 
     # Downstream EJCs: junctions after the stop codon
-    # ORFik ORF end = last nt of ORF (before stop). Stop is at oe+1 to oe+3.
-    stop_end <- oe + 3L
-    n_downstream_ejc[j] <- sum(junctions > stop_end)
+    # ORFik ORF end = last nt of ORF (including stop codon). Stop ends at oe.
+    n_downstream_ejc[j] <- sum(junctions > oe)
   }
 
   feature_rows[[tx_idx]] <- data.frame(
@@ -291,6 +292,31 @@ results <- list(
     run_timestamp = Sys.time()
   )
 )
+
+# ==============================================================================
+# 8. Verification: confirm all ORFs start with ATG
+# ==============================================================================
+cat("\n=== Verification ===\n")
+n_atg <- sum(orf_features$start_codon == "ATG", na.rm = TRUE)
+n_non_atg <- sum(orf_features$start_codon != "ATG" & !is.na(orf_features$start_codon))
+n_na <- sum(is.na(orf_features$start_codon))
+cat("  ATG starts:", n_atg, sprintf("(%.1f%%)\n", 100 * n_atg / nrow(orf_features)))
+cat("  Non-ATG starts:", n_non_atg, "\n")
+cat("  NA starts:", n_na, "\n")
+if (n_non_atg > 0 || n_na > 0) {
+  stop("VERIFICATION FAILED: Found ", n_non_atg, " non-ATG and ", n_na,
+       " NA start codons. Name mapping or coordinate extraction is likely wrong.")
+}
+cat("  PASSED: All ORFs start with ATG\n")
+
+# Also verify transcript IDs are valid
+n_valid_tx <- sum(orf_features$isoform_id %in% names(target_seqs))
+cat("  Valid transcript IDs:", n_valid_tx, "/", nrow(orf_features), "\n")
+if (n_valid_tx != nrow(orf_features)) {
+  stop("VERIFICATION FAILED: ", nrow(orf_features) - n_valid_tx,
+       " ORFs have isoform_ids not in the input sequences.")
+}
+cat("  PASSED: All isoform_ids match input sequences\n")
 
 saveRDS(results, OUTPUT_PATH)
 cat("\nSaved to:", OUTPUT_PATH, "\n")
