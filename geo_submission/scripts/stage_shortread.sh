@@ -283,10 +283,10 @@ printf "Sample name\ttitle\tsource name\torganism\tcharacteristics: cell type\tc
 tail -n +2 "${SAMPLES_RESOLVED}" | while IFS=$'\t' read -r alias ct donor trt name lib nf r1 r2; do
   # Human-readable source name per cell type
   case "${ct}" in
-    AT|AT2)  src="Alveolar Type 2 cells (AT2)" ;;
+    AT2)     src="Alveolar Type 2 cells (AT2)" ;;
     DD)      src="Differentiated airway epithelial cells (submerged)" ;;
     DD_ALI)  src="Differentiated airway epithelial cells (air-liquid interface)" ;;
-    DO)      src="Undifferentiated donor airway epithelial cells" ;;
+    DO_ALI)  src="Donor airway epithelial cells (air-liquid interface)" ;;
     FB)      src="Lung fibroblasts" ;;
     MV)      src="Lung microvascular endothelial cells" ;;
     *)       src="${ct}" ;;

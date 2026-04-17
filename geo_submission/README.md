@@ -142,10 +142,10 @@ Cell-type codes used in the alias:
 
 | Code    | Description |
 |---------|-------------|
-| `AT`    | Primary alveolar type 2 cells (AT2) |
+| `AT2`   | Primary alveolar type 2 cells |
 | `DD`    | Differentiated airway epithelial cells, submerged |
 | `DD_ALI`| Differentiated airway epithelial cells, air-liquid interface |
-| `DO`    | Undifferentiated donor airway epithelial cells |
+| `DO_ALI`| Donor airway epithelial cells, air-liquid interface |
 | `FB`    | Lung fibroblasts |
 | `MV`    | Lung microvascular endothelial cells |
 
