@@ -30,8 +30,12 @@ STAGING_DIR="${STAGING_ROOT}/shortread"
 PHENO_FB_MV="/udd/repjc/RESEARCH/NMD/NMD_Cell_Lines/pheno/FB_MV_pheno_2025.8.2.csv"
 PHENO_DD_DO_AT="/udd/repjc/RESEARCH/NMD/NMD_Cell_Lines/pheno/DD_DO_AT_pheno_2025.8.15.csv"
 
-# FASTQ raw directories (paired-end)
+# FASTQ raw directories (paired-end). The 20250718 batch stores each sample
+# inside a per-sample subdirectory (PS_STC1505_*_ds.<hash>/…), so find_fastq()
+# must recurse. The later batches may be flat or nested; the recursive search
+# below handles either.
 FASTQ_DIRS=(
+  "/proj/regeps/regep00/studies/ExternalCellLines/data/rnaseq/Randell_Lung_Cells_2025/data/raw/20250718"
   "/proj/regeps/regep00/studies/ExternalCellLines/data/rnaseq/Randell_Lung_Cells_2025/data/raw/20250811"
   "/proj/regeps/regep00/studies/ExternalCellLines/data/rnaseq/Randell_Lung_Cells_2025/data/raw/20260129"
 )
@@ -147,23 +151,29 @@ echo "[shortread] Locating FASTQs in raw directories..."
 missing=0
 
 # Helper: find a FASTQ for a given {name} and {read} in any of the raw dirs.
-# Tries common patterns produced by Illumina + nf-core:
-#   {name}_R1_001.fastq.gz, {name}_R1.fastq.gz, {name}_1.fq.gz, ...
+# Searches each directory *recursively* (handles per-sample nested subdirs
+# like PS_STC1505_*_ds.<hash>/) and tries common Illumina/nf-core filename
+# patterns, strict match first, then a looser substring match.
 find_fastq() {
   local name="$1"
   local read="$2"    # 1 or 2
   local d f
   for d in "${FASTQ_DIRS[@]}"; do
-    for f in \
-        "${d}/${name}_R${read}_001.fastq.gz" \
-        "${d}/${name}_R${read}.fastq.gz" \
-        "${d}/${name}_${read}.fastq.gz" \
-        "${d}/${name}_${read}.fq.gz" \
-        "${d}"/*"${name}"*"_R${read}"*.fastq.gz \
-        "${d}"/*"${name}"*"_R${read}"*.fq.gz
-    do
-      [[ -f "${f}" ]] && { echo "${f}"; return 0; }
-    done
+    [[ -d "${d}" ]] || continue
+    # Strict exact-name match (fastest, preferred).
+    f=$(find "${d}" -type f \( \
+          -name "${name}_R${read}_001.fastq.gz" -o \
+          -name "${name}_R${read}.fastq.gz"     -o \
+          -name "${name}_${read}.fastq.gz"      -o \
+          -name "${name}_${read}.fq.gz" \
+        \) -print 2>/dev/null | head -n 1)
+    [[ -n "${f}" && -f "${f}" ]] && { echo "${f}"; return 0; }
+    # Loose substring fallback.
+    f=$(find "${d}" -type f \( \
+          -name "*${name}*_R${read}*.fastq.gz" -o \
+          -name "*${name}*_R${read}*.fq.gz" \
+        \) -print 2>/dev/null | head -n 1)
+    [[ -n "${f}" && -f "${f}" ]] && { echo "${f}"; return 0; }
   done
   return 1
 }
