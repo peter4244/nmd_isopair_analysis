@@ -1,0 +1,9 @@
+Sample name	title	source name	organism	characteristics: cell type	characteristics: donor	characteristics: treatment	molecule	description	processed data file	raw file read 1	raw file read 2
+# Cluster script `scripts/stage_shortread.sh` will populate this file from:
+#   /udd/repjc/RESEARCH/NMD/NMD_Cell_Lines/pheno/FB_MV_pheno_2025.8.2.csv
+#   /udd/repjc/RESEARCH/NMD/NMD_Cell_Lines/pheno/DD_DO_AT_pheno_2025.8.15.csv
+# plus the FASTQ files under:
+#   /proj/regeps/regep00/studies/ExternalCellLines/data/rnaseq/Randell_Lung_Cells_2025/data/raw/20250811
+#   /proj/regeps/regep00/studies/ExternalCellLines/data/rnaseq/Randell_Lung_Cells_2025/data/raw/20260129
+# Each row produced will follow the same column order as the header above,
+# with sample_alias formatted as {ct}_{donor}_{treatment}_SR (e.g., DD_001V_Smg1i_SR).
