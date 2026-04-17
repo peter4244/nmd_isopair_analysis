@@ -30,12 +30,15 @@ STAGING_DIR="${STAGING_ROOT}/shortread"
 PHENO_FB_MV="/udd/repjc/RESEARCH/NMD/NMD_Cell_Lines/pheno/FB_MV_pheno_2025.8.2.csv"
 PHENO_DD_DO_AT="/udd/repjc/RESEARCH/NMD/NMD_Cell_Lines/pheno/DD_DO_AT_pheno_2025.8.15.csv"
 
-# FASTQ raw directories (paired-end). The 20250718 batch stores each sample
-# inside a per-sample subdirectory (PS_STC1505_*_ds.<hash>/…), so find_fastq()
-# must recurse. The later batches may be flat or nested; the recursive search
-# below handles either.
+# FASTQ raw directories (paired-end).
+#   20250811: flat layout, filenames end in _R{1,2}_001.fastq.gz — holds
+#             DD/DO/AT/DD_ALI samples; find_fastq matches by BAM stem.
+#   20260129: per-sample subdirs named {ct}{donor}_{treatment}[_clean]/
+#             ILLUMINA_DATA/, filenames end in _R{1,2}.fastq.gz (with
+#             _trimmed variants to skip) — holds FB/MV resequenced data;
+#             find_fastq matches by alias dir.
+# 20250718 is the original FB/MV run, superseded by 20260129 — do NOT include.
 FASTQ_DIRS=(
-  "/proj/regeps/regep00/studies/ExternalCellLines/data/rnaseq/Randell_Lung_Cells_2025/data/raw/20250718"
   "/proj/regeps/regep00/studies/ExternalCellLines/data/rnaseq/Randell_Lung_Cells_2025/data/raw/20250811"
   "/proj/regeps/regep00/studies/ExternalCellLines/data/rnaseq/Randell_Lung_Cells_2025/data/raw/20260129"
 )
@@ -150,17 +153,27 @@ echo "[shortread] Locating FASTQs in raw directories..."
 
 missing=0
 
-# Helper: find a FASTQ for a given {name} and {read} in any of the raw dirs.
-# Searches each directory *recursively* (handles per-sample nested subdirs
-# like PS_STC1505_*_ds.<hash>/) and tries common Illumina/nf-core filename
-# patterns, strict match first, then a looser substring match.
+# Helper: find an R1/R2 FASTQ for a given sample.
+# Takes (name, read, alias_dir) where:
+#   name       = BAM stem (e.g. XCAST_20250729_A00904_IL21522-001_N4UD-F10_L002)
+#   read       = 1 or 2
+#   alias_dir  = {ct}{donor}_{treatment} (e.g. FB001V_DMSO) — matches the
+#                per-sample dir naming in 20260129 for FB/MV
+# Tries two strategies:
+#   1. Recursive exact-name lookup by BAM stem across FASTQ_DIRS (works for
+#      DD/DO/AT in 20250811 whose FASTQ filename embeds the BAM stem).
+#   2. Look inside ${d}/${alias_dir}[_clean]/ILLUMINA_DATA/ for the raw
+#      (non-trimmed) R1/R2 (works for FB/MV in 20260129 where the FASTQ
+#      filename is XCAST_... and doesn't embed the BAM stem).
 find_fastq() {
   local name="$1"
-  local read="$2"    # 1 or 2
-  local d f
+  local read="$2"
+  local alias_dir="$3"
+  local d f base
+
   for d in "${FASTQ_DIRS[@]}"; do
     [[ -d "${d}" ]] || continue
-    # Strict exact-name match (fastest, preferred).
+    # Strategy 1: BAM-stem match.
     f=$(find "${d}" -type f \( \
           -name "${name}_R${read}_001.fastq.gz" -o \
           -name "${name}_R${read}.fastq.gz"     -o \
@@ -168,13 +181,23 @@ find_fastq() {
           -name "${name}_${read}.fq.gz" \
         \) -print 2>/dev/null | head -n 1)
     [[ -n "${f}" && -f "${f}" ]] && { echo "${f}"; return 0; }
-    # Loose substring fallback.
-    f=$(find "${d}" -type f \( \
-          -name "*${name}*_R${read}*.fastq.gz" -o \
-          -name "*${name}*_R${read}*.fq.gz" \
-        \) -print 2>/dev/null | head -n 1)
-    [[ -n "${f}" && -f "${f}" ]] && { echo "${f}"; return 0; }
   done
+
+  # Strategy 2: alias-dir lookup (for FB/MV 20260129 layout).
+  if [[ -n "${alias_dir}" ]]; then
+    for d in "${FASTQ_DIRS[@]}"; do
+      for suffix in "" "_clean"; do
+        base="${d}/${alias_dir}${suffix}/ILLUMINA_DATA"
+        [[ -d "${base}" ]] || continue
+        f=$(find "${base}" -maxdepth 1 -type f \
+              -name "*_R${read}.fastq.gz" \
+              -not -name "*_trimmed*" \
+              -print 2>/dev/null | head -n 1)
+        [[ -n "${f}" && -f "${f}" ]] && { echo "${f}"; return 0; }
+      done
+    done
+  fi
+
   return 1
 }
 
@@ -183,8 +206,9 @@ SAMPLES_RESOLVED="${STAGING_DIR}/metadata/.samples_resolved.tsv"
 printf "sample_alias\tct\tdonor\ttreatment\tname\tlib_size\tnorm_factors\tr1\tr2\n" > "${SAMPLES_RESOLVED}"
 
 tail -n +2 "${SAMPLES_SCRATCH}" | while IFS=$'\t' read -r alias ct donor trt name lib nf; do
-  r1=$(find_fastq "${name}" 1 || true)
-  r2=$(find_fastq "${name}" 2 || true)
+  alias_dir="${ct}${donor}_${trt}"
+  r1=$(find_fastq "${name}" 1 "${alias_dir}" || true)
+  r2=$(find_fastq "${name}" 2 "${alias_dir}" || true)
   if [[ -z "${r1}" || -z "${r2}" ]]; then
     echo "  MISSING  ${alias}  (name=${name})  r1=${r1:-?}  r2=${r2:-?}" >&2
     missing=$((missing + 1))
