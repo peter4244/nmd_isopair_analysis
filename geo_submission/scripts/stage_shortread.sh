@@ -98,7 +98,7 @@ with open(p, newline='') as fh:
     # Try common column names
     for row in reader:
         ct   = (row.get('ct')   or '').strip()
-        donor= (row.get('id')   or '').strip()
+        donor= (row.get('sample_id') or row.get('id') or row.get('donor') or '').strip()
         trt  = (row.get('treatment') or '').strip()
         bam  = (row.get('bam')  or '').strip()
         lib  = (row.get('lib.size') or '').strip()
@@ -110,7 +110,9 @@ with open(p, newline='') as fh:
         name = re.sub(r'\.markdup.*$', '', name)
         name = re.sub(r'\.aligned.*$',  '', name)
         name = re.sub(r'\.bam$',        '', name)
-        name = name.replace('-', '_')
+        # NOTE: do NOT rewrite dashes to underscores — FASTQ filenames reuse the
+        # BAM stem verbatim (e.g., IL21522-001_N4UD-F10_L002), and sanitizing
+        # dashes would break find_fastq() matching.
         alias = f"{ct}_{donor}_{trt}_SR"
         print(f"{alias}\t{ct}\t{donor}\t{trt}\t{name}\t{lib}\t{nf}")
 PYEOF
