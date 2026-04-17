@@ -30,7 +30,7 @@ SAMPLE_META="${PROJECT_REPO}/geo_submission/sample_metadata_longread.csv"
 # Processed data file(s) produced by the isocall pipeline.
 # These should be the final count matrix + isoform GTF written to disk.
 # TODO: confirm these paths point at the final isocall outputs you want to upload.
-ISOCALL_RESULTS_DIR="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/isocall/nmd_lungcells"
+ISOCALL_RESULTS_DIR="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/code/isocall_v1/projects/nmd_lungcells/results"
 ISOCALL_COUNT_MATRIX="${ISOCALL_RESULTS_DIR}/call/nmd_isocall.count_matrix.txt"
 ISOCALL_ISOFORMS_GTF="${ISOCALL_RESULTS_DIR}/call/nmd_isocall.isoforms.gtf.gz"
 
