@@ -31,6 +31,13 @@ tmp/
 counts/
 isoseq/
 oarfish_aligned_counts/
+isocall/
+isocall_dtu/
+IGV/
+isoseq_pipeline/
+
+# Literature review PDFs (kept locally, not in history; the .md text review is tracked)
+lit_review/*.pdf
 
 # R binary files
 *.rds
@@ -39,6 +46,7 @@ oarfish_aligned_counts/
 # Large generated files
 *_proportions_*.tsv
 *_interpretation_*.tsv
+code/*_full_table.csv
 
 # Large DGE result files (can be regenerated)
 longread_dge/*.csv
