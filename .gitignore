@@ -43,6 +43,8 @@ oarfish_aligned_counts/
 # Large DGE result files (can be regenerated)
 longread_dge/*.csv
 shortread_dge/*.csv
+isocall_dge/limma/**/*.csv
+isocall_dge/mashr/*.csv
 
 # Archive folders - old versions and backups
 **/archive/
