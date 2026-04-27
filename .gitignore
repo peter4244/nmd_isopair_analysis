@@ -36,9 +36,15 @@ isocall_dtu/
 IGV/
 isoseq_pipeline/
 isocall_pipeline/
+resources/
+sqanti/
 
 # Literature review PDFs (kept locally, not in history; the .md text review is tracked)
-lit_review/*.pdf
+lit_review/**/*.pdf
+
+# Standalone PDF deliverables and rendered HTML reports (regenerable / large)
+pilot_endothelial/*.pdf
+code/nonNMD_*.html
 
 # R binary files
 *.rds
