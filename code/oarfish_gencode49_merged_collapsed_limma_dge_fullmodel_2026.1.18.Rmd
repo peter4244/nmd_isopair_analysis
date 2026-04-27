@@ -1,0 +1,469 @@
+---
+title: "Oarfish limma DGE"
+author: "Peter Castaldi"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      toc_collapsed: true
+    toc_depth: 3
+    number_sections: true
+    theme: lumen
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+suppressPackageStartupMessages({
+library(data.table)
+library(ggplot2)
+library(edgeR)
+library(limma)
+library(DT)
+library(EnhancedVolcano)
+library(BiocParallel)
+library(htmltools)
+library(biomaRt)
+library(dplyr)
+library(ggrepel)
+library(gridExtra)
+library(parallel)
+})
+
+# DST = ('/proj/regeps/regep00/studies/ExternalCellLines/data/longread/mrna/Randell_Lung_Cells_2025')
+# 
+# RESULTS_DIR = paste0(DST,"/results/long-read-isoseq/20251202-early-ALL/")
+# 
+# MERGED_GROUP = paste0(RESULTS_DIR,"collapse/merge-collapsed.group.txt")
+# MERGED_ABUNDANCE = paste0(RESULTS_DIR,'collapse/merge-collapsed.abundance.txt')
+# 
+# SQANTI = paste0("/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/sqanti_runs/merged_collapsed/isoforms_classification_TPM.txt")
+
+# gmap<-readRDS("/udd/repjc/RESEARCH/REUSABLE_CODE/ensembl_genes_2025.1.31_EnsemblRelease113.rds")
+
+sqanti<-fread("/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/sqanti_runs/merged_collapsed/isoforms_classification_TPM.txt",data.table=F)
+
+plot_volcano <- function(df, design_name, coef_name) {
+  df <- df %>%
+    mutate(
+      negLogP = -log10(P.Value),
+      sig = ifelse(adj.P.Val < 0.05, "Significant", "Not Sig")
+    )
+  
+  top_hits <- df %>%
+    filter(sig == "Significant") %>%
+    arrange(P.Value) %>%
+    slice_head(n = 10)
+  
+  sig<- df[!rownames(df) %in% rownames(top_hits),]
+  
+  not_sig <- df %>%
+    filter(sig == "Not Sig")
+  
+  not_sig<-rbind(sig,not_sig) # this is all of the results except for the top 10, which will have names attached in the figure
+  
+  set.seed(42)
+  random_subset <- not_sig %>%
+    mutate(pval_bin = ntile(P.Value, 100)) %>%
+    group_by(pval_bin) %>%
+    slice_sample(prop = 1) %>%
+    slice_head(n = 50) %>%
+    ungroup() %>%
+    dplyr::select(-pval_bin)
+  
+  df<-rbind(top_hits,random_subset)
+  
+  ggplot(df, aes(x = logFC, y = negLogP)) +
+    geom_point(aes(color = sig), alpha = 0.6, size = 1.5) +
+    scale_color_manual(values = c("Significant" = "red", "Not Sig" = "gray")) +
+    geom_text_repel(
+      data = top_hits,
+      aes(label = hgnc_id),
+      size = 3,
+      max.overlaps = 10,
+      box.padding = 0.3,
+      point.padding = 0.3,
+      segment.color = "grey50"
+    ) +
+    labs(
+      title = paste0("Volcano Plot — ", design_name, "\nCoefficient: ", coef_name),
+      x = "log2 Fold Change",
+      y = expression(-log[10]("P-value"))
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      legend.position = "bottom",
+      plot.title = element_text(hjust = 0.5)
+    )
+}
+
+
+```
+
+# Merged and collapsed counts
+```{r}
+
+temp<-dir("/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/oarfish/gencode49_merged_collapsed_2025.12.21/oarfish_aligned_counts/oarfish_gencode49_merged_collapsed_2025.12.21/")
+temp<-temp[grep("quant",temp)]
+
+qlist<-list()
+for(a in temp){
+  qlist[[a]]<-fread(paste0("/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/oarfish/gencode49_merged_collapsed_2025.12.21/oarfish_aligned_counts/oarfish_gencode49_merged_collapsed_2025.12.21/",a),data.table=F)
+}
+
+qdf<-do.call(cbind,qlist)
+
+qdf<-qdf[,c(1:3,seq(6,ncol(qdf),3))]
+qdf[,3:ncol(qdf)]<-round(qdf[,3:ncol(qdf)],3)
+# fwrite(qdf,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/data/qdf_raw_counts_2026.1.3.csv")
+
+pheno<-fread("/proj/regeps/regep00/studies/ExternalCellLines/data/longread/mrna/Randell_Lung_Cells_2025/bam_sample_map.csv",data.table=F)
+
+pheno$id<-substr(pheno$sample,3,6)
+pheno$treatment<-sapply(strsplit(pheno$sample,"_"),function(x)x[2])
+pheno$ct<-substr(pheno$sample,1,2)
+pheno$bamid<-sapply(strsplit(pheno$bam,"\\/"),function(x)x[16])
+pheno$bamid<-sapply(strsplit(pheno$bamid,".bam"),function(x)x[1])
+
+#add sample numbers to pheno file
+tb<-sapply(strsplit(colnames(qdf)[c(-1,-2)],".quant"),function(x)x[1])
+tb<-paste0("X",sapply(strsplit(tb,"_X"),function(x)x[2]))
+
+tdf<-data.frame(bamid=tb,sample_num=sapply(strsplit(colnames(qdf)[c(-1,-2)],"_"),function(x)x[1]))
+pheno<-merge(pheno,tdf,by="bamid")
+
+names(qdf)[3:ncol(qdf)]<-sapply(strsplit(names(qdf)[3:ncol(qdf)],".quant.num_reads"),function(x)x[1])
+names(qdf)<-sapply(strsplit(names(qdf),"_X"),function(x)paste0("X",x[2]))
+
+phenosub<-pheno[pheno$bamid %in% names(qdf),]
+
+qdf2<-qdf[,phenosub$bamid]
+
+gdf<-data.frame(txid=sapply(strsplit(qdf$`XCAST_20250725_R84050_PL21521-002_1-1-D01_IsoSeqX_bc04.quant.tname`,"\\|"),function(x)x[1]),transcript=sapply(strsplit(qdf$`XCAST_20250725_R84050_PL21521-002_1-1-D01_IsoSeqX_bc04.quant.tname`,"\\|"),function(x)x[5]),hgnc_id=sapply(strsplit(qdf$`XCAST_20250725_R84050_PL21521-002_1-1-D01_IsoSeqX_bc04.quant.tname`,"\\|"),function(x)x[6]),biotype=sapply(strsplit(qdf$`XCAST_20250725_R84050_PL21521-002_1-1-D01_IsoSeqX_bc04.quant.tname`,"\\|"),function(x)x[8]),length=sapply(strsplit(qdf$`XCAST_20250725_R84050_PL21521-002_1-1-D01_IsoSeqX_bc04.quant.tname`,"\\|"),function(x)x[7]))
+
+sqanti<-sqanti[,c("isoform","associated_transcript","associated_gene","length")]
+names(sqanti)<-c("txid","transcript","associated_gene","length")
+
+gmap<-readRDS("/udd/repjc/RESEARCH/REUSABLE_CODE/rds/gmap_txlevel_ENSGv115_2025.08.12.rds")  # /udd/repjc/RESEARCH/REUSABLE_CODE/Gene_Mapping_ENSGv115_2025.08.12.Rmd
+
+gdf<-merge(gdf,gmap,by.x="txid",by.y="ensembl_transcript_id_version",all.x=T)
+
+gdf<-merge(gdf,sqanti,by="txid",all.x=TRUE,suffixes=c(".gc",".sq"))
+
+gdf$gene_id_ens115_sqanti<-ifelse(is.na(gdf$ensembl_gene_id_version),gdf$associated_gene,sapply(strsplit(gdf$ensembl_gene_id_version,"\\."),function(x)x[1]))
+
+gdf$transcript<-ifelse(is.na(gdf$transcript.gc),gdf$transcript.sq,gdf$transcript.gc)
+
+gdf$hgnc_symbol<-gmap$hgnc_symbol[match(gdf$gene_id_ens115_sqanti,sapply(strsplit(gmap$ensembl_gene_id_version,"\\."),function(x)x[1]))]
+
+gdf$length<-ifelse(is.na(gdf$length.gc),gdf$length.sq,gdf$length.gc)
+
+gdf<-gdf[,c("txid","transcript","gene_id_ens115_sqanti","biotype","hgnc_symbol","length")]
+
+rm(qdf)
+
+dge = DGEList(qdf2, samples = phenosub,genes=gdf)
+
+dge_nofilt<-dge
+
+design_all<-model.matrix(formula("~treatment+ct+ct*treatment"),data = dge$samples)
+
+# ---- Filter lowly expressed genes ----
+
+  keep <- filterByExpr(dge,design=design_all,min.count=5,min.total.count = 10,min.prop=0)
+  cat("Isoforms retained =", sum(keep), "\n")
+
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+
+
+# ---- Normalize with TMM ----
+dge <- calcNormFactors(dge, method = "TMM")
+
+quantile(dge$samples$norm.factors)
+
+# Final check
+cat("DGEList contains:", nrow(dge$samples), "samples and", nrow(dge$counts), "isoforms\n")
+
+v <- voom(dge, plot = TRUE) 
+pca <- prcomp(t(v$E), scale. = TRUE)
+pca_df <- as.data.frame(pca$x[, 1:2])
+var_exp <- round(100 * (pca$sdev^2 / sum(pca$sdev^2))[1:2], 1)
+
+# Add metadata
+pca_df$treatment <- dge$samples$treatment
+# pca_df$ct <- dge_temp$samples$ct
+pca_df$id <- dge$samples$id
+pca_df$ct <- dge$samples$ct
+pca_df$bamid <- dge$samples$bamid
+pca_df$color<-ifelse(pca_df$treatment=="DMSO","orange","purple")
+
+# Plot 2: color by time_days, shape by treatment
+p2 <- ggplot(pca_df, aes(x = PC1, y = PC2, color=color, label = ct)) +
+  geom_point(size = 3, alpha = 0.8) +
+  geom_text(vjust = -0.5, hjust = 0.5, size = 3, show.legend = FALSE) +
+  scale_color_identity("color") +
+  labs(
+    title = "Pre-Adjustment PCA: Treatment (color), Cell Type (shape)",
+    x = paste0("PC1 (", var_exp[1], "%)"),
+    y = paste0("PC2 (", var_exp[2], "%)")
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+print(p2)
+
+table(pca_df$PC2[pca_df$ct=="DD"]>(-125))
+
+pca_df$bamid[pca_df$ct=="DD" & pca_df$PC2>(-125)]
+
+# fix the labeling problem wth the ALI
+dge$samples$ct[dge$samples$bamid %in% pca_df$bamid[pca_df$ct=="DD" & pca_df$PC2>(-125)]]<-"DD_ALI"
+
+dge_nofilt$samples$ct[dge_nofilt$samples$bamid %in% pca_df$bamid[pca_df$ct=="DD" & pca_df$PC2>(-125)]]<-"DD_ALI"
+
+## save dge object
+# saveRDS(dge,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/rds/dge_isoform_2026.2.7.rds")
+
+## save dge object
+# saveRDS(dge_nofilt,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/rds/dge_isoform_nofilter_2026.2.7.rds")
+
+table(dge$samples$ct)
+
+#write out corrected phenotype file
+pheno<-dge$samples[,c(2,3,7,8,9,10,5)]
+
+# fwrite(dge$samples[,c(2,3,6,7,8,9,10,5)],"/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/pheno/nmd_pheno_longreadbamids_2026.1.18.csv",row.names =F)
+
+#redefine the design matrix
+design_all<-model.matrix(formula("~treatment+ct+treatment*ct"),data = dge$samples)
+
+```
+
+# Fit Model 
+
+
+```{r}
+
+cat("\nElements from model matrix: ",colnames(design_all))
+  
+v <- voom(dge, design=design_all,plot = TRUE) 
+
+  # Fit linear model with duplicate correlation
+
+# corfit <- duplicateCorrelation(v, design_all, block = dge$samples$id)
+# saveRDS(corfit,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/rds/corfit_2026.1.18.rds")
+corfit<-readRDS("/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/rds/corfit_2026.1.18.rds")
+
+  fit <- lmFit(v, design_all,block = dge$samples$id, 
+             correlation = corfit$consensus.correlation)
+  fit <- eBayes(fit)
+
+  # Residual SD vs Average Expression
+ plotSA(fit, main = paste("Residual SD vs Avg Expression:"))
+ 
+# Step 2: Fix them to be syntactically valid
+colnames(fit$design) <- make.names(colnames(fit$design))
+
+
+# Step 4: IMPORTANT - Update the coefficients names too
+colnames(fit$coefficients) <- colnames(fit$design)
+
+# Step 5: Now create the contrast matrix
+contrast_matrix <- makeContrasts(
+  Smg1i_in_DD = treatmentSmg1i + treatmentSmg1i.ctDD,
+  Smg1i_in_DD_ALI = treatmentSmg1i + treatmentSmg1i.ctDD_ALI,
+  Smg1i_in_DO_ALI = treatmentSmg1i + treatmentSmg1i.ctDO,
+  Smg1i_in_AT2 = treatmentSmg1i,
+  Smg1i_in_FB = treatmentSmg1i + treatmentSmg1i.ctFB,
+  Smg1i_in_MV = treatmentSmg1i + treatmentSmg1i.ctMV,
+  levels = fit$design
+)
+
+
+# Step 7: Fit contrasts (should work now without warning)
+fit2 <- contrasts.fit(fit, contrast_matrix)
+fit2 <- eBayes(fit2)
+ 
+```
+
+# Results
+
+## DD
+
+```{r}
+treatment_res<-topTable(fit2, coef = "Smg1i_in_DD", number = Inf)
+
+table(treatment_res$adj.P.Val<=0.05)
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$logFC>0,dnn=c("FDR sig","logFC>0"))
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$biotype=="nonsense_mediated_decay",treatment_res$logFC>0,dnn=c("FDR sig","NMD","logFC>0"))
+
+treatment_res[,c(7:9)]<-round(treatment_res[,c(7:9)],3)
+
+treatment_res<-treatment_res[order(treatment_res$P.Value),]
+
+treatment_res$hgnc_id<-ifelse(is.na(treatment_res$hgnc_id.gc),treatment_res$hgnc_id.sq,treatment_res$hgnc_id.gc)
+  
+plot_volcano(treatment_res, "DD", "Smg1i_in_DD")  
+
+temp<-treatment_res[treatment_res$adj.P.Val<=0.05,c("txid","transcript.gc","transcript.sq","hgnc_id","logFC","AveExpr","adj.P.Val","P.Value","biotype")]
+
+datatable(temp[1:1000,],rownames = FALSE)
+
+fwrite(treatment_res,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/longread_dge/nmd_dge_dd_2026.1.18.csv")
+
+dielist<-list()
+dielist[["DD"]]<-treatment_res
+
+```
+
+## DD_ALI
+
+```{r}
+treatment_res<-topTable(fit2, coef = "Smg1i_in_DD_ALI", number = Inf)
+
+table(treatment_res$adj.P.Val<=0.05)
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$logFC>0,dnn=c("FDR sig","logFC>0"))
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$biotype=="nonsense_mediated_decay",treatment_res$logFC>0,dnn=c("FDR sig","NMD","logFC>0"))
+
+treatment_res[,c(7:9)]<-round(treatment_res[,c(7:9)],3)
+
+treatment_res<-treatment_res[order(treatment_res$P.Value),]
+
+treatment_res$hgnc_id<-ifelse(is.na(treatment_res$hgnc_id.gc),treatment_res$hgnc_id.sq,treatment_res$hgnc_id.gc)
+  
+plot_volcano(treatment_res, "DD_ALI", "Smg1i_in_DD")  
+
+temp<-treatment_res[treatment_res$adj.P.Val<=0.05,c("txid","transcript.gc","transcript.sq","hgnc_id","logFC","AveExpr","adj.P.Val","P.Value","biotype")]
+
+datatable(temp[1:1000,],rownames = FALSE)
+
+fwrite(treatment_res,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/longread_dge/nmd_dge_ddali_2026.1.18.csv")
+
+dielist<-list()
+dielist[["DD_ALI"]]<-treatment_res
+
+```
+
+## DO_ALI
+
+```{r}
+treatment_res<-topTable(fit2,coef="Smg1i_in_DO_ALI",number = Inf, confint = TRUE, sort.by = "none")
+
+table(treatment_res$adj.P.Val<=0.05)
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$logFC>0,dnn=c("FDR sig","logFC>0"))
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$biotype=="nonsense_mediated_decay",treatment_res$logFC>0,dnn=c("FDR sig","NMD","logFC>0"))
+
+treatment_res[,c(7:9)]<-round(treatment_res[,c(7:9)],3)
+
+treatment_res<-treatment_res[order(treatment_res$P.Value),]
+
+treatment_res$hgnc_id<-ifelse(is.na(treatment_res$hgnc_id.gc),treatment_res$hgnc_id.sq,treatment_res$hgnc_id.gc)
+  
+plot_volcano(treatment_res, "DO_ALI", "Smg1i_in_DD")  
+
+datatable(treatment_res[treatment_res$adj.P.Val<=0.05,c("txid","transcript.gc","transcript.sq","hgnc_id","logFC","AveExpr","adj.P.Val","P.Value","biotype")],rownames = FALSE)
+
+fwrite(treatment_res,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/longread_dge/nmd_dge_doali_2026.1.18.csv")
+
+dielist<-list()
+dielist[["DO_ALI"]]<-treatment_res
+
+```
+
+
+## AT2
+
+```{r}
+treatment_res<-topTable(fit2,coef="Smg1i_in_AT2",number = Inf, confint = TRUE, sort.by = "none")
+
+table(treatment_res$adj.P.Val<=0.05)
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$logFC>0,dnn=c("FDR sig","logFC>0"))
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$biotype=="nonsense_mediated_decay",treatment_res$logFC>0,dnn=c("FDR sig","NMD","logFC>0"))
+
+treatment_res[,c(7:9)]<-round(treatment_res[,c(7:9)],3)
+
+treatment_res<-treatment_res[order(treatment_res$P.Value),]
+
+treatment_res$hgnc_id<-ifelse(is.na(treatment_res$hgnc_id.gc),treatment_res$hgnc_id.sq,treatment_res$hgnc_id.gc)
+  
+plot_volcano(treatment_res, "AT2", "Smg1i_in_DD")  
+
+temp<-treatment_res[treatment_res$adj.P.Val<=0.05,c("txid","transcript.gc","transcript.sq","hgnc_id","logFC","AveExpr","adj.P.Val","P.Value","biotype")]
+
+datatable(temp[1:1000,],rownames = FALSE)
+
+fwrite(treatment_res,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/longread_dge/nmd_dge_at2_2026.1.18.csv")
+
+dielist<-list()
+dielist[["AT2"]]<-treatment_res
+
+```
+
+## MV
+
+```{r}
+treatment_res<-topTable(fit2,coef="Smg1i_in_MV",number = Inf, confint = TRUE, sort.by = "none")
+
+table(treatment_res$adj.P.Val<=0.05)
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$logFC>0,dnn=c("FDR sig","logFC>0"))
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$biotype=="nonsense_mediated_decay",treatment_res$logFC>0,dnn=c("FDR sig","NMD","logFC>0"))
+
+treatment_res[,c(7:9)]<-round(treatment_res[,c(7:9)],3)
+
+treatment_res<-treatment_res[order(treatment_res$P.Value),]
+
+treatment_res$hgnc_id<-ifelse(is.na(treatment_res$hgnc_id.gc),treatment_res$hgnc_id.sq,treatment_res$hgnc_id.gc)
+  
+plot_volcano(treatment_res, "MV", "Smg1i_in_DD")  
+
+temp<-treatment_res[treatment_res$adj.P.Val<=0.05,c("txid","transcript.gc","transcript.sq","hgnc_id","logFC","AveExpr","adj.P.Val","P.Value","biotype")]
+
+datatable(temp[1:1000,],rownames = FALSE)
+
+fwrite(treatment_res,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/longread_dge/nmd_dge_mv_2026.1.18.csv")
+
+dielist<-list()
+dielist[["MV"]]<-treatment_res
+
+```
+
+## FB
+
+```{r}
+treatment_res<-topTable(fit2,coef="Smg1i_in_FB",number = Inf, confint = TRUE, sort.by = "none")
+
+table(treatment_res$adj.P.Val<=0.05)
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$logFC>0,dnn=c("FDR sig","logFC>0"))
+
+table(treatment_res$adj.P.Val<=0.05,treatment_res$biotype=="nonsense_mediated_decay",treatment_res$logFC>0,dnn=c("FDR sig","NMD","logFC>0"))
+
+treatment_res[,c(7:9)]<-round(treatment_res[,c(7:9)],3)
+
+treatment_res<-treatment_res[order(treatment_res$P.Value),]
+
+treatment_res$hgnc_id<-ifelse(is.na(treatment_res$hgnc_id.gc),treatment_res$hgnc_id.sq,treatment_res$hgnc_id.gc)
+  
+plot_volcano(treatment_res, "FB", "Smg1i_in_DD")  
+
+temp<-treatment_res[treatment_res$adj.P.Val<=0.05,c("txid","transcript.gc","transcript.sq","hgnc_id","logFC","AveExpr","adj.P.Val","P.Value","biotype")]
+
+datatable(temp[1:1000,],rownames = FALSE)
+
+fwrite(treatment_res,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/longread_dge/nmd_dge_fb_2026.1.18.csv")
+
+dielist<-list()
+dielist[["FB"]]<-treatment_res
+
+saveRDS(dielist,file="/proj/regeps/regep00/studies/ExternalCellLines/analyses/repjc/Randell_Lung_Cells_2025/results/rds/dielist_2026.1.18.rds")
+```

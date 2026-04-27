@@ -1,0 +1,750 @@
+---
+title: "Expression distribution of non-NMD-responsive isoforms in NMD+ vs NMD− genes (Smg1i samples)"
+author: "Pete Castaldi"
+date: "2026-04-17"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+    code_folding: hide
+    number_sections: true
+---
+
+# Question
+
+For each primary lung cell type (AT, DD, DO, FB, MV), how does the expression
+of non-NMD-responsive isoforms in **Smg1i**-treated samples differ between:
+
+- **NMD+ genes**: genes containing at least one NMD-responsive isoform, versus
+- **NMD− genes**: genes containing zero NMD-responsive isoforms (but at least
+  one non-NMD-responsive isoform, so that they contribute points to the
+  comparison).
+
+The analysis is restricted to Smg1i samples and uses library-size-normalized
+CPM (**not** TMM-normalized), per project directive.
+
+# Data provenance
+
+- Differential expression: isocall / limma results from
+  `isocall_dge/limma/pete/nmd_isocall_dge_{at,dd,do,fb,mv}_2026.3.1.csv`.
+  These define each isoform's NMD response in the corresponding cell type.
+- Expression matrix: `results/isoform_transitions/Version_6.0/data/isocall/dge_isocall_unfiltered.rds`
+  — isocall-derived isoform DGEList (645,273 isoforms × 38 samples),
+  unfiltered (no expression filter applied) per user directive. Selected over
+  `rds/dge_isoform_nofilter_2026.2.7.rds` because the latter is an
+  oarfish-era DGEList whose novel-isoform IDs (`PB.x.y`) do not match the
+  isocall DE output's `ENSG....novelN` IDs; the isocall DGEList's row names
+  match the DE `transcript_id` column exactly.
+- CPM: computed with `edgeR::cpm(counts, lib.size = colSums(counts),
+  normalized.lib.sizes = FALSE)` so that column scaling is raw library size
+  **only** (no TMM norm factor).
+- Cell-type coding: DE file suffix `{at,dd,do,fb,mv}` corresponds to
+  `dge$samples$ct` levels `{AT, DD, DO, FB, MV}` (DD_ALI excluded per user
+  directive).
+- NMD classification thresholds (project standard, memory): NMD-responsive =
+  `adj.P.Val < 0.05 & logFC > 0`; non-NMD-responsive = `adj.P.Val > 0.50`;
+  isoforms with `0.05 ≤ adj.P.Val ≤ 0.50` are ambiguous and excluded from
+  the isoform-level comparison (but they still count toward classifying a
+  gene as NMD+ if any sibling isoform is NMD-responsive — see §4).
+- Novel isoforms (`ENSG....novelN`): included per user directive.
+- All biotypes included per user directive.
+- Gene-level expression filter: in each cell type, a gene is retained only
+  if its mean DMSO gene CPM (sum of isoform CPMs per sample, averaged
+  across that cell type's DMSO samples) is ≥ 1. DMSO (not Smg1i) is used
+  so the filter doesn't preferentially retain NMD+ genes whose targets
+  are stabilised by Smg1i. See §7 for the before/after counts.
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 9, fig.height = 5, dpi = 110
+)
+options(bitmapType = "cairo")
+```
+
+```{r libs}
+suppressPackageStartupMessages({
+  library(edgeR)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(DT)
+  library(knitr)
+  library(scales)
+})
+
+theme_pub <- theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+render_dt <- function(df, caption = NULL, digits = 3) {
+  num_cols <- names(df)[sapply(df, is.numeric)]
+  DT::datatable(
+    df,
+    caption = caption,
+    options = list(pageLength = 10, scrollX = TRUE),
+    rownames = FALSE
+  ) |> DT::formatSignif(columns = num_cols, digits = digits)
+}
+```
+
+# Parameters
+
+```{r params}
+PROJ_ROOT <- tryCatch(here::here(), error = function(e) normalizePath(".."))
+DE_DIR    <- file.path(PROJ_ROOT, "isocall_dge", "limma", "pete")
+DGELIST   <- file.path(
+  PROJ_ROOT,
+  "results", "isoform_transitions", "Version_6.0", "data", "isocall",
+  "dge_isocall_unfiltered.rds"
+)
+
+CELL_TYPES <- c("AT", "DD", "DO", "FB", "MV")      # DD_ALI excluded per user
+DE_FILE_SUFFIX <- c(AT = "at", DD = "dd", DO = "do", FB = "fb", MV = "mv")
+
+NMD_RESP_PADJ  <- 0.05
+NMD_RESP_LFC   <- 0
+NON_NMD_PADJ   <- 0.50
+
+stopifnot(dir.exists(DE_DIR), file.exists(DGELIST))
+```
+
+Parameter definitions: **NMD_RESP_PADJ** = upper bound on adjusted p-value for
+NMD-responsive classification; **NMD_RESP_LFC** = lower bound on `logFC` (Smg1i vs
+DMSO) for NMD-responsive classification; **NON_NMD_PADJ** = lower bound on
+adjusted p-value for non-NMD-responsive classification.
+
+# Load and classify isoforms
+
+```{r classify-isoforms}
+# Read the 5 per-cell-type DE files and classify each isoform.
+classify_de <- function(de_df) {
+  de_df |>
+    mutate(
+      nmd_class = case_when(
+        adj.P.Val < NMD_RESP_PADJ  & logFC > NMD_RESP_LFC ~ "NMD_responsive",
+        adj.P.Val > NON_NMD_PADJ                          ~ "non_NMD_responsive",
+        TRUE                                              ~ "ambiguous"
+      )
+    )
+}
+
+de_list <- lapply(CELL_TYPES, function(ct) {
+  f <- file.path(DE_DIR, paste0("nmd_isocall_dge_", DE_FILE_SUFFIX[[ct]], "_2026.3.1.csv"))
+  read.csv(f, stringsAsFactors = FALSE) |>
+    classify_de() |>
+    mutate(ct = ct)
+})
+names(de_list) <- CELL_TYPES
+
+# Sanity: all DE files should share the same transcript universe
+de_sizes <- sapply(de_list, nrow)
+stopifnot(length(unique(de_sizes)) == 1)
+```
+
+```{r classify-isoforms-summary}
+iso_class_summary <- bind_rows(lapply(de_list, function(d) {
+  data.frame(
+    cell_type           = d$ct[1],
+    n_total             = nrow(d),
+    n_NMD_responsive    = sum(d$nmd_class == "NMD_responsive"),
+    n_non_NMD_responsive= sum(d$nmd_class == "non_NMD_responsive"),
+    n_ambiguous         = sum(d$nmd_class == "ambiguous")
+  )
+}))
+kable(iso_class_summary, caption = "Isoform-level NMD classification per cell type.")
+```
+
+Columns: **cell_type** = cell population; **n_total** = number of isoforms in
+the DE output; **n_NMD_responsive** = isoforms with `adj.P.Val <
+`r NMD_RESP_PADJ`` and `logFC > `r NMD_RESP_LFC``; **n_non_NMD_responsive** =
+isoforms with `adj.P.Val > `r NON_NMD_PADJ``; **n_ambiguous** = isoforms whose
+`adj.P.Val` falls in the intermediate range (`r NMD_RESP_PADJ` ≤ adj.P.Val ≤
+`r NON_NMD_PADJ`), excluded from isoform-level comparisons but still counted
+when classifying the parent gene (below).
+
+# Classify genes per cell type
+
+A gene is **NMD+** in cell type *c* if it has ≥1 NMD-responsive isoform in *c*;
+otherwise it is **NMD−**. Under this rule, ambiguous isoforms do not change a
+gene's classification (they neither promote it to NMD+ nor prevent it from
+being NMD−). We further restrict NMD− genes to those with ≥1
+**non-NMD-responsive** isoform, since only those contribute points to the
+downstream isoform-level comparison.
+
+```{r classify-genes}
+gene_class_list <- lapply(de_list, function(d) {
+  d |>
+    group_by(gene_id) |>
+    summarise(
+      n_iso              = n(),
+      n_nmd_resp         = sum(nmd_class == "NMD_responsive"),
+      n_non_nmd_resp     = sum(nmd_class == "non_NMD_responsive"),
+      n_ambig            = sum(nmd_class == "ambiguous"),
+      .groups = "drop"
+    ) |>
+    mutate(
+      gene_group = case_when(
+        n_nmd_resp >= 1                      ~ "NMD+_gene",
+        n_nmd_resp == 0 & n_non_nmd_resp >= 1 ~ "NMD-_gene",
+        TRUE                                 ~ "excluded"   # only ambiguous isoforms
+      )
+    )
+})
+names(gene_class_list) <- CELL_TYPES
+
+gene_class_summary <- bind_rows(lapply(CELL_TYPES, function(ct) {
+  g <- gene_class_list[[ct]]
+  data.frame(
+    cell_type     = ct,
+    n_genes_total = nrow(g),
+    n_NMDplus     = sum(g$gene_group == "NMD+_gene"),
+    n_NMDminus    = sum(g$gene_group == "NMD-_gene"),
+    n_excluded    = sum(g$gene_group == "excluded")
+  )
+}))
+kable(gene_class_summary, caption = "Gene-level NMD classification per cell type.")
+```
+
+Columns: **cell_type** = cell population; **n_genes_total** = distinct genes
+present in the DE output; **n_NMDplus** = genes with ≥1 NMD-responsive isoform
+(`NMD+_gene`); **n_NMDminus** = genes with 0 NMD-responsive and ≥1
+non-NMD-responsive isoform (`NMD-_gene`); **n_excluded** = genes whose only
+isoforms are ambiguous (excluded from the comparison).
+
+# Compute non-TMM CPM per Smg1i sample, average within cell type
+
+```{r load-dge}
+dge <- readRDS(DGELIST)
+stopifnot(inherits(dge, "DGEList"))
+
+n_smg1i_by_ct <- dge$samples |>
+  as.data.frame() |>
+  filter(treatment == "Smg1i", ct %in% CELL_TYPES) |>
+  count(ct, name = "n_smg1i_samples")
+kable(n_smg1i_by_ct, caption = "Number of Smg1i samples contributing to the mean CPM per cell type.")
+```
+
+Columns: **ct** = cell population (`dge$samples$ct`); **n_smg1i_samples** =
+count of Smg1i-treated samples in the DGEList for that cell type.
+
+```{r compute-cpm}
+dge_nontmm <- dge
+dge_nontmm$samples$norm.factors <- 1
+cpm_mat <- edgeR::cpm(dge_nontmm, normalized.lib.sizes = FALSE)
+stopifnot(all(abs(colSums(cpm_mat) - 1e6) < 1))
+
+dge_txids <- rownames(dge_nontmm$counts)
+stopifnot(!anyDuplicated(dge_txids))
+
+# Sanity: every DE transcript must be present in the DGEList so the
+# inner_join below doesn't silently drop isoforms.
+de_txids <- unique(unlist(lapply(de_list, function(d) d$transcript_id)))
+missing_in_dge <- setdiff(de_txids, dge_txids)
+if (length(missing_in_dge) > 0) {
+  stop("DE transcript_ids missing from DGEList rownames: n = ",
+       length(missing_in_dge),
+       "  e.g., ", paste(head(missing_in_dge, 3), collapse = ", "))
+}
+```
+
+```{r mean-cpm-per-ct}
+# For each cell type, compute mean CPM per isoform across its Smg1i samples.
+mean_cpm_by_ct <- lapply(CELL_TYPES, function(ct) {
+  smg1i_cols <- rownames(dge_nontmm$samples)[
+    dge_nontmm$samples$treatment == "Smg1i" &
+      dge_nontmm$samples$ct == ct
+  ]
+  if (length(smg1i_cols) == 0) {
+    stop("No Smg1i samples found for cell type ", ct)
+  }
+  m <- rowMeans(cpm_mat[, smg1i_cols, drop = FALSE])
+  data.frame(transcript_id = names(m), mean_cpm_smg1i = unname(m), ct = ct)
+})
+names(mean_cpm_by_ct) <- CELL_TYPES
+```
+
+Columns in `mean_cpm_by_ct[[ct]]`: **transcript_id** = isoform ID (matches DE
+`transcript_id`); **mean_cpm_smg1i** = mean of library-size-normalized (non-TMM)
+CPM across the Smg1i samples of cell type `ct`; **ct** = cell type.
+
+# Gene-level expression — distribution and filter calibration
+
+Purpose: the comparison is biased if low-expressed genes are systematically
+classified NMD− simply because their isoforms lacked power to reach
+`adj.P.Val < `r NMD_RESP_PADJ``. This section summarises gene-level
+expression in DMSO and Smg1i per cell type so a minimum-expression filter
+can be chosen on the same CPM scale used downstream.
+
+Definition: **gene CPM** = sum of isoform CPMs (non-TMM) over all isoforms
+of that gene within a sample; **mean gene CPM by treatment** = mean of
+gene CPM across that cell type's samples of that treatment. No filter is
+applied yet — this section informs the threshold only.
+
+```{r gene-cpm-by-treatment}
+gene_ids_by_tx <- setNames(dge$genes$gene_id, rownames(dge$counts))
+stopifnot(!is.null(gene_ids_by_tx), !any(is.na(gene_ids_by_tx)))
+
+gene_cpm_mat <- rowsum(cpm_mat, group = gene_ids_by_tx, reorder = TRUE)
+
+samp <- dge_nontmm$samples |>
+  as.data.frame() |>
+  mutate(sample_col = rownames(dge_nontmm$samples)) |>
+  filter(ct %in% CELL_TYPES, treatment %in% c("DMSO", "Smg1i"))
+
+gene_cpm_summary <- lapply(CELL_TYPES, function(ct_i) {
+  lapply(c("DMSO", "Smg1i"), function(tx) {
+    cols <- samp$sample_col[samp$ct == ct_i & samp$treatment == tx]
+    if (length(cols) == 0) return(NULL)
+    mg <- rowMeans(gene_cpm_mat[, cols, drop = FALSE])
+    data.frame(ct = ct_i, treatment = tx, gene_id = names(mg), mean_gene_cpm = unname(mg))
+  }) |> bind_rows()
+}) |> bind_rows()
+```
+
+## Quantile table
+
+```{r gene-cpm-quantiles}
+q_probs <- c(0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
+
+gene_cpm_quantiles <- gene_cpm_summary |>
+  group_by(ct, treatment) |>
+  summarise(
+    n_genes = n(),
+    q05 = quantile(mean_gene_cpm, 0.05),
+    q10 = quantile(mean_gene_cpm, 0.10),
+    q25 = quantile(mean_gene_cpm, 0.25),
+    q50 = quantile(mean_gene_cpm, 0.50),
+    q75 = quantile(mean_gene_cpm, 0.75),
+    q90 = quantile(mean_gene_cpm, 0.90),
+    q95 = quantile(mean_gene_cpm, 0.95),
+    .groups = "drop"
+  ) |>
+  mutate(across(starts_with("q"), ~round(.x, 3)))
+
+kable(gene_cpm_quantiles,
+      caption = "Quantiles of mean gene-level CPM (non-TMM) by cell type and treatment.")
+```
+
+Columns: **ct** = cell type; **treatment** = DMSO or Smg1i; **n_genes** =
+distinct genes contributing; **q05–q95** = quantiles of the per-gene mean
+CPM within that (cell type, treatment) cell.
+
+## Fraction of genes excluded at candidate thresholds
+
+```{r gene-cpm-threshold-scan}
+thresholds <- c(0.1, 0.5, 1, 2, 5, 10)
+
+threshold_scan <- lapply(thresholds, function(thr) {
+  gene_cpm_summary |>
+    group_by(ct, treatment) |>
+    summarise(
+      threshold     = thr,
+      n_genes       = n(),
+      n_kept        = sum(mean_gene_cpm >= thr),
+      pct_kept      = round(100 * mean(mean_gene_cpm >= thr), 2),
+      pct_excluded  = round(100 * mean(mean_gene_cpm <  thr), 2),
+      .groups = "drop"
+    )
+}) |> bind_rows() |> arrange(treatment, ct, threshold)
+
+kable(threshold_scan,
+      caption = "Genes kept/excluded at candidate minimum-mean-CPM thresholds, by cell type and treatment.")
+```
+
+Columns: **ct**, **treatment** — as above; **threshold** = candidate
+minimum on mean gene CPM; **n_genes** = total distinct genes in that (ct,
+treatment) cell; **n_kept** / **pct_kept** = genes with mean gene CPM ≥
+threshold; **pct_excluded** = complement.
+
+## Density of log10(mean gene CPM)
+
+```{r gene-cpm-density, fig.width=11, fig.height=6}
+ggplot(gene_cpm_summary,
+       aes(x = log10(mean_gene_cpm + 0.01),
+           colour = treatment, fill = treatment)) +
+  geom_density(alpha = 0.25, linewidth = 0.5) +
+  facet_wrap(~ ct, ncol = 3, scales = "free_y") +
+  scale_colour_manual(values = c("DMSO" = "#2c3e50", "Smg1i" = "#c0392b"),
+                      name = "Treatment") +
+  scale_fill_manual(values = c("DMSO" = "#2c3e50", "Smg1i" = "#c0392b"),
+                    name = "Treatment") +
+  labs(
+    x = "log10(mean gene CPM + 0.01), non-TMM",
+    y = "Density",
+    title = "Gene-level expression distribution, DMSO vs Smg1i"
+  ) +
+  theme_pub
+```
+
+All genes in the DGEList are shown (no truncation). The small offset
+`+0.01` is only to keep log10 defined at zero.
+
+# Apply DMSO expression filter
+
+Filter motivation: genes with low baseline (DMSO) expression have low power
+to reach `adj.P.Val < `r NMD_RESP_PADJ`` for any isoform, so they are
+systematically classified NMD− by the "no NMD-responsive isoforms" rule
+regardless of their underlying biology. Thresholding on **DMSO** (not
+Smg1i) keeps the criterion independent of NMD-target stabilisation, which
+preferentially inflates Smg1i expression of exactly the NMD+ genes we
+don't want to bias for.
+
+Rule: in each cell type, retain a gene only if its mean DMSO gene CPM
+(sum of isoform CPMs summed within each DMSO sample, then averaged across
+that cell type's DMSO samples) is ≥ `r 1` CPM. Both NMD+ and NMD− genes
+are subject to the same bar.
+
+```{r apply-dmso-filter}
+DMSO_CPM_MIN <- 1
+
+dmso_cpm_by_gene <- gene_cpm_summary |>
+  filter(treatment == "DMSO") |>
+  select(ct, gene_id, dmso_mean_gene_cpm = mean_gene_cpm)
+
+gene_class_list_filt <- lapply(CELL_TYPES, function(ct_i) {
+  gcls <- gene_class_list[[ct_i]]
+  dm   <- dmso_cpm_by_gene |> filter(ct == ct_i) |> select(-ct)
+  gcls |>
+    left_join(dm, by = "gene_id") |>
+    mutate(
+      dmso_mean_gene_cpm = ifelse(is.na(dmso_mean_gene_cpm), 0, dmso_mean_gene_cpm),
+      passed_dmso_filter = dmso_mean_gene_cpm >= DMSO_CPM_MIN,
+      gene_group_pre  = gene_group,
+      gene_group = case_when(
+        !passed_dmso_filter                    ~ "excluded_low_expression",
+        n_nmd_resp >= 1                        ~ "NMD+_gene",
+        n_nmd_resp == 0 & n_non_nmd_resp >= 1  ~ "NMD-_gene",
+        TRUE                                   ~ "excluded"
+      )
+    )
+})
+names(gene_class_list_filt) <- CELL_TYPES
+
+filt_summary <- bind_rows(lapply(CELL_TYPES, function(ct_i) {
+  g <- gene_class_list_filt[[ct_i]]
+  n_pre_plus   <- sum(g$gene_group_pre == "NMD+_gene")
+  n_pre_minus  <- sum(g$gene_group_pre == "NMD-_gene")
+  n_post_plus  <- sum(g$gene_group == "NMD+_gene")
+  n_post_minus <- sum(g$gene_group == "NMD-_gene")
+  data.frame(
+    cell_type              = ct_i,
+    n_NMDplus_pre          = n_pre_plus,
+    n_NMDminus_pre         = n_pre_minus,
+    n_NMDplus_post         = n_post_plus,
+    n_NMDminus_post        = n_post_minus,
+    pct_NMDplus_dropped    = round(100 * (n_pre_plus  - n_post_plus)  / max(1, n_pre_plus),  2),
+    pct_NMDminus_dropped   = round(100 * (n_pre_minus - n_post_minus) / max(1, n_pre_minus), 2),
+    n_excluded_lowexpr     = sum(g$gene_group == "excluded_low_expression")
+  )
+}))
+
+kable(filt_summary,
+      caption = paste0("Gene classification before and after the DMSO mean gene CPM \u2265 ",
+                       DMSO_CPM_MIN, " filter, per cell type."))
+```
+
+Columns: **cell_type** = cell population; **n_NMDplus_pre** /
+**n_NMDminus_pre** = NMD+ / NMD− gene counts from the pre-filter
+classification (`r format(nrow(gene_class_list_filt[[1]]), big.mark=",")`
+genes total per cell type); **n_NMDplus_post** / **n_NMDminus_post** =
+counts after requiring mean DMSO gene CPM ≥ `r 1` in the same cell type;
+**pct_NMDplus_dropped** / **pct_NMDminus_dropped** = percentage of each
+pre-filter set removed by the DMSO filter; **n_excluded_lowexpr** = genes
+(of any pre-filter group) that fell below the DMSO CPM threshold.
+
+Interpretation cue: if the NMD− drop % is much larger than the NMD+ drop %,
+that confirms the original bias — the NMD− set was disproportionately
+made of low-expression genes.
+
+# Assemble the per-isoform comparison dataset
+
+```{r assemble}
+# For each cell type, keep only non-NMD-responsive isoforms, attach their
+# post-filter parent-gene classification, and attach the Smg1i mean CPM.
+iso_cmp_by_ct <- lapply(CELL_TYPES, function(ct) {
+  de   <- de_list[[ct]]
+  gcls <- gene_class_list_filt[[ct]]
+  cpm  <- mean_cpm_by_ct[[ct]]
+
+  de |>
+    filter(nmd_class == "non_NMD_responsive") |>
+    inner_join(gcls |> select(gene_id, gene_group, dmso_mean_gene_cpm),
+               by = "gene_id") |>
+    filter(gene_group %in% c("NMD+_gene", "NMD-_gene")) |>
+    inner_join(cpm |> select(transcript_id, mean_cpm_smg1i), by = "transcript_id") |>
+    mutate(ct = ct, log2_cpm_p1 = log2(mean_cpm_smg1i + 1))
+})
+names(iso_cmp_by_ct) <- CELL_TYPES
+
+iso_cmp_all <- bind_rows(iso_cmp_by_ct)
+
+cmp_counts <- iso_cmp_all |>
+  count(ct, gene_group, name = "n_isoforms") |>
+  pivot_wider(names_from = gene_group, values_from = n_isoforms, values_fill = 0)
+kable(cmp_counts, caption = "Number of non-NMD-responsive isoforms entering the comparison (after DMSO filter), by cell type and parent-gene class.")
+```
+
+Columns: **ct** = cell type; **NMD+_gene** = number of non-NMD-responsive
+isoforms whose parent gene has at least one NMD-responsive isoform in that cell
+type; **NMD-_gene** = number of non-NMD-responsive isoforms whose parent gene
+has no NMD-responsive isoforms in that cell type. Denominator: all
+non-NMD-responsive isoforms in that cell type (see `n_non_NMD_responsive` in
+the isoform classification table above). The two columns sum to the
+denominator less any isoforms whose parent gene was classified as `excluded`
+(parent gene has only ambiguous isoforms — not possible here because the
+child is by definition non-NMD-responsive, so this sum equals the denominator
+within each cell type).
+
+# Distribution comparison
+
+```{r mw-tests}
+# Mann–Whitney U test (two-sided) per cell type on log2(CPM+1).
+mw_by_ct <- iso_cmp_all |>
+  group_by(ct) |>
+  group_modify(~ {
+    d <- .x
+    w <- wilcox.test(
+      log2_cpm_p1 ~ gene_group,
+      data = d, exact = FALSE, conf.int = FALSE
+    )
+    tibble(
+      n_NMDplus      = sum(d$gene_group == "NMD+_gene"),
+      n_NMDminus     = sum(d$gene_group == "NMD-_gene"),
+      median_NMDplus = median(d$log2_cpm_p1[d$gene_group == "NMD+_gene"]),
+      median_NMDminus= median(d$log2_cpm_p1[d$gene_group == "NMD-_gene"]),
+      W              = unname(w$statistic),
+      p_value        = w$p.value
+    )
+  }) |>
+  ungroup() |>
+  mutate(
+    median_diff = median_NMDplus - median_NMDminus,
+    direction   = ifelse(median_NMDplus > median_NMDminus,
+                         "higher in NMD+ genes",
+                         "higher in NMD- genes"),
+    p_adj_BH    = p.adjust(p_value, method = "BH")
+  )
+
+kable(
+  mw_by_ct |>
+    select(ct, n_NMDplus, n_NMDminus,
+           median_NMDplus, median_NMDminus, median_diff,
+           direction, W, p_value, p_adj_BH) |>
+    mutate(across(c(median_NMDplus, median_NMDminus, median_diff), ~round(.x, 3)),
+           p_value = signif(p_value, 3),
+           p_adj_BH= signif(p_adj_BH, 3)),
+  caption = "Mann–Whitney U comparison of non-NMD-responsive isoform expression (log2 CPM+1, non-TMM, Smg1i mean) between NMD+ and NMD− genes, per cell type."
+)
+```
+
+Columns: **ct** = cell type; **n_NMDplus** / **n_NMDminus** = non-NMD-responsive
+isoforms whose parent gene is NMD+ / NMD−; **median_NMDplus** /
+**median_NMDminus** = median log2(CPM+1) within each parent-gene class;
+**median_diff** = `median_NMDplus − median_NMDminus` on the log2 scale;
+**direction** = which class has the higher median; **W** = Mann–Whitney U
+statistic (two-sided, normal approximation); **p_value** = raw test p-value;
+**p_adj_BH** = Benjamini–Hochberg adjusted p-value across the `r length(CELL_TYPES)`
+cell-type tests.
+
+## Density plot — pooled across cell types
+
+Pooled view of the same population, ignoring cell-type structure: each
+non-NMD-responsive isoform contributes one point per cell type in which it
+is classified non-NMD-responsive, so a single isoform may contribute up to
+`r length(CELL_TYPES)` observations. This is descriptive, not a valid joint
+inference (see the per-cell-type Mann–Whitney table above for the primary
+test).
+
+```{r density-pooled, fig.width=9, fig.height=5}
+pooled_medians <- iso_cmp_all |>
+  group_by(gene_group) |>
+  summarise(median_log2cpm_p1 = median(log2_cpm_p1), .groups = "drop")
+
+ggplot(iso_cmp_all,
+       aes(x = log2_cpm_p1, colour = gene_group, fill = gene_group)) +
+  geom_density(alpha = 0.25, linewidth = 0.7) +
+  geom_vline(data = pooled_medians,
+             aes(xintercept = median_log2cpm_p1, colour = gene_group),
+             linetype = "dashed", linewidth = 0.5, show.legend = FALSE) +
+  scale_colour_manual(values = c("NMD+_gene" = "#c0392b", "NMD-_gene" = "#2c3e50"),
+                      name = "Parent gene class") +
+  scale_fill_manual(values = c("NMD+_gene" = "#c0392b", "NMD-_gene" = "#2c3e50"),
+                    name = "Parent gene class") +
+  labs(
+    x = "log2(mean Smg1i CPM + 1), non-TMM",
+    y = "Density",
+    title = "Pooled expression distribution of non-NMD-responsive isoforms",
+    subtitle = "Dashed lines: group medians"
+  ) +
+  theme_pub
+```
+
+## Density plot — per cell type
+
+Population for this figure: non-NMD-responsive isoforms (adj.P.Val >
+`r NON_NMD_PADJ`) in each cell type, expressed as mean log2(CPM+1) across
+that cell type's Smg1i samples, colored by whether the parent gene has ≥1
+NMD-responsive isoform in the same cell type. Counts per (cell type,
+parent-gene class) are shown in the preceding table. Parent genes are
+restricted to those passing the DMSO mean gene CPM ≥ `r 1` filter; no
+other CPM or gene-filter thresholds are applied.
+
+```{r density, fig.width=11, fig.height=6}
+ggplot(iso_cmp_all,
+       aes(x = log2_cpm_p1, colour = gene_group, fill = gene_group)) +
+  geom_density(alpha = 0.25, linewidth = 0.6) +
+  facet_wrap(~ ct, ncol = 3, scales = "free_y") +
+  scale_colour_manual(values = c("NMD+_gene" = "#c0392b", "NMD-_gene" = "#2c3e50"),
+                      name = "Parent gene class") +
+  scale_fill_manual(values = c("NMD+_gene" = "#c0392b", "NMD-_gene" = "#2c3e50"),
+                    name = "Parent gene class") +
+  labs(
+    x = "log2(mean Smg1i CPM + 1), non-TMM",
+    y = "Density",
+    title = "Expression distribution of non-NMD-responsive isoforms in NMD+ vs NMD− genes"
+  ) +
+  theme_pub
+```
+
+## Empirical cumulative distribution
+
+```{r ecdf, fig.width=11, fig.height=6}
+ggplot(iso_cmp_all,
+       aes(x = log2_cpm_p1, colour = gene_group)) +
+  stat_ecdf(geom = "step", linewidth = 0.6) +
+  facet_wrap(~ ct, ncol = 3) +
+  scale_colour_manual(values = c("NMD+_gene" = "#c0392b", "NMD-_gene" = "#2c3e50"),
+                      name = "Parent gene class") +
+  labs(
+    x = "log2(mean Smg1i CPM + 1), non-TMM",
+    y = "ECDF",
+    title = "ECDF of non-NMD-responsive isoform expression, per cell type"
+  ) +
+  theme_pub
+```
+
+## Boxplot with jitter (all isoforms shown)
+
+```{r box, fig.width=10, fig.height=5}
+ggplot(iso_cmp_all,
+       aes(x = gene_group, y = log2_cpm_p1, fill = gene_group)) +
+  geom_boxplot(outlier.shape = NA, width = 0.5, alpha = 0.6) +
+  geom_jitter(width = 0.15, size = 0.2, alpha = 0.08) +
+  facet_wrap(~ ct, nrow = 1) +
+  scale_fill_manual(values = c("NMD+_gene" = "#c0392b", "NMD-_gene" = "#2c3e50"),
+                    guide = "none") +
+  labs(
+    x = NULL,
+    y = "log2(mean Smg1i CPM + 1), non-TMM",
+    title = "Per-isoform expression by parent-gene class"
+  ) +
+  theme_pub +
+  theme(axis.text.x = element_text(angle = 0))
+```
+
+No values are truncated in the three plots above — all non-NMD-responsive
+isoforms in the comparison universe are shown (`r nrow(iso_cmp_all)` isoforms
+total across the `r length(CELL_TYPES)` cell types).
+
+# Sensitivity: pooled meta-analysis
+
+```{r pooled}
+pooled <- wilcox.test(
+  log2_cpm_p1 ~ gene_group,
+  data = iso_cmp_all, exact = FALSE, conf.int = FALSE
+)
+
+pooled_tbl <- tibble(
+  n_NMDplus       = sum(iso_cmp_all$gene_group == "NMD+_gene"),
+  n_NMDminus      = sum(iso_cmp_all$gene_group == "NMD-_gene"),
+  median_NMDplus  = median(iso_cmp_all$log2_cpm_p1[iso_cmp_all$gene_group == "NMD+_gene"]),
+  median_NMDminus = median(iso_cmp_all$log2_cpm_p1[iso_cmp_all$gene_group == "NMD-_gene"]),
+  median_diff     = median_NMDplus - median_NMDminus,
+  W               = unname(pooled$statistic),
+  p_value         = pooled$p.value
+) |>
+  mutate(across(c(median_NMDplus, median_NMDminus, median_diff), ~round(.x, 3)),
+         p_value = signif(p_value, 3))
+
+kable(pooled_tbl,
+      caption = "Pooled Mann–Whitney U test across all cell types. Note: this
+      treats isoforms as independent even though a gene can contribute multiple
+      non-NMD isoforms in more than one cell type; interpret as a descriptive
+      summary rather than a valid joint inference. See the per-cell-type table
+      above for the primary result.")
+```
+
+Columns: as defined in the per-cell-type Mann–Whitney table above.
+
+# Full per-isoform results
+
+```{r prepare-full-table}
+iso_cmp_full <- iso_cmp_all |>
+  transmute(
+    cell_type    = ct,
+    transcript_id,
+    gene_id,
+    gene_symbol  = gene_name,
+    gene_group,
+    adj_P_Val    = signif(adj.P.Val, 3),
+    logFC        = round(logFC, 3),
+    mean_cpm_smg1i = round(mean_cpm_smg1i, 3),
+    log2_cpm_p1  = round(log2_cpm_p1, 3)
+  ) |>
+  arrange(cell_type, desc(log2_cpm_p1))
+
+FULL_CSV      <- "nonNMD_expression_distribution_2026.4.17_full_table.csv"
+FULL_CSV_PATH <- file.path(PROJ_ROOT, "code", FULL_CSV)
+write.csv(iso_cmp_full, FULL_CSV_PATH, row.names = FALSE)
+
+PREVIEW_N        <- 2000
+iso_cmp_preview  <- head(iso_cmp_full, PREVIEW_N)
+n_full           <- nrow(iso_cmp_full)
+n_truncated_out  <- n_full - nrow(iso_cmp_preview)
+```
+
+Full table: **`r format(n_full, big.mark = ",")` rows** total.
+**Truncation disclosed:** the DT widget below shows only the first
+`r format(PREVIEW_N, big.mark = ",")` rows after sorting by `cell_type`
+(ascending) then `log2_cpm_p1` (descending). The remaining
+**`r format(n_truncated_out, big.mark = ",")` rows** are omitted from the
+widget but written in full to
+[`r FULL_CSV`](`r FULL_CSV`) next to this HTML. Reason: embedding all
+`r format(n_full, big.mark = ",")` rows as inline JSON produced a single
+~72 MB line that prevented browsers from loading the page. No rows are
+omitted from the density, ECDF, or boxplot figures above (those summarise
+all `r format(n_full, big.mark = ",")` rows).
+
+```{r dt-preview}
+render_dt(
+  iso_cmp_preview,
+  caption = sprintf(
+    "Preview: top %s of %s non-NMD-responsive isoforms (cell_type asc, log2(CPM+1) desc). Full table: %s.",
+    format(PREVIEW_N, big.mark = ","),
+    format(n_full, big.mark = ","),
+    FULL_CSV
+  )
+)
+```
+
+Columns: **cell_type** = cell population; **transcript_id** = isoform ID
+(ENST…, or ENSG….novelN for novel isoforms); **gene_id** = parent gene
+(versioned ENSG from the DE output); **gene_symbol** = HGNC symbol as
+reported in the DE output; **gene_group** = NMD+ / NMD− per-cell-type
+classification of the parent gene; **adj_P_Val**, **logFC** = from the
+corresponding cell type's limma/isocall DE CSV; **mean_cpm_smg1i** =
+library-size-normalized (non-TMM) CPM averaged across Smg1i samples in that
+cell type; **log2_cpm_p1** = `log2(mean_cpm_smg1i + 1)`.
+
+# Session info
+
+```{r session}
+sessionInfo()
+```
