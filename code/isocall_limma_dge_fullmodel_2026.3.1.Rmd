@@ -26,8 +26,8 @@ library(ggrepel)
 })
 
 # ---- Input/Output paths ----
-COUNT_MATRIX <- "../isocall/nmd_lungcells/results/call/nmd_isocall.count_matrix.txt"
-GTF_FILE     <- "../isocall/nmd_lungcells/results/call/nmd_isocall.isoforms.gtf.gz"
+COUNT_MATRIX <- "~/claude_projects/nmd/sqanti/nmd_lungcells/results/nmd_lungcells_filtered.count_matrix.txt"
+GTF_FILE     <- "~/claude_projects/nmd/sqanti/nmd_lungcells/results/nmd_lungcells_filtered.gtf"
 OUT_DIR      <- "../isocall_dge"
 
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
@@ -103,10 +103,8 @@ rownames(counts) <- txids
 cat("Count matrix:", nrow(counts), "isoforms x", ncol(counts), "samples\n")
 
 # ---- Parse gene annotation from isocall GTF ----
-gtf <- fread(
-  cmd = paste("gunzip -c", GTF_FILE, "| grep '\ttranscript\t'"),
-  header = FALSE, sep = "\t", quote = ""
-)
+gtf <- fread(GTF_FILE,header = FALSE, sep = "\t", quote = "")
+gtf<-gtf[gtf$V3 %in% "transcript",]
 
 gtf$transcript_id <- gsub('.*transcript_id "([^"]+)".*', '\\1', gtf$V9)
 gtf$gene_id       <- gsub('.*gene_id "([^"]+)".*', '\\1', gtf$V9)
@@ -148,6 +146,8 @@ table(pheno$ct, pheno$treatment)
 
 # ---- Create DGEList ----
 dge <- DGEList(counts, samples = pheno, genes = gdf)
+
+saveRDS(dge, file = file.path(OUT_DIR, "dgelist_isocall_2026.3.1.rds"))
 
 # ---- Filter lowly expressed isoforms ----
 design_all <- model.matrix(~ treatment + ct + ct * treatment, data = dge$samples)
