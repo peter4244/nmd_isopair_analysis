@@ -35,6 +35,7 @@ isocall/
 isocall_dtu/
 IGV/
 isoseq_pipeline/
+isocall_pipeline/
 
 # Literature review PDFs (kept locally, not in history; the .md text review is tracked)
 lit_review/*.pdf
