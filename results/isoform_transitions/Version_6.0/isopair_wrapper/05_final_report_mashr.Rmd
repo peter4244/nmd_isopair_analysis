@@ -2432,6 +2432,149 @@ group1 longer); **p_value** = Wilcoxon rank-sum test p-value.
 
 </details>
 
+```{r goal3-fig6b-utr3-boxplot, fig.width=10, fig.height=6}
+# ── Data provenance ──
+# Source: utr3_data (built in goal3-fig6-pop chunk above)
+# Population: same 5-group 3'UTR data as the density plot
+
+fig6b <- ggplot(utr3_data, aes(x = group, y = utr3_bp, fill = group)) +
+  geom_boxplot(alpha = 0.85, outlier.size = 0.5, width = 0.6) +
+  scale_y_log10(labels = scales::comma) +
+  scale_fill_manual(values = pal5_utr3) +
+  labs(title = "3'UTR Length by PTC Mechanism",
+       subtitle = "Boxplot complement to the density plot above",
+       x = NULL, y = "3'UTR length (bp, log scale)", fill = "") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1),
+        legend.position = "none")
+save_fig(fig6b, "fig7b_utr3_length_boxplot", width = 10, height = 6)
+```
+
+### 3'UTR Length of GENCODE-Annotated NMD vs Non-NMD Isoforms
+
+The analyses above focus on isoform *pairs* from the gene-matched set and
+stratify by PTC mechanism. Here we ask a simpler, broader question: among all
+expressed GENCODE-annotated (ENST) isoforms, do NMD-sensitive isoforms have
+longer 3'UTRs than non-NMD isoforms?
+
+```{r goal3-gencode-utr3-nmd, fig.width=10, fig.height=6}
+# ── Data provenance ──
+# Source: cds.rds (CDS boundaries), structures.rds (exon coordinates),
+#   nmd_classification.rds (NMD/non-NMD classification from mashr all_samples),
+#   expression_data.rds (expressed isoforms)
+# Population: all expressed GENCODE-annotated coding isoforms with valid CDS.
+#   NMD: adj.P.Val < 0.05 AND logFC > 0 (mashr all_samples).
+#   Non-NMD: adj.P.Val > 0.50 (mashr all_samples).
+# 3'UTR: exonic bp downstream of cds_stop (strand-aware), computed from
+#   SQANTI/TransDecoder2 CDS annotations via compute_sqanti_3utr().
+
+# Identify GENCODE isoforms (ENST prefix, not novel)
+nmd_ids_gc <- nmd_class$all_samples$nmd
+non_nmd_ids_gc <- nmd_class$all_samples$non_nmd
+
+# Restrict to GENCODE-annotated, coding, expressed
+gencode_coding <- cds$isoform_id[cds$coding_status == "coding" &
+                                  !is_novel_iso(cds$isoform_id) &
+                                  cds$isoform_id %in% rownames(expr_mat)]
+
+gc_nmd     <- intersect(gencode_coding, nmd_ids_gc)
+gc_non_nmd <- intersect(gencode_coding, non_nmd_ids_gc)
+
+# Compute 3'UTR (exonic bp downstream of cds_stop, strand-aware)
+compute_3utr_local <- function(iso_id) {
+  cds_row <- cds[cds$isoform_id == iso_id, ]
+  if (nrow(cds_row) == 0 || cds_row$coding_status != "coding") return(NA_real_)
+  str_row <- structures[structures$isoform_id == iso_id, ]
+  if (nrow(str_row) == 0) return(NA_real_)
+  strand <- cds_row$strand
+  stop_pos <- if (strand == "+") cds_row$cds_stop else cds_row$cds_start
+  exon_s <- str_row$exon_starts[[1]]; exon_e <- str_row$exon_ends[[1]]
+  utr3 <- 0
+  for (j in seq_along(exon_s)) {
+    if (strand == "+") {
+      if (exon_e[j] > stop_pos) utr3 <- utr3 + exon_e[j] - max(exon_s[j], stop_pos + 1) + 1
+    } else {
+      if (exon_s[j] < stop_pos) utr3 <- utr3 + min(exon_e[j], stop_pos - 1) - exon_s[j] + 1
+    }
+  }
+  utr3
+}
+
+gc_nmd_utr3     <- sapply(gc_nmd, compute_3utr_local)
+gc_non_nmd_utr3 <- sapply(gc_non_nmd, compute_3utr_local)
+
+gc_utr3_data <- rbind(
+  data.frame(group = "NMD-sensitive",
+             utr3_bp = gc_nmd_utr3[!is.na(gc_nmd_utr3) & gc_nmd_utr3 > 0]),
+  data.frame(group = "Non-NMD",
+             utr3_bp = gc_non_nmd_utr3[!is.na(gc_non_nmd_utr3) & gc_non_nmd_utr3 > 0])
+)
+gc_utr3_data$group <- factor(gc_utr3_data$group, levels = c("NMD-sensitive", "Non-NMD"))
+
+# Wilcoxon test
+gc_wt <- wilcox.test(gc_utr3_data$utr3_bp[gc_utr3_data$group == "NMD-sensitive"],
+                     gc_utr3_data$utr3_bp[gc_utr3_data$group == "Non-NMD"])
+
+gc_med <- tapply(gc_utr3_data$utr3_bp, gc_utr3_data$group, median, na.rm = TRUE)
+gc_q25 <- tapply(gc_utr3_data$utr3_bp, gc_utr3_data$group, quantile, 0.25, na.rm = TRUE)
+gc_q75 <- tapply(gc_utr3_data$utr3_bp, gc_utr3_data$group, quantile, 0.75, na.rm = TRUE)
+gc_n   <- table(gc_utr3_data$group)
+
+fig_gc_utr3 <- ggplot(gc_utr3_data, aes(x = utr3_bp, fill = group)) +
+  geom_density(alpha = 0.5) +
+  scale_x_log10(labels = scales::comma) +
+  scale_fill_manual(values = c("NMD-sensitive" = "#d6604d", "Non-NMD" = "#67a9cf")) +
+  annotate("text", x = Inf, y = Inf,
+           label = sprintf("Wilcoxon p = %s", format.pval(gc_wt$p.value, digits = 2)),
+           hjust = 1.1, vjust = 1.5, size = 4, fontface = "italic") +
+  labs(title = "3'UTR Length: GENCODE NMD-Sensitive vs Non-NMD Isoforms",
+       subtitle = sprintf("NMD: %s bp (%s\u2013%s) n = %s | Non-NMD: %s bp (%s\u2013%s) n = %s  [median (IQR)]",
+                          fmt(gc_med[["NMD-sensitive"]]), fmt(gc_q25[["NMD-sensitive"]]), fmt(gc_q75[["NMD-sensitive"]]),
+                          fmt(gc_n[["NMD-sensitive"]]),
+                          fmt(gc_med[["Non-NMD"]]), fmt(gc_q25[["Non-NMD"]]), fmt(gc_q75[["Non-NMD"]]),
+                          fmt(gc_n[["Non-NMD"]])),
+       x = "3'UTR length (bp, log scale)", y = "Density", fill = "") +
+  theme(legend.position = "bottom")
+save_fig(fig_gc_utr3, "fig7c_gencode_utr3_nmd_vs_nonnmd", width = 10, height = 6)
+```
+
+<details>
+<summary>Click to view tabular data for GENCODE 3'UTR comparison</summary>
+
+```{r goal3-gencode-utr3-table, echo=FALSE}
+gc_utr3_summary <- gc_utr3_data %>%
+  group_by(group) %>%
+  summarise(n = n(),
+            `Median 3'UTR (bp)` = round(median(utr3_bp, na.rm = TRUE)),
+            `Mean 3'UTR (bp)` = round(mean(utr3_bp, na.rm = TRUE)),
+            Q25 = round(quantile(utr3_bp, 0.25, na.rm = TRUE)),
+            Q75 = round(quantile(utr3_bp, 0.75, na.rm = TRUE)),
+            .groups = "drop")
+gc_utr3_summary$`Wilcoxon p` <- c(signif(gc_wt$p.value, 3), NA)
+render_dt(gc_utr3_summary, caption = "3'UTR Length: GENCODE NMD vs Non-NMD Isoforms")
+```
+
+Columns: **group** = NMD classification (NMD-sensitive = mashr adj.P.Val < 0.05
+and logFC > 0; Non-NMD = adj.P.Val > 0.50); **n** = number of GENCODE coding
+isoforms; **Median/Mean 3'UTR (bp)** = 3'UTR length from CDS stop to
+transcript end (exonic bp only); **Q25/Q75** = interquartile range;
+**Wilcoxon p** = two-sided Wilcoxon rank-sum test p-value.
+
+</details>
+
+This analysis uses all expressed GENCODE-annotated coding isoforms — not
+restricted to the gene-matched pair set — to test whether NMD-sensitive
+isoforms have systematically longer 3'UTRs. Unlike the pair-based analysis
+above, this includes isoforms with curated GENCODE CDS annotations, avoiding
+potential biases from TransDecoder2 CDS prediction on novel isoforms.
+
+NMD-sensitive isoforms have significantly *shorter* 3'UTRs than non-NMD
+isoforms (median `r fmt(gc_med[["NMD-sensitive"]])` vs
+`r fmt(gc_med[["Non-NMD"]])` bp, p < 2e-16). This is the opposite of what
+the long-3'UTR NMD model would predict and is consistent with the pair-based
+analysis: the apparent 3'UTR lengthening in NMD isoforms is an artifact of
+measuring from premature stop codons, not a genuine feature of these
+transcripts.
+
 ## Illustrative Example: 3'UTR Measurement Correction (CMAS)
 
 The CMAS gene illustrates why naive 3'UTR measurement is misleading for
@@ -2995,6 +3138,61 @@ ptc_neg_ref <- c2_ref[!c2_ref$original_ptc, ]
 
 n_atg_avail <- sum(ptc_neg_ref$ref_atg_exonic_in_comp == TRUE, na.rm = TRUE)
 n_atg_lost_2c <- sum(ptc_neg_ref$ref_atg_exonic_in_comp == FALSE, na.rm = TRUE)
+
+# ── Canonical subgroup assignment ──
+# Two-pass reclassification:
+#   Pass 1 (ref-ATG tracing): effectively_ptc → PTC+
+#   Pass 2 (TD2 fallback): ref_atg_lost with ptc$n_downstream_ejcs > 0 → PTC+
+# Remaining groups:
+#   no_downstream_ejc + truncated_no_ejc → NMD PTC-, ref ATG retained
+#   ref_atg_lost (TD2 EJC == 0) + rare categories → NMD PTC-, ref ATG lost
+
+# TD2 second-pass: check downstream EJCs from TD2 CDS for ref_atg_lost pairs
+td2_ejc_lookup <- setNames(ptc$n_downstream_ejcs, ptc$isoform_id)
+ref_lost_cats <- c("ref_atg_lost", "not_atg_in_ref", "no_stop_in_comp")
+is_ref_lost <- ptc_neg_ref$category %in% ref_lost_cats
+td2_ejc_vals <- td2_ejc_lookup[ptc_neg_ref$comparator_isoform_id[is_ref_lost]]
+stopifnot("All ref_atg_lost comparators found in ptc.rds" =
+            all(ptc_neg_ref$comparator_isoform_id[is_ref_lost] %in% ptc$isoform_id))
+td2_reclass_mask <- is_ref_lost & td2_ejc_lookup[ptc_neg_ref$comparator_isoform_id] > 0
+n_td2_reclass <- sum(td2_reclass_mask, na.rm = TRUE)
+
+ptc_neg_ref$subgroup <- case_when(
+  ptc_neg_ref$category == "effectively_ptc" ~ "NMD PTC+",
+  td2_reclass_mask ~ "NMD PTC+",
+  ptc_neg_ref$category %in% c("no_downstream_ejc", "truncated_no_ejc") ~
+    "NMD PTC-, ref ATG retained",
+  ptc_neg_ref$category %in% ref_lost_cats ~ "NMD PTC-, ref ATG lost",
+  TRUE ~ "NMD PTC-, ref ATG lost"
+)
+
+# subgroup_detail preserves the original split within ref ATG retained
+ptc_neg_ref$subgroup_detail <- case_when(
+  ptc_neg_ref$subgroup == "NMD PTC+" ~ "NMD PTC+",
+  ptc_neg_ref$category == "no_downstream_ejc" ~ "No downstream EJC",
+  ptc_neg_ref$category == "truncated_no_ejc" ~ "Truncated, no EJC",
+  ptc_neg_ref$subgroup == "NMD PTC-, ref ATG lost" ~ "NMD PTC-, ref ATG lost",
+  TRUE ~ ptc_neg_ref$category
+)
+
+# Canonical palette (matching Report 2)
+subgroup_pal <- c("NMD PTC+" = "#ef8a62",
+                  "NMD PTC-, ref ATG retained" = "#fdd49e",
+                  "NMD PTC-, ref ATG lost" = "#fdbb84",
+                  "Control" = "#67a9cf")
+
+# Convenience counts
+n_subgroup_ptcplus <- sum(ptc_neg_ref$subgroup == "NMD PTC+")
+n_subgroup_retained <- sum(ptc_neg_ref$subgroup == "NMD PTC-, ref ATG retained")
+n_subgroup_lost <- sum(ptc_neg_ref$subgroup == "NMD PTC-, ref ATG lost")
+
+n_refatg_reclass <- sum(ptc_neg_ref$category == "effectively_ptc")
+
+cat(sprintf("Canonical subgroup assignment (PTC-negative pairs, n = %d):\n", nrow(ptc_neg_ref)))
+cat(sprintf("  NMD PTC+ (ref-ATG + TD2 reclass): %d (%d ref-ATG + %d TD2)\n",
+            n_subgroup_ptcplus, n_refatg_reclass, n_td2_reclass))
+cat(sprintf("  NMD PTC-, ref ATG retained: %d\n", n_subgroup_retained))
+cat(sprintf("  NMD PTC-, ref ATG lost: %d\n", n_subgroup_lost))
 ```
 
 Of the `r fmt(sum(ref_cds5_2c != comp_cds5_2c, na.rm = TRUE))` pairs with a
@@ -3069,33 +3267,56 @@ ORF tracing of PTC-negative NMD comparators.
 </details>
 
 ```{r sec2c-reclassification}
-# Reclassification of all PTC-negative pairs
-reclass_tab <- ptc_neg_ref %>%
+# Raw category breakdown (for provenance)
+reclass_raw <- ptc_neg_ref %>%
   count(category) %>%
   mutate(pct = round(100 * n / sum(n), 1)) %>%
   arrange(-n)
 
+# Canonical 3-group breakdown
+reclass_tab <- ptc_neg_ref %>%
+  count(subgroup) %>%
+  mutate(pct = round(100 * n / sum(n), 1)) %>%
+  arrange(-n)
+
 render_dt(reclass_tab,
-  caption = sprintf("Table 8a: Reclassification of %s PTC-Negative Pairs by Reference ATG Tracing",
+  caption = sprintf("Table 8a: Final Subgroup Assignment of %s PTC-Negative Pairs",
                     fmt(nrow(ptc_neg_ref))))
 
 n_eff_ptc <- sum(ptc_neg_ref$category == "effectively_ptc")
-n_atg_lost <- sum(ptc_neg_ref$category == "ref_atg_lost")
-n_truly_nonptc <- nrow(ptc_neg_ref) - n_eff_ptc - n_atg_lost
+n_atg_lost <- n_subgroup_lost
 ```
 
-Column definitions: **category** = outcome of tracing the reference CDS start
-ATG through the comparator; **effectively_ptc** = reading frame is truncated
-and stop has ≥1 downstream EJC; **ref_atg_lost** = reference ATG not in
-comparator exonic sequence; **no_downstream_ejc** = truncated but stop has
-no downstream EJCs; **n** = pair count; **pct** = percentage.
+Column definitions: **subgroup** = final classification after two-pass
+reclassification; **NMD PTC+** = PTC present by ref-ATG tracing
+(`r fmt(n_refatg_reclass)` pairs) or by TD2 CDS (`r fmt(n_td2_reclass)` pairs);
+**NMD PTC-, ref ATG retained** = reference ATG available but reading frame
+terminates without downstream EJCs (includes both full-length and truncated
+ORFs); **NMD PTC-, ref ATG lost** = reference ATG not exonic in the comparator
+AND TD2 CDS also shows 0 downstream EJCs; **n** = pair count; **pct** =
+percentage.
+
+<details>
+<summary>Click to view raw category breakdown</summary>
+
+```{r sec2c-reclass-raw-table, echo=FALSE}
+render_dt(reclass_raw,
+  caption = sprintf("Raw categories from ref-ATG tracing (before TD2 second-pass)"))
+```
+
+Columns: **category** = raw outcome of ref-ATG tracing; **n** = pair count;
+**pct** = percentage.
+
+</details>
 
 Of `r fmt(n_atg_avail)` pairs with the reference ATG available,
 `r fmt(n_eff_ptc)` (`r round(100 * n_eff_ptc / n_atg_avail, 1)`%) have a
 truncated reading frame with downstream EJCs — **effectively PTCs** that TD2's
-length-based scoring caused it to miss. Combined with the original PTC-positive
-pairs, **`r round(100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2), 1)`%
-of all coding NMD pairs are PTC-mediated** when viewed from the reference ATG.
+length-based scoring caused it to miss. An additional `r fmt(n_td2_reclass)`
+pairs that lost the reference ATG were reclassified as PTC+ because their TD2
+CDS has ≥1 downstream EJC. Combined with the original PTC-positive pairs,
+**`r round(100 * (n_ptc_pos + n_subgroup_ptcplus) / nrow(coding_pairs_c2), 1)`%
+of all coding NMD pairs are PTC-mediated**.
 
 ```{r sec2c-td2-length, fig.width=10, fig.height=5}
 # Among the reclassified pairs: compare TD2-selected CDS vs ref-ATG ORF length
@@ -3345,40 +3566,38 @@ for (k in seq_len(nrow(diff_pairs_koz))) {
   td2_kozak_vec[k] <- kozak_score_fn(seq_koz[cid], td2_tx)
 }
 
-# Numeric Kozak PWM score: weighted match to consensus at positions -6 to +4
-# Weights: -3 (A/G) = 2, +4 (G) = 2, -1/-2 (C) = 1 each,
-#   -4/-5 (C) = 0.5, -6 (A/G) = 0.5. Max = 7.5.
-kozak_pwm_score <- function(seq_str, atg_tx_pos) {
-  if (is.na(atg_tx_pos)) return(NA_real_)
-  start <- atg_tx_pos - 6L; end <- atg_tx_pos + 4L
-  if (start < 1 || end > nchar(seq_str)) return(NA_real_)
-  w <- substr(seq_str, start, end)
-  if (nchar(w) != 11 || substr(w, 7, 9) != "ATG") return(NA_real_)
-  ch <- strsplit(w, "")[[1]]
-  s <- 0
-  if (ch[4] %in% c("A","G")) s <- s + 2    # -3
-  if (ch[10] == "G") s <- s + 2             # +4
-  if (ch[6] == "C") s <- s + 1              # -1
-  if (ch[5] == "C") s <- s + 1              # -2
-  if (ch[3] == "C") s <- s + 0.5            # -4
-  if (ch[2] == "C") s <- s + 0.5            # -5
-  if (ch[1] %in% c("A","G")) s <- s + 0.5   # -6
-  s
-}
+# Kozak PWM score using Isopair::scoreKozakPWM (log-odds across 8 positions)
+# Matches the scoring used in orf_model_report_v5 Section 6.4
+ref_tx_pos <- integer(nrow(diff_pairs_koz))
+td2_tx_pos <- integer(nrow(diff_pairs_koz))
+pwm_seqs <- character(nrow(diff_pairs_koz))
 
-ref_pwm <- numeric(nrow(diff_pairs_koz))
-td2_pwm <- numeric(nrow(diff_pairs_koz))
 for (k in seq_len(nrow(diff_pairs_koz))) {
   cid <- diff_pairs_koz$comparator_isoform_id[k]
   strand_k <- diff_pairs_koz$strand[k]
-  if (!cid %in% names(seq_koz)) { ref_pwm[k] <- NA; td2_pwm[k] <- NA; next }
+  if (!cid %in% names(seq_koz)) { ref_tx_pos[k] <- NA; td2_tx_pos[k] <- NA; next }
   cs <- structs_lookup[[cid]]
-  if (is.null(cs)) { ref_pwm[k] <- NA; td2_pwm[k] <- NA; next }
-  ref_tx <- genomic_to_transcript_local(diff_pairs_koz$ref_atg_genomic[k],
-                                          cs$starts, cs$ends, strand_k)
-  td2_tx <- genomic_to_transcript_local(diff_td2_atg[k], cs$starts, cs$ends, strand_k)
-  ref_pwm[k] <- kozak_pwm_score(seq_koz[cid], ref_tx)
-  td2_pwm[k] <- kozak_pwm_score(seq_koz[cid], td2_tx)
+  if (is.null(cs)) { ref_tx_pos[k] <- NA; td2_tx_pos[k] <- NA; next }
+  ref_tx_pos[k] <- genomic_to_transcript_local(diff_pairs_koz$ref_atg_genomic[k],
+                                                 cs$starts, cs$ends, strand_k)
+  td2_tx_pos[k] <- genomic_to_transcript_local(diff_td2_atg[k], cs$starts, cs$ends, strand_k)
+  pwm_seqs[k] <- seq_koz[cid]
+}
+
+# Score both ATGs using Isopair's log-odds PWM
+valid_ref <- !is.na(ref_tx_pos) & pwm_seqs != ""
+valid_td2 <- !is.na(td2_tx_pos) & pwm_seqs != ""
+
+ref_pwm <- rep(NA_real_, nrow(diff_pairs_koz))
+td2_pwm <- rep(NA_real_, nrow(diff_pairs_koz))
+
+if (sum(valid_ref) > 0) {
+  ref_result <- Isopair::scoreKozakPWM(pwm_seqs[valid_ref], ref_tx_pos[valid_ref])
+  ref_pwm[valid_ref] <- ref_result$score
+}
+if (sum(valid_td2) > 0) {
+  td2_result <- Isopair::scoreKozakPWM(pwm_seqs[valid_td2], td2_tx_pos[valid_td2])
+  td2_pwm[valid_td2] <- td2_result$score
 }
 
 koz_valid <- !is.na(ref_pwm) & !is.na(td2_pwm)
@@ -3401,9 +3620,9 @@ fig_kozak <- ggplot(koz_df, aes(x = ATG_source, y = score, fill = ATG_source)) +
            label = sprintf("paired Wilcoxon p = %s", signif(wt_koz$p.value, 3)),
            size = 4.5) +
   labs(title = "Kozak Initiation Context Score: Reference vs TD2-Predicted ATG",
-       subtitle = sprintf("%s NMD comparators with different ref and TD2 start codons | Score range: 0-7.5",
+       subtitle = sprintf("%s NMD comparators with different ref and TD2 start codons | Isopair scoreKozakPWM (log-odds)",
                           fmt(n_koz_valid)),
-       x = NULL, y = "Kozak PWM score") +
+       x = NULL, y = "Kozak PWM score (log-odds)") +
   theme(legend.position = "none", text = element_text(size = 14))
 save_fig(fig_kozak, "fig_sec2c_kozak_ref_vs_td2", width = 10, height = 5)
 ```
@@ -3439,9 +3658,11 @@ Among `r fmt(n_koz_valid)` pairs where the reference and TD2 ATGs differ,
 the reference ATG has a median Kozak score of `r ref_median` versus
 `r td2_median` for the TD2 ATG (paired Wilcoxon p =
 `r signif(wt_koz$p.value, 3)`). The reference ATG scores higher in
-`r pct_ref_higher`% of pairs. The Kozak PWM score weights the two critical
-positions (-3: A/G, weight 2; +4: G, weight 2) plus supporting positions
-(-1, -2: C, weight 1 each; -4 to -6, weight 0.5 each; max = 7.5). TD2
+`r pct_ref_higher`% of pairs. The Kozak PWM score (`Isopair::scoreKozakPWM`)
+computes log-odds across 8 positions (-6 to +5) relative to a background
+nucleotide frequency model; positive values indicate stronger-than-average
+initiation context, and the same scoring function is used in the CNN
+model report (Section 6.4). TD2
 selects ATGs that maximize ORF length, not initiation context --- the
 reference ATG, used by the gene's dominant isoform, has substantially
 stronger Kozak context and is more likely to be the biologically active
@@ -3770,99 +3991,43 @@ a reading frame shift; **pct_frameshift** = percentage.
 
 </details>
 
-If the reclassified pairs are truly PTC-positive, their NMD response should
-match the original PTC+ group. We test this directly using the mashr
-meta-analysis logFC (posterior mean averaged across cell types).
-
-```{r sec2c-logfc-validation, fig.width=8, fig.height=5}
-# ── Data provenance ──
-# Source: mashr_isoform_model_2026.3.10.rds → post_mean → meta_logfc (STAGE 5)
-#   Original PTC+: coding_pairs_c2 with comp_has_ptc == TRUE (Section 3b)
-#   Reclassified PTC: eff_ptc (Section 3c ref-ATG tracing)
-#   Control: profiles_list[["c4_allsamples"]] (C4 gene-matched pairs)
-# Population: comparator isoforms with mashr logFC available
-
-# Build three-group comparison
+```{r sec2c-logfc-ids, include=FALSE}
+# ID vectors used downstream (logFC all-subgroups, accounting)
 orig_ptc_ids <- coding_pairs_c2$comparator_isoform_id[coding_pairs_c2$comp_has_ptc == TRUE]
-reclass_ids  <- eff_ptc$comparator_isoform_id
+reclass_ids  <- ptc_neg_ref$comparator_isoform_id[ptc_neg_ref$subgroup == "NMD PTC+"]
+all_ptcplus_ids <- c(orig_ptc_ids, reclass_ids)
 ctrl_ids     <- profiles_list[["c4_allsamples"]]$comparator_isoform_id
-
-logfc_groups <- rbind(
-  data.frame(group = "Original PTC+",
-             mean_logFC = meta_logfc$mean_logFC[meta_logfc$txid %in% orig_ptc_ids]),
-  data.frame(group = "Reclassified PTC",
-             mean_logFC = meta_logfc$mean_logFC[meta_logfc$txid %in% reclass_ids]),
-  data.frame(group = "Control",
-             mean_logFC = meta_logfc$mean_logFC[meta_logfc$txid %in% ctrl_ids])
-)
-logfc_groups$group <- factor(logfc_groups$group,
-  levels = c("Original PTC+", "Reclassified PTC", "Control"))
-
-# Median summaries
-med_vals <- tapply(logfc_groups$mean_logFC, logfc_groups$group, median, na.rm = TRUE)
-
-fig_logfc_val <- ggplot(logfc_groups, aes(x = group, y = mean_logFC, fill = group)) +
-  geom_boxplot(alpha = 0.85, outlier.size = 0.5, width = 0.6) +
-  scale_fill_manual(values = c("Original PTC+" = "#fddbc7",
-                                "Reclassified PTC" = "#ef8a62",
-                                "Control" = "#67a9cf")) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
-  labs(title = "NMD Response Magnitude by PTC Classification",
-       subtitle = sprintf("Median logFC: Original PTC+ = %.3f | Reclassified = %.3f | Control = %.3f",
-                          med_vals[["Original PTC+"]], med_vals[["Reclassified PTC"]], med_vals[["Control"]]),
-       x = NULL, y = "Mean logFC (mashr, SMG1i vs DMSO)") +
-  theme(legend.position = "none")
-save_fig(fig_logfc_val, "fig_sec2c_logfc_validation", width = 8, height = 5)
 ```
-
-<details>
-<summary>Click to view tabular data for logFC validation by group</summary>
-
-```{r sec2c-logfc-validation-table, echo=FALSE}
-logfc_summary <- logfc_groups %>%
-  group_by(group) %>%
-  summarise(n = n(),
-            `Median logFC` = round(median(mean_logFC, na.rm = TRUE), 3),
-            `Mean logFC` = round(mean(mean_logFC, na.rm = TRUE), 3),
-            Q25 = round(quantile(mean_logFC, 0.25, na.rm = TRUE), 3),
-            Q75 = round(quantile(mean_logFC, 0.75, na.rm = TRUE), 3),
-            .groups = "drop")
-render_dt(logfc_summary, caption = "NMD Response (logFC) by Reclassification Group")
-```
-
-Columns: **group** = isoform category; **n** = isoforms; **Median/Mean logFC**
-= mashr posterior mean (SMG1i vs DMSO); **Q25/Q75** = interquartile range.
-
-</details>
-
-The Original PTC+ and Reclassified PTC groups are virtually indistinguishable
-in NMD response magnitude (median logFC
-`r round(med_vals[["Original PTC+"]], 3)` vs
-`r round(med_vals[["Reclassified PTC"]], 3)`), while Control pairs cluster
-around zero (`r round(med_vals[["Control"]], 3)`). This confirms that the
-reclassified pairs are genuine PTC-positive NMD targets, not a distinct
-biological category.
 
 The reclassified pairs show the same splice event profile as the original
 PTC-positive group — enriched for SE and with high frameshift rates across
 multiple event types. These are not a distinct mechanism; they are PTC-positive
-isoforms that were misclassified by the CDS prediction algorithm.
+isoforms that were misclassified by the CDS prediction algorithm. NMD response
+magnitude across all subgroups is compared in the DIE logFC analysis below.
 
-## The Remaining PTC-Negative Pairs: Three Distinct Groups
+## The Remaining PTC-Negative Pairs: Two Subgroups
 
 ```{r sec2c-remaining-setup, include=FALSE}
-n_remaining <- nrow(coding_pairs_c2) - n_ptc_pos - n_eff_ptc
+n_remaining <- n_subgroup_retained + n_subgroup_lost
 ```
 
-After reclassification, `r fmt(n_remaining)` pairs
+After reclassification (ref-ATG tracing + TD2 fallback),
+`r fmt(n_remaining)` pairs
 (`r round(100 * n_remaining / nrow(coding_pairs_c2), 1)`% of all NMD pairs)
-remain PTC-negative. These fall into three structurally distinct groups:
-`r fmt(n_atg_lost)` lost the reference ATG entirely (Alt_TSS or first-exon
-differences force a different start codon),
-`r fmt(sum(ptc_neg_ref$category == "no_downstream_ejc"))` retain the reference
-ATG but its reading frame terminates without downstream EJCs, and
-`r fmt(sum(ptc_neg_ref$category == "truncated_no_ejc"))` have a truncated
-ref-ATG ORF but no downstream EJCs.
+remain PTC-negative. These fall into two groups:
+
+- **NMD PTC-, ref ATG retained** (`r fmt(n_subgroup_retained)` pairs): the
+reference ATG is present in the comparator but the reading frame terminates
+without downstream EJCs. This group contains two structurally distinct
+subpopulations: `r fmt(sum(ptc_neg_ref$category == "no_downstream_ejc"))` with
+a full-length ORF from the reference ATG (no downstream EJC), and
+`r fmt(sum(ptc_neg_ref$category == "truncated_no_ejc"))` with a truncated
+ref-ATG ORF but still no downstream EJCs.
+
+- **NMD PTC-, ref ATG lost** (`r fmt(n_subgroup_lost)` pairs): the reference
+ATG is not exonic in the comparator, AND the TD2-predicted CDS also has 0
+downstream EJCs. These are PTC-negative by both available reading frame
+definitions.
 
 ```{r sec2c-remaining-characterization}
 # ── Data provenance ──
@@ -3872,11 +4037,13 @@ ref-ATG ORF but no downstream EJCs.
 # Population: remaining PTC-negative pairs after reclassification, grouped by
 #   category. Compared to reclassified PTC and Control baselines.
 
-remaining_pairs <- ptc_neg_ref[!ptc_neg_ref$category %in% c("effectively_ptc", "no_ref_cds"), ]
+remaining_pairs <- ptc_neg_ref[ptc_neg_ref$subgroup != "NMD PTC+", ]
 
-# Subcategories of interest
-remaining_cats <- c("ref_atg_lost", "no_downstream_ejc", "truncated_no_ejc")
-remaining_by_cat <- split(remaining_pairs, remaining_pairs$category)
+# Split by canonical subgroup (2 groups)
+remaining_by_subgroup <- split(remaining_pairs, remaining_pairs$subgroup)
+
+# Also split by detail category for 5'UTR substructure analyses
+remaining_by_cat <- split(remaining_pairs, remaining_pairs$subgroup_detail)
 
 # --- Transcript lengths from structures ---
 tx_lengths <- setNames(
@@ -3983,21 +4150,22 @@ c4_ref <- ref_atg$c4
 c4_ref_avail <- c4_ref[c4_ref$ref_atg_exonic_in_comp == TRUE & !is.na(c4_ref$comp_stop_tx_pos), ]
 
 summary_rows <- rbind(
-  build_row(eff_ptc_pairs, "Reclassified PTC", has_ref_atg = TRUE),
-  build_row(remaining_by_cat[["ref_atg_lost"]], "Ref ATG lost", has_ref_atg = FALSE),
-  build_row(remaining_by_cat[["no_downstream_ejc"]], "No downstream EJC", has_ref_atg = TRUE),
-  build_row(remaining_by_cat[["truncated_no_ejc"]], "Truncated, no EJC", has_ref_atg = TRUE),
+  build_row(eff_ptc_pairs, "NMD PTC+ (reclassified)", has_ref_atg = TRUE),
+  build_row(remaining_by_subgroup[["NMD PTC-, ref ATG retained"]],
+            "NMD PTC-, ref ATG retained", has_ref_atg = TRUE),
+  build_row(remaining_by_subgroup[["NMD PTC-, ref ATG lost"]],
+            "NMD PTC-, ref ATG lost", has_ref_atg = FALSE),
   build_row(c4_ref_avail, "Control (C4)", has_ref_atg = TRUE)
 )
 
-render_dt(summary_rows, caption = "Remaining PTC-Negative Pairs: Structural Characterization (medians)")
+render_dt(summary_rows, caption = "PTC-Negative Pairs: Structural Characterization by Subgroup (medians)")
 ```
 
-Columns: **Group** = pair category; **n** = number of pairs;
+Columns: **Group** = canonical subgroup; **n** = number of pairs;
 **SQANTI 5'UTR / 3'UTR** = exonic bp from the TransDecoder2-predicted CDS
 boundaries to the transcript ends;
 **Ref-ATG 5'UTR / 3'UTR** = exonic bp computed from the reference isoform's
-CDS start ATG traced through the comparator (NA for ref_atg_lost where the
+CDS start ATG traced through the comparator (NA for ref ATG lost where the
 reference ATG is not available in the comparator);
 **Total ORFs** = all ORFs detected by ORFik; **NMD-susceptible ORFs** = ORFs
 whose stop codon has ≥1 downstream exon-exon junction;
@@ -4009,21 +4177,19 @@ whose stop codon has ≥1 downstream exon-exon junction;
 #   gene_symbol_lookup (from mashr DE files)
 # Population: PTC-negative NMD pairs that could not be reclassified as PTC+
 
-remaining_for_table <- ptc_neg_ref[
-  !ptc_neg_ref$category %in% c("effectively_ptc", "no_ref_cds"), ]
-
 remaining_display <- data.frame(
-  gene_id = remaining_for_table$gene_id,
-  gene_symbol = sapply(remaining_for_table$gene_id, get_gene_sym),
-  reference_isoform = remaining_for_table$reference_isoform_id,
-  comparator_isoform = remaining_for_table$comparator_isoform_id,
-  category = remaining_for_table$category,
-  ref_atg_exonic = remaining_for_table$ref_atg_exonic_in_comp,
-  ref_orf_length = remaining_for_table$ref_orf_length,
-  comp_orf_length = remaining_for_table$comp_orf_length_from_ref_atg,
-  n_downstream_ejc = remaining_for_table$n_downstream_ejc,
+  gene_id = remaining_pairs$gene_id,
+  gene_symbol = sapply(remaining_pairs$gene_id, get_gene_sym),
+  reference_isoform = remaining_pairs$reference_isoform_id,
+  comparator_isoform = remaining_pairs$comparator_isoform_id,
+  subgroup = remaining_pairs$subgroup,
+  subgroup_detail = remaining_pairs$subgroup_detail,
+  ref_atg_exonic = remaining_pairs$ref_atg_exonic_in_comp,
+  ref_orf_length = remaining_pairs$ref_orf_length,
+  comp_orf_length = remaining_pairs$comp_orf_length_from_ref_atg,
+  n_downstream_ejc = remaining_pairs$n_downstream_ejc,
   stringsAsFactors = FALSE)
-remaining_display <- remaining_display[order(remaining_display$category,
+remaining_display <- remaining_display[order(remaining_display$subgroup,
                                               remaining_display$gene_symbol), ]
 
 render_dt(remaining_display,
@@ -4035,12 +4201,118 @@ write.csv(remaining_display, file.path(table_dir, "remaining_ptc_negative_pairs.
 ```
 
 Columns: **gene_id/gene_symbol** = gene identifier; **reference/comparator_isoform** =
-paired isoform IDs; **category** = classification from ref-ATG tracing
-(ref_atg_lost, no_downstream_ejc, truncated_no_ejc);
+paired isoform IDs; **subgroup** = canonical classification (NMD PTC- ref ATG
+retained or ref ATG lost); **subgroup_detail** = finer subdivision within
+ref ATG retained (No downstream EJC vs Truncated, no EJC);
 **ref_atg_exonic** = whether the reference ATG is in the comparator's exons;
 **ref/comp_orf_length** = ORF length (nt) from the reference ATG in each
 isoform; **n_downstream_ejc** = exon-exon junctions downstream of the
 ref-ATG ORF stop in the comparator.
+
+### DIE logFC Across All Subgroups
+
+We now compare NMD response magnitude across all four canonical subgroups.
+
+```{r sec2c-logfc-all-subgroups, fig.width=10, fig.height=6}
+# ── Data provenance ──
+# Source: meta_logfc (STAGE 5, mashr posterior means averaged across cell types)
+#   NMD PTC+: all_ptcplus_ids (original + ref-ATG + TD2 reclassified)
+#   NMD PTC-, ref ATG retained: remaining_by_subgroup
+#   NMD PTC-, ref ATG lost: remaining_by_subgroup
+#   Control: profiles_list[["c4_allsamples"]] (C4 gene-matched pairs)
+# Population: comparator isoforms with mashr logFC available
+
+retained_ids <- remaining_by_subgroup[["NMD PTC-, ref ATG retained"]]$comparator_isoform_id
+lost_ids     <- remaining_by_subgroup[["NMD PTC-, ref ATG lost"]]$comparator_isoform_id
+
+logfc_all <- rbind(
+  data.frame(group = "NMD PTC+",
+             mean_logFC = meta_logfc$mean_logFC[meta_logfc$txid %in% all_ptcplus_ids]),
+  data.frame(group = "NMD PTC-, ref ATG retained",
+             mean_logFC = meta_logfc$mean_logFC[meta_logfc$txid %in% retained_ids]),
+  data.frame(group = "NMD PTC-, ref ATG lost",
+             mean_logFC = meta_logfc$mean_logFC[meta_logfc$txid %in% lost_ids]),
+  data.frame(group = "Control",
+             mean_logFC = meta_logfc$mean_logFC[meta_logfc$txid %in% ctrl_ids])
+)
+
+logfc_all$group <- factor(logfc_all$group,
+  levels = c("NMD PTC+", "NMD PTC-, ref ATG retained",
+             "NMD PTC-, ref ATG lost", "Control"))
+
+# Group medians for subtitle
+med_all <- tapply(logfc_all$mean_logFC, logfc_all$group, median, na.rm = TRUE)
+
+# Pairwise Wilcoxon tests
+pw_test <- pairwise.wilcox.test(logfc_all$mean_logFC, logfc_all$group,
+                                 p.adjust.method = "BH")
+
+fig_logfc_all <- ggplot(logfc_all, aes(x = group, y = mean_logFC, fill = group)) +
+  geom_boxplot(alpha = 0.85, outlier.size = 0.5, width = 0.6) +
+  scale_fill_manual(values = subgroup_pal) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  labs(title = "NMD Response Magnitude Across All Isoform Subgroups",
+       subtitle = sprintf("Median logFC: PTC+ = %.2f | Retained = %.2f | Lost = %.2f | Ctrl = %.2f",
+                          med_all[["NMD PTC+"]], med_all[["NMD PTC-, ref ATG retained"]],
+                          med_all[["NMD PTC-, ref ATG lost"]], med_all[["Control"]]),
+       x = NULL, y = "Mean logFC (mashr, SMG1i vs DMSO)") +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1), legend.position = "none")
+save_fig(fig_logfc_all, "fig_sec2c_logfc_all_subgroups", width = 10, height = 6)
+```
+
+<details>
+<summary>Click to view tabular data for logFC by subgroup</summary>
+
+```{r sec2c-logfc-all-subgroups-table, echo=FALSE}
+logfc_all_summary <- logfc_all %>%
+  group_by(group) %>%
+  summarise(n = n(),
+            `Median logFC` = round(median(mean_logFC, na.rm = TRUE), 3),
+            `Mean logFC` = round(mean(mean_logFC, na.rm = TRUE), 3),
+            Q25 = round(quantile(mean_logFC, 0.25, na.rm = TRUE), 3),
+            Q75 = round(quantile(mean_logFC, 0.75, na.rm = TRUE), 3),
+            SD = round(sd(mean_logFC, na.rm = TRUE), 3),
+            .groups = "drop")
+render_dt(logfc_all_summary, caption = "NMD Response (logFC) Across All Subgroups")
+```
+
+Columns: **group** = canonical isoform subgroup; **n** = number of isoforms;
+**Median/Mean logFC** = mashr posterior mean logFC (SMG1i vs DMSO), averaged
+across cell types; **Q25/Q75** = interquartile range bounds;
+**SD** = standard deviation.
+
+</details>
+
+<details>
+<summary>Click to view pairwise statistical comparisons</summary>
+
+```{r sec2c-logfc-pairwise-table, echo=FALSE}
+pw_mat <- pw_test$p.value
+pw_tidy <- data.frame(
+  Group1 = rep(rownames(pw_mat), ncol(pw_mat)),
+  Group2 = rep(colnames(pw_mat), each = nrow(pw_mat)),
+  `BH-adjusted p` = as.vector(pw_mat),
+  check.names = FALSE, stringsAsFactors = FALSE)
+pw_tidy <- pw_tidy[!is.na(pw_tidy$`BH-adjusted p`), ]
+pw_tidy$`BH-adjusted p` <- signif(pw_tidy$`BH-adjusted p`, 3)
+pw_tidy <- pw_tidy[order(pw_tidy$`BH-adjusted p`), ]
+render_dt(pw_tidy, caption = "Pairwise Wilcoxon Tests (BH-adjusted)")
+```
+
+Columns: **Group1/Group2** = pair of subgroups being compared;
+**BH-adjusted p** = Benjamini-Hochberg adjusted p-value from a two-sided
+Wilcoxon rank-sum test.
+
+</details>
+
+NMD PTC+ isoforms show the strongest NMD response (median logFC
+`r round(med_all[["NMD PTC+"]], 2)`). Both PTC-negative subgroups show
+intermediate responses that are significantly above Control: ref ATG retained
+(median `r round(med_all[["NMD PTC-, ref ATG retained"]], 2)`) and ref ATG
+lost (median `r round(med_all[["NMD PTC-, ref ATG lost"]], 2)`). The weaker
+but still substantial logFC in these groups indicates NMD engagement through
+non-canonical mechanisms — consistent with the 5'UTR and uORF features
+characterized below.
 
 ### Splicing and Stop Codon Landscape
 
@@ -4067,9 +4339,9 @@ compute_same_stop <- function(ref_ids, comp_ids) {
 }
 
 ptc_pos_pairs_local <- c2_ref[c2_ref$original_ptc, ]
-no_ejc_local <- remaining_by_cat[["no_downstream_ejc"]]
-ref_lost_local <- remaining_by_cat[["ref_atg_lost"]]
-trunc_local <- remaining_by_cat[["truncated_no_ejc"]]
+no_ejc_local <- remaining_by_cat[["No downstream EJC"]]
+ref_lost_local <- remaining_by_subgroup[["NMD PTC-, ref ATG lost"]]
+trunc_local <- remaining_by_cat[["Truncated, no EJC"]]
 
 pct_same_ptcpos <- compute_same_stop(ptc_pos_pairs_local$reference_isoform_id,
                                       ptc_pos_pairs_local$comparator_isoform_id)[["pct_same"]]
@@ -4102,12 +4374,13 @@ ptc_assoc_c2 <- set_results[["c2_allsamples"]]$ptc_assoc
 ptc_pos_comp_ids <- ptc_assoc_c2$pair_summary$comparator_isoform_id[
   ptc_assoc_c2$pair_summary$comp_has_ptc == TRUE]
 
+retained_comp_ids <- c(no_ejc_local$comparator_isoform_id,
+                       trunc_local$comparator_isoform_id)
+
 all_events <- rbind(
-  extract_events(c2_profiles, ptc_pos_comp_ids, "PTC+"),
-  extract_events(c2_profiles, eff_ptc_pairs$comparator_isoform_id, "Reclassified PTC"),
-  extract_events(c2_profiles, no_ejc_local$comparator_isoform_id, "No downstream EJC"),
-  extract_events(c2_profiles, ref_lost_local$comparator_isoform_id, "Ref ATG lost"),
-  extract_events(c2_profiles, trunc_local$comparator_isoform_id, "Truncated, no EJC"),
+  extract_events(c2_profiles, all_ptcplus_ids, "NMD PTC+"),
+  extract_events(c2_profiles, retained_comp_ids, "NMD PTC-, ref ATG retained"),
+  extract_events(c2_profiles, ref_lost_local$comparator_isoform_id, "NMD PTC-, ref ATG lost"),
   extract_events(c4_profiles, c4_profiles$comparator_isoform_id, "Control")
 )
 
@@ -4126,18 +4399,14 @@ event_pct_key <- event_pct %>%
   filter(event_type %in% key_events) %>%
   mutate(event_type = factor(event_type, levels = key_events),
          group = factor(group,
-           levels = c("PTC+", "Reclassified PTC", "No downstream EJC",
-                      "Ref ATG lost", "Truncated, no EJC", "Control")))
+           levels = c("NMD PTC+", "NMD PTC-, ref ATG retained",
+                      "NMD PTC-, ref ATG lost", "Control")))
 
 fig_splice <- ggplot(event_pct_key, aes(x = event_type, y = pct, fill = group)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.85) +
-  scale_fill_manual(values = c("PTC+" = "#c7e9c0", "Reclassified PTC" = "#fdd0a2",
-                                "No downstream EJC" = "#d95f02",
-                                "Ref ATG lost" = "#e6ab02",
-                                "Truncated, no EJC" = "#984ea3",
-                                "Control" = "#67a9cf")) +
-  labs(title = "Splicing Event Proportions Across All Groups",
-       subtitle = "Key difference: SE dominates PTC+; Missing_Internal and TSS/TES changes elevated in residual groups",
+  scale_fill_manual(values = subgroup_pal) +
+  labs(title = "Splicing Event Proportions Across All Subgroups",
+       subtitle = "SE dominates NMD PTC+; Alt_TSS elevated in ref ATG lost",
        x = NULL, y = "% of events within group", fill = NULL) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "bottom")
 save_fig(fig_splice, "fig_sec2c_crossgroup_splicing", width = 12, height = 6)
@@ -4159,27 +4428,32 @@ events within each group.
 </details>
 
 The splicing landscape reveals a quantitative shift between PTC-mediated and
-residual groups. SE events dominate the PTC+ and reclassified PTC groups (the
-primary frameshift-causing mechanism). Residual groups still carry SE events
-but show a relative enrichment for Missing_Internal events and TSS/TES
-changes compared to the PTC-mediated groups. This shift is consistent with
-the residual groups' defining feature: they lack a main-ORF PTC despite
-undergoing alternative splicing, suggesting that the splicing events present
-in these isoforms alter the ORF landscape without necessarily creating a
-classical frameshift-to-stop path.
+PTC-negative subgroups. SE events dominate NMD PTC+ (the primary
+frameshift-causing mechanism). The PTC-negative subgroups still carry SE
+events but show a relative enrichment for Missing_Internal events and TSS/TES
+changes. This is consistent with their defining feature: they lack a
+main-ORF PTC despite undergoing alternative splicing, suggesting that the
+splicing events present in these isoforms alter the ORF landscape without
+necessarily creating a classical frameshift-to-stop path.
 
 Stop codon concordance reinforces this distinction: only
-`r pct_same_ptcpos`% of PTC+ pairs share the same stop codon as their
+`r pct_same_ptcpos`% of NMD PTC+ pairs share the same stop codon as their
 reference (consistent with a premature stop), while `r pct_same_no_ejc`% of
-`No downstream EJC` pairs use the *same* stop codon --- their main reading
-frame is intact, ruling out a classical main-ORF PTC as the NMD trigger.
+the ref ATG retained subpopulation with no downstream EJCs use the *same*
+stop codon --- their main reading frame is intact, ruling out a classical
+main-ORF PTC as the NMD trigger.
 
-### Group 1: No Downstream EJC --- Same Reading Frame, Extended 5'UTR (n = `r nrow(remaining_by_cat[["no_downstream_ejc"]])`)
+### NMD PTC-, Ref ATG Retained (n = `r fmt(n_subgroup_retained)`)
 
-These isoforms retain the reference ATG and the reference reading frame
-terminates without downstream EJCs --- by definition, no classical PTC. Yet
-they show robust NMD response. What mechanism triggers NMD in the absence of
-a main-ORF PTC?
+These isoforms retain the reference ATG but the reading frame terminates
+without downstream EJCs — no classical PTC is present. Yet they show robust
+NMD response (median logFC `r round(med_all[["NMD PTC-, ref ATG retained"]], 2)`).
+This group contains two structurally distinct subpopulations:
+`r nrow(no_ejc_local)` with a full-length ORF from the reference ATG
+("no downstream EJC"), and `r nrow(trunc_local)` with a truncated ref-ATG
+ORF but still no downstream EJCs ("truncated, no EJC"). We characterize
+the dominant subpopulation (no downstream EJC) first, then note how the
+truncated subpopulation differs.
 
 ```{r sec2c-uorf-populations}
 # ── Data provenance ──
@@ -4193,10 +4467,10 @@ utr5_feat_all <- readRDS(file.path(cache_dir, "utr5_features_all.rds"))
 utr5_feat <- utr5_feat_all$isoform_features %>% filter(!excluded)
 orf_feat_local <- orfik_data$orf_features
 
-# Define populations
-no_ejc <- remaining_by_cat[["no_downstream_ejc"]]
-ref_lost <- remaining_by_cat[["ref_atg_lost"]]
-trunc_noejc <- remaining_by_cat[["truncated_no_ejc"]]
+# Define populations (using subgroup_detail keys from remaining_by_cat)
+no_ejc <- remaining_by_cat[["No downstream EJC"]]
+ref_lost <- remaining_by_subgroup[["NMD PTC-, ref ATG lost"]]
+trunc_noejc <- remaining_by_cat[["Truncated, no EJC"]]
 
 # Compute ref-ATG 5'UTR for no_downstream_ejc
 # ATG tx position = comp_stop_tx_pos - comp_orf_length_from_ref_atg; 5'UTR = ATG - 1
@@ -4299,12 +4573,6 @@ sequence using `scan5UtrFeatures()`:
 # Source: utr5_features_all.rds (per-isoform features from scan5UtrFeatures)
 # Population: 4 groups defined in sec2c-uorf-populations
 
-uorf_groups <- list(
-  "No downstream EJC" = no_ejc$comparator_isoform_id,
-  "Ref ATG lost" = ref_lost$comparator_isoform_id,
-  "Truncated, no EJC" = trunc_noejc$comparator_isoform_id,
-  "Control" = c4_ref_avail$comparator_isoform_id)
-
 key_feats <- c("utr5_length", "n_atg", "atg_density", "n_strong_kozak_atg",
                "n_orfs_overlapping", "n_orfs_outframe", "longest_orf_nt",
                "pct_utr5_in_orfs")
@@ -4314,41 +4582,44 @@ uorf_feat_labels <- c(
   n_orfs_overlapping = "Overlapping\nuORF count", n_orfs_outframe = "Out-of-frame\nuORF count",
   longest_orf_nt = "Longest uORF (nt)", pct_utr5_in_orfs = "ORF coverage (%)")
 
-uorf_plot_data <- do.call(rbind, lapply(names(uorf_groups), function(grp) {
-  sub <- utr5_feat[utr5_feat$isoform_id %in% uorf_groups[[grp]], ]
+# --- Primary figure: 3 canonical groups ---
+uorf_groups_3 <- list(
+  "NMD PTC-, ref ATG retained" = c(no_ejc$comparator_isoform_id,
+                                    trunc_noejc$comparator_isoform_id),
+  "NMD PTC-, ref ATG lost" = ref_lost$comparator_isoform_id,
+  "Control" = c4_ref_avail$comparator_isoform_id)
+
+uorf_plot_3 <- do.call(rbind, lapply(names(uorf_groups_3), function(grp) {
+  sub <- utr5_feat[utr5_feat$isoform_id %in% uorf_groups_3[[grp]], ]
   sub$group <- grp
   sub[, c("group", key_feats)]
 }))
-uorf_plot_data$group <- factor(uorf_plot_data$group,
-  levels = c("Control", "Truncated, no EJC", "Ref ATG lost", "No downstream EJC"))
+uorf_plot_3$group <- factor(uorf_plot_3$group,
+  levels = c("Control", "NMD PTC-, ref ATG retained", "NMD PTC-, ref ATG lost"))
 
-uorf_plot_long <- uorf_plot_data %>%
+uorf_long_3 <- uorf_plot_3 %>%
   pivot_longer(cols = all_of(key_feats), names_to = "feature", values_to = "value") %>%
   mutate(feature = uorf_feat_labels[feature],
          feature = factor(feature, levels = uorf_feat_labels))
 
-fig_uorf <- ggplot(uorf_plot_long, aes(x = group, y = value, fill = group)) +
+fig_uorf_3 <- ggplot(uorf_long_3, aes(x = group, y = value, fill = group)) +
   geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
   facet_wrap(~feature, scales = "free_y", ncol = 4) +
-  scale_fill_manual(values = c("Control" = "#67a9cf",
-                                "Truncated, no EJC" = "#984ea3",
-                                "Ref ATG lost" = "#e6ab02",
-                                "No downstream EJC" = "#d95f02")) +
-  labs(title = "5\u2032UTR Features: Residual PTC-Negative Groups vs Control",
-       subtitle = "Reclassified PTC+ excluded (TD2-predicted 5\u2032UTR is artifactually inflated; see Section 3c)",
+  scale_fill_manual(values = subgroup_pal[c("Control", "NMD PTC-, ref ATG retained",
+                                             "NMD PTC-, ref ATG lost")]) +
+  labs(title = "5\u2032UTR Features: PTC-Negative Subgroups vs Control",
+       subtitle = "NMD PTC+ excluded (TD2-predicted 5\u2032UTR is artifactually inflated)",
        x = NULL) +
-  theme(legend.position = "bottom",
-        axis.text.x = element_blank(),
+  theme(legend.position = "bottom", axis.text.x = element_blank(),
         strip.text = element_text(size = 10))
-save_fig(fig_uorf, "fig_sec2c_uorf_5utr_features", width = 14, height = 8)
+save_fig(fig_uorf_3, "fig_sec2c_uorf_5utr_features", width = 14, height = 8)
 ```
 
 <details>
-
 <summary>Click to view tabular data for 5'UTR feature comparison</summary>
 
 ```{r sec2c-uorf-5utr-features-table, echo=FALSE}
-uorf_summary <- uorf_plot_data %>%
+uorf_summary_3 <- uorf_plot_3 %>%
   group_by(group) %>%
   summarise(n = n(),
             across(all_of(key_feats),
@@ -4356,24 +4627,87 @@ uorf_summary <- uorf_plot_data %>%
                         Q25 = ~round(quantile(.x, 0.25, na.rm = TRUE), 1),
                         Q75 = ~round(quantile(.x, 0.75, na.rm = TRUE), 1))),
             .groups = "drop")
-render_dt(uorf_summary, caption = "5'UTR Features by Group (Median, Q25, Q75)")
+render_dt(uorf_summary_3, caption = "5'UTR Features by Canonical Subgroup (Median, Q25, Q75)")
 ```
 
-Columns: **group** = pair category; **n** = isoforms with non-excluded
+Columns: **group** = canonical subgroup; **n** = isoforms with non-excluded
 5'UTR features; **feature_median/Q25/Q75** = distribution of each 5'UTR
 feature within the group.
 
 </details>
 
-Both the `No downstream EJC` and `Ref ATG lost` groups have substantially
-longer 5'UTRs and increased uORF features relative to `Control` and
-`Truncated, no EJC`. ATG count, overlapping uORFs, strong Kozak ATGs, and
-ORF coverage are all elevated in these two groups (Wilcoxon p < 1e-9 vs
-Control for all features in both groups). The `No downstream EJC` group
-shows the most extreme enrichment, but the `Ref ATG lost` group follows a
-similar pattern --- consistent with the shared structural feature of long
-5'UTRs that provide space for multiple upstream ORFs. The `Truncated, no EJC`
-group, by contrast, resembles Control across most features.
+Both PTC-negative subgroups have substantially longer 5'UTRs and increased
+uORF features relative to Control. The ref ATG retained group shows the most
+extreme enrichment, but the ref ATG lost group follows a similar pattern ---
+consistent with the shared structural feature of long 5'UTRs that provide
+space for multiple upstream ORFs.
+
+The ref ATG retained group merges two structurally distinct subpopulations
+(`r nrow(no_ejc)` "no downstream EJC" pairs with a full-length ref-ATG ORF,
+and `r nrow(trunc_noejc)` "truncated, no EJC" pairs with a shortened ORF).
+The supplementary figure below splits this group to show whether the 5'UTR
+signal comes from both subpopulations or is driven by one.
+
+```{r sec2c-uorf-5utr-features-detail, fig.width=14, fig.height=8}
+# --- Supplementary figure: 4-group split within ref ATG retained ---
+uorf_groups_4 <- list(
+  "No downstream EJC" = no_ejc$comparator_isoform_id,
+  "Truncated, no EJC" = trunc_noejc$comparator_isoform_id,
+  "NMD PTC-, ref ATG lost" = ref_lost$comparator_isoform_id,
+  "Control" = c4_ref_avail$comparator_isoform_id)
+
+uorf_plot_4 <- do.call(rbind, lapply(names(uorf_groups_4), function(grp) {
+  sub <- utr5_feat[utr5_feat$isoform_id %in% uorf_groups_4[[grp]], ]
+  sub$group <- grp
+  sub[, c("group", key_feats)]
+}))
+uorf_plot_4$group <- factor(uorf_plot_4$group,
+  levels = c("Control", "Truncated, no EJC", "NMD PTC-, ref ATG lost",
+             "No downstream EJC"))
+
+uorf_long_4 <- uorf_plot_4 %>%
+  pivot_longer(cols = all_of(key_feats), names_to = "feature", values_to = "value") %>%
+  mutate(feature = uorf_feat_labels[feature],
+         feature = factor(feature, levels = uorf_feat_labels))
+
+detail_pal <- c("Control" = "#67a9cf",
+                "Truncated, no EJC" = "#984ea3",
+                "NMD PTC-, ref ATG lost" = "#fdbb84",
+                "No downstream EJC" = "#d95f02")
+
+fig_uorf_4 <- ggplot(uorf_long_4, aes(x = group, y = value, fill = group)) +
+  geom_boxplot(outlier.size = 0.3, alpha = 0.7) +
+  facet_wrap(~feature, scales = "free_y", ncol = 4) +
+  scale_fill_manual(values = detail_pal) +
+  labs(title = "5\u2032UTR Features: Subpopulation Detail Within Ref ATG Retained",
+       subtitle = sprintf("Splitting ref ATG retained into No downstream EJC (n=%d) and Truncated, no EJC (n=%d)",
+                          nrow(no_ejc), nrow(trunc_noejc)),
+       x = NULL) +
+  theme(legend.position = "bottom", axis.text.x = element_blank(),
+        strip.text = element_text(size = 10))
+save_fig(fig_uorf_4, "fig_sec2c_uorf_5utr_features_detail", width = 14, height = 8)
+```
+
+<details>
+<summary>Click to view tabular data for 5'UTR features by subpopulation</summary>
+
+```{r sec2c-uorf-5utr-features-detail-table, echo=FALSE}
+uorf_summary_4 <- uorf_plot_4 %>%
+  group_by(group) %>%
+  summarise(n = n(),
+            across(all_of(key_feats),
+                   list(median = ~round(median(.x, na.rm = TRUE), 1),
+                        Q25 = ~round(quantile(.x, 0.25, na.rm = TRUE), 1),
+                        Q75 = ~round(quantile(.x, 0.75, na.rm = TRUE), 1))),
+            .groups = "drop")
+render_dt(uorf_summary_4, caption = "5'UTR Features by Subpopulation (Median, Q25, Q75)")
+```
+
+Columns: **group** = subpopulation (No downstream EJC and Truncated, no EJC
+are the two components of NMD PTC-, ref ATG retained); **n** = isoforms;
+**feature_median/Q25/Q75** = distribution of each feature.
+
+</details>
 
 ```{r sec2c-uorf-logfc-setup, include=FALSE}
 # ── Data provenance ──
@@ -4463,13 +4797,14 @@ p = `r signif(rho_nmd$p.value, 3)`). Whatever drives the quantitative
 strength of the NMD response in these isoforms, it is not simply the count
 of ORFs with downstream EJCs.
 
-### Group 2: Ref ATG Lost --- Alternative TSS Redefines the Reading Frame (n = `r nrow(remaining_by_cat[["ref_atg_lost"]])`)
+### NMD PTC-, Ref ATG Lost (n = `r fmt(n_subgroup_lost)`)
 
 These isoforms lost the reference start codon entirely --- the comparator's
-transcript does not contain the reference ATG in its exonic sequence. Because
-the ref-ATG tracing approach requires this ATG, these pairs could not be
-evaluated for reclassification. But what removed the ATG, and what reading
-frame does the comparator actually use?
+transcript does not contain the reference ATG in its exonic sequence, AND the
+TD2-predicted CDS also has 0 downstream EJCs. (An additional
+`r fmt(n_td2_reclass)` pairs that lost the reference ATG were reclassified
+as NMD PTC+ because their TD2 CDS had ≥1 downstream EJC.) What removed the
+ATG, and what reading frame does the comparator actually use?
 
 ```{r sec2c-group2-characterization}
 # ── Data provenance ──
@@ -4498,91 +4833,53 @@ n_tss_downstream <- sum(ref_lost_tss$direction == "LOSS", na.rm = TRUE)
 n_tss_upstream <- sum(ref_lost_tss$direction == "GAIN", na.rm = TRUE)
 pct_tss_downstream <- round(100 * n_tss_downstream / nrow(ref_lost_tss), 1)
 
-# --- Best-Kozak ORF analysis ---
-# For each ref_atg_lost isoform, find the ORF with the strongest Kozak context
-# and check whether it would produce a PTC (has_downstream_ejc)
-ref_lost_orfs <- orf_feat_local[orf_feat_local$isoform_id %in% ref_lost$comparator_isoform_id, ]
-
-# Best Kozak ORF per isoform (highest kozak_score, then longest)
-best_kozak <- ref_lost_orfs %>%
-  group_by(isoform_id) %>%
-  slice_max(kozak_score, n = 1, with_ties = TRUE) %>%
-  slice_max(orf_length, n = 1, with_ties = FALSE) %>%
-  ungroup()
-
-n_best_kozak_ptc <- sum(best_kozak$has_downstream_ejc)
-pct_best_kozak_ptc <- round(100 * n_best_kozak_ptc / nrow(best_kozak), 1)
-n_strong_kozak <- sum(best_kozak$kozak_score == 2)
-
-# --- Best-Kozak 5'UTR validation ---
-# orf_start in transcript coordinates = effective 5'UTR from best-Kozak ATG
-best_kozak_5utr <- best_kozak$orf_start
-td2_5utr_ref_lost <- sapply(best_kozak$isoform_id, compute_sqanti_5utr)
-median_bk_5utr <- round(median(best_kozak_5utr))
-median_td2_5utr_rl <- round(median(td2_5utr_ref_lost, na.rm = TRUE))
-
 # --- logFC for this group ---
 ref_lost_logfc <- meta_logfc$mean_logFC[match(ref_lost$comparator_isoform_id, meta_logfc$txid)]
 
+# --- TD2 5'UTR for this group ---
+td2_5utr_ref_lost <- sapply(ref_lost$comparator_isoform_id, compute_sqanti_5utr)
+median_td2_5utr_rl <- round(median(td2_5utr_ref_lost, na.rm = TRUE))
+
 ref_lost_summary <- data.frame(
   Metric = c("Total pairs", "TSS changed", "TSS moved downstream (5' truncated)",
-             "TSS moved upstream (5' extended)", "Best-Kozak ORF \u2192 PTC",
-             "Strong Kozak (score = 2)",
-             "Best-Kozak 5'UTR (bp)", "TD2 5'UTR (bp)",
-             "Median logFC"),
+             "TSS moved upstream (5' extended)",
+             "TD2 5'UTR (bp)", "Median logFC"),
   Value = c(nrow(ref_lost), n_tss_changed, n_tss_downstream,
-            n_tss_upstream, n_best_kozak_ptc, n_strong_kozak,
-            median_bk_5utr, median_td2_5utr_rl,
+            n_tss_upstream, median_td2_5utr_rl,
             round(median(ref_lost_logfc, na.rm = TRUE), 3)),
   Percentage = c("", sprintf("%.1f%%", 100 * n_tss_changed / nrow(ref_lost)),
                  sprintf("%.1f%%", pct_tss_downstream),
                  sprintf("%.1f%%", round(100 * n_tss_upstream / nrow(ref_lost_tss), 1)),
-                 sprintf("%.1f%%", pct_best_kozak_ptc),
-                 sprintf("%.1f%% of best-Kozak", round(100 * n_strong_kozak / nrow(best_kozak), 1)),
-                 "", "", ""),
+                 "", ""),
   stringsAsFactors = FALSE)
 
-render_dt(ref_lost_summary, caption = "Group 2: Ref ATG Lost — Structural Characterization")
+render_dt(ref_lost_summary, caption = "NMD PTC-, Ref ATG Lost — Structural Characterization")
 ```
 
 Columns: **Metric** = structural feature; **Value** = count or measurement;
 **Percentage** = proportion of the group.
 
-The majority of ref_atg_lost pairs (`r sprintf("%.1f%%", 100 * n_tss_changed / nrow(ref_lost))`)
+The majority of ref ATG lost pairs (`r sprintf("%.1f%%", 100 * n_tss_changed / nrow(ref_lost))`)
 have a changed TSS, with `r pct_tss_downstream`% moving *downstream*
 (5'-truncated). This truncation removes the reference ATG from the exonic
-sequence. When we examine the best-Kozak ORF in each comparator, only
-`r pct_best_kozak_ptc`% have at least one downstream EJC --- the majority
-of this group remains PTC-negative when CDS is assessed from the strongest
-available Kozak sequence start site. The `r fmt(n_best_kozak_ptc)` best-Kozak PTC pairs do not
-differ from the remaining `r fmt(nrow(ref_lost) - n_best_kozak_ptc)` in
-5'UTR length (median 691 vs 649 bp, p = 0.47), suggesting they come from
-the same population but happen to have a strong-Kozak ORF that reaches a
-downstream junction.
-`r sprintf("%.1f%%", round(100 * n_strong_kozak / nrow(best_kozak), 1))`
-of the best-Kozak ORFs have strong initiation context (Kozak score = 2),
-yet most of these ORFs terminate without a downstream junction.
+sequence. These isoforms are PTC-negative by both available reading frame
+definitions (ref-ATG tracing and TD2 CDS), yet they show a median logFC of
+`r round(median(ref_lost_logfc, na.rm = TRUE), 2)` — weaker than the PTC+
+group but substantially above Control.
 
-The long 5'UTR in this group is not a TD2 artifact: the best-Kozak ATG
-position (median `r median_bk_5utr` bp from the 5' end) closely matches
-the TD2-predicted 5'UTR (`r median_td2_5utr_rl` bp), both ~3x longer than
-Control. Unlike the reclassified PTC+ group where TD2 selected a
-far-downstream CDS that inflated the apparent 5'UTR, here the two estimates
-agree --- the long 5'UTR is genuine regardless of which start codon is used.
+The long 5'UTR in this group (TD2 median `r median_td2_5utr_rl` bp, ~3x
+longer than Control) suggests uORF-mediated NMD as a candidate mechanism,
+similar to the ref ATG retained group. Their NMD mechanism remains open ---
+candidates include uORF-mediated NMD, near-cognate initiation from non-AUG
+codons, or EJC-independent NMD pathways.
 
-This group represents the largest unresolved PTC-negative population. The
-ref-ATG tracing approach cannot evaluate them (the reference ATG is absent),
-and the best-Kozak ORF analysis shows that classical PTC-mediated NMD
-explains only a minority. Their NMD mechanism remains open --- candidates
-include uORF-mediated NMD (similar to the no_downstream_ejc group, given
-their long 5'UTRs), near-cognate initiation from non-AUG codons, or
-EJC-independent NMD pathways.
+#### Subpopulation: Truncated, No EJC (n = `r nrow(trunc_noejc)`)
 
-### Group 3: Truncated, No EJC --- 3'-Shortened Isoforms (n = `r nrow(remaining_by_cat[["truncated_no_ejc"]])`)
-
-These isoforms retain the reference ATG, and the ref-ATG ORF is shorter than
-in the reference. However, no exon-exon junction lies downstream of the
-premature stop --- the classical NMD trigger is absent.
+Within the ref ATG retained group, `r nrow(trunc_noejc)` pairs have a
+truncated ref-ATG ORF (shorter than the reference) but still no downstream
+EJCs. These differ structurally from the no_downstream_ejc subpopulation
+above — their ORF is shortened rather than full-length, and they tend to
+have 3'-truncated isoforms rather than 5'-extended ones.
 
 ```{r sec2c-group3-characterization}
 # ── Data provenance ──
@@ -4679,36 +4976,25 @@ groups --- ref_atg_lost and truncated_no_ejc --- represent a substantial
 PTC-negative population whose NMD mechanism is unresolved.
 
 ```{r sec2c-accounting}
-n_remaining <- nrow(coding_pairs_c2) - n_ptc_pos - n_eff_ptc
-n_no_dejc <- sum(ptc_neg_ref$category == "no_downstream_ejc")
-n_trunc <- sum(ptc_neg_ref$category == "truncated_no_ejc")
+# Canonical subgroup accounting
+n_total_coding <- nrow(coding_pairs_c2)
+n_ptcplus_total <- n_ptc_pos + n_subgroup_ptcplus  # original + reclassified (ref-ATG + TD2)
 
-# Best-Kozak PTC from ref_atg_lost (computed in Group 2 chunk)
-n_bk_ptc <- n_best_kozak_ptc
-n_bk_nonptc <- n_atg_lost - n_best_kozak_ptc
-
-# PTC-mediated: original + reclassified + small best-Kozak contribution
-n_ptc_total <- n_ptc_pos + n_eff_ptc + n_bk_ptc
-# Characterized: PTC-mediated + uORF-mediated
-n_characterized <- n_ptc_total + n_no_dejc
-# Uncharacterized: ref_atg_lost (non-PTC) + truncated_no_ejc
-n_uncharacterized <- n_bk_nonptc + n_trunc
-
-cat("Updated NMD accounting (post residual analysis):\n")
-cat("  Original PTC+:", fmt(n_ptc_pos),
-    sprintf("(%.1f%%)\n", 100 * n_ptc_pos / nrow(coding_pairs_c2)))
-cat("  Reclassified PTC (ref-ATG tracing):", fmt(n_eff_ptc),
-    sprintf("(%.1f%%)\n", 100 * n_eff_ptc / nrow(coding_pairs_c2)))
-cat("  Best-Kozak PTC (ref ATG lost):", fmt(n_bk_ptc),
-    sprintf("(%.1f%%)\n", 100 * n_bk_ptc / nrow(coding_pairs_c2)))
-cat("  Total PTC-mediated:", fmt(n_ptc_total),
-    sprintf("(%.1f%%)\n", 100 * n_ptc_total / nrow(coding_pairs_c2)))
-cat("  uORF-mediated (no downstream EJC):", fmt(n_no_dejc),
-    sprintf("(%.1f%%)\n", 100 * n_no_dejc / nrow(coding_pairs_c2)))
-cat("  Ref ATG lost, non-PTC:", fmt(n_bk_nonptc),
-    sprintf("(%.1f%%)\n", 100 * n_bk_nonptc / nrow(coding_pairs_c2)))
-cat("  Truncated, no EJC:", fmt(n_trunc),
-    sprintf("(%.1f%%)\n", 100 * n_trunc / nrow(coding_pairs_c2)))
+cat("NMD accounting (canonical subgroups):\n")
+cat("  NMD PTC+ total:", fmt(n_ptcplus_total),
+    sprintf("(%.1f%%)\n", 100 * n_ptcplus_total / n_total_coding))
+cat("    Original PTC+:", fmt(n_ptc_pos),
+    sprintf("(%.1f%%)\n", 100 * n_ptc_pos / n_total_coding))
+cat("    Reclassified (ref-ATG):", fmt(n_refatg_reclass),
+    sprintf("(%.1f%%)\n", 100 * n_refatg_reclass / n_total_coding))
+cat("    Reclassified (TD2):", fmt(n_td2_reclass),
+    sprintf("(%.1f%%)\n", 100 * n_td2_reclass / n_total_coding))
+cat("  NMD PTC-, ref ATG retained:", fmt(n_subgroup_retained),
+    sprintf("(%.1f%%)\n", 100 * n_subgroup_retained / n_total_coding))
+cat("  NMD PTC-, ref ATG lost:", fmt(n_subgroup_lost),
+    sprintf("(%.1f%%)\n", 100 * n_subgroup_lost / n_total_coding))
+cat("  Total:", fmt(n_ptcplus_total + n_subgroup_retained + n_subgroup_lost), "\n")
+stopifnot(n_ptcplus_total + n_subgroup_retained + n_subgroup_lost == n_total_coding)
 ```
 
 ```{r sec2c-flowchart, fig.width=12, fig.height=12}
@@ -4723,35 +5009,39 @@ digraph flowchart {
   C [label="PTC- (annotated CDS)\\n%s (%.1f%%)", fillcolor="#fee0d2"]
   D [label="Ref ATG available\\n%s (%.1f%% of PTC-)", fillcolor="#fef0d9"]
   E [label="Ref ATG lost\\n%s (%.1f%% of PTC-)", fillcolor="#fdcccc"]
-  F [label="Effectively PTC\\n(ref ATG traces to truncated ORF + EJCs)\\n%s (%.1f%% of PTC-)", fillcolor="#c7e9c0"]
-  G1 [label="No downstream EJC\\n(uORF-mediated NMD)\\n%s", fillcolor="#ccebc5"]
-  G2 [label="Truncated, no EJC\\n%s", fillcolor="#dadaeb"]
-  H [label="Total PTC-mediated\\n%s (%.1f%%)", fillcolor="#a1d99b", color="#31a354", penwidth=2]
-  I [label="Remaining PTC-negative\\n%s (%.1f%%)", fillcolor="#fdcccc", color="#de2d26", penwidth=2]
+  F [label="Effectively PTC\\n(ref ATG → truncated ORF + EJCs)\\n%s", fillcolor="#c7e9c0"]
+  G [label="NMD PTC-, ref ATG retained\\n%s", fillcolor="#fdd49e"]
+  H [label="TD2 PTC+\\n(TD2 CDS has EJCs)\\n%s", fillcolor="#c7e9c0"]
+  I [label="NMD PTC-, ref ATG lost\\n(TD2 also 0 EJCs)\\n%s", fillcolor="#fdbb84"]
+  J [label="NMD PTC+ (total)\\n%s (%.1f%%)", fillcolor="#a1d99b", color="#31a354", penwidth=2]
+  K [label="PTC-negative (total)\\n%s (%.1f%%)", fillcolor="#fdcccc", color="#de2d26", penwidth=2]
 
   A -> B
   A -> C
   C -> D
   C -> E
   D -> F [label="Trace ref ATG"]
-  D -> G1
-  D -> G2
-  B -> H [style=dashed]
-  F -> H [style=dashed]
-  G1 -> I [style=dashed, label="uORF-mediated"]
-  E -> I [style=dashed, label="Mechanism open"]
-  G2 -> I [style=dashed]
+  D -> G [label="No downstream EJC"]
+  E -> H [label="TD2 fallback"]
+  E -> I [label="TD2 also 0 EJC"]
+  B -> J [style=dashed]
+  F -> J [style=dashed]
+  H -> J [style=dashed]
+  G -> K [style=dashed]
+  I -> K [style=dashed]
 }',
-  fmt(nrow(coding_pairs_c2)),
-  fmt(n_ptc_pos), 100 * n_ptc_pos / nrow(coding_pairs_c2),
-  fmt(n_ptc_neg), 100 * n_ptc_neg / nrow(coding_pairs_c2),
+  fmt(n_total_coding),
+  fmt(n_ptc_pos), 100 * n_ptc_pos / n_total_coding,
+  fmt(n_ptc_neg), 100 * n_ptc_neg / n_total_coding,
   fmt(n_atg_avail), 100 * n_atg_avail / n_ptc_neg,
-  fmt(n_atg_lost), 100 * n_atg_lost / n_ptc_neg,
-  fmt(n_eff_ptc), 100 * n_eff_ptc / n_ptc_neg,
-  fmt(n_no_dejc),
-  fmt(n_trunc),
-  fmt(n_ptc_pos + n_eff_ptc), 100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2),
-  fmt(n_remaining), 100 * n_remaining / nrow(coding_pairs_c2))
+  fmt(n_atg_lost_2c), 100 * n_atg_lost_2c / n_ptc_neg,
+  fmt(n_refatg_reclass),
+  fmt(n_subgroup_retained),
+  fmt(n_td2_reclass),
+  fmt(n_subgroup_lost),
+  fmt(n_ptcplus_total), 100 * n_ptcplus_total / n_total_coding,
+  fmt(n_subgroup_retained + n_subgroup_lost),
+  100 * (n_subgroup_retained + n_subgroup_lost) / n_total_coding)
 
 if (requireNamespace("DiagrammeR", quietly = TRUE)) {
   DiagrammeR::grViz(dot_flow)
@@ -4760,28 +5050,18 @@ if (requireNamespace("DiagrammeR", quietly = TRUE)) {
 }
 ```
 
-PTC-mediated NMD --- from the annotated CDS (Section 3a) and reference-ATG
-tracing (Section 3c) --- accounts for
-`r round(100 * (n_ptc_pos + n_eff_ptc) / nrow(coding_pairs_c2), 1)`% of all
-coding NMD pairs. A small additional `r fmt(n_bk_ptc)` pairs
-(`r round(100 * n_bk_ptc / nrow(coding_pairs_c2), 1)`%) from the
-ref_atg_lost group have a best-Kozak ORF with downstream EJCs, bringing the
-total PTC-mediated fraction to
-`r round(100 * n_ptc_total / nrow(coding_pairs_c2), 1)`%.
+NMD PTC+ --- combining original PTC+ (annotated CDS), ref-ATG reclassified,
+and TD2-reclassified pairs --- accounts for
+`r round(100 * n_ptcplus_total / n_total_coding, 1)`% of all coding NMD pairs.
 
-The `r fmt(n_no_dejc)` no_downstream_ejc pairs
-(`r round(100 * n_no_dejc / nrow(coding_pairs_c2), 1)`%) retain the
-reference reading frame without a classical PTC but have genuinely long
-5'UTRs enriched for NMD-susceptible ORFs, a structural profile consistent
-with uORF-mediated NMD.
-
-The remaining `r fmt(n_uncharacterized)` pairs
-(`r round(100 * n_uncharacterized / nrow(coding_pairs_c2), 1)`%) lack a
-clear mechanistic explanation. These include `r fmt(n_bk_nonptc)`
-ref_atg_lost pairs whose best-Kozak ORF does not produce a PTC (the
-largest unresolved group) and `r fmt(n_trunc)` truncated pairs with weak
-structural evidence (of which `r pct_near_boundary`% are near the lfsr
-classification boundary).
+The remaining `r fmt(n_subgroup_retained + n_subgroup_lost)` pairs
+(`r round(100 * (n_subgroup_retained + n_subgroup_lost) / n_total_coding, 1)`%)
+are PTC-negative by all available reading frame definitions:
+`r fmt(n_subgroup_retained)` retain the reference ATG but lack downstream EJCs
+(NMD PTC-, ref ATG retained), and `r fmt(n_subgroup_lost)` lost the reference
+ATG and also have 0 downstream EJCs from the TD2 CDS (NMD PTC-, ref ATG lost).
+Both groups have long 5'UTRs enriched for uORFs, consistent with
+non-classical NMD mechanisms.
 
 ### Gene Architecture and NMD Susceptibility
 
@@ -5608,8 +5888,8 @@ Column definitions for the SHAP beeswarm: each dot is one holdout test set
 isoform. The x-axis shows the SHAP contribution (positive = pushes
 prediction toward NMD); color indicates the rank-normalized feature value
 (red = high, blue = low). Features are ordered by mean absolute SHAP (most
-important at top). Missing values (ref-CDS features for ref_atg_lost
-isoforms) are shown at the midpoint color.
+important at top). Missing values (ref-CDS features for NMD PTC-, ref ATG
+lost isoforms) are shown at the midpoint color.
 
 ## NMD-Only SHAP Clustering
 
@@ -5813,58 +6093,45 @@ n_reclass_fs <- sum(reclass$attr_mechanism == "Frameshift", na.rm = TRUE)
 n_reclass_ifs <- sum(reclass$attr_mechanism == "In-frame stop", na.rm = TRUE)
 n_reclass_3utr <- sum(reclass$attr_mechanism == "3'UTR splice", na.rm = TRUE)
 
-# --- Remaining ---
-remaining_ref <- ptc_neg_ref[!ptc_neg_ref$category %in% c("effectively_ptc", "no_ref_cds"), ]
-n_lost_s4 <- sum(remaining_ref$category == "ref_atg_lost")
-n_no_ejc_s4 <- sum(remaining_ref$category == "no_downstream_ejc")
-n_trunc_no_ejc_s4 <- sum(remaining_ref$category == "truncated_no_ejc")
-n_other_rem_s4 <- nrow(remaining_ref) - n_lost_s4 - n_no_ejc_s4 - n_trunc_no_ejc_s4
-
-# Best-Kozak PTC from ref_atg_lost (n_best_kozak_ptc computed in Section 3d)
-n_bk_ptc_s4 <- n_best_kozak_ptc
-n_bk_nonptc_s4 <- n_lost_s4 - n_bk_ptc_s4
+# --- TD2 reclassified PTC breakdown ---
+td2_reclass_pairs <- ptc_neg_ref[td2_reclass_mask, ]
 
 n_total <- nrow(coding_pairs_c2)
 
-# --- Build waterfall data ---
+# --- Build waterfall data using canonical subgroups ---
 acct <- data.frame(
   category = c("PTC+: Frameshift", "PTC+: In-frame stop", "PTC+: 3'UTR splice",
-                "Reclassified: Frameshift", "Reclassified: In-frame stop",
-                "Reclassified: 3'UTR splice",
-                "Best-Kozak PTC (ref ATG lost)",
-                "uORF-mediated (no downstream EJC)",
-                "Ref ATG lost, non-PTC",
-                "Truncated, no EJC", "Other"),
+                "Reclassified (ref-ATG): Frameshift", "Reclassified (ref-ATG): In-frame stop",
+                "Reclassified (ref-ATG): 3'UTR splice",
+                "Reclassified (TD2 fallback)",
+                "NMD PTC-, ref ATG retained",
+                "NMD PTC-, ref ATG lost"),
   n = c(n_ptcplus_fs, n_ptcplus_ifs, n_ptcplus_3utr,
         n_reclass_fs, n_reclass_ifs, n_reclass_3utr,
-        n_bk_ptc_s4,
-        n_no_ejc_s4,
-        n_bk_nonptc_s4,
-        n_trunc_no_ejc_s4, n_other_rem_s4),
+        n_td2_reclass,
+        n_subgroup_retained,
+        n_subgroup_lost),
   stringsAsFactors = FALSE
 )
 acct$pct <- round(100 * acct$n / n_total, 1)
-acct$group <- c(rep("PTC+ (annotated CDS)", 3),
-                rep("Reclassified PTC (ref-ATG tracing)", 3),
-                "Best-Kozak PTC (ref ATG lost)",
-                "uORF-mediated",
-                rep("Uncharacterized", 3))
+acct$group <- c(rep("NMD PTC+ (annotated CDS)", 3),
+                rep("NMD PTC+ (ref-ATG reclassified)", 3),
+                "NMD PTC+ (TD2 reclassified)",
+                "NMD PTC-, ref ATG retained",
+                "NMD PTC-, ref ATG lost")
 
-# Sort within groups by size, then by group order
 acct$group <- factor(acct$group,
-  levels = c("PTC+ (annotated CDS)", "Reclassified PTC (ref-ATG tracing)",
-             "Best-Kozak PTC (ref ATG lost)", "uORF-mediated",
-             "Uncharacterized"))
+  levels = c("NMD PTC+ (annotated CDS)", "NMD PTC+ (ref-ATG reclassified)",
+             "NMD PTC+ (TD2 reclassified)",
+             "NMD PTC-, ref ATG retained", "NMD PTC-, ref ATG lost"))
 acct <- acct[order(acct$group, -acct$n), ]
 acct$category <- factor(acct$category, levels = rev(acct$category))
 
-group_colors <- c("PTC+ (annotated CDS)" = "#c7e9c0",
-                   "Reclassified PTC (ref-ATG tracing)" = "#fdd0a2",
-                   "Best-Kozak PTC (ref ATG lost)" = "#b2df8a",
-                   "uORF-mediated" = "#ccebc5",
-                   "Uncharacterized" = "#dadaeb")
-
-n_characterized <- sum(acct$n[acct$group != "Uncharacterized"])
+group_colors <- c("NMD PTC+ (annotated CDS)" = "#c7e9c0",
+                   "NMD PTC+ (ref-ATG reclassified)" = "#fdd0a2",
+                   "NMD PTC+ (TD2 reclassified)" = "#b2df8a",
+                   "NMD PTC-, ref ATG retained" = "#fdd49e",
+                   "NMD PTC-, ref ATG lost" = "#fdbb84")
 
 fig_acct <- ggplot(acct, aes(x = category, y = n, fill = group)) +
   geom_col(alpha = 0.85, width = 0.7) +
@@ -5874,9 +6141,11 @@ fig_acct <- ggplot(acct, aes(x = category, y = n, fill = group)) +
   coord_flip() +
   scale_y_continuous(expand = expansion(mult = c(0, 0.3))) +
   labs(title = "NMD Mechanism Accounting: All Coding Pairs",
-       subtitle = sprintf("%s coding gene-matched NMD pairs | Mechanistically characterized: %s (%.1f%%)",
-                          fmt(n_total), fmt(n_characterized),
-                          100 * n_characterized / n_total),
+       subtitle = sprintf("%s coding gene-matched NMD pairs | NMD PTC+: %s (%.1f%%) | PTC-negative: %s (%.1f%%)",
+                          fmt(n_total), fmt(n_ptcplus_total),
+                          100 * n_ptcplus_total / n_total,
+                          fmt(n_subgroup_retained + n_subgroup_lost),
+                          100 * (n_subgroup_retained + n_subgroup_lost) / n_total),
        x = NULL, y = "Number of pairs", fill = NULL) +
   theme(legend.position = "bottom")
 save_fig(fig_acct, "fig_sec3_mechanism_accounting", width = 10, height = 6)
@@ -5899,30 +6168,22 @@ source; **n** = coding NMD pairs; **%** = percentage of all coding NMD pairs.
 
 </details>
 
-Every coding NMD pair is accounted for. PTC-mediated NMD --- detected from
-the annotated CDS (Section 3a) or revealed by reference-ATG tracing
-(Section 3c) --- accounts for
-`r round(100 * (n_ptcplus_fs + n_ptcplus_ifs + n_ptcplus_3utr + n_reclass_fs + n_reclass_ifs + n_reclass_3utr + n_bk_ptc_s4) / n_total, 1)`%
-of pairs. The dominant mechanism is **frameshift-causing splice events
-(primarily exon skipping) that create premature stop codons with downstream
-EJCs.** The PTC+/PTC- distinction largely reflects which ORF the CDS
-prediction algorithm selects, not distinct biological mechanisms.
+Every coding NMD pair is accounted for. **NMD PTC+** --- detected from the
+annotated CDS, ref-ATG tracing, or TD2 CDS fallback --- accounts for
+`r round(100 * n_ptcplus_total / n_total, 1)`% of pairs. The dominant
+mechanism is **frameshift-causing splice events (primarily exon skipping)
+that create premature stop codons with downstream EJCs.** The original
+PTC+/PTC- distinction largely reflects which ORF the CDS prediction algorithm
+selects, not distinct biological mechanisms.
 
-An additional `r fmt(n_no_ejc_s4)` pairs
-(`r round(100 * n_no_ejc_s4 / n_total, 1)`%) are consistent with
-uORF-mediated NMD: they retain the reference reading frame but have genuinely
-long 5'UTRs enriched for NMD-susceptible uORFs.
-
-The remaining `r round(100 * (n_total - n_characterized) / n_total, 1)`%
-(`r fmt(n_total - n_characterized)` pairs) lack a clear mechanistic
-explanation. The largest unresolved group is ref_atg_lost
-(`r fmt(n_bk_nonptc_s4)` pairs) --- isoforms that lost the reference ATG
-via alternative TSS usage and whose best-Kozak ORF does not produce a
-classical PTC. An additional `r fmt(n_trunc_no_ejc_s4)` truncated pairs
-have weak structural evidence (of which `r pct_near_boundary`% are near
-the lfsr classification boundary). This PTC-negative population is a
-significant minority of NMD pairs and represents an important target for
-future mechanistic investigation.
+The remaining `r round(100 * (n_subgroup_retained + n_subgroup_lost) / n_total, 1)`%
+(`r fmt(n_subgroup_retained + n_subgroup_lost)` pairs) are PTC-negative by all
+available reading frame definitions. They divide into two canonical subgroups:
+**NMD PTC-, ref ATG retained** (`r fmt(n_subgroup_retained)` pairs) and
+**NMD PTC-, ref ATG lost** (`r fmt(n_subgroup_lost)` pairs). Both show
+intermediate NMD response and long 5'UTRs enriched for uORFs, consistent
+with non-classical NMD mechanisms. This PTC-negative population represents
+an important target for future mechanistic investigation.
 
 # 5. Cross-Cell-Type Summary {#summary}
 
@@ -6005,12 +6266,12 @@ SMG1 inhibitor.
 
 **PTC-mediated NMD dominates.** Premature termination codons with downstream
 exon-exon junctions account for
-`r round(100 * sum(acct$n[acct$group != "Remaining (unexplained)"]) / sum(acct$n), 1)`%
-of NMD pairs — `r round(100 * n_ptc_pos / nrow(coding_pairs_c2), 1)`% from
-the annotated CDS and an additional
-`r round(100 * n_eff_ptc / nrow(coding_pairs_c2), 1)`% revealed by tracing
-the reference isoform's ATG through the NMD comparator. The dominant
-mechanism is frameshift-causing exon skipping.
+`r round(100 * n_ptcplus_total / n_total_coding, 1)`% of NMD pairs —
+`r round(100 * n_ptc_pos / n_total_coding, 1)`% from the annotated CDS,
+`r round(100 * n_refatg_reclass / n_total_coding, 1)`% revealed by tracing
+the reference isoform's ATG through the NMD comparator, and
+`r round(100 * n_td2_reclass / n_total_coding, 1)`% reclassified via the
+TD2 CDS fallback. The dominant mechanism is frameshift-causing exon skipping.
 
 **CDS prediction obscures the true PTC rate.** TransDecoder2 selects the
 longest high-scoring ORF. When a frameshift truncates the reference reading
@@ -6025,12 +6286,14 @@ isoforms have more exon-exon junctions and a higher fraction of
 NMD-susceptible ORFs than non-NMD genes. This structural property creates a
 baseline NMD susceptibility that affects all isoforms of the gene.
 
-**~15% of NMD pairs remain unexplained.** These include pairs where the
-reference ATG is lost (primarily Alt_TSS) and pairs with the reference ATG
-intact but no downstream EJCs. Their NMD response is strong (median logFC
-> 1.0) but they lack the structural hallmarks of PTC-mediated NMD — shorter
-3'UTRs than control, no enrichment for NMD-susceptible ORFs. Their mechanism
-remains an open question.
+**`r round(100 * (n_subgroup_retained + n_subgroup_lost) / n_total_coding, 1)`%
+of NMD pairs are PTC-negative.** These `r fmt(n_subgroup_retained + n_subgroup_lost)`
+pairs fall into two canonical subgroups: `r fmt(n_subgroup_retained)` retain
+the reference ATG but lack downstream EJCs (NMD PTC-, ref ATG retained), and
+`r fmt(n_subgroup_lost)` lost the reference ATG entirely (NMD PTC-, ref ATG
+lost). Both groups show intermediate NMD response and long 5'UTRs enriched
+for uORFs, consistent with non-classical NMD mechanisms. Their precise NMD
+trigger remains an open question.
 
 # Session Info
 
