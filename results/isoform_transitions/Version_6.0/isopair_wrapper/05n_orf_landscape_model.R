@@ -77,14 +77,19 @@ cat("\n=== Model 2: Elastic Net (ORF Landscape) ===\n")
 orf_features <- c(
   "n_nmd_competent_capped",    # NMD-competent ORF count (capped at 20)
   "max_downstream_ejc_capped", # max downstream EJCs across all ORF stops (capped at 5)
-  "n_nmd_competent_strong_kozak", # NMD-competent ORFs with strong Kozak
-  "best_kozak_nmd",            # best Kozak score among NMD-competent ATGs
+  "best_kozak_nmd",            # best PWM Kozak score among NMD-competent ATGs (continuous)
+  "mean_kozak_nmd",            # mean PWM Kozak score among NMD-competent ATGs (continuous)
   "frac_nmd_competent",        # fraction of ORFs that are NMD-competent
-  "n_orfs",                    # total ORFs (proxy for transcript complexity)
-  "n_atgs",                    # total ATGs
+  "n_orfs",                    # Kozak-passing ORFs (proxy for transcript complexity)
+  "n_annotated_cds_orfs",      # number of Kozak-passing ATGs at the annotated CDS start
   "n_junctions",               # total exon-exon junctions
   "tx_length"                  # transcript length
 )
+# Note (2026-04-29): n_nmd_competent_strong_kozak (categorical 0/1/2) and n_atgs
+# (count of ALL ATGs) removed when 05m switched to Isopair::enumerateOrfs with
+# Kozak filtering. Continuous PWM Kozak scores (best_kozak_nmd, mean_kozak_nmd)
+# replace the categorical "strong" feature; n_atgs is no longer meaningful under
+# Kozak filtering (only plausibly-translated ATGs are enumerated).
 
 # Build model matrices
 make_matrix <- function(data, features) {

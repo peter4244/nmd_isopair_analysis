@@ -167,7 +167,7 @@ cat("\nComputing per-cell-type domain disruption rates...\n")
 
 # Load per-CT frame comparisons and protein data
 ct_results <- list()
-for (ct in c("at", "dd", "do", "fb", "mv")) {
+for (ct in c("at", "dd", "fb", "mv")) {
   fc_file <- file.path(cache_dir, sprintf("fc_c4_%s.rds", ct))
   if (!file.exists(fc_file)) next
 

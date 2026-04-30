@@ -38,7 +38,7 @@ cds <- readRDS(file.path(data_dir, "cds.rds"))
 cds_exons <- readRDS(file.path(data_dir, "cds_exons.rds"))
 coding_ids <- cds$isoform_id[cds$coding_status == "coding"]
 
-cell_types <- c("allsamples", "at", "dd", "do", "fb", "mv")
+cell_types <- c("allsamples", "at", "dd", "fb", "mv")
 
 # ==============================================================================
 # 1. Load and deduplicate C4 pairs across cell types

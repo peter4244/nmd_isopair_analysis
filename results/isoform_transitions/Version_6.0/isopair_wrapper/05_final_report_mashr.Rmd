@@ -35,6 +35,17 @@ render_dt <- function(df, caption = NULL, pageLength = 15, ...) {
             ...)
 }
 
+# Helper: format a p-value for inline rendering. Avoids knitr's auto-LaTeX
+# scientific notation (which produces "3.88^{-22}" artifacts in HTML).
+format_p <- function(p, digits = 2) {
+  if (is.na(p)) return("NA")
+  if (p < 1e-3) {
+    formatC(p, format = "e", digits = digits)
+  } else {
+    formatC(signif(p, digits + 1), format = "g")
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Publication theme and color palette
 # ---------------------------------------------------------------------------
@@ -104,6 +115,11 @@ compute_ptc_rates_row <- function(ct) {
   cod_c4 <- p_c4[p_c4$reference_isoform_id %in% coding_ids &
                    p_c4$comparator_isoform_id %in% coding_ids, ]
   if (nrow(cod_c2) == 0 || nrow(cod_c4) == 0) return(NULL)
+  # Gene-match: restrict OR computation to genes appearing in both C2 and C4
+  # coding pair sets so the 2x2 contingency is a within-gene comparison.
+  shared_genes <- intersect(cod_c2$gene_id, cod_c4$gene_id)
+  cod_c2 <- cod_c2[cod_c2$gene_id %in% shared_genes, ]
+  cod_c4 <- cod_c4[cod_c4$gene_id %in% shared_genes, ]
   ptc_c2 <- sum(cod_c2$comparator_isoform_id %in% ptc$isoform_id[ptc$has_ptc == TRUE])
   ptc_c4 <- sum(cod_c4$comparator_isoform_id %in% ptc$isoform_id[ptc$has_ptc == TRUE])
   n_c2 <- nrow(cod_c2); n_c4 <- nrow(cod_c4)
@@ -185,8 +201,13 @@ data pipeline is:
    `Sample26_DO_029T_Smg1i`, identified as PCA outlier), applies TMM
    normalization and condition-stratified 5% isoform filtering, then classifies
    isoforms as NMD-sensitive (`nmd_responsive == TRUE` in mashr DIE results) or
-   non-NMD (`adj.P.Val > 0.50`). Final dataset: 36 samples across 6 cell types.
-   Outputs: `expression_data.rds`, `nmd_classification.rds`,
+   non-NMD (`adj.P.Val > 0.30`; threshold raised from 0.50 to restore the
+   historical proportion of non-NMD isoforms after the 4-CT mashr refit
+   tightened p-value distributions). The count matrix carries 36 samples across
+   six cell types, but downstream classification, pair construction, and all
+   results are restricted to the **4 non-ALI paper-scope cell types: AT, DD,
+   FB, MV**. DD_ALI, DO_ALI, and DO are not used. Outputs:
+   `expression_data.rds`, `nmd_classification.rds`,
    `sample_metadata.rds`, `gene_map.rds`.
 
 2. **02_build_profiles_mashr.R**: Generates isoform pairs —
@@ -280,7 +301,7 @@ digraph flowchart {
   B [label=<<b>Sample Exclusion</b><br/>Remove DO donor 029T (PCA outlier)<br/>%s isoforms × %d samples>,
      fillcolor="#fee0d2", color="#de2d26"]
 
-  C [label=<<b>5%% Filter + filterByExpr</b><br/>%s isoforms pass<br/>%d DMSO + %d Smg1i | 6 cell types>,
+  C [label=<<b>5%% Filter + filterByExpr</b><br/>%s isoforms pass<br/>%d DMSO + %d Smg1i | 6 CTs in matrix &rarr; 4 CTs analyzed (AT, DD, FB, MV)>,
      fillcolor="#e8f4f8", color="#2c7fb8"]
 
   D [label=<<b>NMD Classification (mashr)</b><br/>NMD-sensitive: %s isoforms (union across CTs)<br/>Non-NMD: %s isoforms (intersection across CTs)>,
@@ -377,10 +398,10 @@ get_gene_sym <- function(gid) {
   if (is.na(sym) || sym == "") gid else sym
 }
 
-# Cell types (mashr: DO included, DD_ALI excluded from main)
-cell_types  <- c("all_samples", "AT", "DD", "DO", "FB", "MV")
+# Cell types — paper scope (2026-04-29): 4 non-ALI cell types
+cell_types  <- c("all_samples", "AT", "DD", "FB", "MV")
 comparisons <- c("c2", "c4")
-main_cts    <- c("AT", "DD", "DO", "FB", "MV")
+main_cts    <- c("AT", "DD", "FB", "MV")
 ```
 
 ```{r load-profiles}
@@ -532,14 +553,13 @@ if (!all(verification_df$ptc_subset_ok)) {
 # ==============================================================================
 
 # ── mashr meta-analysis logFC ──
-# Source: mashr model fit on isocall DIE (6 conditions).
-# PosteriorMean averaged across 5 main conditions (excluding DD_ALI).
+# Source: mashr model fit on isocall DIE (4 non-ALI cell types — paper scope).
+# PosteriorMean averaged across the 4 main conditions.
 # Used in Section 3a to characterize NMD response magnitude.
 mashr_model_path <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/mashr_isoform_model_2026.3.10.rds"
 mashr_model <- readRDS(mashr_model_path)
 post_mean <- ashr::get_pm(mashr_model)
-meta_cols <- c("Smg1i_in_DD", "Smg1i_in_AT", "Smg1i_in_DO_ALI",
-               "Smg1i_in_FB", "Smg1i_in_MV")
+meta_cols <- c("Smg1i_in_DD", "Smg1i_in_AT", "Smg1i_in_FB", "Smg1i_in_MV")
 meta_logfc <- data.frame(
   txid = rownames(post_mean),
   mean_logFC = rowMeans(post_mean[, meta_cols, drop = FALSE])
@@ -550,12 +570,17 @@ meta_logfc <- data.frame(
 # Note: Section 4 (protein analysis) now uses unmatched data from 05d_protein_domain_analysis.R
 c4_protein <- readRDS(file.path(cache_dir, "all_c4_protein_comparison_allsamples.rds"))
 
-# ── Productive frameshift precompute ──
+# ── Productive frameshift precompute (optional) ──
 # Source: 04_productive_frameshift_precompute.R
-# Input: fc_c4_allsamples.rds + fw_c4_allsamples.rds (gene-matched, from script 03)
+# Input: fc_c4_allsamples.rds + fw_c4_allsamples.rds (gene-matched)
 #        + SQANTI protein FASTA + EBI/biomaRt API queries
 # Output: characterization of same-start frameshift C4 pairs without PTC
-pf_data <- readRDS(file.path(cache_dir, "productive_frameshift_allsamples.rds"))
+# Optional: only used in one section (all_samples productive frameshift count).
+# Run 04_productive_frameshift_precompute.R to populate; without it that count
+# falls back to NA.
+pf_data <- tryCatch(
+  readRDS(file.path(cache_dir, "productive_frameshift_allsamples.rds")),
+  error = function(e) NULL)
 ```
 
 ```{r data-dimensions}
@@ -1641,8 +1666,8 @@ stop codon > 50 nt upstream of last EJC.
 # Step 1: Extract comparator_isoform_id from gene-matched C2 profiles
 # Step 2: Look up ptc features (ptc_distance, has_ptc, orf_length, n_downstream_ejcs)
 #   from ptc.rds for those comparators
-# Step 3: Merge with meta_logfc — mashr PosteriorMean averaged across 5 conditions
-#   (DD, AT, DO_ALI, FB, MV). Source: mashr_isoform_model_2026.3.10.rds
+# Step 3: Merge with meta_logfc — mashr PosteriorMean averaged across 4 conditions
+#   (AT, DD, FB, MV). Source: mashr_isoform_model_2026.3.10.rds
 # Result: scatter of NMD response magnitude vs stop codon position
 
 comp_ids_as <- set_results[["c2_allsamples"]]$profiles$comparator_isoform_id
@@ -1695,7 +1720,7 @@ render_dt(dist_bins, caption = "Mean logFC by Stop Codon Distance Bin")
 Columns: **dist_bin** = distance range (nt from stop codon to last EJC);
 **n** = NMD comparators; **Median/Mean logFC** = mashr posterior mean
 (SMG1i vs DMSO). Overall Spearman rho =
-`r round(cor_test$estimate, 3)`, p = `r signif(cor_test$p.value, 3)`.
+`r round(cor_test$estimate, 3)`, p = `r format_p(cor_test$p.value)`.
 
 </details>
 
@@ -2639,7 +2664,7 @@ The skipped exon causes a frameshift that creates a PTC (red triangle).
 Measuring 3'UTR from the PTC includes the red-shaded former coding sequence.
 The corrected measurement (from the reference stop, green triangle) gives the
 true 3'UTR. PTC-negative NMD comparators have 3'UTR lengths indistinguishable
-from Control (p = `r signif(tests$p_value[tests$group1 == "NMD PTC-"], 2)`),
+from Control (p = `r format_p(tests$p_value[tests$group1 == "NMD PTC-"])`),
 providing strong evidence against the long-3'UTR hypothesis.
 
 ## 3'UTR Splicing: PTC-Creating, Not PTC-Independent
@@ -3102,7 +3127,7 @@ clipped).
 
 PTC-negative NMD comparators have a median exonic 5'UTR
 `r round(median(nmd_5utr_diff, na.rm = TRUE))` bp longer than their paired
-references (p = `r signif(wt_5utr$p.value, 3)` vs Control). The genomic
+references (p = `r format_p(wt_5utr$p.value)` vs Control). The genomic
 decomposition (second figure) shows where this extension comes from: the TSS
 moves modestly upstream (median `r round(median(tss_shift, na.rm = TRUE))` bp
 genomic), while the CDS start moves substantially downstream (median
@@ -4545,7 +4570,7 @@ Meanwhile, the ref-ATG 3'UTR
 (`r round(median(no_ejc$ref_3utr, na.rm = TRUE))` bp) is significantly
 shorter than Control
 (`r round(median(c4_ref_avail$ref_3utr, na.rm = TRUE))` bp; Wilcoxon
-p = `r signif(wilcox.test(no_ejc$ref_3utr, c4_ref_avail$ref_3utr)$p.value, 3)`),
+p = `r format_p(wilcox.test(no_ejc$ref_3utr, c4_ref_avail$ref_3utr)$p.value)`),
 ruling out the long-3'UTR NMD pathway.
 
 #### 5'UTR Feature Landscape
@@ -4793,7 +4818,7 @@ with both logFC and ORF data.
 
 Within this group, the number of NMD-susceptible ORFs does not predict NMD
 response magnitude (Spearman rho = `r round(rho_nmd$estimate, 3)`,
-p = `r signif(rho_nmd$p.value, 3)`). Whatever drives the quantitative
+p = `r format_p(rho_nmd$p.value)`). Whatever drives the quantitative
 strength of the NMD response in these isoforms, it is not simply the count
 of ORFs with downstream EJCs.
 
@@ -4902,8 +4927,9 @@ trunc_tes <- do.call(rbind, lapply(seq_len(nrow(trunc_profiles)), function(i) {
     stringsAsFactors = FALSE)
 }))
 
-n_tes_upstream <- sum(trunc_tes$direction == "LOSS", na.rm = TRUE)
-pct_tes_upstream <- round(100 * n_tes_upstream / nrow(trunc_tes), 1)
+n_tes_tot <- if (is.null(trunc_tes)) 0L else nrow(trunc_tes)
+n_tes_upstream <- if (n_tes_tot > 0) sum(trunc_tes$direction == "LOSS", na.rm = TRUE) else 0L
+pct_tes_upstream <- if (n_tes_tot > 0) round(100 * n_tes_upstream / n_tes_tot, 1) else NA_real_
 
 # --- 3'UTR length ---
 trunc_noejc$ref_3utr <- tx_lengths[trunc_noejc$comparator_isoform_id] -
@@ -4912,8 +4938,7 @@ trunc_noejc$ref_3utr <- tx_lengths[trunc_noejc$comparator_isoform_id] -
 # --- lfsr classification confidence ---
 # mashr_model already loaded in STAGE 5 (line ~539)
 lfsr_mat <- ashr::get_lfsr(mashr_model)
-main_cols <- c("Smg1i_in_DD", "Smg1i_in_AT", "Smg1i_in_DO_ALI",
-               "Smg1i_in_FB", "Smg1i_in_MV")
+main_cols <- c("Smg1i_in_DD", "Smg1i_in_AT", "Smg1i_in_FB", "Smg1i_in_MV")
 min_lfsr_vec <- apply(lfsr_mat[, main_cols], 1, min)
 
 trunc_lfsr <- min_lfsr_vec[match(trunc_noejc$comparator_isoform_id, names(min_lfsr_vec))]
@@ -4928,20 +4953,30 @@ pct_ptc_boundary <- round(100 * mean(ptc_pos_lfsr > 0.01), 1)
 # --- logFC ---
 trunc_logfc <- meta_logfc$mean_logFC[match(trunc_noejc$comparator_isoform_id, meta_logfc$txid)]
 
+# Defensive: each cell collapsed to a length-1 character so empty subgroups
+# don't drop columns to length 6 in the data.frame() call below.
+fmt1 <- function(x) {
+  s <- format(x, nsmall = 0)
+  if (length(s) == 0) "NA" else as.character(s[1])
+}
+fmt_pct <- function(x) {
+  if (length(x) == 0 || is.na(x) || is.nan(x)) "NA" else sprintf("%.1f%%", x)
+}
+
 trunc_summary <- data.frame(
   Metric = c("Total pairs", "TES moved upstream (3' truncated)",
              "Median 3'UTR (bp)", "Control median 3'UTR (bp)",
              "lfsr > 0.01 (near boundary)", "PTC+ lfsr > 0.01 (comparison)",
              "Median logFC"),
-  Value = c(nrow(trunc_noejc), n_tes_upstream,
-            round(median(trunc_noejc$ref_3utr, na.rm = TRUE)),
-            round(median(c4_ref_avail$ref_3utr, na.rm = TRUE)),
+  Value = c(fmt1(nrow(trunc_noejc)), fmt1(n_tes_upstream),
+            fmt1(round(median(trunc_noejc$ref_3utr, na.rm = TRUE))),
+            fmt1(round(median(c4_ref_avail$ref_3utr, na.rm = TRUE))),
             sprintf("%d/%d", sum(trunc_lfsr > 0.01), length(trunc_lfsr)),
             sprintf("%d/%d", sum(ptc_pos_lfsr > 0.01), length(ptc_pos_lfsr)),
-            round(median(trunc_logfc, na.rm = TRUE), 3)),
-  Percentage = c("", sprintf("%.1f%%", pct_tes_upstream),
-                 "", "", sprintf("%.1f%%", pct_near_boundary),
-                 sprintf("%.1f%%", pct_ptc_boundary), ""),
+            fmt1(round(median(trunc_logfc, na.rm = TRUE), 3))),
+  Percentage = c("", fmt_pct(pct_tes_upstream),
+                 "", "", fmt_pct(pct_near_boundary),
+                 fmt_pct(pct_ptc_boundary), ""),
   stringsAsFactors = FALSE)
 
 render_dt(trunc_summary, caption = "Group 3: Truncated, No EJC — Structural Characterization")
@@ -5238,7 +5273,10 @@ architecture analysis.
 # Population: non-NMD isoforms, grouped by gene NMD status
 
 de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
-de_files <- list.files(de_dir, pattern = "csv$", full.names = TRUE)
+# Match only per-CT DIE files; the directory also has mashr meta CSVs
+# (lfsr, posterior_means, sharing, null_correlation) with different schemas.
+de_files <- list.files(de_dir, pattern = "^nmd_mashr_die_.*\\.csv$",
+                       full.names = TRUE)
 
 logfc_per_ct <- lapply(de_files, function(f) {
   d <- read.csv(f, stringsAsFactors = FALSE)
@@ -5302,7 +5340,7 @@ interquartile range.
 </details>
 
 Non-NMD isoforms from NMD-harboring genes show a significantly higher logFC
-than those from non-NMD genes (p = `r signif(wt_gene$p.value, 3)`). The
+than those from non-NMD genes (p = `r format_p(wt_gene$p.value)`). The
 effect is small --- both groups are centered near zero --- but the direction
 is consistent with low-level NMD sensitivity in genes that also harbor
 NMD-classified isoforms. However, this observation alone does not
@@ -5563,10 +5601,70 @@ population as the combined model.
 Restricting to the 11 TD2-only features yields holdout AUC =
 `r round(mc$td2_models$step3$auc_test, 3)`. Restricting to the 11
 reference-CDS-only features yields AUC =
-`r round(mc$ref_models$step3$auc_test, 3)`. Reference-CDS features alone
-slightly outperform TD2, consistent with the PTC misidentification findings
-from Sections 3a--3b: the reference reading frame provides more accurate
-stop codon positions for NMD isoforms.
+`r round(mc$ref_models$step3$auc_test, 3)`. **Note that these AUCs are
+computed on different populations:** TD2 features can be evaluated on
+every coding isoform in the holdout test set
+(N = `r fmt(length(mc$td2_models$step3$pred_test))`), but the reference-CDS
+model is restricted to the `ref_atg_available` subset where the reference
+ATG is exonic in the comparator (N = `r fmt(length(mc$ref_models$step3$pred_test))`).
+Population selection alone changes apparent performance — the
+reference-restricted subset is intrinsically easier to classify regardless
+of feature source.
+
+```{r sec3d-matched-population-auc}
+# ── Data provenance ──
+# Source: mc$td2_models$step3$pred_test (TD2 predictions on full test set)
+#   mc$ref_test (ref-CDS test set; subset of mc$test where ref ATG available)
+#   mc$test (full TD2 test set)
+# Method: re-evaluate TD2 model AUC on the subset of test isoforms that also
+#   appear in the ref-CDS test set, so the comparison is apples-to-apples.
+
+# Identify the ref-CDS test population: rows of mc$test where ref-CDS
+# features are complete (ref_utr5_excluded == FALSE). This is the same
+# population mc$ref_models$step3 was evaluated on (n=7,373).
+matched_idx <- which(!is.na(mc$test$ref_utr5_excluded) &
+                       mc$test$ref_utr5_excluded == FALSE)
+
+td2_pred_matched <- mc$td2_models$step3$pred_test[matched_idx]
+y_matched        <- mc$test$is_nmd[matched_idx]
+
+td2_auc_matched <- as.numeric(pROC::auc(pROC::roc(y_matched, td2_pred_matched,
+                                                  quiet = TRUE)))
+
+matched_pop_auc <- data.frame(
+  Comparison = c("Headline (different populations)",
+                 "Matched population (ref-CDS subset)"),
+  `TD2 AUC`     = c(round(mc$td2_models$step3$auc_test, 3),
+                    round(td2_auc_matched, 3)),
+  `Ref-CDS AUC` = c(round(mc$ref_models$step3$auc_test, 3),
+                    round(mc$ref_models$step3$auc_test, 3)),
+  Difference    = c(round(mc$ref_models$step3$auc_test -
+                            mc$td2_models$step3$auc_test, 3),
+                    round(mc$ref_models$step3$auc_test - td2_auc_matched, 3)),
+  N             = c(sprintf("TD2: %s / Ref: %s",
+                            fmt(length(mc$td2_models$step3$pred_test)),
+                            fmt(length(mc$ref_models$step3$pred_test))),
+                    sprintf("Both: %s", fmt(length(matched_idx)))),
+  check.names = FALSE
+)
+
+render_dt(matched_pop_auc, caption = "TD2 vs Ref-CDS AUC on matched populations")
+```
+
+Column definitions: **Comparison** = headline (different populations) vs
+matched (ref-CDS subset only); **TD2 AUC** = AUC of the 11-feature TD2
+model on each population; **Ref-CDS AUC** = AUC of the 11-feature
+reference-CDS model on the `ref_atg_available` subset; **Difference** =
+Ref-CDS AUC − TD2 AUC; **N** = test isoforms.
+
+On the **matched population** (the `ref_atg_available` subset where both
+models can be evaluated), the AUC difference shrinks from
+`r round(mc$ref_models$step3$auc_test - mc$td2_models$step3$auc_test, 3)`
+to **`r round(mc$ref_models$step3$auc_test - td2_auc_matched, 3)`** — i.e., most
+of the headline difference reflects population selection, not features.
+This means the *discrimination* benefit of reference-CDS features is small.
+The substantive benefit, demonstrated in the next subsection, is in
+*attribution*: which features the model leans on for occult-PTC isoforms.
 
 ### By Feature Category: EJC Counts Alone
 
@@ -5707,37 +5805,13 @@ with its EJC count alone.
 
 ## NMD Response Magnitude
 
-```{r sec3a-load-limma}
-# ── Data provenance ──
-# Source: limma DE files from /Users/petecastaldi/claude_projects/nmd/isocall_dge/limma/yul/
-# Raw unshrunk logFC per cell type — independent estimates (no mashr shrinkage)
-
-limma_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/limma/yul"
-limma_cts <- c(AT = "at", DD = "dd", DD_ALI = "ddali", DO = "do", FB = "fb", MV = "mv")
-
-limma_logfc <- lapply(names(limma_cts), function(ct) {
-  f <- file.path(limma_dir, sprintf("nmd_dge_%s_2026.3.3.csv", limma_cts[ct]))
-  de <- read.csv(f, stringsAsFactors = FALSE)
-  id_col <- if ("transcript_id" %in% names(de)) "transcript_id" else "txid"
-  data.frame(
-    isoform_id = de[[id_col]],
-    cell_type = ct,
-    logFC = de$logFC,
-    stringsAsFactors = FALSE
-  )
-})
-limma_long <- do.call(rbind, limma_logfc)
-
-mean_logfc <- limma_long %>%
-  group_by(isoform_id) %>%
-  summarise(
-    mean_logFC = mean(logFC, na.rm = TRUE),
-    n_cts = n(),
-    .groups = "drop"
-  )
-```
-
 ```{r sec3a-dose-response, fig.width=10, fig.height=5}
+# ── Data provenance ──
+# Source: meta_logfc (loaded in STAGE 5) — mashr posterior mean logFC averaged
+# across the 4 paper-scope cell types (AT, DD, FB, MV). Dose-response evaluates
+# whether the combined model's predicted NMD probability tracks the magnitude
+# of SMG1i rescue measured by mashr.
+
 # Score NMD isoforms with the combined model
 nmd_test <- mc$test[mc$test$is_nmd == 1, ]
 nmd_test$pred_combined <- mc$combined_model$pred_test[
@@ -5745,7 +5819,7 @@ nmd_test$pred_combined <- mc$combined_model$pred_test[
         mc$test$isoform_id)]
 
 nmd_dose <- nmd_test %>%
-  inner_join(mean_logfc, by = "isoform_id")
+  inner_join(meta_logfc, by = c("isoform_id" = "txid"))
 
 rho_combined <- cor(nmd_dose$pred_combined, nmd_dose$mean_logFC,
                      method = "spearman", use = "complete.obs")
@@ -5761,7 +5835,7 @@ fig_dose <- ggplot(nmd_dose,
                           fmt(nrow(nmd_dose)), rho_combined,
                           signif(p_combined, 3)),
        x = "Predicted NMD probability (combined model)",
-       y = "Mean logFC (limma, across cell types)")
+       y = "Mean mashr posterior logFC (across 4 cell types)")
 save_fig(fig_dose, "fig_dose_response_combined", width = 10, height = 5)
 ```
 
@@ -5787,7 +5861,7 @@ isoforms; **Median/Mean logFC** = SMG1i response within that score bin.
 
 The combined model's predicted probability correlates with actual NMD
 response magnitude (Spearman rho = `r round(rho_combined, 3)`,
-p = `r signif(p_combined, 3)`), confirming that the structural features
+p = `r format_p(p_combined)`), confirming that the structural features
 capture the continuous nature of NMD --- isoforms with stronger structural
 signals show greater SMG1i rescue.
 
@@ -6028,6 +6102,322 @@ clusters can be interpreted as mechanistically distinct NMD subpopulations:
   NMD or isoforms where the PTC mechanism is not captured by either CDS
   annotation.
 
+## Attribution Dissociation in Occult-PTC Isoforms
+
+A central methodological finding of this work is that **TD2 and Ref-CDS XGBoost
+models achieve similar discrimination on occult-PTC isoforms but rely on
+systematically different features**. The TD2 model classifies most occult-PTC
+isoforms as NMD, but its predictions are driven by spurious 5'UTR/uORF features
+that are mechanistic shadows of the reference CDS that TD2 demoted to a
+"5'UTR" by jumping to a downstream ATG. The Ref-CDS model attributes the same
+isoforms to the actual PTC. We refer to this as the *attribution dissociation*:
+both models can call NMD correctly, but only one identifies the correct cause.
+
+### Per-Family SHAP Decomposition
+
+```{r sec3d-attribution-discordance}
+# ── Data provenance ──
+# Source: mc$combined_model$shap_test (TreeSHAP from XGBoost on holdout test)
+#   mc$test (holdout test isoforms, 1:1 with shap_test rows)
+#   ref_atg_analysis.rds c2 table — categorizes NMD pairs by ref-ATG fate
+# Population: holdout test NMD isoforms, split into occult-PTC vs non-occult NMD
+# Methods: identify occult-PTC = NMD pair where comparator was originally PTC-
+#   per TD2 but reclassified as effectively_ptc by ref-ATG analysis. Compare
+#   per-isoform |SHAP| fraction from Ref-CDS feature family vs TD2 family.
+
+ra <- readRDS(file.path(cache_dir, "ref_atg_analysis.rds"))
+occult_ids <- ra$c2$comparator_isoform_id[
+  ra$c2$category == "effectively_ptc" & !ra$c2$original_ptc]
+
+shap_combined <- mc$combined_model$shap_test
+test_df <- mc$test
+nmd_test_idx <- which(test_df$is_nmd == 1)
+occult_test_idx <- nmd_test_idx[test_df$isoform_id[nmd_test_idx] %in% occult_ids]
+nonoccult_test_idx <- setdiff(nmd_test_idx, occult_test_idx)
+
+# Partition combined-model features by family (Ref-CDS columns prefixed "ref_")
+all_feat <- colnames(shap_combined)
+ref_feat <- grep("^ref_", all_feat, value = TRUE)
+td2_feat <- setdiff(all_feat, ref_feat)
+
+# Per-isoform fraction of |SHAP| from Ref-CDS family
+abs_shap <- abs(shap_combined)
+row_sum   <- rowSums(abs_shap)
+ref_frac  <- rowSums(abs_shap[, ref_feat, drop = FALSE]) / pmax(row_sum, 1e-12)
+
+attribution_summary <- data.frame(
+  Subset = c("Occult-PTC NMD", "Non-occult NMD"),
+  N      = c(length(occult_test_idx), length(nonoccult_test_idx)),
+  `Mean Ref-CDS |SHAP| fraction` = c(
+    round(mean(ref_frac[occult_test_idx]), 3),
+    round(mean(ref_frac[nonoccult_test_idx]), 3)
+  ),
+  `Median Ref-CDS |SHAP| fraction` = c(
+    round(median(ref_frac[occult_test_idx]), 3),
+    round(median(ref_frac[nonoccult_test_idx]), 3)
+  ),
+  check.names = FALSE
+)
+wt_attr <- wilcox.test(ref_frac[occult_test_idx], ref_frac[nonoccult_test_idx])
+
+render_dt(attribution_summary,
+  caption = "Per-isoform |SHAP| family fractions, combined model")
+```
+
+Column definitions: **Subset** = NMD subgroup; **N** = isoforms in holdout test set;
+**Mean / Median Ref-CDS |SHAP| fraction** = per-isoform sum of |SHAP| from
+Ref-CDS-prefixed features divided by total |SHAP|, averaged across isoforms.
+
+Occult-PTC isoforms attribute **`r round(100 * attribution_summary[1, 3], 1)`%** of
+combined-model |SHAP| to Ref-CDS features, vs only
+**`r round(100 * attribution_summary[2, 3], 1)`%** for non-occult NMD
+(Wilcoxon p = `r format_p(wt_attr$p.value)`). The Ref-CDS family carries
+~`r round((attribution_summary[1, 3] / attribution_summary[2, 3] - 1) * 100, 0)`%
+more relative attribution in occult-PTC than in standard NMD, even though
+both subpopulations are correctly classified as NMD.
+
+### Top Feature Attributions per Subset
+
+```{r sec3d-top-features-by-subset}
+# ── Data provenance ──
+# Source: mc$td2_models$step4$shap_test, mc$ref_models$step4$shap_test,
+#   mc$combined_model$shap_test — TreeSHAP from each XGBoost variant
+# Population: occult-PTC isoforms in each model's test set
+# Method: mean |SHAP| per feature within occult-PTC subset, ranked
+
+# TD2 model SHAP — same test set as combined
+td2_shap <- mc$td2_models$step4$shap_test
+td2_test_df <- mc$test
+td2_occult_idx <- which(td2_test_df$is_nmd == 1 &
+                          td2_test_df$isoform_id %in% occult_ids)
+td2_nonoccult_idx <- setdiff(which(td2_test_df$is_nmd == 1), td2_occult_idx)
+
+# Ref-CDS model SHAP — restricted test set (ref-CDS features complete:
+# ref_utr5_excluded == FALSE in mc$test). Row order is preserved between
+# mc$ref_models$step4$shap_test and mc$test[ref_utr5_excluded == FALSE, ].
+ref_shap <- mc$ref_models$step4$shap_test
+ref_filter_idx <- which(!is.na(mc$test$ref_utr5_excluded) &
+                          mc$test$ref_utr5_excluded == FALSE)
+ref_test_df <- mc$test[ref_filter_idx, ]
+ref_occult_idx <- which(ref_test_df$is_nmd == 1 &
+                          ref_test_df$isoform_id %in% occult_ids)
+ref_nonoccult_idx <- setdiff(which(ref_test_df$is_nmd == 1), ref_occult_idx)
+
+mean_abs <- function(mat, idx) colMeans(abs(mat[idx, , drop = FALSE]))
+
+td2_occult_top <- sort(mean_abs(td2_shap, td2_occult_idx), decreasing = TRUE)[1:6]
+ref_occult_top <- sort(mean_abs(ref_shap, ref_occult_idx), decreasing = TRUE)[1:6]
+td2_nonoccult_top <- mean_abs(td2_shap, td2_nonoccult_idx)[names(td2_occult_top)]
+ref_nonoccult_top <- mean_abs(ref_shap, ref_nonoccult_idx)[names(ref_occult_top)]
+
+td2_table <- data.frame(
+  Feature = names(td2_occult_top),
+  `Mean |SHAP| occult` = round(td2_occult_top, 3),
+  `Mean |SHAP| non-occult` = round(td2_nonoccult_top, 3),
+  Ratio = round(td2_occult_top / pmax(td2_nonoccult_top, 1e-6), 2),
+  check.names = FALSE
+)
+ref_table <- data.frame(
+  Feature = names(ref_occult_top),
+  `Mean |SHAP| occult` = round(ref_occult_top, 3),
+  `Mean |SHAP| non-occult` = round(ref_nonoccult_top, 3),
+  Ratio = round(ref_occult_top / pmax(ref_nonoccult_top, 1e-6), 2),
+  check.names = FALSE
+)
+
+render_dt(td2_table,
+  caption = "TD2-only model: top features for occult-PTC isoforms")
+render_dt(ref_table,
+  caption = "Ref-CDS-only model: top features for occult-PTC isoforms")
+```
+
+Column definitions (both tables): **Feature** = XGBoost feature name; **Mean
+|SHAP| occult** / **non-occult** = average absolute SHAP value across occult-PTC
+or non-occult NMD isoforms; **Ratio** = mean |SHAP| (occult) / mean |SHAP|
+(non-occult). A ratio above 1 means the feature carries more attribution weight
+for occult-PTC than for standard NMD.
+
+The TD2 model's top occult-PTC feature is `uorf_longest_nt` — the median
+length is ~432 nt in occult-PTC vs ~183 nt in non-occult NMD. A 432-nt
+"uORF" is biologically implausible; this signal is the **reference CDS that
+TD2 demoted** when it skipped the early PTC and chose a downstream ATG.
+Meanwhile the TD2 model's `downstream_ejc` feature (TD2's notion of PTC
+status) carries near-zero |SHAP| for occult-PTC because TD2's chosen ORF
+contains no downstream EJC — the early PTC has been absorbed into TD2's
+"5'UTR".
+
+The Ref-CDS model attributes the same isoforms primarily to
+`ref_downstream_ejc` (the genuine PTC signal in the reference reading
+frame), with mean |SHAP| ~2× higher than for non-occult NMD.
+
+### Independent Corroboration: Three-Way ORF Caller Agreement
+
+If TD2's downstream-ATG choice is genuinely incorrect for occult-PTC isoforms,
+a second, independently-motivated ORF caller should also disagree with TD2
+and converge on the reference-ATG. We test this using **ORFik**, which scores
+all ATGs by their Kozak context and selects the highest-scoring ORF without
+any splicing-context information. ORFik's choices come from a different
+prior (translation initiation strength) than reference-ATG tracing (splicing
+preserves the start), so agreement between the two would be strong evidence
+that *both* are recovering the biologically correct ORF.
+
+```{r sec3d-orfik-agreement}
+# ── Data provenance ──
+# Source: orfik_scan.rds$orf_features (Isopair-derived per-ORF table)
+#   ref_atg_analysis.rds c2 (ref-ATG categorization)
+#   cds.rds (TD2 CDS coordinates)
+#   structures.rds (exon coordinates for genomic-to-transcript mapping)
+# Method: for each comparator isoform, compute three candidate ATG
+#   tx-positions (TD2 CDS, ref-ATG, ORFik top-Kozak) and tabulate agreement
+#   within ±2 nt tolerance. Restrict to NMD pairs by category.
+
+orfik <- readRDS(file.path(cache_dir, "orfik_scan.rds"))
+orfik_features <- orfik$orf_features
+
+# ORFik top-Kozak ATG per isoform (tiebreak by smallest tx position)
+orfik_top <- orfik_features %>%
+  group_by(isoform_id) %>%
+  arrange(desc(kozak_score), orf_start) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  select(isoform_id,
+         orfik_atg_tx     = orf_start,
+         orfik_kozak      = kozak_score,
+         orfik_n_dejc     = n_downstream_ejc,
+         orfik_has_dejc   = has_downstream_ejc)
+
+# TD2 ATG genomic → tx position per comparator
+struct_lookup <- setNames(
+  lapply(seq_len(nrow(structures)), function(i) {
+    list(starts = structures$exon_starts[[i]],
+         ends   = structures$exon_ends[[i]],
+         strand = structures$strand[i])
+  }), structures$isoform_id)
+
+td2_atg_genomic_for <- function(iso_id) {
+  cd <- cds[match(iso_id, cds$isoform_id), ]
+  if (is.na(cd$strand)) return(NA_integer_)
+  ifelse(cd$strand == "+", cd$cds_start, cd$cds_stop)
+}
+
+g2t_safe <- function(genomic, iso_id) {
+  s <- struct_lookup[[iso_id]]
+  if (is.null(s) || is.na(genomic)) return(NA_integer_)
+  Isopair::genomicToTranscript(genomic, s$starts, s$ends, s$strand)
+}
+
+# Build per-pair table of three ATG tx positions (NMD pairs only)
+ra_c2 <- ra$c2
+ra_c2$td2_atg_tx <- vapply(seq_len(nrow(ra_c2)), function(i) {
+  cid <- ra_c2$comparator_isoform_id[i]
+  g2t_safe(td2_atg_genomic_for(cid), cid)
+}, numeric(1))
+ra_c2$ref_atg_tx <- vapply(seq_len(nrow(ra_c2)), function(i) {
+  cid <- ra_c2$comparator_isoform_id[i]
+  g2t_safe(ra_c2$ref_atg_genomic[i], cid)
+}, numeric(1))
+ra_c2 <- merge(ra_c2, orfik_top,
+               by.x = "comparator_isoform_id", by.y = "isoform_id",
+               all.x = TRUE)
+
+# Subset definitions for the agreement table
+ra_c2$subset <- dplyr::case_when(
+  ra_c2$category == "effectively_ptc" & !ra_c2$original_ptc ~ "Occult-PTC",
+  ra_c2$original_ptc ~ "Genuinely PTC+",
+  ra_c2$category == "no_downstream_ejc" ~ "PTC-, no_downstream_ejc",
+  ra_c2$category == "truncated_no_ejc"  ~ "PTC-, truncated_no_ejc",
+  ra_c2$category == "ref_atg_lost"      ~ "Ref-ATG lost",
+  TRUE ~ "Other"
+)
+
+resolvable <- !is.na(ra_c2$td2_atg_tx) & !is.na(ra_c2$ref_atg_tx) &
+               !is.na(ra_c2$orfik_atg_tx)
+TOL <- 2L
+ra_c2$agree_orfik_td2 <- resolvable &
+  abs(ra_c2$orfik_atg_tx - ra_c2$td2_atg_tx) <= TOL
+ra_c2$agree_orfik_ref <- resolvable &
+  abs(ra_c2$orfik_atg_tx - ra_c2$ref_atg_tx) <= TOL
+ra_c2$agree_td2_ref   <- resolvable &
+  abs(ra_c2$td2_atg_tx - ra_c2$ref_atg_tx) <= TOL
+
+ra_c2$bucket <- dplyr::case_when(
+  !resolvable                                   ~ "Unresolvable",
+  ra_c2$agree_orfik_td2 & ra_c2$agree_orfik_ref ~ "All three agree",
+  ra_c2$agree_orfik_td2                         ~ "ORFik = TD2 only",
+  ra_c2$agree_orfik_ref                         ~ "ORFik = ref-ATG only",
+  TRUE                                          ~ "ORFik picks third ATG"
+)
+
+agreement_table <- ra_c2 %>%
+  filter(subset != "Other", subset != "Ref-ATG lost") %>%
+  group_by(subset) %>%
+  summarise(
+    N_resolvable = sum(bucket != "Unresolvable"),
+    `ORFik = TD2 only`     = sprintf("%d (%.1f%%)",
+        sum(bucket == "ORFik = TD2 only"),
+        100 * sum(bucket == "ORFik = TD2 only") / pmax(sum(bucket != "Unresolvable"), 1)),
+    `ORFik = ref-ATG only` = sprintf("%d (%.1f%%)",
+        sum(bucket == "ORFik = ref-ATG only"),
+        100 * sum(bucket == "ORFik = ref-ATG only") / pmax(sum(bucket != "Unresolvable"), 1)),
+    `All three agree`      = sprintf("%d (%.1f%%)",
+        sum(bucket == "All three agree"),
+        100 * sum(bucket == "All three agree") / pmax(sum(bucket != "Unresolvable"), 1)),
+    `ORFik picks third ATG` = sprintf("%d (%.1f%%)",
+        sum(bucket == "ORFik picks third ATG"),
+        100 * sum(bucket == "ORFik picks third ATG") / pmax(sum(bucket != "Unresolvable"), 1)),
+    .groups = "drop"
+  )
+
+render_dt(agreement_table,
+  caption = "Three-way ORF caller agreement (ORFik vs TD2 vs ref-ATG, ±2 nt tolerance)")
+
+# Headline numbers for prose
+occult_row <- ra_c2[ra_c2$subset == "Occult-PTC", ]
+n_occult_resolvable <- sum(!is.na(occult_row$td2_atg_tx) &
+                            !is.na(occult_row$ref_atg_tx) &
+                            !is.na(occult_row$orfik_atg_tx))
+n_occult_orfik_ref <- sum(occult_row$bucket == "ORFik = ref-ATG only")
+n_occult_orfik_td2 <- sum(occult_row$bucket == "ORFik = TD2 only")
+pct_orfik_ref_occult <- round(100 * n_occult_orfik_ref / n_occult_resolvable, 1)
+pct_orfik_td2_occult <- round(100 * n_occult_orfik_td2 / n_occult_resolvable, 1)
+
+# Of occult-PTC pairs where ORFik agrees with ref-ATG, what fraction are PTC-bearing per ORFik?
+n_orfik_ref_with_dejc <- sum(occult_row$bucket == "ORFik = ref-ATG only" &
+                              occult_row$orfik_has_dejc, na.rm = TRUE)
+pct_orfik_ref_ptc <- round(100 * n_orfik_ref_with_dejc /
+                            pmax(n_occult_orfik_ref, 1), 1)
+```
+
+Column definitions: **Subset** = NMD pair category (occult-PTC, genuinely
+PTC+, etc.); **N_resolvable** = pairs where all three ATG positions could be
+resolved on the comparator transcript; **ORFik = TD2/ref-ATG only** =
+pairs where ORFik's top-Kozak ATG matches one caller exclusively (within
+±2 nt); **All three agree** = TD2, ref-ATG, and ORFik converge on the
+same position; **ORFik picks third ATG** = ORFik selects an ATG that
+matches neither.
+
+For occult-PTC isoforms (where TD2 and ref-ATG disagree by construction),
+ORFik agrees with ref-ATG **`r pct_orfik_ref_occult`%** of the time and
+with TD2 only **`r pct_orfik_td2_occult`%** —
+ORFik corroborates ref-ATG ~`r round(pct_orfik_ref_occult / pmax(pct_orfik_td2_occult, 0.1), 0)`×
+more often than TD2. In genuinely-PTC+ pairs where TD2 and ref-ATG agree
+by construction, ORFik aligns with both at similar rates (no preference),
+confirming that ORFik's bias toward ref-ATG is specific to occult-PTC.
+
+Importantly, of the `r n_occult_orfik_ref` occult-PTC pairs where ORFik
+agrees with ref-ATG, **`r pct_orfik_ref_ptc`% of those ORFik-derived ORFs
+have a downstream exon-exon junction** — i.e., they are PTC-bearing per
+ORFik's own classification. Two independent ORF callers, motivated by
+unrelated priors (translation initiation strength vs splicing context),
+converge on the same answer where TD2 fails: an early PTC.
+
+(Caveat: the ORFik scan in this run uses an integer-binned Kozak score
+0–2; ~57% of occult-PTC pairs have ORFik picking a third ATG due to
+tied-strong-Kozak alternatives broken by smallest-position tiebreaker.
+Switching to the continuous PWM Kozak score (`scoreKozakPWM()`) should
+recover most of those cases. The exclusive `ORFik = ref-ATG` count is
+therefore a lower bound on agreement.)
+
 ## Structural Features vs Sequence: The Remaining Gap
 
 The combined structural model achieves holdout AUC =
@@ -6219,8 +6609,9 @@ summary_rows <- lapply(c("all_samples", main_cts), function(ct) {
   div_row <- compute_divergence_row(ct)
   med_shared <- if (!is.null(div_row)) div_row$Ctrl_median_pct_shared else NA
 
-  # Productive frameshifts (only available for all_samples)
-  n_pf <- if (ct == "all_samples") nrow(pf_data$characterization) else NA
+  # Productive frameshifts (only available for all_samples; pf_data may be NULL)
+  n_pf <- if (ct == "all_samples" && !is.null(pf_data))
+            nrow(pf_data$characterization) else NA
 
   data.frame(
     cell_type = ct,

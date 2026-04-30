@@ -44,13 +44,18 @@ gtf_file <- "/Users/petecastaldi/claude_projects/nmd/isocall/nmd_lungcells/resul
 de_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
 de_date <- "2026.3.10"
 # mashr file naming: nmd_mashr_die_{suffix}_{date}.csv
-# Note: mashr doali file corresponds to DO cell type (name mapping quirk)
-ct_to_de_suffix <- c(AT = "at", DD = "dd", DD_ALI = "ddali",
-                      DO = "doali", FB = "fb", MV = "mv")
+# Paper scope (2026-04-29): 4 non-ALI cell types only — AT, DD, FB, MV.
+# DD_ALI / DO_ALI / DO dropped from the paper.
+ct_to_de_suffix <- c(AT = "at", DD = "dd", FB = "fb", MV = "mv")
 
 # --- Thresholds ---
-# mashr has pre-computed nmd_responsive column; non-NMD still uses adj.P.Val
-NON_NMD_ADJ_P <- 0.50
+# mashr has pre-computed nmd_responsive column; non-NMD uses adj.P.Val.
+# Threshold raised from 0.50 → 0.30 (2026-04-29) because the 4-CT mashr rerun
+# tightened adj.P.Val distributions (the per-CT limma fits feeding mashr were
+# rerun on the 4-CT subset). At 0.50 only ~7-12% of isoforms qualified as
+# non-NMD vs ~71% historically; 0.30 yields ~52-60% non-NMD per CT, restoring
+# a usable pair set for downstream gene-matching.
+NON_NMD_ADJ_P <- 0.30
 MIN_PROP      <- 0.05
 
 cat("=== NMD Data Preparation — mashr Classification ===\n\n")
@@ -190,15 +195,15 @@ for (ct in names(ct_to_de_suffix)) {
   cat(sprintf("  %s: %d NMD, %d non-NMD\n", ct, length(nmd_ids), length(non_nmd_ids)))
 }
 
-# all_samples: NMD = union across AT, DD, DO, FB, MV (excludes DD_ALI)
-# non-NMD = intersection across AT, DD, DO, FB, MV (excludes DD_ALI)
-main_cts <- c("AT", "DD", "DO", "FB", "MV")
+# all_samples: NMD = union across AT, DD, FB, MV (paper scope: 4 non-ALI cell types)
+# non-NMD = intersection across AT, DD, FB, MV
+main_cts <- c("AT", "DD", "FB", "MV")
 all_nmd <- unique(unlist(lapply(nmd_classification[main_cts], `[[`, "nmd")))
 all_non_nmd <- Reduce(intersect, lapply(nmd_classification[main_cts], `[[`, "non_nmd"))
 nmd_classification[["all_samples"]] <- list(nmd = all_nmd, non_nmd = all_non_nmd)
 dmso_samples_list[["all_samples"]]  <- dmso_cols
 smg1i_samples_list[["all_samples"]] <- smg1i_cols
-cat(sprintf("  all_samples (AT, DD, DO, FB, MV): %d NMD (union), %d non-NMD (intersection)\n",
+cat(sprintf("  all_samples (AT, DD, FB, MV): %d NMD (union), %d non-NMD (intersection)\n",
             length(all_nmd), length(all_non_nmd)))
 
 # ==============================================================================

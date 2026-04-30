@@ -2,23 +2,22 @@
 # ==============================================================================
 # 05r_ref_atg_analysis.R
 #
-# Reference-ATG-anchored NMD analysis.
+# Reference-ATG-anchored NMD analysis. Backend: Isopair::traceReferenceAtg().
 #
 # For each gene-matched NMD pair (C2) and Control pair (C4):
-#   1. Check if the reference's CDS start ATG is exonic in the comparator
-#   2. If yes, trace the ORF from that ATG through the comparator's transcript
-#   3. Compare ORF length to the reference, count downstream EJCs
-#   4. Reclassify: is this effectively a PTC?
-#   5. Attribute splice events for the effectively-PTC cases
+#   1. Trace the reference ATG through the comparator (Isopair::traceReferenceAtg)
+#   2. For effectively-PTC cases, attribute the responsible splice event
+#      using the shared attribute_ptc_events() / attribute_3utr_splice()
+#      helpers in analysis_functions.R
 #
-# Three groups:
-#   Group 1: Reference isoforms (non-NMD baseline)
-#   Group 2: NMD+ / ref ATG available (ref CDS start is exonic in comparator)
-#   Group 3: NMD+ / ref ATG not available (ref CDS start lost)
+# Categories produced (from Isopair::traceReferenceAtg):
+#   effectively_ptc, truncated_no_ejc, no_downstream_ejc, ref_atg_lost,
+#   no_ref_cds, mapping_failed
 #
 # Inputs:
 #   - data_mashr/cds.rds, structures.rds, profiles_c2/c4_allsamples.rds
 #   - data_mashr/analysis_cache/ptc_c2_allsamples.rds
+#   - data_mashr/analysis_cache/fw_c2_allsamples.rds
 #   - SQANTI corrected FASTA
 #
 # Output:
@@ -30,6 +29,7 @@
 
 suppressPackageStartupMessages({
   library(dplyr)
+  library(Isopair)
 })
 
 setwd("/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0/isopair_wrapper")
@@ -37,7 +37,7 @@ setwd("/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Versi
 FASTA_PATH <- "/Users/petecastaldi/claude_projects/nmd/sqanti/nmd_lungcells/results/nmd_lungcells_corrected.fasta"
 OUTPUT_PATH <- "data_mashr/analysis_cache/ref_atg_analysis.rds"
 
-cat("=== Reference-ATG-Anchored NMD Analysis ===\n")
+cat("=== Reference-ATG-Anchored NMD Analysis (Isopair::traceReferenceAtg) ===\n")
 cat("Started:", format(Sys.time()), "\n\n")
 
 # ==============================================================================
@@ -76,67 +76,9 @@ cat("  Original PTC+:", sum(c2_coding$comp_has_ptc),
     " PTC-:", sum(!c2_coding$comp_has_ptc), "\n")
 
 # ==============================================================================
-# 2. Build exon lookup and helper functions
+# 2. Extract transcript sequences from FASTA
 # ==============================================================================
-cat("\nBuilding exon lookups...\n")
-
-structs_lookup <- setNames(
-  lapply(seq_len(nrow(structures)), function(i) {
-    list(starts = structures$exon_starts[[i]],
-         ends = structures$exon_ends[[i]],
-         strand = structures$strand[i])
-  }), structures$isoform_id)
-
-# Check if a genomic position (and the full 3-nt codon) is exonic
-is_codon_exonic <- function(pos, iso_id, strand) {
-  ex <- structs_lookup[[iso_id]]
-  if (is.null(ex) || is.na(pos)) return(FALSE)
-  # For + strand: codon is at pos, pos+1, pos+2
-  # For - strand: codon is at pos, pos-1, pos-2
-  if (strand == "+") {
-    positions <- c(pos, pos + 1L, pos + 2L)
-  } else {
-    positions <- c(pos, pos - 1L, pos - 2L)
-  }
-  all(sapply(positions, function(p) any(p >= ex$starts & p <= ex$ends)))
-}
-
-# Map genomic position to transcript-space (1-based)
-genomic_to_transcript <- function(genomic_pos, exon_starts, exon_ends, strand) {
-  if (strand == "-") {
-    exon_starts <- rev(exon_starts)
-    exon_ends <- rev(exon_ends)
-  }
-  cum <- 0L
-  for (j in seq_along(exon_starts)) {
-    es <- exon_starts[j]; ee <- exon_ends[j]
-    if (strand == "+") {
-      if (genomic_pos >= es && genomic_pos <= ee)
-        return(cum + (genomic_pos - es) + 1L)
-    } else {
-      if (genomic_pos >= es && genomic_pos <= ee)
-        return(cum + (ee - genomic_pos) + 1L)
-    }
-    cum <- cum + (ee - es + 1L)
-  }
-  NA_integer_
-}
-
-# Compute junction positions in transcript space
-get_junctions <- function(exon_starts, exon_ends, strand) {
-  n <- length(exon_starts)
-  if (n <= 1) return(integer(0))
-  exon_lengths <- exon_ends - exon_starts + 1L
-  if (strand == "-") exon_lengths <- rev(exon_lengths)
-  cumsum(exon_lengths)[-n]
-}
-
-stop_codons <- c("TAA", "TAG", "TGA")
-
-# ==============================================================================
-# 3. Extract transcript sequences
-# ==============================================================================
-cat("Extracting sequences...\n")
+cat("\nExtracting sequences...\n")
 
 all_isoforms <- unique(c(c2_coding$reference_isoform_id,
                           c2_coding$comparator_isoform_id,
@@ -159,178 +101,69 @@ seq_vec <- setNames(
   vapply(split_lines, `[`, character(1), 1))
 cat("  Sequences loaded:", length(seq_vec), "\n")
 
+# Structures lookup used by Section 4 (transcript-to-genomic mapping for PTC stops)
+structs_lookup <- setNames(
+  lapply(seq_len(nrow(structures)), function(i) {
+    list(starts = structures$exon_starts[[i]],
+         ends = structures$exon_ends[[i]],
+         strand = structures$strand[i])
+  }), structures$isoform_id)
+
 # ==============================================================================
-# 4. Core analysis: trace ref ATG through comparator
+# 3. Trace ref ATG through comparator (Isopair::traceReferenceAtg)
 # ==============================================================================
 analyze_pairs <- function(pairs, label) {
   cat(sprintf("\n=== Analyzing %s pairs (n=%d) ===\n", label, nrow(pairs)))
 
-  ref_cds_data <- cds[match(pairs$reference_isoform_id, cds$isoform_id), ]
-  ref_cds_data$cds_5prime <- ifelse(ref_cds_data$strand == "+",
-                                     ref_cds_data$cds_start, ref_cds_data$cds_stop)
-
-  results <- data.frame(
-    reference_isoform_id = pairs$reference_isoform_id,
-    comparator_isoform_id = pairs$comparator_isoform_id,
-    gene_id = pairs$gene_id,
-    ref_atg_genomic = ref_cds_data$cds_5prime,
-    strand = ref_cds_data$strand,
-    ref_atg_exonic_in_comp = NA,
-    ref_orf_length = NA_integer_,
-    comp_orf_length_from_ref_atg = NA_integer_,
-    comp_stop_tx_pos = NA_integer_,
-    n_downstream_ejc = NA_integer_,
-    category = NA_character_,
-    stringsAsFactors = FALSE
-  )
-
   t0 <- proc.time()
+  trace <- Isopair::traceReferenceAtg(
+    pairs = pairs[, c("reference_isoform_id", "comparator_isoform_id")],
+    structures = structures,
+    cds_metadata = cds,
+    sequences = seq_vec,
+    ejc_threshold = 50L,
+    resolve_alt_start = FALSE  # legacy behavior; alt-start handled separately if needed
+  )
+  cat(sprintf("  traceReferenceAtg completed in %.0f seconds\n",
+              (proc.time() - t0)[3]))
 
-  for (i in seq_len(nrow(pairs))) {
-    ref_id <- pairs$reference_isoform_id[i]
-    comp_id <- pairs$comparator_isoform_id[i]
-    ref_atg <- ref_cds_data$cds_5prime[i]
-    strand <- ref_cds_data$strand[i]
+  # Augment with wrapper-specific columns expected by Section 4 and downstream consumers
+  pair_key <- paste(pairs$reference_isoform_id, pairs$comparator_isoform_id, sep = "|")
+  trace_key <- paste(trace$reference_isoform_id, trace$comparator_isoform_id, sep = "|")
+  trace$gene_id <- pairs$gene_id[match(trace_key, pair_key)]
+  trace$strand <- cds$strand[match(trace$comparator_isoform_id, cds$isoform_id)]
 
-    if (is.na(ref_atg)) { results$category[i] <- "no_ref_cds"; next }
-
-    # Check if ref ATG codon is exonic in comparator
-    atg_exonic <- is_codon_exonic(ref_atg, comp_id, strand)
-    results$ref_atg_exonic_in_comp[i] <- atg_exonic
-
-    if (!atg_exonic) { results$category[i] <- "ref_atg_lost"; next }
-    if (!ref_id %in% names(seq_vec) || !comp_id %in% names(seq_vec)) {
-      results$category[i] <- "no_sequence"; next
-    }
-
-    ref_s <- structs_lookup[[ref_id]]
-    comp_s <- structs_lookup[[comp_id]]
-
-    # Map ref ATG to transcript positions
-    ref_tx_pos <- genomic_to_transcript(ref_atg, ref_s$starts, ref_s$ends, strand)
-    comp_tx_pos <- genomic_to_transcript(ref_atg, comp_s$starts, comp_s$ends, strand)
-
-    if (is.na(ref_tx_pos) || is.na(comp_tx_pos)) {
-      results$category[i] <- "mapping_failed"; next
-    }
-
-    ref_seq <- seq_vec[ref_id]
-    comp_seq <- seq_vec[comp_id]
-
-    # Verify ATG in both
-    if (substr(ref_seq, ref_tx_pos, ref_tx_pos + 2) != "ATG") {
-      results$category[i] <- "not_atg_in_ref"; next
-    }
-    if (substr(comp_seq, comp_tx_pos, comp_tx_pos + 2) != "ATG") {
-      results$category[i] <- "not_atg_in_comp"; next
-    }
-
-    # Find ORF from ref ATG in reference
-    ref_stop <- NA_integer_
-    pos <- ref_tx_pos + 3L
-    while (pos + 2L <= nchar(ref_seq)) {
-      if (substr(ref_seq, pos, pos + 2L) %in% stop_codons) {
-        ref_stop <- pos; break
-      }
-      pos <- pos + 3L
-    }
-    if (!is.na(ref_stop)) results$ref_orf_length[i] <- ref_stop - ref_tx_pos
-
-    # Find ORF from ref ATG in comparator
-    comp_stop <- NA_integer_
-    pos <- comp_tx_pos + 3L
-    while (pos + 2L <= nchar(comp_seq)) {
-      if (substr(comp_seq, pos, pos + 2L) %in% stop_codons) {
-        comp_stop <- pos; break
-      }
-      pos <- pos + 3L
-    }
-
-    if (is.na(comp_stop)) { results$category[i] <- "no_stop_in_comp"; next }
-
-    comp_orf_len <- comp_stop - comp_tx_pos
-    results$comp_orf_length_from_ref_atg[i] <- comp_orf_len
-    results$comp_stop_tx_pos[i] <- comp_stop
-
-    # Count downstream EJCs
-    junctions <- get_junctions(comp_s$starts, comp_s$ends, strand)
-    stop_end <- comp_stop + 2L
-    n_dejc <- sum(junctions > stop_end)
-    results$n_downstream_ejc[i] <- n_dejc
-
-    # Classify
-    # Any ORF with downstream EJCs is effectively PTC, regardless of whether
-    # the ORF is shorter, same length, or longer than the reference. Cases:
-    #   - Shorter ORF + EJCs: frameshift or in-frame stop created a PTC
-    #   - Same-length ORF + EJCs: 3'UTR splice gained downstream junctions
-    #   - Longer ORF + EJCs: reference stop skipped, new stop still has EJCs
-    ref_orf_len <- results$ref_orf_length[i]
-    if (n_dejc > 0) {
-      results$category[i] <- "effectively_ptc"
-    } else if (!is.na(ref_orf_len) && comp_orf_len < ref_orf_len) {
-      results$category[i] <- "truncated_no_ejc"
-    } else {
-      results$category[i] <- "no_downstream_ejc"
-    }
-
-    if (i %% 500 == 0) cat(sprintf("  %d / %d (%.0f sec)\n", i, nrow(pairs),
-                                    (proc.time() - t0)[3]))
-  }
-
-  cat(sprintf("  Completed in %.0f seconds\n", (proc.time() - t0)[3]))
+  # Backward-compatible column name used by 05_final_report_mashr.Rmd
+  trace$comp_orf_length_from_ref_atg <- trace$comp_orf_length
 
   # Summary
   cat("\n  Results:\n")
-  tab <- sort(table(results$category), decreasing = TRUE)
+  tab <- sort(table(trace$category), decreasing = TRUE)
   for (nm in names(tab)) {
-    cat(sprintf("    %s: %d (%.1f%%)\n", nm, tab[nm], 100 * tab[nm] / nrow(pairs)))
+    cat(sprintf("    %s: %d (%.1f%%)\n", nm, tab[nm], 100 * tab[nm] / nrow(trace)))
   }
 
-  results
+  trace
 }
 
 # Run on C2 (NMD) pairs
 c2_results <- analyze_pairs(c2_coding, "NMD (C2)")
-
-# Add original PTC status
-c2_results$original_ptc <- c2_coding$comp_has_ptc
+c2_results$original_ptc <- c2_coding$comp_has_ptc[
+  match(c2_results$comparator_isoform_id, c2_coding$comparator_isoform_id)]
 
 # Run on C4 (Control) pairs
 c4_results <- analyze_pairs(c4_coding, "Control (C4)")
 
 # ==============================================================================
-# 5. Splice event attribution for effectively-PTC cases
-#    Uses the SAME shared function (attribute_ptc_events) as Section 2b for
-#    truncated-ORF pairs. Same-stop and longer-ORF pairs are attributed to
-#    3'UTR splice (gained downstream junctions) using the same approach as
-#    Section 2b's same-stop Sankey.
+# 4. Splice event attribution for effectively-PTC cases
+#    (a) Truncated ORF → frameshift / in-frame stop (attribute_ptc_events)
+#    (b) Same/longer ORF with downstream EJCs → 3'UTR splice (attribute_3utr_splice)
 # ==============================================================================
 cat("\n=== Splice Event Attribution (Shared Function) ===\n")
 
 source("analysis_functions.R")
 
-# Load frame walk results (same data as used in Section 2b Sankey)
 fw_c2 <- readRDS("data_mashr/analysis_cache/fw_c2_allsamples.rds")
-
-# Transcript-to-genomic coordinate mapping (reverse of genomic_to_transcript)
-transcript_to_genomic <- function(tx_pos, exon_starts, exon_ends, strand) {
-  if (strand == "-") {
-    exon_starts <- rev(exon_starts)
-    exon_ends <- rev(exon_ends)
-  }
-  cum <- 0L
-  for (j in seq_along(exon_starts)) {
-    es <- exon_starts[j]; ee <- exon_ends[j]
-    exon_len <- ee - es + 1L
-    if (tx_pos <= cum + exon_len) {
-      offset <- tx_pos - cum - 1L
-      if (strand == "+") return(es + offset)
-      else return(ee - offset)
-    }
-    cum <- cum + exon_len
-  }
-  NA_integer_
-}
 
 # For effectively-PTC cases in C2 (originally PTC-): map stop to genomic coords
 eff_ptc_mask <- c2_results$category == "effectively_ptc" & !c2_results$original_ptc
@@ -338,6 +171,7 @@ eff_ptc_idx <- which(eff_ptc_mask)
 cat("  Reclassified effectively-PTC (originally PTC-):", length(eff_ptc_idx), "\n")
 
 # Map premature stop from transcript-space to genomic coordinates
+# (Isopair::transcriptToGenomic — strand-aware)
 comp_stop_genomic <- rep(NA_integer_, nrow(c2_results))
 for (k in eff_ptc_idx) {
   comp_id <- c2_results$comparator_isoform_id[k]
@@ -345,14 +179,14 @@ for (k in eff_ptc_idx) {
   comp_stop_tx <- c2_results$comp_stop_tx_pos[k]
   comp_s <- structs_lookup[[comp_id]]
   if (!is.null(comp_s) && !is.na(comp_stop_tx)) {
-    comp_stop_genomic[k] <- transcript_to_genomic(
+    comp_stop_genomic[k] <- Isopair::transcriptToGenomic(
       comp_stop_tx, comp_s$starts, comp_s$ends, strand)
   }
 }
 c2_results$comp_stop_genomic <- comp_stop_genomic
 
 # Split reclassified pairs into:
-#   (a) Truncated ORF: comp_orf < ref_orf → use frameshift/in-frame stop attribution
+#   (a) Truncated ORF: comp_orf < ref_orf → frameshift/in-frame stop attribution
 #   (b) Same/longer ORF with downstream EJCs → 3'UTR splice mechanism
 eff_ptc_all <- c2_results[eff_ptc_mask, ]
 is_truncated <- !is.na(eff_ptc_all$ref_orf_length) &
@@ -395,9 +229,6 @@ if (nrow(trunc_pairs) > 0) {
 }
 
 # --- (b) Same/longer ORF attribution: 3'UTR splice ---
-# These have downstream EJCs but the ORF isn't truncated. The comparator
-# gained junctions downstream of the stop (same mechanism as Section 2b
-# same-stop pairs). Uses shared attribute_3utr_splice() function.
 nontrunc_pairs <- eff_ptc_all[!is_truncated, ]
 nontrunc_idx <- eff_ptc_idx[!is_truncated]
 
@@ -466,7 +297,7 @@ if (nrow(utr3_reclass) > 0) {
 }
 
 # ==============================================================================
-# 6. Summary
+# 5. Summary and save
 # ==============================================================================
 cat("\n=== FINAL SUMMARY ===\n\n")
 
@@ -495,9 +326,6 @@ cat(sprintf("  Reclassified effectively-PTC: %d\n", reclass_ptc))
 cat(sprintf("  Total PTC-mediated: %d of %d (%.1f%%)\n",
             total_ptc, nrow(c2_results), 100 * total_ptc / nrow(c2_results)))
 
-# ==============================================================================
-# 7. Save
-# ==============================================================================
 results <- list(
   c2 = c2_results,
   c4 = c4_results,
@@ -512,7 +340,9 @@ results <- list(
   ),
   metadata = list(
     run_timestamp = Sys.time(),
-    fasta_path = FASTA_PATH
+    fasta_path = FASTA_PATH,
+    isopair_version = as.character(packageVersion("Isopair")),
+    backend = "Isopair::traceReferenceAtg"
   )
 )
 

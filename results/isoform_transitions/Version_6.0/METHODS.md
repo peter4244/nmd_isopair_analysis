@@ -1109,9 +1109,7 @@ After characterizing splicing patterns within the pooled dataset, we compare NMD
 
 **C3 excluded:** C4 pairs are a strict subset of C3. Using both introduces pseudo-replication because C3's multiple pairs per gene inflate sample sizes, and C3 and C4 are not statistically independent.
 
-**Cell types analyzed:** AT2, DD, DD_ALI, FB, MV (5 cell types + all_samples aggregate)
-
-**DO excluded from downstream:** DO yields too few NMD pairs for meaningful analysis (C1: 1 pair, C2: 6 pairs at 0.50 threshold). DO still contributes to all_samples isoform classification in Script 07: NMD-sensitive isoforms are defined as the union across ANY cell type (including DO), and non-NMD isoforms require the intersection across ALL cell types (including DO). Removing DO from Script 07 would slightly expand the non-NMD set (one fewer cell type to agree) and slightly shrink the NMD set (lose DO-only NMD isoforms). This marginal influence is accepted because the individual cell-type runs (which exclude DO) are the primary unit of analysis.
+**Cell types analyzed (paper scope, 2026-04-29):** AT2, DD, FB, MV (4 non-ALI cell types + all_samples aggregate). DD_ALI, DO_ALI, and DO are excluded from the paper.
 
 ### Per-Comparison Filtering (Script 14)
 
@@ -1383,11 +1381,24 @@ donors 001V and 027U).
 Isoforms are classified using mashr (multivariate adaptive shrinkage)
 differential isoform expression results:
 - **NMD-sensitive**: `nmd_responsive == TRUE` (pre-computed by mashr;
-  adj.P.Val < 0.05 & logFC > 0 with mashr-shrunken effect sizes)
-- **Non-NMD**: `adj.P.Val > 0.50`
-- **all_samples**: NMD = union across AT, DD, DO, FB, MV cell types;
-  non-NMD = intersection across the same 5 cell types. DD_ALI excluded
-  from main aggregation.
+  lfsr < 0.05 & posterior logFC > 0 with mashr-shrunken effect sizes)
+- **Non-NMD**: `adj.P.Val > 0.30`
+- **all_samples**: NMD = union across AT, DD, FB, MV cell types;
+  non-NMD = intersection across the same 4 cell types.
+
+The non-NMD threshold of 0.30 was selected (2026-04-29) to restore the
+historical proportion of non-NMD isoforms (~52–60% of expressed isoforms
+across the four cell types) after the mashr model was refit on the
+4-cell-type paper scope. The earlier 0.50 threshold, while appropriate
+when the mashr model was fit on six cell types, became overly restrictive
+under the 4-CT refit because the per-CT limma fits feeding mashr were
+rerun on the smaller subset and produced tighter adj.P.Val distributions.
+At 0.50 only 7–13% of isoforms per CT qualified as non-NMD; at 0.30 the
+per-CT proportions are AT 60.1%, DD 52.4%, FB 59.6%, MV 58.1%.
+
+Paper scope (2026-04-29): the analysis is restricted to four non-ALI
+primary lung cell types — AT, DD, FB, MV. DD_ALI, DO_ALI, and DO are
+not used.
 
 ### Pair Construction and Gene-Matching
 

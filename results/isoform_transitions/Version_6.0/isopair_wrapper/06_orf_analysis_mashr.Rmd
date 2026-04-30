@@ -262,7 +262,7 @@ orf_summary <- orf_grouped %>%
     n = n(),
     median_orfs = median(n_orfs),
     median_nmd_competent = median(n_nmd_competent),
-    median_atgs = median(n_atgs),
+    median_best_kozak_nmd = round(median(best_kozak_nmd, na.rm = TRUE), 2),
     median_junctions = median(n_junctions),
     pct_any_nmd_comp = round(100 * mean(has_any_nmd_competent), 1),
     .groups = "drop")
@@ -270,10 +270,12 @@ orf_summary <- orf_grouped %>%
 render_dt(orf_summary, caption = "ORF Landscape by Analysis Group")
 ```
 
-Column definitions: **median_orfs** = median ORFs per isoform; **median_nmd_competent**
-= median ORFs whose stop has ≥1 downstream EJC; **median_atgs** = median ATG
-count; **median_junctions** = median exon-exon junctions; **pct_any_nmd_comp** =
-% with at least one NMD-competent ORF.
+Column definitions: **median_orfs** = median plausibly-translated (Kozak-passing)
+ORFs per isoform; **median_nmd_competent** = median ORFs whose stop has ≥1
+downstream EJC; **median_best_kozak_nmd** = median (across isoforms) of the best
+PWM Kozak score among NMD-competent ORFs (continuous log-odds); **median_junctions**
+= median exon-exon junctions; **pct_any_nmd_comp** = % of isoforms with at least
+one NMD-competent ORF.
 
 ```{r orf-boxplots, fig.width=12, fig.height=5}
 # Side-by-side boxplots

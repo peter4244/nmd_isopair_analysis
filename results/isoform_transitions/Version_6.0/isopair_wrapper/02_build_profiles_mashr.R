@@ -4,13 +4,13 @@
 # Version: 7.0-mashr
 #
 # Purpose: Generate C2/C4 pairs and build splicing choice profiles using mashr
-#          NMD classifications. Reuses infrastructure (structures, union exons,
-#          CDS, PTC) from the limma run and caches profiles by pair identity
-#          to avoid recomputing already-profiled pairs.
+#          NMD classifications. Reuses isoform-intrinsic infrastructure
+#          (structures, union exons, CDS, PTC) from data/ and caches profiles
+#          by pair identity to avoid recomputing already-profiled pairs.
 #
 # Input:
 #   - RDS files from 01_prepare_data_mashr.R (data_mashr/)
-#   - Infrastructure from limma run (data/)
+#   - Isoform infrastructure (data/) — DE-method-independent
 #
 # Output (to output_dir/):
 #   - Per cell type: pairs_c2_{ct}.rds, pairs_c4_{ct}.rds,
@@ -18,7 +18,7 @@
 #   - Symlinked/copied infrastructure files for self-contained data_mashr/
 #
 # Usage:
-#   Rscript 02_build_profiles_mashr.R [--data-dir DIR] [--output-dir DIR] [--limma-dir DIR]
+#   Rscript 02_build_profiles_mashr.R [--data-dir DIR] [--output-dir DIR] [--infra-dir DIR]
 
 library(Isopair)
 library(dplyr)
@@ -30,7 +30,7 @@ library(dplyr)
 args <- commandArgs(trailingOnly = TRUE)
 data_dir   <- "data_mashr"
 output_dir <- "data_mashr"
-limma_dir  <- "data"
+infra_dir  <- "data_mashr"  # isoform-intrinsic infra was copied here; legacy data/ archived
 if ("--data-dir" %in% args) {
   idx <- which(args == "--data-dir")
   if (idx < length(args)) data_dir <- args[idx + 1]
@@ -39,14 +39,14 @@ if ("--output-dir" %in% args) {
   idx <- which(args == "--output-dir")
   if (idx < length(args)) output_dir <- args[idx + 1]
 }
-if ("--limma-dir" %in% args) {
-  idx <- which(args == "--limma-dir")
-  if (idx < length(args)) limma_dir <- args[idx + 1]
+if ("--infra-dir" %in% args) {
+  idx <- which(args == "--infra-dir")
+  if (idx < length(args)) infra_dir <- args[idx + 1]
 }
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
 
-# Cell types to process (DO now included; DD_ALI excluded from main)
-cell_types <- c("all_samples", "AT", "DD", "DO", "FB", "MV")
+# Cell types to process — paper scope (2026-04-29): 4 non-ALI cell types
+cell_types <- c("all_samples", "AT", "DD", "FB", "MV")
 
 # Min pairs threshold
 MIN_PAIRS <- 50
@@ -67,20 +67,20 @@ smg1i_samp <- readRDS(file.path(data_dir, "smg1i_samples.rds"))
 cat(sprintf("  Expression: %d isoforms x %d samples\n",
             nrow(expr_mat), ncol(expr_mat)))
 
-# Load infrastructure from limma run (these are isoform-intrinsic, DE-independent)
-cat("Loading infrastructure from limma run...\n")
-structures   <- readRDS(file.path(limma_dir, "structures.rds"))
-ue_union     <- readRDS(file.path(limma_dir, "union_exons.rds"))
-ue_mapping   <- readRDS(file.path(limma_dir, "isoform_union_mapping.rds"))
-cds          <- readRDS(file.path(limma_dir, "cds.rds"))
-annotated_ue <- readRDS(file.path(limma_dir, "annotated_ue.rds"))
-ptc          <- readRDS(file.path(limma_dir, "ptc.rds"))
+# Load isoform-intrinsic infrastructure (DE-method-independent)
+cat("Loading isoform infrastructure...\n")
+structures   <- readRDS(file.path(infra_dir, "structures.rds"))
+ue_union     <- readRDS(file.path(infra_dir, "union_exons.rds"))
+ue_mapping   <- readRDS(file.path(infra_dir, "isoform_union_mapping.rds"))
+cds          <- readRDS(file.path(infra_dir, "cds.rds"))
+annotated_ue <- readRDS(file.path(infra_dir, "annotated_ue.rds"))
+ptc          <- readRDS(file.path(infra_dir, "ptc.rds"))
 
 # Copy infrastructure to output dir for self-contained data_mashr/
 infra_files <- c("structures.rds", "union_exons.rds", "isoform_union_mapping.rds",
                  "cds.rds", "cds_exons.rds", "annotated_ue.rds", "ptc.rds")
 for (f in infra_files) {
-  src <- file.path(limma_dir, f)
+  src <- file.path(infra_dir, f)
   dst <- file.path(output_dir, f)
   if (!file.exists(dst) && file.exists(src)) {
     file.copy(src, dst)
@@ -97,17 +97,18 @@ gene_map_tbl <- tibble::tibble(
 gene_map_tbl <- gene_map_tbl[gene_map_tbl$isoform_id %in% structures$isoform_id, ]
 
 # ==============================================================================
-# 2. Build profile lookup from existing limma profiles
+# 2. Build profile lookup from existing cached profiles
 # ==============================================================================
 
-cat("\nBuilding profile lookup from existing limma profiles...\n")
+cat("\nBuilding profile lookup from cached profiles...\n")
 
 # Load all existing profiles into a single lookup keyed by ref|comp
+# (cache is by pair identity — cell-type label is irrelevant for reuse)
 profile_lookup <- list()
-limma_profile_files <- list.files(limma_dir, pattern = "^profiles_c[24]_.*\\.rds$",
-                                   full.names = TRUE)
+cached_profile_files <- list.files(infra_dir, pattern = "^profiles_c[24]_.*\\.rds$",
+                                    full.names = TRUE)
 n_cached <- 0L
-for (pf in limma_profile_files) {
+for (pf in cached_profile_files) {
   profiles <- readRDS(pf)
   for (i in seq_len(nrow(profiles))) {
     key <- paste(profiles$reference_isoform_id[i],
@@ -116,8 +117,8 @@ for (pf in limma_profile_files) {
   }
   n_cached <- n_cached + nrow(profiles)
 }
-cat(sprintf("  Loaded %d cached profiles from %d limma profile files\n",
-            n_cached, length(limma_profile_files)))
+cat(sprintf("  Loaded %d cached profiles from %d profile files\n",
+            n_cached, length(cached_profile_files)))
 
 # ==============================================================================
 # 3. Per cell type: Generate pairs and build profiles (with reuse)

@@ -3,23 +3,31 @@
 # 05m_orf_landscape.R
 #
 # ORF landscape feature extraction for NMD prediction.
+# Backend: Isopair::enumerateOrfs (Kozak-filtered, MANE-calibrated threshold).
 #
-# For each classified coding isoform, scans the full spliced transcript
-# sequence for ALL ORFs (ATG → first in-frame stop, all three frames).
-# For each ORF stop codon, counts downstream exon-exon junctions (EJCs).
-# An ORF whose stop has ≥1 downstream EJC is "NMD-competent."
+# For each classified coding isoform, enumerates plausibly-translated ORFs
+# (ATGs above the MANE 5th-percentile Kozak threshold), traces each to the
+# first in-frame stop, counts downstream exon-exon junctions, and aggregates
+# to per-isoform features.
 #
-# This analysis is CDS-annotation-free: it reasons from first principles
-# about ribosomal encounters with ORFs and EJCs.
+# Key change from prior categorical implementation (2026-04-29):
+#   - Kozak filtering ON (kozak_filter=TRUE): only plausibly-translated
+#     ATGs are enumerated, eliminating low-quality noise from random ATGs.
+#   - Continuous PWM Kozak scores replace the categorical 0/1/2 score.
+#   - n_atgs (count of all ATGs) is no longer reported — it was a diagnostic
+#     feature that lost meaning under Kozak filtering.
+#   - n_nmd_competent_strong_kozak (categorical) replaced by best_kozak_nmd
+#     and mean_kozak_nmd (both continuous PWM scores).
 #
 # Inputs:
-#   - nmd_classification.rds (mashr NMD/non-NMD labels)
-#   - structures.rds (exon coordinates → EJC positions)
-#   - cds.rds (only for population filtering, not for features)
+#   - data_mashr/nmd_classification.rds (mashr NMD/non-NMD labels)
+#   - data_mashr/structures.rds (exon coords → junctions)
+#   - data_mashr/cds.rds (population filter and is_annotated_cds annotation)
 #   - SQANTI corrected FASTA (spliced transcript sequences)
 #
 # Output:
-#   - data_mashr/analysis_cache/orf_landscape.rds
+#   - data_mashr/analysis_cache/orf_landscape.rds (per-isoform aggregates)
+#   - data_mashr/analysis_cache/orf_landscape_per_orf.rds (raw enumerateOrfs output)
 #
 # Usage:
 #   Rscript 05m_orf_landscape.R
@@ -27,14 +35,16 @@
 
 suppressPackageStartupMessages({
   library(dplyr)
+  library(Isopair)
 })
 
 setwd("/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0/isopair_wrapper")
 
 FASTA_PATH <- "/Users/petecastaldi/claude_projects/nmd/sqanti/nmd_lungcells/results/nmd_lungcells_corrected.fasta"
 OUTPUT_PATH <- "data_mashr/analysis_cache/orf_landscape.rds"
+PER_ORF_PATH <- "data_mashr/analysis_cache/orf_landscape_per_orf.rds"
 
-cat("=== ORF Landscape Feature Extraction ===\n")
+cat("=== ORF Landscape Feature Extraction (Isopair::enumerateOrfs) ===\n")
 cat("Started:", format(Sys.time()), "\n\n")
 
 # ==============================================================================
@@ -55,57 +65,7 @@ target_ids <- intersect(c(nmd_ids, non_nmd_ids), coding_ids)
 cat("  Target isoforms:", length(target_ids), "\n")
 
 # ==============================================================================
-# 2. Compute exon junction positions in transcript space
-# ==============================================================================
-cat("\nComputing exon junction positions in transcript space...\n")
-
-# For each isoform, compute the transcript-space positions of exon-exon junctions.
-# A junction occurs between consecutive exons. In transcript space, junctions
-# are at cumulative exon length boundaries.
-#
-# For + strand: exons are in genomic order (5'→3')
-# For - strand: exons are in reverse genomic order (5'→3' in transcript)
-
-target_structs <- structures[structures$isoform_id %in% target_ids, ]
-
-junction_list <- setNames(vector("list", nrow(target_structs)), target_structs$isoform_id)
-
-for (i in seq_len(nrow(target_structs))) {
-  starts <- target_structs$exon_starts[[i]]
-  ends <- target_structs$exon_ends[[i]]
-  strand <- target_structs$strand[i]
-  n_exons <- length(starts)
-
-  if (n_exons <= 1) {
-    junction_list[[i]] <- integer(0)
-    next
-  }
-
-  # Exon lengths (1-based inclusive coordinates: length = end - start + 1)
-  exon_lengths <- ends - starts + 1L
-
-  # For - strand, reverse exon order (transcript is read 3'→5' genomically)
-  if (strand == "-") {
-    exon_lengths <- rev(exon_lengths)
-  }
-
-  # Junction positions in transcript space: cumulative sum of exon lengths
-  # Junction j is at position sum(exon_lengths[1:j]) — the last nt of exon j
-  cum_lengths <- cumsum(exon_lengths)
-  # Junctions are between exon j and exon j+1, at transcript position cum_lengths[j]
-  junction_positions <- cum_lengths[-n_exons]
-
-  junction_list[[i]] <- junction_positions
-}
-
-cat("  Computed junctions for", length(junction_list), "isoforms\n")
-
-# Quick check
-n_junctions <- sapply(junction_list, length)
-cat("  Median junctions per isoform:", median(n_junctions), "\n")
-
-# ==============================================================================
-# 3. Extract transcript sequences from FASTA
+# 2. Extract transcript sequences from FASTA
 # ==============================================================================
 cat("\nExtracting sequences from FASTA...\n")
 
@@ -135,156 +95,100 @@ cat("  Missing:", sum(!target_ids %in% names(seq_vec)), "\n")
 
 # Filter to isoforms with sequences
 target_ids <- intersect(target_ids, names(seq_vec))
+target_structs <- structures[structures$isoform_id %in% target_ids, ]
 cat("  Final target:", length(target_ids), "\n")
 
 # ==============================================================================
-# 4. Scan all ORFs and compute features
+# 3. Enumerate ORFs (Isopair::enumerateOrfs)
 # ==============================================================================
-cat("\nScanning ORFs...\n")
+cat("\nEnumerating ORFs...\n")
 
-# Kozak scoring function (simplified, matches Isopair logic)
-# Strong Kozak: A/G at -3 AND G at +4 relative to ATG
-score_kozak <- function(seq, atg_pos) {
-  # atg_pos is 1-based position of the A in ATG
-  # -3 position = atg_pos - 3, +4 position = atg_pos + 3 (G after ATG)
-  pos_m3 <- atg_pos - 3
-  pos_p4 <- atg_pos + 3  # 4th position after A (i.e., position after G of ATG)
-  n <- nchar(seq)
+t_enum <- proc.time()
+per_orf <- Isopair::enumerateOrfs(
+  structures   = target_structs,
+  cds_metadata = cds,
+  sequences    = seq_vec[target_ids],
+  min_orf_nt   = 30L,         # 10 aa minimum
+  ejc_threshold = 50L,        # canonical NMD rule
+  include_no_stop = TRUE,     # emit category="no_stop_in_frame" rows
+  kozak_filter = TRUE,        # Kozak-gate ATGs (MANE-calibrated default threshold)
+  kozak_threshold = NULL      # defaultKozakThreshold(0.05): admits 95% of MANE CDS starts
+)
+cat(sprintf("  enumerateOrfs completed in %.0f seconds\n", (proc.time() - t_enum)[3]))
+cat(sprintf("  Per-ORF rows: %d (%.1f per isoform avg)\n",
+            nrow(per_orf), nrow(per_orf) / length(target_ids)))
 
-  nt_m3 <- if (pos_m3 >= 1) substr(seq, pos_m3, pos_m3) else ""
-  nt_p4 <- if (pos_p4 <= n) substr(seq, pos_p4, pos_p4) else ""
+saveRDS(per_orf, PER_ORF_PATH)
 
-  has_m3 <- nt_m3 %in% c("A", "G")
-  has_p4 <- nt_p4 == "G"
+# ==============================================================================
+# 4. Roll up to per-isoform features
+# ==============================================================================
+cat("\nRolling up per-isoform features...\n")
 
-  if (has_m3 && has_p4) return(2L)  # strong
-  if (has_m3 || has_p4) return(1L)  # moderate
-  return(0L)  # weak
+# Per-isoform tx_length and junction count from structures (not in enumerateOrfs output)
+tx_meta <- target_structs %>%
+  rowwise() %>%
+  mutate(tx_length = sum(exon_ends - exon_starts + 1L),
+         n_junctions = max(0L, length(exon_starts) - 1L)) %>%
+  ungroup() %>%
+  select(isoform_id, tx_length, n_junctions)
+
+# Per-isoform ORF features. With include_no_stop=TRUE, no_stop rows have NA
+# stop_tx_pos / orf_length. Treat them as a separate count and otherwise
+# aggregate over rows that DO have a stop.
+orf_df <- per_orf %>%
+  group_by(isoform_id) %>%
+  summarise(
+    # Counts (Kozak-passing ORFs only; n_orfs_nonstop = ATGs with no in-frame stop)
+    n_orfs_nonstop  = sum(category == "no_stop_in_frame"),
+    n_orfs          = sum(category != "no_stop_in_frame"),
+    n_nmd_competent = sum(category == "effectively_ptc"),
+    has_any_nmd_competent = any(category == "effectively_ptc"),
+
+    # Magnitudes (NA-safe — empty subsets return -Inf/+Inf without na.rm gating)
+    max_downstream_ejc = if (any(category == "effectively_ptc"))
+                          max(n_downstream_ejc[category == "effectively_ptc"]) else 0L,
+    best_kozak_nmd     = if (any(category == "effectively_ptc"))
+                          max(kozak_score[category == "effectively_ptc"]) else NA_real_,
+    mean_kozak_nmd     = if (any(category == "effectively_ptc"))
+                          mean(kozak_score[category == "effectively_ptc"]) else NA_real_,
+    first_nmd_atg_pos  = if (any(category == "effectively_ptc"))
+                          min(atg_tx_pos[category == "effectively_ptc"]) else NA_integer_,
+    n_annotated_cds_orfs = sum(is_annotated_cds, na.rm = TRUE),
+
+    .groups = "drop"
+  ) %>%
+  left_join(tx_meta, by = "isoform_id")
+
+# Isoforms with zero Kozak-passing ATGs aren't represented in per_orf — add zero-rows
+missing_ids <- setdiff(target_ids, orf_df$isoform_id)
+if (length(missing_ids) > 0) {
+  zero_rows <- tibble::tibble(
+    isoform_id = missing_ids,
+    n_orfs_nonstop = 0L, n_orfs = 0L, n_nmd_competent = 0L,
+    has_any_nmd_competent = FALSE,
+    max_downstream_ejc = 0L,
+    best_kozak_nmd = NA_real_, mean_kozak_nmd = NA_real_,
+    first_nmd_atg_pos = NA_integer_,
+    n_annotated_cds_orfs = 0L
+  ) %>% left_join(tx_meta, by = "isoform_id")
+  orf_df <- bind_rows(orf_df, zero_rows)
+  cat(sprintf("  Added %d zero-ORF rows (isoforms with no Kozak-passing ATGs)\n",
+              length(missing_ids)))
 }
 
-# Stop codons
-stop_codons <- c("TAA", "TAG", "TGA")
-
-# Process each isoform
-results <- vector("list", length(target_ids))
-names(results) <- target_ids
-
-t_scan <- proc.time()
-for (idx in seq_along(target_ids)) {
-  iso_id <- target_ids[idx]
-  seq <- seq_vec[iso_id]
-  seq_len <- nchar(seq)
-  junctions <- junction_list[[iso_id]]
-
-  if (is.null(junctions)) junctions <- integer(0)
-
-  # Find all ATG positions (1-based)
-  atg_matches <- gregexpr("ATG", seq, fixed = TRUE)[[1]]
-  if (atg_matches[1] == -1L) {
-    # No ATGs — rare but possible
-    results[[idx]] <- data.frame(
-      isoform_id = iso_id, n_orfs = 0L, n_nmd_competent = 0L,
-      max_downstream_ejc = 0L, n_nmd_competent_strong_kozak = 0L,
-      best_kozak_nmd = 0L, first_nmd_atg_pos = NA_integer_,
-      has_any_nmd_competent = FALSE, n_atgs = 0L, tx_length = seq_len,
-      n_junctions = length(junctions), n_orfs_nonstop = 0L,
-      stringsAsFactors = FALSE
-    )
-    next
-  }
-
-  atg_positions <- as.integer(atg_matches)
-  n_atgs <- length(atg_positions)
-
-  # For each ATG, find first in-frame stop codon
-  n_orfs <- 0L
-  n_nmd_competent <- 0L
-  n_nmd_strong <- 0L
-  max_dejc <- 0L
-  best_kozak_nmd <- 0L
-  first_nmd_atg <- NA_integer_
-  n_nonstop <- 0L
-
-  for (atg_pos in atg_positions) {
-    # Scan downstream in-frame (every 3 nt) for stop codon
-    stop_pos <- NA_integer_
-    pos <- atg_pos + 3L  # skip the ATG itself
-    while (pos + 2L <= seq_len) {
-      codon <- substr(seq, pos, pos + 2L)
-      if (codon %in% stop_codons) {
-        stop_pos <- pos
-        break
-      }
-      pos <- pos + 3L
-    }
-
-    if (is.na(stop_pos)) {
-      # No in-frame stop found — nonstop ORF, skip
-      n_nonstop <- n_nonstop + 1L
-      next
-    }
-
-    # We have an ORF: ATG at atg_pos, stop at stop_pos
-    n_orfs <- n_orfs + 1L
-    orf_length <- stop_pos - atg_pos  # in nt (includes ATG, excludes stop)
-
-    # Count downstream EJCs: junctions after the stop codon position
-    # The stop codon occupies positions stop_pos to stop_pos+2
-    # EJCs downstream = junctions at positions > stop_pos + 2
-    stop_end <- stop_pos + 2L
-    n_dejc <- sum(junctions > stop_end)
-
-    if (n_dejc > 0L) {
-      n_nmd_competent <- n_nmd_competent + 1L
-      if (n_dejc > max_dejc) max_dejc <- n_dejc
-
-      # Kozak score for this ATG
-      kozak <- score_kozak(seq, atg_pos)
-      if (kozak == 2L) n_nmd_strong <- n_nmd_strong + 1L
-      if (kozak > best_kozak_nmd) best_kozak_nmd <- kozak
-
-      # Track first NMD-competent ATG position
-      if (is.na(first_nmd_atg) || atg_pos < first_nmd_atg) {
-        first_nmd_atg <- atg_pos
-      }
-    }
-  }
-
-  results[[idx]] <- data.frame(
-    isoform_id = iso_id,
-    n_orfs = n_orfs,
-    n_nmd_competent = n_nmd_competent,
-    max_downstream_ejc = max_dejc,
-    n_nmd_competent_strong_kozak = n_nmd_strong,
-    best_kozak_nmd = best_kozak_nmd,
-    first_nmd_atg_pos = first_nmd_atg,
-    has_any_nmd_competent = n_nmd_competent > 0L,
-    n_atgs = n_atgs,
-    tx_length = seq_len,
-    n_junctions = length(junctions),
-    n_orfs_nonstop = n_nonstop,
-    stringsAsFactors = FALSE
-  )
-
-  if (idx %% 10000 == 0) {
-    cat(sprintf("  Processed %d / %d isoforms (%.0f sec)\n",
-                idx, length(target_ids), (proc.time() - t_scan)[3]))
-  }
-}
-
-cat(sprintf("  ORF scanning completed in %.0f seconds\n", (proc.time() - t_scan)[3]))
-
-# Combine results
-orf_df <- do.call(rbind, results)
-
-# Add derived features
-orf_df$frac_nmd_competent <- orf_df$n_nmd_competent / pmax(orf_df$n_orfs, 1L)
-orf_df$first_nmd_atg_frac <- orf_df$first_nmd_atg_pos / orf_df$tx_length
-orf_df$n_nmd_competent_capped <- pmin(orf_df$n_nmd_competent, 20L)
+# Derived features (matches prior schema where applicable)
+orf_df$frac_nmd_competent       <- orf_df$n_nmd_competent / pmax(orf_df$n_orfs, 1L)
+orf_df$first_nmd_atg_frac       <- orf_df$first_nmd_atg_pos / orf_df$tx_length
+orf_df$n_nmd_competent_capped   <- pmin(orf_df$n_nmd_competent, 20L)
 orf_df$max_downstream_ejc_capped <- pmin(orf_df$max_downstream_ejc, 5L)
 
-# Add NMD status
+# NMD label
 orf_df$is_nmd <- as.integer(orf_df$isoform_id %in% nmd_ids)
+
+# Chromosome for train/test split
+chr_map <- structures[, c("isoform_id", "chr")]
+orf_df <- merge(orf_df, chr_map, by = "isoform_id", all.x = TRUE)
 
 # ==============================================================================
 # 5. Summary
@@ -293,9 +197,8 @@ cat("\n=== SUMMARY ===\n\n")
 cat("Total isoforms:", nrow(orf_df), "\n")
 cat("  NMD:", sum(orf_df$is_nmd), "  Non-NMD:", sum(!orf_df$is_nmd), "\n\n")
 
-cat("ORF landscape:\n")
+cat("ORF landscape (Kozak-filtered):\n")
 cat("  Median ORFs per isoform:", median(orf_df$n_orfs), "\n")
-cat("  Median ATGs:", median(orf_df$n_atgs), "\n")
 cat("  Median NMD-competent ORFs:", median(orf_df$n_nmd_competent), "\n")
 cat("  Isoforms with any NMD-competent ORF:",
     sum(orf_df$has_any_nmd_competent),
@@ -305,7 +208,7 @@ cat("\nBy NMD status:\n")
 for (status in c(1, 0)) {
   sub <- orf_df[orf_df$is_nmd == status, ]
   label <- if (status == 1) "NMD" else "Non-NMD"
-  cat(sprintf("  %s (n=%d): median ORFs=%d, median NMD-competent=%d, any NMD-competent=%.1f%%\n",
+  cat(sprintf("  %s (n=%d): median ORFs=%g, median NMD-competent=%g, any NMD-competent=%.1f%%\n",
               label, nrow(sub), median(sub$n_orfs), median(sub$n_nmd_competent),
               100 * mean(sub$has_any_nmd_competent)))
 }
@@ -313,10 +216,17 @@ for (status in c(1, 0)) {
 # ==============================================================================
 # 6. Save
 # ==============================================================================
-# Add chromosome for train/test split
-chr_map <- structures[, c("isoform_id", "chr")]
-orf_df <- merge(orf_df, chr_map, by = "isoform_id", all.x = TRUE)
+attr(orf_df, "metadata") <- list(
+  run_timestamp = Sys.time(),
+  fasta_path = FASTA_PATH,
+  isopair_version = as.character(packageVersion("Isopair")),
+  backend = "Isopair::enumerateOrfs",
+  kozak_filter = TRUE,
+  kozak_threshold = "defaultKozakThreshold(0.05)",
+  schema_change_note = "n_atgs and n_nmd_competent_strong_kozak removed; mean_kozak_nmd added; PWM continuous Kozak scores"
+)
 
 saveRDS(orf_df, OUTPUT_PATH)
 cat("\nSaved to:", OUTPUT_PATH, "\n")
+cat("Per-ORF table also saved to:", PER_ORF_PATH, "\n")
 cat("Completed:", format(Sys.time()), "\n")

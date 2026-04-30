@@ -53,7 +53,7 @@ ue_mapping   <- readRDS(file.path(data_dir, "isoform_union_mapping.rds"))
 annotated_ue <- readRDS(file.path(data_dir, "annotated_ue.rds"))
 cds_exons    <- readRDS(file.path(data_dir, "cds_exons.rds"))
 
-cell_types <- c("all_samples", "AT", "DD", "DO", "FB", "MV")
+cell_types <- c("all_samples", "AT", "DD", "FB", "MV")  # paper scope (2026-04-29)
 comparisons <- c("c2", "c4")
 
 # ==============================================================================

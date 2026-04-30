@@ -34,7 +34,7 @@ FASTA_PATH <- "/Users/petecastaldi/claude_projects/nmd/sqanti/nmd_lungcells/resu
 cds       <- readRDS(file.path(data_dir, "cds.rds"))
 cds_exons <- readRDS(file.path(data_dir, "cds_exons.rds"))
 
-cell_types <- c("allsamples", "at", "dd", "do", "fb", "mv")
+cell_types <- c("allsamples", "at", "dd", "fb", "mv")
 coding_ids <- cds$isoform_id[cds$coding_status == "coding"]
 orf_lookup <- setNames(cds$orf_length, cds$isoform_id)
 
