@@ -368,7 +368,7 @@ ue_mapping   <- readRDS(file.path(data_dir, "isoform_union_mapping.rds"))
 annotated_ue <- readRDS(file.path(data_dir, "annotated_ue.rds"))
 cds_exons    <- readRDS(file.path(data_dir, "cds_exons.rds"))
 
-# ── Prediction model objects (used in Sections 3a, 3b, 3d) ──
+# ── Prediction model objects (used in Sections 4 and 6) ──
 unified <- readRDS(file.path(cache_dir, "unified_model.rds"))
 feat_labels <- unified$feature_labels
 mc <- readRDS(file.path(cache_dir, "model_comparison.rds"))
@@ -555,7 +555,7 @@ if (!all(verification_df$ptc_subset_ok)) {
 # ── mashr meta-analysis logFC ──
 # Source: mashr model fit on isocall DIE (4 non-ALI cell types — paper scope).
 # PosteriorMean averaged across the 4 main conditions.
-# Used in Section 3a to characterize NMD response magnitude.
+# Used in Section 4 to characterize NMD response magnitude.
 mashr_model_path <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/mashr_isoform_model_2026.3.10.rds"
 mashr_model <- readRDS(mashr_model_path)
 post_mean <- ashr::get_pm(mashr_model)
@@ -590,6 +590,23 @@ pf_data <- tryCatch(
 render_dt(gene_match_df, caption = "Gene-Matching: Before and After")
 render_dt(verification_df, caption = "Cache Consistency Check")
 ```
+
+**Gene-Matching column definitions:** **key** = `(comparison_label, cell_type)`
+identifier; **n_before_c2 / n_before_c4** = pair counts in C2 (NMD)
+and C4 (Control) profile sets prior to gene-matching; **n_after_c2 /
+n_after_c4** = pair counts after restricting both sets to shared
+`(gene_id, reference_isoform_id)` keys; **n_genes_matched** = number of
+genes in the shared key intersection.
+
+**Cache Consistency Check column definitions:** **key** =
+`(comparison_label, cell_type)` identifier; **n_profiles** = gene-matched
+pair count loaded for this key (from STAGE 2); **n_div / n_fc / n_fw /
+n_ptc** = row counts in the cached `div_*`, `fc_*$pair_summary`,
+`fw_*$profile_summary`, and `ptc_*$pair_summary` analysis objects;
+**exact_match** = TRUE when div / fc / fw row counts equal n_profiles
+(invariant: these are 1-row-per-pair); **ptc_subset_ok** = TRUE when
+n_ptc ≤ n_profiles (PTC analysis subsets to coding pairs only, so this
+should always be smaller).
 
 # Event Type Glossary {.tabset}
 
@@ -807,7 +824,71 @@ In the IR section of this report, **IR_diff** refers to the aggregate of IR_diff
 IR_diff_3, and IR_diff_5_3 events.
 
 
-# 1. Transcriptional Landscape {#sec1-landscape}
+# 1. Comparison of Long-read to Short-read RNA-seq Gene Level Quantification {#sec1-srlr}
+
+Before pivoting to long-read isoform-level analyses, we verify that the
+short-read and long-read platforms agree on the differential expression
+effect of Smg1i treatment at the gene level. (A full multipanel figure
+including expression-magnitude correlation is in the manuscript
+supplement; this section reports only the per-cell-type logFC
+concordance.)
+
+```{r sec1-srlr-data}
+# ── Data provenance ──
+# Source:
+#   - SR gene mashr DE files: shortread_dge/mashr/nmd_mashr_dge_{at,dd,fb,mv}_2026.3.10.csv
+#   - LR isoform mashr DIE files: isocall_dge/mashr/nmd_mashr_die_{at,dd,fb,mv}_2026.3.10.csv
+# Population: genes shared between platforms (matched on unversioned ENSG ID).
+# LR gene-level summary: median posterior logFC across all isoforms of each gene.
+
+sr_dir <- "/Users/petecastaldi/claude_projects/nmd/shortread_dge/mashr"
+lr_dir <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr"
+
+# Strip Ensembl versions for matching
+strip_ver <- function(x) sub("\\..*$", "", x)
+
+srlr_concordance <- lapply(c("AT", "DD", "FB", "MV"), function(ct) {
+  sr <- read.csv(file.path(sr_dir, sprintf("nmd_mashr_dge_%s_2026.3.10.csv",
+                                            tolower(ct))),
+                 stringsAsFactors = FALSE)
+  lr <- read.csv(file.path(lr_dir, sprintf("nmd_mashr_die_%s_2026.3.10.csv",
+                                            tolower(ct))),
+                 stringsAsFactors = FALSE)
+  sr$gene_unv <- strip_ver(sr$ensembl_gene_id_version)
+  lr$gene_unv <- strip_ver(lr$gene_id)
+  # Aggregate LR isoform → gene by median logFC
+  lr_gene <- aggregate(logFC ~ gene_unv, data = lr, FUN = median, na.rm = TRUE)
+  m <- merge(sr[, c("gene_unv", "logFC")], lr_gene,
+             by = "gene_unv", suffixes = c("_sr", "_lr"))
+  m <- m[!is.na(m$logFC_sr) & !is.na(m$logFC_lr), ]
+  data.frame(
+    `Cell Type` = ct,
+    `N genes` = format(nrow(m), big.mark = ","),
+    `Pearson r (logFC)` = round(cor(m$logFC_sr, m$logFC_lr), 3),
+    check.names = FALSE
+  )
+})
+srlr_table <- do.call(rbind, srlr_concordance)
+render_dt(srlr_table, caption = "SR↔LR logFC concordance, gene level")
+```
+
+Column definitions: **Cell Type** = primary lung cell type; **N genes** =
+count of genes shared between SR gene-level mashr and LR isoform-level
+mashr (matched on unversioned Ensembl gene ID); **Pearson r (logFC)** =
+correlation between SR posterior logFC and LR median-isoform posterior
+logFC across the shared gene set.
+
+The Smg1i logFC effect correlates moderately between platforms across
+all four cell types (Pearson r `r round(min(srlr_table$"Pearson r (logFC)"), 2)`–`r round(max(srlr_table$"Pearson r (logFC)"), 2)`).
+This is lower than typical gene-level expression concordance (which is
+generally r > 0.8) but expected — logFC is a derived quantity, and the
+gene-level LR signal is approximated by the median across isoforms of
+each gene since a native LR gene-level mashr fit is not yet available
+in this run. See Methods for the aggregation choice. The full multipanel
+concordance figure is in the manuscript supplement:
+`paper_figures/FigX-SRLRConcordance_generated.pdf`.
+
+# 2. Isoform Expression Landscape {#sec2-landscape}
 
 Before asking what triggers NMD, we briefly establish the transcriptional
 landscape. NMD-sensitive isoforms are excluded so that the baseline reflects
@@ -822,7 +903,7 @@ pair set (structures.rds, expression_data.rds, nmd_classification.rds).
 #   expression_data.rds (TMM-normalized count matrix from 01_prepare_data_mashr.R),
 #   nmd_classification.rds (mashr NMD/non-NMD classification)
 # Population: Expressed NON-NMD isoforms for genes in gene-matched pair set.
-#   NMD-sensitive isoforms (mashr all_samples) are excluded so that Section 1
+#   NMD-sensitive isoforms (mashr all_samples) are excluded so that Section 2
 #   describes the baseline transcriptional landscape that NMD acts upon.
 #   Gene set defined by profiles_list (loaded in STAGE 2, gene-matched).
 
@@ -1190,7 +1271,7 @@ important for CDS interpretation: GENCODE isoforms have curated CDS
 annotations, while novel isoforms rely entirely on computational CDS
 prediction (TransDecoder2).
 
-# 2. Splicing Patterns in NMD vs Control Pairs {#sec2-baseline}
+# 3. Isopair Pair Analysis: Splicing Events Distinguishing NMD from Control {#sec3-isopair}
 
 This section begins the NMD-specific analysis. We compare structural profiles
 between NMD (C2) and Control (C4) gene-matched isoform pairs to identify which
@@ -1523,7 +1604,7 @@ or "Non-significant" (p > 0.05).
 
 </details>
 
-# 3a. Stop Codon Analysis {#sec2b-stop-codons}
+## Stop Codon Analysis
 
 The prediction model (Section 3e) identifies downstream EJC count as the strongest
 single predictor of NMD status. Here we examine stop codon position in detail
@@ -1531,7 +1612,14 @@ using gene-matched C2 (NMD) vs C4 (Control) isoform pairs, quantify PTC
 enrichment with a dose-response relationship, and trace how PTCs arise through
 three distinct splicing mechanisms.
 
+# 4. PTC Mechanism: How Splicing Triggers NMD {#sec4-ptc-mechanism}
+
 ## PTC Rates
+
+*This subsection's first chunk is a silent setup step that subsets gene-matched
+profiles to coding pairs (both reference and comparator isoforms classified as
+coding by SQANTI3). The PTC rate table and Fisher OR are computed and rendered
+in the chunks that follow.*
 
 ```{r goal1-ptc-rates-subsetting}
 # ── Data provenance ──
@@ -1582,6 +1670,11 @@ coding pairs (both ref and comp coding) in NMD (C2) / Control (C4);
 Fisher's exact test; **p_value** = Fisher p-value.
 
 ## Stop Codon Distance to Last EJC
+
+*This subsection's first chunk is a silent setup step that builds the population
+(`fig2_pop`) for the stop-codon-distance density plot — gene-matched comparators
+with non-NA `ptc_distance`, broader than the coding-pair subset used for the
+Fisher OR table above. The density plot itself is rendered in the next chunk.*
 
 ```{r goal1-fig1-stop-dist-pop}
 # ── Population derivation ──
@@ -1693,7 +1786,7 @@ fig2 <- ggplot(nmd_logfc_dist, aes(x = ptc_distance, y = mean_logFC)) +
     quantile(nmd_logfc_dist$ptc_distance, 0.01, na.rm = TRUE),
     quantile(nmd_logfc_dist$ptc_distance, 0.99, na.rm = TRUE))) +
   labs(title = sprintf("NMD Response vs Stop Codon Distance (n = %d)", nrow(nmd_logfc_dist)),
-       subtitle = "mashr meta-analysis mean logFC (5 conditions). Blue = loess.",
+       subtitle = "mashr meta-analysis mean logFC (4 conditions). Blue = loess.",
        x = "Distance from stop codon to last EJC (nt)",
        y = "Mean logFC (mashr)")
 save_fig(fig2, "fig3_nmd_response_vs_distance")
@@ -1725,6 +1818,11 @@ Columns: **dist_bin** = distance range (nt from stop codon to last EJC);
 </details>
 
 ## NMD Strength by Downstream EJC Count
+
+*This subsection's first chunk is a silent setup step that filters the
+NMD-comparator pairs to PTC-positive only (`as_ptc_pos`) in preparation for
+the EJC-count-vs-NMD-strength figure. The figure and accompanying statistics
+are rendered in the next chunk.*
 
 ```{r goal1-fig3-pop}
 as_ptc_pos <- nmd_logfc_dist[nmd_logfc_dist$has_ptc == TRUE, ]
@@ -1791,7 +1889,7 @@ write.csv(ptc_ct, file.path(table_dir, "table3_ptc_rates_by_ct.csv"), row.names 
 ```
 
 Same columns as Table 2, one row per cell type. all_samples uses the union
-(NMD) and intersection (non-NMD) across AT, DD, DO, FB, MV.
+(NMD) and intersection (non-NMD) across AT, DD, FB, MV.
 
 
 ## Three Mechanisms of PTC Creation {#sec2b-ptc-mechanisms}
@@ -1813,6 +1911,14 @@ PTCs in NMD-responsive isoforms arise through three distinct splicing mechanisms
 
 ## How PTCs Arise: Frameshift vs In-Frame Stop
 
+*This subsection's first chunk is a silent compute step that runs the
+three-mechanism PTC attribution (Frameshift / In-frame stop / 3'UTR splice)
+across all PTC-positive NMD comparators using the shared
+`attribute_ptc_events()` function in `analysis_functions.R` — the same routine
+used downstream for reclassified PTC-negative pairs (Section 4, "Ruling Out
+Alternative NMD Mechanisms"). Counts and percentages are summarized in the
+prose and Sankey figure that follow.*
+
 ```{r goal2-ptc-mechanisms}
 # ── Data provenance ──
 # Source: attribute_ptc_events() from analysis_functions.R (shared with 05r)
@@ -1820,7 +1926,7 @@ PTCs in NMD-responsive isoforms arise through three distinct splicing mechanisms
 #
 # For each PTC+ NMD comparator, identify the PTC-CAUSING splice event using
 # the shared three-mechanism attribution function. This is the SAME code used
-# for reclassified PTC-negative pairs in Section 3b.
+# for reclassified PTC-negative pairs in Section 4 (Ruling Out Alternative NMD Mechanisms).
 #
 # Strand-aware PTC position:
 #   + strand: PTC = cds_stop (larger genomic coordinate = 3' end of CDS)
@@ -1863,7 +1969,7 @@ names(ptc_genomic_pos) <- ptc_plus$comparator_isoform_id
 # Build is_frameshift lookup
 is_fs_lookup <- setNames(ptc_plus$is_frameshift_cat, ptc_plus$comparator_isoform_id)
 
-# Use shared attribution function (same as Section 3b reclassified pairs)
+# Use shared attribution function (same as Section 4 reclassified pairs)
 ptc_events_df <- attribute_ptc_events(
   pairs = ptc_plus[, c("comparator_isoform_id", "reference_isoform_id")],
   fw_events = fw_c2$events,
@@ -2035,8 +2141,12 @@ of pairs; **pct** = percentage of all `r fmt(nrow(ptc_attr))` attributed PTCs.
 ## PTC-Causing Events by Mechanism
 
 ```{r goal2-fig5-summary}
+# ── Data provenance ──
+# Source: ptc_attr (PTC-causing event attribution from analysis_functions.R,
+#   computed in the PTC-Causing Splice Events Sankey chunk above)
+# Population: all directly attributed pairs (excludes unresolved)
+
 # Summary table of PTC-causing events by mechanism
-# Denominator: all directly attributed pairs (excludes unresolved)
 ptc_event_summary <- ptc_attr |>
   group_by(mechanism, ptc_causing_event) |>
   summarise(n = n(), .groups = "drop") |>
@@ -2045,7 +2155,16 @@ ptc_event_summary$pct <- round(100 * ptc_event_summary$n / nrow(ptc_attr), 1)
 
 write.csv(ptc_event_summary, file.path(table_dir, "table5a_ptc_causing_events.csv"),
           row.names = FALSE)
+
+render_dt(ptc_event_summary,
+  caption = "PTC-causing events broken down by mechanism")
 ```
+
+Column definitions: **mechanism** = the way the splicing event creates a PTC
+(Frameshift, In-frame stop, or 3'UTR splice — see the section above);
+**ptc_causing_event** = Isopair splice event type (SE, A3SS, A5SS, IR, etc.);
+**n** = number of NMD pairs where this (mechanism, event-type) combination
+created the PTC; **pct** = percent of all attributed PTC-creating events.
 
 ## PTC-Causing Event Proportions vs Control Baseline
 
@@ -2228,9 +2347,9 @@ nucleotide. The new frame encounters a stop codon at position 22,250,112
 (red triangle) — 406 bp before the normal stop at 22,250,518 (green triangle).
 Four exon-exon junctions remain downstream, triggering NMD.
 
-# 3b. Ruling Out Alternative NMD Mechanisms {#sec2c-ptc-neg}
+## Ruling Out Alternative NMD Mechanisms
 
-Section 3a characterized PTC-positive NMD isoforms. Here we investigate
+The Stop Codon Analysis subsection characterized PTC-positive NMD isoforms. Here we investigate
 the remaining PTC-negative isoforms through a systematic examination of
 their structural properties, beginning with the 3'UTR and 5'UTR boundaries.
 
@@ -2857,9 +2976,9 @@ question: why is the 5'UTR so much longer in these isoforms?
 
 
 
-# 3c. The CDS Misprediction Problem {#sec2c-cds-misprediction}
+## The CDS Misprediction Problem (TD2 Occult-PTC Discovery)
 
-Sections 3a--3b established that PTC-mediated NMD is the dominant mechanism
+The earlier subsections of Section 4 established that PTC-mediated NMD is the dominant mechanism
 and that 3'UTR length is not an independent predictor. But nearly half of
 NMD comparators are PTC-negative under the TransDecoder2 (TD2) CDS
 annotation. Here we trace the cause: TD2 systematically selects the wrong
@@ -3686,8 +3805,8 @@ the reference ATG has a median Kozak score of `r ref_median` versus
 `r pct_ref_higher`% of pairs. The Kozak PWM score (`Isopair::scoreKozakPWM`)
 computes log-odds across 8 positions (-6 to +5) relative to a background
 nucleotide frequency model; positive values indicate stronger-than-average
-initiation context, and the same scoring function is used in the CNN
-model report (Section 6.4). TD2
+initiation context, and the same scoring function is used in the external CNN
+model report (`orf_model_report_v5`, §6.4). TD2
 selects ATGs that maximize ORF length, not initiation context --- the
 reference ATG, used by the gene's dominant isoform, has substantially
 stronger Kozak context and is more likely to be the biologically active
@@ -3695,7 +3814,7 @@ start codon.
 
 
 
-# 3d. Updated PTC Accounting {#sec2c-accounting}
+## Updated PTC Accounting
 
 With the reference-ATG reclassification complete, we can now provide a
 comprehensive accounting of PTC-mediated NMD. The reclassified pairs
@@ -3708,7 +3827,7 @@ failed to identify.
 The `r fmt(nrow(eff_ptc))` reclassified pairs share the reference ATG — any
 PTC must arise from splice events between the ATG and the premature stop.
 We attribute PTC-causing events using the same three-mechanism framework as
-Section 3a (see METHODS.md § "PTC-Causing Event Attribution"):
+the PTC-Causing Splice Events subsection of Section 4 (see METHODS.md § "PTC-Causing Event Attribution"):
 
 1. **Frameshift**: `analyzeFrameWalk()` identifies splice events between the
    shared ATG and the premature stop that shift the reading frame
@@ -3723,13 +3842,13 @@ Section 3a (see METHODS.md § "PTC-Causing Event Attribution"):
 # Population: reclassified effectively-PTC pairs (originally PTC-)
 # Methods: METHODS.md § "PTC-Causing Event Attribution"
 # Three-mechanism attribution using same analyzeFrameWalk() + coordinate
-# containment approach as Section 3a. All three mechanisms (frameshift,
+# containment approach as Section 4 mechanism analysis. All three mechanisms (frameshift,
 # in-frame stop, 3'UTR splice) apply to the reclassified population.
 
 reclass_attr <- c2_ref[c2_ref$category == "effectively_ptc" & !c2_ref$original_ptc, ]
 reclass_attr <- reclass_attr[!is.na(reclass_attr$attr_mechanism), ]
 
-# Build attribution table matching Section 3a format
+# Build attribution table matching Section 4 mechanism-attribution format
 attr_df <- reclass_attr %>%
   filter(attr_mechanism != "unresolved") %>%
   group_by(attr_mechanism, attr_event) %>%
@@ -3832,7 +3951,7 @@ directly attributed; `r fmt(n_attr_unres)` remain unresolved
 have truncated ORFs (frameshift or in-frame stop), but a subset use the same
 3'UTR splice mechanism seen in the original PTC+ group.
 
-The event type distribution mirrors Section 3a: SE dominates both
+The event type distribution mirrors the Section 4 PTC-Causing Splice Events subsection: SE dominates both
 mechanisms, followed by A3SS and A5SS for frameshifts. This confirms that
 the reclassified pairs arise from the same biological processes as the
 original PTC+ pairs — the difference is purely which CDS the prediction
@@ -4029,6 +4148,8 @@ PTC-positive group — enriched for SE and with high frameshift rates across
 multiple event types. These are not a distinct mechanism; they are PTC-positive
 isoforms that were misclassified by the CDS prediction algorithm. NMD response
 magnitude across all subgroups is compared in the DIE logFC analysis below.
+
+# 5. Residual NMD: PTC-Negative NMD Subgroups {#sec5-residual}
 
 ## The Remaining PTC-Negative Pairs: Two Subgroups
 
@@ -5348,7 +5469,7 @@ distinguish between direct NMD effects on these isoforms and indirect
 transcriptional or post-transcriptional consequences of SMG1 inhibition.
 
 
-# 3e. Predicting NMD from Isoform Structure {#sec-prediction}
+# 6. Predictive Model: ORF Assumption Drives Attribution {#sec6-model}
 
 Can we predict which isoforms trigger NMD from structural features alone?
 We built a gradient-boosted tree model (XGBoost) using structural features
@@ -6095,7 +6216,7 @@ clusters can be interpreted as mechanistically distinct NMD subpopulations:
   identify the PTC. These are structurally unambiguous NMD targets.
 - **Ref-CDS-driven clusters** (high Ref EJC, low TD2 EJC): The reference
   reading frame reveals a PTC that TD2 missed by selecting the wrong ORF.
-  These correspond to the reclassified PTC-negative isoforms from Section 3c.
+  These correspond to the reclassified PTC-negative isoforms from Section 4 (CDS Misprediction Problem).
 - **5'UTR-driven clusters** (low EJC from both sources, elevated uORF/ATG
   features): Neither CDS source identifies a clear PTC. The model relies on
   translational regulation features --- these may represent uORF-mediated
@@ -6439,12 +6560,12 @@ Whether sequence-based models can close or exceed the structural model's
 performance --- particularly for the PTC-absent NMD subpopulation --- is an
 active question for the next phase of this analysis.
 
-# 4. NMD Mechanism Summary {#sec3-accounting}
+# 7. NMD Mechanism Summary {#sec7-accounting}
 
 ```{r sec3-summary-figure, fig.width=10, fig.height=6}
 # ── Data provenance ──
 # Methods: METHODS.md § "Cumulative NMD Mechanism Attribution"
-# Source: coding_pairs_c2 (Section 3a), ref_atg_analysis.rds (Section 3c),
+# Source: coding_pairs_c2 (Section 4), ref_atg_analysis.rds (Section 4 occult-PTC subsection),
 #   frame walk (fw_c2_allsamples.rds), attribute_ptc_events (analysis_functions.R)
 # Every coding gene-matched NMD pair is classified into one mutually exclusive
 # category. PTC+ pairs use the annotated CDS; PTC- pairs use reference-ATG tracing.
@@ -6575,7 +6696,7 @@ intermediate NMD response and long 5'UTRs enriched for uORFs, consistent
 with non-classical NMD mechanisms. This PTC-negative population represents
 an important target for future mechanistic investigation.
 
-# 5. Cross-Cell-Type Summary {#summary}
+# 8. Cross-Cell-Type Summary {#sec8-cross-ct}
 
 ```{r sec6-summary-table}
 # ── Data provenance ──

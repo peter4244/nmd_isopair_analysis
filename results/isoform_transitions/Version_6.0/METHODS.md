@@ -1109,7 +1109,7 @@ After characterizing splicing patterns within the pooled dataset, we compare NMD
 
 **C3 excluded:** C4 pairs are a strict subset of C3. Using both introduces pseudo-replication because C3's multiple pairs per gene inflate sample sizes, and C3 and C4 are not statistically independent.
 
-**Cell types analyzed (paper scope, 2026-04-29):** AT2, DD, FB, MV (4 non-ALI cell types + all_samples aggregate). DD_ALI, DO_ALI, and DO are excluded from the paper.
+**Cell types analyzed (paper scope, 2026-04-29):** AT, DD, FB, MV (4 non-ALI cell types + all_samples aggregate). DD_ALI, DO_ALI, and DO are excluded from the paper. (Note: cell-type code "AT" in the mashr/isocall pipeline corresponds to alveolar type 2 cells, sometimes written "AT2" in earlier limma-pipeline documentation. The two refer to the same cells.)
 
 ### Per-Comparison Filtering (Script 14)
 
@@ -1154,7 +1154,7 @@ For comparisons where event_regions data is available (from Script 12):
 
 ### Phase 2: Random-Effects Meta-Analysis
 
-Meta-analyze key effect sizes across the 5 cell types (AT2, DD, DD_ALI, FB, MV), excluding all_samples (not independent of individual cell types) and DO (excluded from downstream).
+Meta-analyze key effect sizes across the 4 paper-scope cell types (AT, DD, FB, MV), excluding all_samples (not independent of individual cell types). DD_ALI, DO_ALI, and DO are excluded from the paper. (Earlier limma-pipeline runs included DD_ALI in this 5-CT meta; the mashr/4-CT paper scope drops it.)
 
 **Method:** Random-effects model (REML estimator) via the metafor R package. Random effects are preferred over fixed effects because cell types are biologically distinct populations, not replicate samples from a single population.
 
@@ -1369,6 +1369,46 @@ Format: One row per (dominant, non-dominant) comparison
 
 ## Publication Report Methods (mashr Classification)
 
+### Report Structure (8 Sections, 2026-04-29)
+
+The publication report (`isopair_wrapper/05_final_report_mashr.Rmd`) is
+organized into eight Results sections matching the manuscript layout:
+
+| § | Title | Key METHODS subsection(s) |
+|---|---|---|
+| 0 | Data Loading and Gene-Matching | NMD Classification (mashr); Pair Construction and Gene-Matching |
+| 1 | SR vs LR Gene-Level Quantification | Short-Read vs Long-Read Gene-Level Concordance |
+| 2 | Isoform Expression Landscape | Transcriptional Diversity Analysis |
+| 3 | Isopair Pair Analysis: Splicing Events | Statistical Methods (event prevalence, GAIN/LOSS) |
+| 4 | PTC Mechanism: How Splicing Triggers NMD | Reading Frame and PTC Analysis; PTC-Causing Event Attribution; Reference-ATG Tracing (occult-PTC); 3'UTR Length Analysis |
+| 5 | Residual NMD: PTC-Negative Subgroups | uORF ATG Position Sharing; 5'UTR Feature Analysis; 3'UTR Splicing Enrichment |
+| 6 | Predictive Model: ORF Assumption Drives Attribution | Combined Prediction Model (TD2 vs Reference CDS) |
+| 7 | NMD Mechanism Summary | Cumulative NMD Mechanism Attribution |
+| 8 | Cross-Cell-Type Summary | Cross-Comparison Statistical Framework |
+
+Sections 4 (PTC mechanism, including occult-PTC reclassification) and 5
+(residual PTC-negative biology) were a single block in the prior report
+structure and are now distinguished. Where this METHODS document still uses
+the older "(Section 2b)" / "(Section 3d)" naming inline, the mapping is:
+2b → §4 PTC mechanisms, 3d → §6 model, 3 → §5 residual.
+
+### Infrastructure Objects (`data_mashr/`)
+
+Seven isoform-intrinsic, DE-independent RDS files are consumed by the report
+and are originally produced by the Isopair pipeline (`scripts/core/02–05`),
+then copied into `isopair_wrapper/data_mashr/` by `02_build_profiles_mashr.R`
+for self-containment:
+
+| File | Source script | Function |
+|---|---|---|
+| `structures.rds` | `scripts/core/02_extract_isoform_structures.R` | `extractIsoformStructures()` — exon coordinates per isoform |
+| `cds.rds` | `scripts/core/04_extract_cds_annotations.R` | `extractCds()` — CDS boundaries per isoform |
+| `ptc.rds` | `scripts/core/04_extract_cds_annotations.R` (downstream) | `testPtcAssociation()` infrastructure — PTC status per isoform |
+| `union_exons.rds` | `scripts/core/03_build_union_exons.R` | `buildUnionExons()` — atomic union exon model per gene |
+| `isoform_union_mapping.rds` | `scripts/core/03_build_union_exons.R` | `mapIsoformsToUnion()` — isoform-to-union-exon mapping |
+| `annotated_ue.rds` | `scripts/core/05_annotate_region_types.R` | `annotateUnionExons()` — union exons with CDS/UTR labels |
+| `cds_exons.rds` | `scripts/core/04_extract_cds_annotations.R` | CDS mapped to individual exons |
+
 ### Sample Exclusion
 
 DO donor 029T was identified as a PCA outlier (distance 252 from DO centroid,
@@ -1410,7 +1450,46 @@ not used.
   `(gene_id, reference_isoform_id)` pairs, ensuring the same genes and
   reference isoforms appear in both NMD and Control analyses
 
-### Transcriptional Diversity Analysis (Section 1)
+### Short-Read vs Long-Read Gene-Level Concordance (Section 1)
+
+Before pivoting to long-read isoform-level analyses, we verify that the
+short-read and long-read platforms agree on the differential expression
+effect of Smg1i treatment at the gene level for each of the four paper-scope
+cell types (AT, DD, FB, MV).
+
+**Source files**:
+
+- Short-read gene-level mashr DGE: `shortread_dge/mashr/nmd_mashr_dge_{at,dd,fb,mv}_2026.3.10.csv`
+- Long-read isoform-level mashr DIE: `isocall_dge/mashr/nmd_mashr_die_{at,dd,fb,mv}_2026.3.10.csv`
+
+**Algorithm**:
+
+1. **Gene-ID matching**: Both files carry Ensembl gene IDs with version
+   suffixes (e.g. `ENSG00000196878.16`). For matching, the version suffix
+   is stripped (`sub("\\..*$", "", x)`) so that LR-detected novel-isoform
+   parents (which carry the versioned ENSG) align with SR ENSG IDs.
+
+2. **LR gene-level aggregation**: Because no native LR gene-level mashr fit
+   is available in this run, the LR isoform-level posterior `logFC` values
+   are aggregated to the gene level by **median across isoforms** of each
+   gene (`aggregate(logFC ~ gene_unv, FUN = median, na.rm = TRUE)`). The
+   median is robust to a single high-magnitude isoform outlier within a
+   gene.
+
+3. **Concordance metric**: Per cell type, **Pearson correlation** between
+   the SR posterior `logFC` and the LR median-isoform posterior `logFC` over
+   the intersection of unversioned ENSG IDs.
+
+**Caveat**: A native LR gene-level mashr fit is not yet available; the
+median-of-isoform approximation slightly attenuates the gene-level Smg1i
+signal because Smg1i-induced isoform switching shifts only a subset of
+isoforms within a gene. The full multipanel concordance figure (which adds
+expression-magnitude correlation and per-CT scatter) is in the manuscript
+supplement (`paper_figures/FigX-SRLRConcordance_generated.pdf`).
+
+Source code: chunk `sec1-srlr-data` in `isopair_wrapper/05_final_report_mashr.Rmd`.
+
+### Transcriptional Diversity Analysis (Section 2)
 
 For genes in the gene-matched pair set, isoform diversity is characterized
 using all expressed isoforms (coding and non-coding) from `structures.rds`
@@ -1431,15 +1510,22 @@ and `expression_data.rds`. Metrics include:
 - **Expression concentration**: Fraction of gene-level DMSO CPM contributed
   by the dominant isoform (highest mean CPM across DMSO samples).
 
-### Combined Prediction Model: TD2 vs Reference CDS (Section 3d)
+### Combined Prediction Model: TD2 vs Reference CDS (Section 6)
 
 #### Overview
 
 Three model sets compare CDS annotation strategies for predicting NMD status
-from isoform structural features. All models are trained and evaluated on the
-same matched population: the intersection of mashr-classified NMD and non-NMD
-coding isoforms with complete features from both CDS sources. Holdout
-chromosomes 1, 3, 5, 7 are never used for feature selection or model tuning.
+from isoform structural features. Two are progressive single-source models
+(TD2 only, reference-CDS only); the third is a combined model with all
+features from both sources. Holdout chromosomes 1, 3, 5, 7 are never used for
+feature selection or model tuning. **TD2 features are available for every
+coding isoform in the matched population; reference-CDS features are only
+defined for the `ref_atg_available` subset (where the reference ATG codon is
+exonic in the comparator). The TD2 and combined models are fit on the full
+matched population; the reference-CDS-only model is fit on the
+`ref_atg_available` subset. The downstream "Matched-Population AUC
+Re-evaluation" sub-section quantifies how much of the headline AUC gap is
+driven by this population difference.**
 
 Source scripts: `05l_unified_model.R` (TD2 features), `05t_ref_cds_features.R`
 (reference-CDS features), `05u_paralog_annotation.R` (paralog annotation),
@@ -1531,11 +1617,20 @@ Source script: `05l_unified_model.R` → `analysis_cache/unified_model.rds`.
 
 #### Model Sets
 
-All three model sets use elastic net logistic regression (glmnet, alpha = 0.5,
-10-fold cross-validation, `type.measure = "auc"`). Step 1 (single feature)
-uses standard logistic regression. Features are centered and scaled using
-training set statistics; the same scaling parameters are applied to the test
-set. `set.seed(42)` is called before each `cv.glmnet` fit.
+All three model sets use **XGBoost gradient-boosted trees** (`xgboost` R
+package) with native NA handling — features are passed as-is and missingness
+is treated as a learned split direction. Hyperparameters: `objective =
+"binary:logistic"`, `eval_metric = "auc"`, `eta = 0.1`, `max_depth = 5`,
+`subsample = 0.8`, `colsample_bytree = 0.8`. The number of boosting rounds is
+selected per model by 10-fold `xgb.cv` with early stopping (50 rounds patience,
+maximum 1000 rounds), using the round that maximizes mean test AUC. `set.seed(42)`
+is called before fit.
+
+Because XGBoost handles NA natively, the combined model includes every coding
+isoform in the matched population — isoforms without a reference ATG simply
+carry NA in the `ref_*` columns and the model routes them via learned
+default directions. The reference-CDS-only model is fit on the
+`ref_atg_available` subset (where all `ref_*` features are non-NA).
 
 **Model Set 1 — TD2 CDS** (progressive):
 - Step 1: `downstream_ejc` (1 feature)
@@ -1555,17 +1650,163 @@ set. `set.seed(42)` is called before each `cv.glmnet` fit.
 
 AUC is evaluated on the paralog-free holdout test set for all models.
 
+#### Matched-Population AUC Re-evaluation
+
+The headline TD2 vs Ref-CDS AUC comparison is confounded by population
+selection: TD2 step-3 is evaluated on every coding test isoform
+(n_test ≈ 10,458), whereas Ref-CDS step-3 is evaluated only on the
+`ref_atg_available` subset (n_test ≈ 7,373). The `ref_atg_available`
+subset is intrinsically easier to classify regardless of feature source
+(reference ATG availability is itself correlated with structural
+"normality"). To isolate the feature-driven contribution from the
+population-driven contribution, we re-evaluate the TD2 step-3 model on
+the same matched population as the Ref-CDS model:
+
+```r
+matched_idx <- which(!is.na(mc$test$ref_utr5_excluded) &
+                       mc$test$ref_utr5_excluded == FALSE)
+td2_pred_matched <- mc$td2_models$step3$pred_test[matched_idx]
+y_matched        <- mc$test$is_nmd[matched_idx]
+td2_auc_matched  <- as.numeric(pROC::auc(pROC::roc(y_matched, td2_pred_matched)))
+```
+
+`ref_utr5_excluded` flags isoforms where reference-CDS features could not be
+computed (no reference ATG, or ATG not exonic in comparator).
+`mc$ref_models$step3` was originally fit + evaluated on
+`mc$test[ref_utr5_excluded == FALSE, ]`, so the matched index reproduces the
+same evaluation population.
+
+**Interpretation**: matched-population TD2 step-3 AUC ≈ 0.929 vs Ref-CDS
+step-3 AUC ≈ 0.934 — a feature-driven gap of only ~0.005. Most of the
+headline 0.030 gap (0.904 vs 0.934) is **population selection**, not
+features. The substantive benefit of Ref-CDS is therefore not
+discrimination but **attribution** (next subsection).
+
+#### SHAP Attribution Dissociation in Occult-PTC Isoforms
+
+**Population**: Occult-PTC test isoforms — defined as NMD pairs where the
+comparator was originally PTC-negative under TD2's predicted CDS but
+classifies as `effectively_ptc` when re-traced from the reference ATG.
+Operationally:
+
+```r
+occult_ids <- ra$c2$comparator_isoform_id[
+  ra$c2$category == "effectively_ptc" & !ra$c2$original_ptc]
+```
+
+In the holdout test set there are ~227 occult-PTC NMD isoforms.
+
+**SHAP source**: TreeSHAP (`predict(xgb_model, dtest, predcontrib = TRUE)`)
+produces an n_isoforms × (n_features + 1) matrix of additive feature
+contributions to the model's log-odds prediction. The trailing BIAS column
+is dropped, leaving an n × n_features SHAP matrix per model. The combined
+model's SHAP matrix is `mc$combined_model$shap_test`.
+
+**Family partitioning**: Combined-model features are partitioned by name:
+features starting with `ref_` belong to the **Ref-CDS family**; all others
+belong to the **TD2 family**.
+
+**Per-isoform attribution metric**: For each test isoform i, the fraction of
+total |SHAP| coming from the Ref-CDS family:
+
+    ref_frac(i) = sum_j∈ref |SHAP_j(i)|  /  sum_j |SHAP_j(i)|
+
+**Group comparison**: The distribution of `ref_frac` is compared between
+occult-PTC and non-occult NMD test isoforms using a two-sided Wilcoxon
+rank-sum test.
+
+**Per-feature comparison**: For each model variant (TD2 step-4, Ref-CDS
+step-4, combined), `mean(|SHAP|)` per feature is computed within the
+occult-PTC and non-occult subsets. The ratio `mean|SHAP|_occult /
+mean|SHAP|_non-occult` for the top-6 occult features highlights which
+features carry disproportionate attribution weight in the occult-PTC
+subpopulation.
+
+**Interpretation**: A higher Ref-CDS family fraction in occult-PTC
+indicates that the combined model "knows" the early PTC is the relevant
+signal for these isoforms — even though TD2's chosen ORF has no
+downstream EJC.
+
+Source code: chunks `sec3d-attribution-discordance` and
+`sec3d-top-features-by-subset` in `isopair_wrapper/05_final_report_mashr.Rmd`.
+
+#### Three-Way ORF Caller Agreement (TD2 vs Ref-ATG vs ORFik)
+
+To independently corroborate the reference-ATG choice for occult-PTC
+isoforms, we compare three ATG callers — TD2, reference-ATG tracing, and
+ORFik — on the comparator transcript of every NMD pair.
+
+**Inputs**:
+
+- `cds.rds` — TD2 CDS coordinates (genomic).
+- `ref_atg_analysis.rds` (`$c2$ref_atg_genomic`) — reference ATG genomic
+  position, traced from the dominant non-NMD coding isoform of the gene.
+- `orfik_scan.rds` (`$orf_features`) — ORFik per-ORF table (one row per
+  candidate ORF on each isoform), with `orf_start` (transcript-space ATG
+  position), `kozak_score` (PWM-derived), and `n_downstream_ejc`.
+
+**Algorithm**:
+
+1. **TD2 ATG (transcript-space)**: For each comparator isoform, take the
+   strand-aware genomic ATG position from `cds.rds`
+   (`+` strand: `cds_start`; `-` strand: `cds_stop`) and map to
+   transcript-space via `Isopair::genomicToTranscript()`.
+
+2. **Reference ATG (transcript-space)**: For each comparator isoform, take
+   `ref_atg_analysis$c2$ref_atg_genomic` and map to transcript-space via
+   `Isopair::genomicToTranscript()` on the comparator's exon structure.
+
+3. **ORFik top-Kozak ATG (transcript-space)**: Filter
+   `orfik_scan$orf_features` to the comparator isoform, sort by
+   `desc(kozak_score)` then `orf_start` (smallest position as tiebreaker),
+   and take the top row's `orf_start`.
+
+4. **Pairwise agreement**: Two ATGs agree if their transcript positions
+   differ by ≤2 nt (`TOL = 2L`). The 2-nt tolerance accommodates off-by-one
+   strand-mapping edge cases and split-codon junctions.
+
+5. **Bucketing**: Each pair is assigned one of:
+   - *Unresolvable*: any of the three positions could not be computed.
+   - *All three agree*: TD2 = ref-ATG = ORFik (all three within 2 nt).
+   - *ORFik = TD2 only*: ORFik agrees with TD2 but not ref-ATG.
+   - *ORFik = ref-ATG only*: ORFik agrees with ref-ATG but not TD2.
+   - *ORFik picks third ATG*: ORFik disagrees with both TD2 and ref-ATG.
+
+6. **Stratification by ref-ATG category**: Pairs are grouped by `subset` —
+   `Occult-PTC`, `Genuinely PTC+`, `PTC-, no_downstream_ejc`,
+   `PTC-, truncated_no_ejc`. The `Ref-ATG lost` category is excluded
+   because the ref-ATG transcript position is undefined.
+
+7. **PTC-bearing rate per ORFik agreement**: For pairs in the
+   `ORFik = ref-ATG only` bucket within the occult-PTC subset, compute the
+   fraction of ORFik-chosen ORFs whose `n_downstream_ejc ≥ 1` — i.e., the
+   fraction where ORFik's choice is itself PTC-bearing.
+
+**Interpretation**: If ORFik (motivated by translation-initiation strength
+alone) preferentially agrees with ref-ATG over TD2 in the occult-PTC subset,
+two independent priors converge on the same answer. The PTC-bearing rate
+within `ORFik = ref-ATG only` directly tests whether ORFik's choice carries
+the same PTC signature.
+
+**Caveat (current run)**: The ORFik scan in this run uses an integer-binned
+Kozak score (0–2 levels). Many occult-PTC pairs end up in `ORFik picks third
+ATG` because tied-strong-Kozak alternatives are broken by smallest-position
+tiebreaker. Switching to the continuous-PWM Kozak score
+(`Isopair::scoreKozakPWM()`) is expected to recover most of those cases,
+making the `ORFik = ref-ATG` count a lower bound on agreement.
+
+Source code: chunk `sec3d-orfik-agreement` in
+`isopair_wrapper/05_final_report_mashr.Rmd`. Source rds file:
+`05s_orfik_scan.R` → `analysis_cache/orfik_scan.rds`.
+
 #### SHAP-Based Isoform Clustering
 
 SHAP (SHapley Additive exPlanations) values decompose each isoform's
-predicted log-odds into per-feature contributions. For a linear model
-(elastic net logistic regression), SHAP values have a closed-form solution:
-
-    SHAP_j(i) = beta_j × x_j,scaled(i)
-
-where `beta_j` is the standardized coefficient at `lambda.min` and
-`x_j,scaled(i)` is the centered/scaled feature value for isoform i. Features
-with zero coefficients have zero SHAP values.
+predicted log-odds into per-feature contributions. For XGBoost, SHAP values
+are computed via the TreeSHAP algorithm (`predict(xgb_model, dtest,
+predcontrib = TRUE)`), which returns an n × (n_features + 1) matrix; the
+trailing BIAS column is dropped to leave the n × n_features SHAP matrix.
+TreeSHAP is exact for tree ensembles (not an approximation).
 
 **All-isoform clustering**: K-means clustering is applied to the SHAP matrix
 (non-zero features only) of the full matched population. Optimal k is selected
@@ -1582,12 +1823,12 @@ Visualization: cluster-mean SHAP heatmaps and beeswarm summary plots.
 #### Dose-Response Analysis
 
 The combined model's predicted NMD probability is tested for correlation with
-actual NMD response magnitude. Raw limma logFC values (per-cell-type
-unshrunk estimates from 6 cell types: AT, DD, DD_ALI, DO, FB, MV) are
-averaged per isoform to produce a mean logFC. Spearman correlation between
+actual NMD response magnitude. mashr posterior logFC values
+(per-cell-type estimates from the 4 paper-scope cell types: AT, DD, FB, MV)
+are averaged per isoform to produce a mean logFC. Spearman correlation between
 predicted probability and mean logFC is computed for holdout NMD isoforms.
 
-### uORF ATG Position Sharing (Section 3)
+### uORF ATG Position Sharing (Section 5)
 
 For genes with PTC-negative NMD comparators that have overlapping uORFs,
 all expressed coding isoforms of those genes are examined to determine
@@ -1630,12 +1871,13 @@ splice events to their mechanism (frameshift vs in-frame stop).
 
 **Implementation**: The attribution logic is implemented in
 `attribute_ptc_events()` (defined in `analysis_functions.R`), called by both
-the report (Section 2b, for PTC-positive pairs) and the precompute script
-(`05r_ref_atg_analysis.R`, for reclassified PTC-negative pairs). The function
-takes configurable parameters: `atg_genomic_pos` (NULL for SQANTI CDS
-attribution, populated for reference-ATG attribution) and `is_frameshift_vec`
-(pre-computed from `compareIsoformFrames()` frame categories, or inferred from
-frame walk events).
+the report (Section 4, "Three Mechanisms of PTC Creation", for PTC-positive
+pairs) and the precompute script (`05r_ref_atg_analysis.R`, for reclassified
+PTC-negative pairs). The function takes configurable parameters:
+`atg_genomic_pos` (NULL for SQANTI CDS attribution, populated for
+reference-ATG attribution) and `is_frameshift_vec` (pre-computed from
+`compareIsoformFrames()` frame categories, or inferred from frame walk
+events).
 
 **Split-codon splice junctions**: A stop codon can span a splice junction,
 with 2 nucleotides from one exon and 1 from the adjacent exon. The event that
@@ -1692,6 +1934,16 @@ GeneMarkS-T).
 
 **Output**: `analysis_cache/ref_atg_analysis.rds` containing per-pair
 classification and attribution results for both C2 (NMD) and C4 (Control) pairs.
+
+**Operational definition — "occult-PTC"**: NMD pairs whose comparator is
+PTC-negative under TD2's predicted CDS but classifies as `effectively_ptc`
+when re-traced from the reference ATG. Operationally:
+`ref_atg_analysis$c2$category == "effectively_ptc" & !original_ptc`. The
+early PTC was masked by TD2's choice of a downstream ATG; the reference
+ATG reveals the true reading frame and its downstream EJCs. Occult-PTC
+isoforms are the central population for the SHAP attribution dissociation
+and three-way ORF caller agreement analyses (see "Combined Prediction Model"
+above).
 
 ### 3'UTR Length Analysis with PTC Correction
 
@@ -1979,6 +2231,14 @@ Splice-specific peptides are validated against the Human PeptideAtlas
 
 ---
 
-**Document Version**: 2.8
-**Last Updated**: 2026-03-19
-**Status**: Complete and validated 2026-03-20 — added methods for transcriptional diversity (Section 1), unified model (Section 2a), dose-response (Section 2d), uORF ATG position sharing (Section 3), reference-ATG tracing, PTC attribution implementation details
+**Document Version**: 2.9
+**Last Updated**: 2026-04-29
+**Status**: Updated for 4-CT paper scope (AT, DD, FB, MV) and 8-section
+report restructure. New METHODS subsections: SR↔LR gene-level concordance
+(§1), Matched-Population AUC re-evaluation (§6), SHAP attribution dissociation
+in occult-PTC isoforms (§6), Three-Way ORF Caller Agreement (§6), Report
+Structure mapping table, Infrastructure Objects table. Updated: Combined
+Prediction Model switched from elastic net (glmnet) to XGBoost gradient-boosted
+trees (TreeSHAP); cross-comparison meta-analysis CT scope (5 → 4); dose-response
+input (limma 6-CT → mashr posterior 4-CT); occult-PTC operational definition
+added under Reference-ATG Tracing.
