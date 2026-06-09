@@ -28,15 +28,16 @@ fmt <- function(x) formatC(x, format = "d", big.mark = ",")
 pct <- function(num, den) sprintf("%.1f%%", 100 * num / den)
 strip_ver <- function(x) sub("\\..*", "", x)
 
-# ── Paths ──
-# This report renders from code/ptcneg_go_handoff/. Repo root is two levels up.
 repo_root <- "../.."
-out_dir   <- "."   # deliverables land alongside this report (tracked under code/)
+out_dir   <- "."
 
-# Canonical reference-AUG ORF + PTC + NMD cache, produced by the NMD_orf_model_v5_4ct
-# repo (NOT the Isopair pairwise pipeline). die_date inside = 2026.3.10 mashr.
+# Reference-AUG ORF + PTC cache (NMD_orf_model_v5_4ct). We use it ONLY for the
+# PTC determination columns; NMD status is taken from the canonical mashr CSVs
+# below (see §1, methodological note).
 CACHE <- file.path(repo_root, "nmd_orf_model_v5_4ct", "tmp",
                    "ref_orf_ptc_cache_with_nmd_2026.5.12.rds")
+MASHR_DIR <- file.path(repo_root, "isocall_dge", "mashr")
+CTS <- c("at", "dd", "fb", "mv")
 
 .d   <- Sys.Date()
 DATE <- sprintf("%d.%d.%d", as.integer(format(.d, "%Y")),
@@ -55,49 +56,75 @@ Two design choices distinguish this from the manuscript's Isopair analysis:
 1. **PTC is determined per-isoform from the reference AUG, not from TD2.**
    TD2/SQANTI's predicted CDS is biased against PTC-containing ORFs, so its NMD
    prediction cannot be trusted here (CLAUDE.md §"SQANTI/TD2 CDS bias"). Instead
-   we use the **reference-AUG projection**: the gene's annotated reference start
-   codon is traced into each isoform, the in-frame stop is located, and downstream
+   we use the **reference-AUG projection** from `Isopair::traceReferenceAtg()`:
+   the gene's reference start codon is traced into each isoform, the in-frame
+   stop is located by walking the isoform's own sequence, and downstream
    exon-junction complexes (EJCs) are counted under the 50-nt rule. This needs no
-   reference-vs-comparator *pairwise* framework — it is a per-isoform projection
-   against the gene's canonical AUG.
+   reference-vs-comparator *pairwise* (NMD-vs-control) framework — it is a
+   per-isoform projection against the gene's reference AUG.
 
 2. **The analysis is restricted to reference-AUG-compatible isoforms**, i.e.
    isoforms in which the reference start codon is exonic and traceable
-   (`ref_atg_exonic_in_comp == TRUE`). Isoforms that lost the reference AUG are
-   out of scope by construction.
+   (`ref_atg_exonic_in_comp == TRUE`). Isoforms that lost the reference AUG
+   (`ref_atg_lost`) are out of scope by construction.
+
+> **Methodological note (NMD direction).** NMD status is taken from the
+> **canonical** per-cell-type mashr DIE (`isocall_dge/mashr/nmd_mashr_die_*.csv`,
+> `nmd_responsive == TRUE` ⇔ mashr `lfsr < 0.05` **and** posterior mean **> 0**),
+> i.e. isoforms significantly **up-regulated** under SMG1 inhibition — the
+> direction expected of genuine NMD substrates. We deliberately do **not** use the
+> cache's own `nmd_responsive_any` flag, which is defined as `adj.P.Val < 0.05`
+> in ≥1 cell type with **no direction filter**; that flag admits down-regulated
+> isoforms (63% of the would-be target) and is not an NMD-substrate criterion.
 
 **Definitions**
 
 | Term | Operational definition |
 |---|---|
-| Reference-AUG compatible | `ref_atg_exonic_in_comp == TRUE` |
+| Reference-AUG compatible | `ref_atg_exonic_in_comp == TRUE` (reference start codon exonic in the isoform) |
 | PTC- (no PTC) | `n_downstream_ejc == 0` from the ref-AUG stop (categories `no_downstream_ejc`, `truncated_no_ejc`) |
 | PTC+ | `n_downstream_ejc > 0` (`effectively_ptc`) — excluded from the target |
-| NMD+ (NMD-responsive) | `nmd_responsive_any == TRUE` (mashr-significant up-regulation under SMG1i in ≥1 of AT, DD, FB, MV) |
+| NMD+ (NMD-responsive) | canonical `nmd_responsive == TRUE` (lfsr < 0.05 **and** posterior mean > 0, i.e. up under SMG1i) in ≥1 of AT, DD, FB, MV |
 | **Target (NMD+/PTC-)** | AUG-compatible **and** PTC- **and** NMD+ |
 
-**Provenance.** All calls come from `ref_orf_ptc_cache_with_nmd_2026.5.12.rds`
-(`$trace_aug`), produced by the `NMD_orf_model_v5_4ct` repo; NMD status is the
-`2026.3.10` isoform-level mashr DIE (4 cell types). This file is a local input
-(under a gitignored `tmp/`); regenerate it from the model repo if absent.
+**Provenance.** PTC calls: `ref_orf_ptc_cache_with_nmd_2026.5.12.rds` (`$trace_aug`,
+columns `ref_atg_exonic_in_comp`, `n_downstream_ejc`, `category`), produced by
+`NMD_orf_model_v5_4ct/tmp/prep_dominant_ref_orf_ptc_2026.5.12.R` via
+`Isopair::traceReferenceAtg()` (50-nt EJC threshold; reference = the gene's
+dominant DMSO-expressed GENCODE-CDS isoform). NMD calls: the `2026.3.10`
+isoform-level mashr DIE CSVs (4 cell types). See `METHODS.md` in this directory.
+The cache is a local input under a gitignored `tmp/`; regenerate from the model
+repo if absent.
 
 ## 2. Target set: NMD+/PTC- isoforms (reference-AUG)
 
 ```{r load}
-# ── Data provenance ──
-# $trace_aug: one row per reference-AUG-projected isoform (keyed comparator_isoform_id),
-# with ref-AUG ORF/EJC trace + per-cell-type mashr DIE + NMD summary flags.
 stopifnot(file.exists(CACHE))
-cache <- readRDS(CACHE)
-ta <- as.data.table(cache$trace_aug)
+ta <- as.data.table(readRDS(CACHE)$trace_aug)
 
-# Reference-AUG-compatible isoforms only
-augc <- ta[ref_atg_exonic_in_comp == TRUE]
+# Reference-AUG-compatible isoforms; PTC determination from the ref-AUG trace.
+augc <- ta[ref_atg_exonic_in_comp == TRUE,
+           .(isoform_id = comparator_isoform_id, reference_isoform_id, gene_id,
+             category, n_downstream_ejc, ref_orf_length, comp_orf_length)]
 augc[, ptc_neg := !is.na(n_downstream_ejc) & n_downstream_ejc == 0]
 augc[, ensembl_gene_id := strip_ver(gene_id)]
 
-# Target: AUG-compatible, PTC-negative, NMD-responsive
-target_iso <- augc[ptc_neg == TRUE & nmd_responsive_any == TRUE]
+# ── Canonical NMD status from the authoritative mashr CSVs ──
+# nmd_responsive == TRUE  <=>  lfsr < 0.05 AND posterior mean > 0 (up under SMG1i).
+nmd_long <- rbindlist(lapply(CTS, function(ct) {
+  d <- fread(file.path(MASHR_DIR, sprintf("nmd_mashr_die_%s_2026.3.10.csv", ct)),
+             select = c("txid", "logFC", "nmd_responsive"))
+  d[nmd_responsive == TRUE, .(isoform_id = txid, ct = toupper(ct), logFC)]
+}))
+nmd_iso <- nmd_long[, .(n_ct_nmd = .N, max_nmd_logfc = round(max(logFC), 3)),
+                    by = isoform_id]
+augc[nmd_iso, on = "isoform_id", `:=`(n_ct_nmd = i.n_ct_nmd,
+                                      max_nmd_logfc = i.max_nmd_logfc)]
+augc[is.na(n_ct_nmd), n_ct_nmd := 0L]
+augc[, nmd_up := n_ct_nmd >= 1L]
+
+# Target: AUG-compatible, PTC-negative, canonically NMD-responsive (up)
+target_iso <- augc[ptc_neg == TRUE & nmd_up == TRUE]
 
 n_aug      <- nrow(augc)
 n_tgt_iso  <- nrow(target_iso)
@@ -115,32 +142,29 @@ render_dt(sub, caption = "Table 1: Target composition by ref-AUG PTC- category",
 ```
 
 ```{r fraction}
-# Live PTC-negative fraction among NMD-responsive, AUG-compatible isoforms —
-# the standalone analogue of the manuscript's "~15% of NMD isoforms lack a PTC".
-nmd_aug   <- augc[nmd_responsive_any == TRUE]
+# PTC-negative fraction among NMD-responsive, AUG-compatible isoforms.
+nmd_aug <- augc[nmd_up == TRUE]
 frac_ptcneg <- pct(sum(nmd_aug$ptc_neg), nrow(nmd_aug))
 ```
 
-Among **`r fmt(nrow(nmd_aug))`** NMD-responsive reference-AUG-compatible isoforms,
-**`r fmt(sum(nmd_aug$ptc_neg))` (`r frac_ptcneg`)** are PTC-negative — the
-genome-wide, pairwise-free counterpart of the manuscript's PTC-negative NMD
-fraction.
+Among **`r fmt(nrow(nmd_aug))`** NMD-responsive (up) reference-AUG-compatible
+isoforms, **`r fmt(sum(nmd_aug$ptc_neg))` (`r frac_ptcneg`)** are PTC-negative.
+(This is a per-isoform, transcriptome-wide quantity and is not directly
+comparable to the manuscript's "~15%", which is the PTC-negative share of
+gene-matched NMD *pairs* in the Isopair framework — a different population.)
 
 ```{r per-ct}
-# Per-cell-type support: in how many of the 4 CTs is each target isoform
-# NMD-significant? (n_ct_sig_005 from the cache.)
-ctt <- target_iso[, .N, by = n_ct_sig_005][order(n_ct_sig_005)]
+ctt <- target_iso[, .N, by = n_ct_nmd][order(n_ct_nmd)]
 setnames(ctt, "N", "n_isoforms")
-render_dt(ctt, caption = "Table 2: Target isoforms by number of cell types with significant NMD response",
+render_dt(ctt, caption = "Table 2: Target isoforms by number of cell types with significant NMD up-response",
           pageLength = 5)
 ```
 
 ## 3. Background universe (AUG-assessed genes)
 
 ```{r universe}
-# Universe = genes with >=1 reference-AUG-compatible isoform, i.e. genes that
-# were actually eligible to be called NMD+/PTC-. This matched background avoids
-# diluting the ORA with genes that could never enter the target.
+# Universe = genes with >=1 reference-AUG-compatible isoform, i.e. genes eligible
+# to be called NMD+/PTC-. Matched background; independent of NMD status.
 universe <- data.table(ensembl_gene_id = unique(augc$ensembl_gene_id))
 n_universe <- nrow(universe)
 all_in_uni <- all(target_iso$ensembl_gene_id %in% universe$ensembl_gene_id)
@@ -153,8 +177,6 @@ isoform). All `r fmt(n_tgt_gene)` target genes are contained in it
 ## 4. Gene identifiers
 
 ```{r ids}
-# Symbol + Entrez from org.Hs.eg.db — the same annotation topGO uses via
-# annFUN.org, so identifiers stay internally consistent with the enrichment.
 all_ens <- union(universe$ensembl_gene_id, target_iso$ensembl_gene_id)
 sym <- mapIds(org.Hs.eg.db, keys = all_ens, column = "SYMBOL",
               keytype = "ENSEMBL", multiVals = "first")
@@ -176,34 +198,33 @@ render_dt(cov_tab, caption = "Table 3: Identifier mapping coverage", pageLength 
 ## 5. Deliverables
 
 ```{r exports}
-# ── Gene-level target (for GO): one row per gene, with supporting-isoform detail ──
+# ── Gene-level target (for GO) ──
 tgt_genes <- target_iso[, .(
   n_ptcneg_isoforms = .N,
   categories        = paste(sort(unique(category)), collapse = ";"),
-  max_n_ct_sig      = max(n_ct_sig_005),
-  max_abs_logfc     = round(max(abs(max_sig_logfc), na.rm = TRUE), 3)
+  max_n_ct_nmd      = max(n_ct_nmd),
+  max_nmd_logfc     = round(max(max_nmd_logfc, na.rm = TRUE), 3)
 ), by = ensembl_gene_id]
 tgt_genes <- merge(tgt_genes, id_map, by = "ensembl_gene_id", all.x = TRUE)
 setcolorder(tgt_genes, c("ensembl_gene_id", "hgnc_symbol", "entrez_id"))
 
-# ── Background with target flag (this IS the topGO allGenes source) ──
+# ── Background with target flag (topGO allGenes source) ──
 bg <- merge(universe, id_map, by = "ensembl_gene_id", all.x = TRUE)
 bg[, is_target := ensembl_gene_id %in% target_iso$ensembl_gene_id]
 setcolorder(bg, c("ensembl_gene_id", "hgnc_symbol", "entrez_id", "is_target"))
 
-# ── Isoform-level detail (traceability / subgroup-stratified GO) ──
+# ── Isoform-level detail ──
 iso_detail <- target_iso[, .(
-  comparator_isoform_id, reference_isoform_id, ensembl_gene_id,
+  isoform_id, reference_isoform_id, ensembl_gene_id,
   category, ref_orf_length, comp_orf_length, n_downstream_ejc,
-  n_ct_sig_005, max_sig_logfc, max_sig_direction)]
+  n_ct_nmd, max_nmd_logfc)]
 
 f_tgt <- file.path(out_dir, sprintf("nmd_ptcneg_refAUG_target_genes_%s.csv", DATE))
 f_bg  <- file.path(out_dir, sprintf("nmd_ptcneg_refAUG_background_genes_%s.csv", DATE))
 f_sym <- file.path(out_dir, sprintf("nmd_ptcneg_refAUG_target_symbols_%s.txt", DATE))
 f_iso <- file.path(out_dir, sprintf("nmd_ptcneg_refAUG_target_isoforms_%s.csv", DATE))
 
-fwrite(tgt_genes, f_tgt)
-fwrite(bg, f_bg)
+fwrite(tgt_genes, f_tgt); fwrite(bg, f_bg)
 writeLines(sort(unique(na.omit(tgt_genes$hgnc_symbol))), f_sym)
 fwrite(iso_detail, f_iso)
 
@@ -218,7 +239,7 @@ render_dt(exports, caption = "Table 4: Exported deliverables", pageLength = 5)
 ```
 
 ```{r preview}
-render_dt(head(tgt_genes[order(-max_n_ct_sig, -max_abs_logfc)], 20),
+render_dt(head(tgt_genes[order(-max_n_ct_nmd, -max_nmd_logfc)], 20),
           caption = "Preview: target gene table (top 20 by cell-type support)")
 ```
 
@@ -239,8 +260,8 @@ GenTable(GOdata, weightFisher = res, topNodes = 30)
 ```
 
 For Enrichr / g:Profiler, paste `*_target_symbols_*.txt` and supply column
-`ensembl_gene_id` of the background CSV as the custom background. Subgroup
-GO is available by filtering `category` in the isoform-level file.
+`ensembl_gene_id` of the background CSV as the custom background. Subgroup GO is
+available by filtering `category` in the isoform-level file.
 
 ## 6. Verification
 
@@ -250,10 +271,10 @@ checks <- list(
   "Target genes unique"                = !any(duplicated(tgt_genes$ensembl_gene_id)),
   "Universe genes unique"              = !any(duplicated(bg$ensembl_gene_id)),
   "is_target count == target genes"    = sum(bg$is_target) == n_tgt_gene,
-  "All target AUG-compatible"          = all(target_iso$ref_atg_exonic_in_comp == TRUE),
+  "All target AUG-compatible"          = nrow(ta[comparator_isoform_id %in% target_iso$isoform_id & ref_atg_exonic_in_comp == FALSE]) == 0,
   "All target PTC- (0 downstream EJC)" = all(target_iso$n_downstream_ejc == 0),
   "No effectively_ptc in target"       = !any(target_iso$category == "effectively_ptc"),
-  "All target NMD-responsive"          = all(target_iso$nmd_responsive_any == TRUE),
+  "All target NMD-responsive (up)"     = all(target_iso$n_ct_nmd >= 1),
   "Category n_isoforms sum to total"   = sum(sub$n_isoforms) == n_tgt_iso
 )
 chk <- data.table(check = names(checks), pass = unlist(checks))

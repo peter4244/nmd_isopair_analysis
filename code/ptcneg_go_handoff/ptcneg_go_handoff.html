@@ -4089,18 +4089,34 @@ analysis:</p>
 from TD2.</strong> TD2/SQANTI’s predicted CDS is biased against
 PTC-containing ORFs, so its NMD prediction cannot be trusted here
 (CLAUDE.md §“SQANTI/TD2 CDS bias”). Instead we use the
-<strong>reference-AUG projection</strong>: the gene’s annotated
-reference start codon is traced into each isoform, the in-frame stop is
-located, and downstream exon-junction complexes (EJCs) are counted under
-the 50-nt rule. This needs no reference-vs-comparator <em>pairwise</em>
-framework — it is a per-isoform projection against the gene’s canonical
+<strong>reference-AUG projection</strong> from
+<code>Isopair::traceReferenceAtg()</code>: the gene’s reference start
+codon is traced into each isoform, the in-frame stop is located by
+walking the isoform’s own sequence, and downstream exon-junction
+complexes (EJCs) are counted under the 50-nt rule. This needs no
+reference-vs-comparator <em>pairwise</em> (NMD-vs-control) framework —
+it is a per-isoform projection against the gene’s reference
 AUG.</p></li>
 <li><p><strong>The analysis is restricted to reference-AUG-compatible
 isoforms</strong>, i.e. isoforms in which the reference start codon is
 exonic and traceable (<code>ref_atg_exonic_in_comp == TRUE</code>).
-Isoforms that lost the reference AUG are out of scope by
-construction.</p></li>
+Isoforms that lost the reference AUG (<code>ref_atg_lost</code>) are out
+of scope by construction.</p></li>
 </ol>
+<blockquote>
+<p><strong>Methodological note (NMD direction).</strong> NMD status is
+taken from the <strong>canonical</strong> per-cell-type mashr DIE
+(<code>isocall_dge/mashr/nmd_mashr_die_*.csv</code>,
+<code>nmd_responsive == TRUE</code> ⇔ mashr <code>lfsr &lt; 0.05</code>
+<strong>and</strong> posterior mean <strong>&gt; 0</strong>),
+i.e. isoforms significantly <strong>up-regulated</strong> under SMG1
+inhibition — the direction expected of genuine NMD substrates. We
+deliberately do <strong>not</strong> use the cache’s own
+<code>nmd_responsive_any</code> flag, which is defined as
+<code>adj.P.Val &lt; 0.05</code> in ≥1 cell type with <strong>no
+direction filter</strong>; that flag admits down-regulated isoforms (63%
+of the would-be target) and is not an NMD-substrate criterion.</p>
+</blockquote>
 <p><strong>Definitions</strong></p>
 <table>
 <colgroup>
@@ -4116,7 +4132,8 @@ construction.</p></li>
 <tbody>
 <tr class="odd">
 <td>Reference-AUG compatible</td>
-<td><code>ref_atg_exonic_in_comp == TRUE</code></td>
+<td><code>ref_atg_exonic_in_comp == TRUE</code> (reference start codon
+exonic in the isoform)</td>
 </tr>
 <tr class="even">
 <td>PTC- (no PTC)</td>
@@ -4130,8 +4147,9 @@ construction.</p></li>
 </tr>
 <tr class="even">
 <td>NMD+ (NMD-responsive)</td>
-<td><code>nmd_responsive_any == TRUE</code> (mashr-significant
-up-regulation under SMG1i in ≥1 of AT, DD, FB, MV)</td>
+<td>canonical <code>nmd_responsive == TRUE</code> (lfsr &lt; 0.05
+<strong>and</strong> posterior mean &gt; 0, i.e. up under SMG1i) in ≥1
+of AT, DD, FB, MV</td>
 </tr>
 <tr class="odd">
 <td><strong>Target (NMD+/PTC-)</strong></td>
@@ -4140,77 +4158,89 @@ NMD+</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Provenance.</strong> All calls come from
+<p><strong>Provenance.</strong> PTC calls:
 <code>ref_orf_ptc_cache_with_nmd_2026.5.12.rds</code>
-(<code>$trace_aug</code>), produced by the
-<code>NMD_orf_model_v5_4ct</code> repo; NMD status is the
-<code>2026.3.10</code> isoform-level mashr DIE (4 cell types). This file
-is a local input (under a gitignored <code>tmp/</code>); regenerate it
-from the model repo if absent.</p>
+(<code>$trace_aug</code>, columns <code>ref_atg_exonic_in_comp</code>,
+<code>n_downstream_ejc</code>, <code>category</code>), produced by
+<code>NMD_orf_model_v5_4ct/tmp/prep_dominant_ref_orf_ptc_2026.5.12.R</code>
+via <code>Isopair::traceReferenceAtg()</code> (50-nt EJC threshold;
+reference = the gene’s dominant DMSO-expressed GENCODE-CDS isoform). NMD
+calls: the <code>2026.3.10</code> isoform-level mashr DIE CSVs (4 cell
+types). See <code>METHODS.md</code> in this directory. The cache is a
+local input under a gitignored <code>tmp/</code>; regenerate from the
+model repo if absent.</p>
 </div>
 <div id="target-set-nmdptc--isoforms-reference-aug" class="section level2">
 <h2>2. Target set: NMD+/PTC- isoforms (reference-AUG)</h2>
-<pre class="r"><code># ── Data provenance ──
-# $trace_aug: one row per reference-AUG-projected isoform (keyed comparator_isoform_id),
-# with ref-AUG ORF/EJC trace + per-cell-type mashr DIE + NMD summary flags.
-stopifnot(file.exists(CACHE))
-cache &lt;- readRDS(CACHE)
-ta &lt;- as.data.table(cache$trace_aug)
+<pre class="r"><code>stopifnot(file.exists(CACHE))
+ta &lt;- as.data.table(readRDS(CACHE)$trace_aug)
 
-# Reference-AUG-compatible isoforms only
-augc &lt;- ta[ref_atg_exonic_in_comp == TRUE]
+# Reference-AUG-compatible isoforms; PTC determination from the ref-AUG trace.
+augc &lt;- ta[ref_atg_exonic_in_comp == TRUE,
+           .(isoform_id = comparator_isoform_id, reference_isoform_id, gene_id,
+             category, n_downstream_ejc, ref_orf_length, comp_orf_length)]
 augc[, ptc_neg := !is.na(n_downstream_ejc) &amp; n_downstream_ejc == 0]
 augc[, ensembl_gene_id := strip_ver(gene_id)]
 
-# Target: AUG-compatible, PTC-negative, NMD-responsive
-target_iso &lt;- augc[ptc_neg == TRUE &amp; nmd_responsive_any == TRUE]
+# ── Canonical NMD status from the authoritative mashr CSVs ──
+# nmd_responsive == TRUE  &lt;=&gt;  lfsr &lt; 0.05 AND posterior mean &gt; 0 (up under SMG1i).
+nmd_long &lt;- rbindlist(lapply(CTS, function(ct) {
+  d &lt;- fread(file.path(MASHR_DIR, sprintf(&quot;nmd_mashr_die_%s_2026.3.10.csv&quot;, ct)),
+             select = c(&quot;txid&quot;, &quot;logFC&quot;, &quot;nmd_responsive&quot;))
+  d[nmd_responsive == TRUE, .(isoform_id = txid, ct = toupper(ct), logFC)]
+}))
+nmd_iso &lt;- nmd_long[, .(n_ct_nmd = .N, max_nmd_logfc = round(max(logFC), 3)),
+                    by = isoform_id]
+augc[nmd_iso, on = &quot;isoform_id&quot;, `:=`(n_ct_nmd = i.n_ct_nmd,
+                                      max_nmd_logfc = i.max_nmd_logfc)]
+augc[is.na(n_ct_nmd), n_ct_nmd := 0L]
+augc[, nmd_up := n_ct_nmd &gt;= 1L]
+
+# Target: AUG-compatible, PTC-negative, canonically NMD-responsive (up)
+target_iso &lt;- augc[ptc_neg == TRUE &amp; nmd_up == TRUE]
 
 n_aug      &lt;- nrow(augc)
 n_tgt_iso  &lt;- nrow(target_iso)
 n_tgt_gene &lt;- uniqueN(target_iso$ensembl_gene_id)</code></pre>
 <p>The reference-AUG-compatible set contains <strong>70,765
-isoforms</strong>. The target NMD+/PTC- set is <strong>1,262 isoforms
-across 995 genes</strong>.</p>
+isoforms</strong>. The target NMD+/PTC- set is <strong>467 isoforms
+across 362 genes</strong>.</p>
 <pre class="r"><code>sub &lt;- target_iso[, .(n_isoforms = .N,
                       n_genes = uniqueN(ensembl_gene_id)), by = category][order(-n_isoforms)]
 render_dt(sub, caption = &quot;Table 1: Target composition by ref-AUG PTC- category&quot;,
           pageLength = 5)</code></pre>
-<div class="datatables html-widget html-fill-item" id="htmlwidget-7bf57ae4d2155f862554" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-7bf57ae4d2155f862554">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 1: Target composition by ref-AUG PTC- category<\/caption>","data":[["no_downstream_ejc","truncated_no_ejc"],[656,606],[518,537]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>category<\/th>\n      <th>n_isoforms<\/th>\n      <th>n_genes<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":5,"scrollX":true,"columnDefs":[{"className":"dt-right","targets":[1,2]},{"name":"category","targets":0},{"name":"n_isoforms","targets":1},{"name":"n_genes","targets":2}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[5,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
-<pre class="r"><code># Live PTC-negative fraction among NMD-responsive, AUG-compatible isoforms —
-# the standalone analogue of the manuscript&#39;s &quot;~15% of NMD isoforms lack a PTC&quot;.
-nmd_aug   &lt;- augc[nmd_responsive_any == TRUE]
+<div class="datatables html-widget html-fill-item" id="htmlwidget-bc765aca5fedc942c037" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-bc765aca5fedc942c037">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 1: Target composition by ref-AUG PTC- category<\/caption>","data":[["no_downstream_ejc","truncated_no_ejc"],[248,219],[185,196]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>category<\/th>\n      <th>n_isoforms<\/th>\n      <th>n_genes<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":5,"scrollX":true,"columnDefs":[{"className":"dt-right","targets":[1,2]},{"name":"category","targets":0},{"name":"n_isoforms","targets":1},{"name":"n_genes","targets":2}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[5,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
+<pre class="r"><code># PTC-negative fraction among NMD-responsive, AUG-compatible isoforms.
+nmd_aug &lt;- augc[nmd_up == TRUE]
 frac_ptcneg &lt;- pct(sum(nmd_aug$ptc_neg), nrow(nmd_aug))</code></pre>
-<p>Among <strong>8,293</strong> NMD-responsive reference-AUG-compatible
-isoforms, <strong>1,262 (15.2%)</strong> are PTC-negative — the
-genome-wide, pairwise-free counterpart of the manuscript’s PTC-negative
-NMD fraction.</p>
-<pre class="r"><code># Per-cell-type support: in how many of the 4 CTs is each target isoform
-# NMD-significant? (n_ct_sig_005 from the cache.)
-ctt &lt;- target_iso[, .N, by = n_ct_sig_005][order(n_ct_sig_005)]
+<p>Among <strong>7,392</strong> NMD-responsive (up)
+reference-AUG-compatible isoforms, <strong>467 (6.3%)</strong> are
+PTC-negative. (This is a per-isoform, transcriptome-wide quantity and is
+not directly comparable to the manuscript’s “~15%”, which is the
+PTC-negative share of gene-matched NMD <em>pairs</em> in the Isopair
+framework — a different population.)</p>
+<pre class="r"><code>ctt &lt;- target_iso[, .N, by = n_ct_nmd][order(n_ct_nmd)]
 setnames(ctt, &quot;N&quot;, &quot;n_isoforms&quot;)
-render_dt(ctt, caption = &quot;Table 2: Target isoforms by number of cell types with significant NMD response&quot;,
+render_dt(ctt, caption = &quot;Table 2: Target isoforms by number of cell types with significant NMD up-response&quot;,
           pageLength = 5)</code></pre>
-<div class="datatables html-widget html-fill-item" id="htmlwidget-e20e3ed9bc104810fb7a" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-e20e3ed9bc104810fb7a">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 2: Target isoforms by number of cell types with significant NMD response<\/caption>","data":[[1,2,3,4],[489,84,150,539]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>n_ct_sig_005<\/th>\n      <th>n_isoforms<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":5,"scrollX":true,"columnDefs":[{"className":"dt-right","targets":[0,1]},{"name":"n_ct_sig_005","targets":0},{"name":"n_isoforms","targets":1}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[5,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
+<div class="datatables html-widget html-fill-item" id="htmlwidget-ff682a126465bdcae921" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-ff682a126465bdcae921">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 2: Target isoforms by number of cell types with significant NMD up-response<\/caption>","data":[[1,2,3,4],[124,29,59,255]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>n_ct_nmd<\/th>\n      <th>n_isoforms<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":5,"scrollX":true,"columnDefs":[{"className":"dt-right","targets":[0,1]},{"name":"n_ct_nmd","targets":0},{"name":"n_isoforms","targets":1}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[5,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
 </div>
 <div id="background-universe-aug-assessed-genes" class="section level2">
 <h2>3. Background universe (AUG-assessed genes)</h2>
-<pre class="r"><code># Universe = genes with &gt;=1 reference-AUG-compatible isoform, i.e. genes that
-# were actually eligible to be called NMD+/PTC-. This matched background avoids
-# diluting the ORA with genes that could never enter the target.
+<pre class="r"><code># Universe = genes with &gt;=1 reference-AUG-compatible isoform, i.e. genes eligible
+# to be called NMD+/PTC-. Matched background; independent of NMD status.
 universe &lt;- data.table(ensembl_gene_id = unique(augc$ensembl_gene_id))
 n_universe &lt;- nrow(universe)
 all_in_uni &lt;- all(target_iso$ensembl_gene_id %in% universe$ensembl_gene_id)</code></pre>
 <p>The background holds <strong>10,978 genes</strong> (≥1
-reference-AUG-compatible isoform). All 995 target genes are contained in
+reference-AUG-compatible isoform). All 362 target genes are contained in
 it (TRUE).</p>
 </div>
 <div id="gene-identifiers" class="section level2">
 <h2>4. Gene identifiers</h2>
-<pre class="r"><code># Symbol + Entrez from org.Hs.eg.db — the same annotation topGO uses via
-# annFUN.org, so identifiers stay internally consistent with the enrichment.
-all_ens &lt;- union(universe$ensembl_gene_id, target_iso$ensembl_gene_id)
+<pre class="r"><code>all_ens &lt;- union(universe$ensembl_gene_id, target_iso$ensembl_gene_id)
 sym &lt;- mapIds(org.Hs.eg.db, keys = all_ens, column = &quot;SYMBOL&quot;,
               keytype = &quot;ENSEMBL&quot;, multiVals = &quot;first&quot;)
 ez  &lt;- mapIds(org.Hs.eg.db, keys = all_ens, column = &quot;ENTREZID&quot;,
@@ -4226,39 +4256,38 @@ cov_tab &lt;- data.table(
   entrez = c(pct(sum(!is.na(id_map[ensembl_gene_id %in% target_iso$ensembl_gene_id]$entrez_id)), n_tgt_gene),
              pct(sum(!is.na(id_map[ensembl_gene_id %in% universe$ensembl_gene_id]$entrez_id)), n_universe)))
 render_dt(cov_tab, caption = &quot;Table 3: Identifier mapping coverage&quot;, pageLength = 5)</code></pre>
-<div class="datatables html-widget html-fill-item" id="htmlwidget-0cabf5984dbdaaf54c31" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-0cabf5984dbdaaf54c31">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 3: Identifier mapping coverage<\/caption>","data":[["Target (NMD+/PTC-)","Background (universe)"],[995,10978],["99.9%","99.8%"],["99.9%","99.8%"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>set<\/th>\n      <th>n<\/th>\n      <th>symbol<\/th>\n      <th>entrez<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":5,"scrollX":true,"columnDefs":[{"className":"dt-right","targets":1},{"name":"set","targets":0},{"name":"n","targets":1},{"name":"symbol","targets":2},{"name":"entrez","targets":3}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[5,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
+<div class="datatables html-widget html-fill-item" id="htmlwidget-8b8cffb3b9176f903536" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-8b8cffb3b9176f903536">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 3: Identifier mapping coverage<\/caption>","data":[["Target (NMD+/PTC-)","Background (universe)"],[362,10978],["99.7%","99.8%"],["99.7%","99.8%"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>set<\/th>\n      <th>n<\/th>\n      <th>symbol<\/th>\n      <th>entrez<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":5,"scrollX":true,"columnDefs":[{"className":"dt-right","targets":1},{"name":"set","targets":0},{"name":"n","targets":1},{"name":"symbol","targets":2},{"name":"entrez","targets":3}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[5,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
 </div>
 <div id="deliverables" class="section level2">
 <h2>5. Deliverables</h2>
-<pre class="r"><code># ── Gene-level target (for GO): one row per gene, with supporting-isoform detail ──
+<pre class="r"><code># ── Gene-level target (for GO) ──
 tgt_genes &lt;- target_iso[, .(
   n_ptcneg_isoforms = .N,
   categories        = paste(sort(unique(category)), collapse = &quot;;&quot;),
-  max_n_ct_sig      = max(n_ct_sig_005),
-  max_abs_logfc     = round(max(abs(max_sig_logfc), na.rm = TRUE), 3)
+  max_n_ct_nmd      = max(n_ct_nmd),
+  max_nmd_logfc     = round(max(max_nmd_logfc, na.rm = TRUE), 3)
 ), by = ensembl_gene_id]
 tgt_genes &lt;- merge(tgt_genes, id_map, by = &quot;ensembl_gene_id&quot;, all.x = TRUE)
 setcolorder(tgt_genes, c(&quot;ensembl_gene_id&quot;, &quot;hgnc_symbol&quot;, &quot;entrez_id&quot;))
 
-# ── Background with target flag (this IS the topGO allGenes source) ──
+# ── Background with target flag (topGO allGenes source) ──
 bg &lt;- merge(universe, id_map, by = &quot;ensembl_gene_id&quot;, all.x = TRUE)
 bg[, is_target := ensembl_gene_id %in% target_iso$ensembl_gene_id]
 setcolorder(bg, c(&quot;ensembl_gene_id&quot;, &quot;hgnc_symbol&quot;, &quot;entrez_id&quot;, &quot;is_target&quot;))
 
-# ── Isoform-level detail (traceability / subgroup-stratified GO) ──
+# ── Isoform-level detail ──
 iso_detail &lt;- target_iso[, .(
-  comparator_isoform_id, reference_isoform_id, ensembl_gene_id,
+  isoform_id, reference_isoform_id, ensembl_gene_id,
   category, ref_orf_length, comp_orf_length, n_downstream_ejc,
-  n_ct_sig_005, max_sig_logfc, max_sig_direction)]
+  n_ct_nmd, max_nmd_logfc)]
 
 f_tgt &lt;- file.path(out_dir, sprintf(&quot;nmd_ptcneg_refAUG_target_genes_%s.csv&quot;, DATE))
 f_bg  &lt;- file.path(out_dir, sprintf(&quot;nmd_ptcneg_refAUG_background_genes_%s.csv&quot;, DATE))
 f_sym &lt;- file.path(out_dir, sprintf(&quot;nmd_ptcneg_refAUG_target_symbols_%s.txt&quot;, DATE))
 f_iso &lt;- file.path(out_dir, sprintf(&quot;nmd_ptcneg_refAUG_target_isoforms_%s.csv&quot;, DATE))
 
-fwrite(tgt_genes, f_tgt)
-fwrite(bg, f_bg)
+fwrite(tgt_genes, f_tgt); fwrite(bg, f_bg)
 writeLines(sort(unique(na.omit(tgt_genes$hgnc_symbol))), f_sym)
 fwrite(iso_detail, f_iso)
 
@@ -4270,12 +4299,12 @@ exports &lt;- data.table(
     sprintf(&quot;%s HGNC symbols — plain list (Enrichr / g:Profiler paste)&quot;, fmt(length(unique(na.omit(tgt_genes$hgnc_symbol))))),
     sprintf(&quot;%s target isoforms — per-isoform trace (traceability, subgroup GO)&quot;, fmt(nrow(iso_detail)))))
 render_dt(exports, caption = &quot;Table 4: Exported deliverables&quot;, pageLength = 5)</code></pre>
-<div class="datatables html-widget html-fill-item" id="htmlwidget-f6d6c5aeecab04372860" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-f6d6c5aeecab04372860">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 4: Exported deliverables<\/caption>","data":[["nmd_ptcneg_refAUG_target_genes_2026.6.8.csv","nmd_ptcneg_refAUG_background_genes_2026.6.8.csv","nmd_ptcneg_refAUG_target_symbols_2026.6.8.txt","nmd_ptcneg_refAUG_target_isoforms_2026.6.8.csv"],["995 NMD+/PTC- genes — IDs + supporting-isoform detail (GO target)","10,978 AUG-assessed genes — IDs + is_target flag (GO background / topGO allGenes)","994 HGNC symbols — plain list (Enrichr / g:Profiler paste)","1,262 target isoforms — per-isoform trace (traceability, subgroup GO)"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>file<\/th>\n      <th>contents<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":5,"scrollX":true,"columnDefs":[{"name":"file","targets":0},{"name":"contents","targets":1}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[5,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
-<pre class="r"><code>render_dt(head(tgt_genes[order(-max_n_ct_sig, -max_abs_logfc)], 20),
+<div class="datatables html-widget html-fill-item" id="htmlwidget-48ee872ce9925f0bb259" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-48ee872ce9925f0bb259">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 4: Exported deliverables<\/caption>","data":[["nmd_ptcneg_refAUG_target_genes_2026.6.8.csv","nmd_ptcneg_refAUG_background_genes_2026.6.8.csv","nmd_ptcneg_refAUG_target_symbols_2026.6.8.txt","nmd_ptcneg_refAUG_target_isoforms_2026.6.8.csv"],["362 NMD+/PTC- genes — IDs + supporting-isoform detail (GO target)","10,978 AUG-assessed genes — IDs + is_target flag (GO background / topGO allGenes)","361 HGNC symbols — plain list (Enrichr / g:Profiler paste)","467 target isoforms — per-isoform trace (traceability, subgroup GO)"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>file<\/th>\n      <th>contents<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":5,"scrollX":true,"columnDefs":[{"name":"file","targets":0},{"name":"contents","targets":1}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[5,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
+<pre class="r"><code>render_dt(head(tgt_genes[order(-max_n_ct_nmd, -max_nmd_logfc)], 20),
           caption = &quot;Preview: target gene table (top 20 by cell-type support)&quot;)</code></pre>
-<div class="datatables html-widget html-fill-item" id="htmlwidget-2bddf638ed0ad3be2474" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-2bddf638ed0ad3be2474">{"x":{"filter":"none","vertical":false,"caption":"<caption>Preview: target gene table (top 20 by cell-type support)<\/caption>","data":[["ENSG00000143314","ENSG00000166340","ENSG00000144034","ENSG00000173933","ENSG00000214078","ENSG00000065548","ENSG00000163728","ENSG00000148690","ENSG00000109534","ENSG00000175197","ENSG00000118292","ENSG00000125775","ENSG00000184281","ENSG00000213185","ENSG00000106404","ENSG00000170892","ENSG00000145996","ENSG00000141391","ENSG00000265681","ENSG00000124588"],["MRPL24","TPP1","TPRKB","RBM4","CPNE1","ZC3H15","TTC14","FRA10AC1","GAR1","DDIT3","C1orf54","SDCBP2","TSSC4","FAM24B","CLDN15","TSEN34","CDKAL1","PRELID3A","RPL17","NQO2"],["79590","1200","51002","5936","8904","55854","151613","118924","54433","1649","79630","27111","10078","196792","24146","79042","54901","10650","6139","4835"],[3,1,6,3,1,2,2,1,2,3,5,3,1,3,3,1,2,4,1,2],["no_downstream_ejc","truncated_no_ejc","no_downstream_ejc","no_downstream_ejc;truncated_no_ejc","no_downstream_ejc","truncated_no_ejc","truncated_no_ejc","truncated_no_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc;truncated_no_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc","truncated_no_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc"],[4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],[5.414,4.628,4.598,4.569,4.533,4.497,4.456,4.413,4.394,4.367,4.302,4.268,4.204,4.129,4.109,4.108,4.088,4.039,3.961,3.941]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>ensembl_gene_id<\/th>\n      <th>hgnc_symbol<\/th>\n      <th>entrez_id<\/th>\n      <th>n_ptcneg_isoforms<\/th>\n      <th>categories<\/th>\n      <th>max_n_ct_sig<\/th>\n      <th>max_abs_logfc<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":10,"scrollX":true,"columnDefs":[{"className":"dt-right","targets":[3,5,6]},{"name":"ensembl_gene_id","targets":0},{"name":"hgnc_symbol","targets":1},{"name":"entrez_id","targets":2},{"name":"n_ptcneg_isoforms","targets":3},{"name":"categories","targets":4},{"name":"max_n_ct_sig","targets":5},{"name":"max_abs_logfc","targets":6}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
+<div class="datatables html-widget html-fill-item" id="htmlwidget-d68b618a8a4fe5fe77ea" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-d68b618a8a4fe5fe77ea">{"x":{"filter":"none","vertical":false,"caption":"<caption>Preview: target gene table (top 20 by cell-type support)<\/caption>","data":[["ENSG00000143314","ENSG00000166340","ENSG00000173933","ENSG00000144034","ENSG00000184281","ENSG00000214078","ENSG00000065548","ENSG00000163728","ENSG00000148690","ENSG00000109534","ENSG00000175197","ENSG00000118292","ENSG00000125775","ENSG00000213185","ENSG00000106404","ENSG00000170892","ENSG00000145996","ENSG00000141391","ENSG00000265681","ENSG00000124588"],["MRPL24","TPP1","RBM4","TPRKB","TSSC4","CPNE1","ZC3H15","TTC14","FRA10AC1","GAR1","DDIT3","C1orf54","SDCBP2","FAM24B","CLDN15","TSEN34","CDKAL1","PRELID3A","RPL17","NQO2"],["79590","1200","5936","51002","10078","8904","55854","151613","118924","54433","1649","79630","27111","196792","24146","79042","54901","10650","6139","4835"],[3,1,3,6,1,1,1,1,1,2,3,5,3,3,3,1,2,4,1,2],["no_downstream_ejc","truncated_no_ejc","no_downstream_ejc;truncated_no_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc","truncated_no_ejc","truncated_no_ejc","truncated_no_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc;truncated_no_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc","truncated_no_ejc","no_downstream_ejc","no_downstream_ejc","no_downstream_ejc"],[4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],[5.414,4.628,4.621,4.598,4.545,4.533,4.497,4.456,4.413,4.394,4.367,4.302,4.268,4.129,4.109,4.108,4.088,4.039,3.961,3.941]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>ensembl_gene_id<\/th>\n      <th>hgnc_symbol<\/th>\n      <th>entrez_id<\/th>\n      <th>n_ptcneg_isoforms<\/th>\n      <th>categories<\/th>\n      <th>max_n_ct_nmd<\/th>\n      <th>max_nmd_logfc<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":10,"scrollX":true,"columnDefs":[{"className":"dt-right","targets":[3,5,6]},{"name":"ensembl_gene_id","targets":0},{"name":"hgnc_symbol","targets":1},{"name":"entrez_id","targets":2},{"name":"n_ptcneg_isoforms","targets":3},{"name":"categories","targets":4},{"name":"max_n_ct_nmd","targets":5},{"name":"max_nmd_logfc","targets":6}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
 <div id="running-topgo-for-yul" class="section level3">
 <h3>Running topGO (for Yul)</h3>
 <p>The background CSV is the topGO universe; column
@@ -4302,17 +4331,17 @@ the custom background. Subgroup GO is available by filtering
   &quot;Target genes unique&quot;                = !any(duplicated(tgt_genes$ensembl_gene_id)),
   &quot;Universe genes unique&quot;              = !any(duplicated(bg$ensembl_gene_id)),
   &quot;is_target count == target genes&quot;    = sum(bg$is_target) == n_tgt_gene,
-  &quot;All target AUG-compatible&quot;          = all(target_iso$ref_atg_exonic_in_comp == TRUE),
+  &quot;All target AUG-compatible&quot;          = nrow(ta[comparator_isoform_id %in% target_iso$isoform_id &amp; ref_atg_exonic_in_comp == FALSE]) == 0,
   &quot;All target PTC- (0 downstream EJC)&quot; = all(target_iso$n_downstream_ejc == 0),
   &quot;No effectively_ptc in target&quot;       = !any(target_iso$category == &quot;effectively_ptc&quot;),
-  &quot;All target NMD-responsive&quot;          = all(target_iso$nmd_responsive_any == TRUE),
+  &quot;All target NMD-responsive (up)&quot;     = all(target_iso$n_ct_nmd &gt;= 1),
   &quot;Category n_isoforms sum to total&quot;   = sum(sub$n_isoforms) == n_tgt_iso
 )
 chk &lt;- data.table(check = names(checks), pass = unlist(checks))
 stopifnot(all(chk$pass))
 render_dt(chk, caption = &quot;Table 5: Consistency checks (all must pass)&quot;, pageLength = 10)</code></pre>
-<div class="datatables html-widget html-fill-item" id="htmlwidget-8126f68461fd9669adf9" style="width:100%;height:auto;"></div>
-<script type="application/json" data-for="htmlwidget-8126f68461fd9669adf9">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 5: Consistency checks (all must pass)<\/caption>","data":[["Target ⊆ universe","Target genes unique","Universe genes unique","is_target count == target genes","All target AUG-compatible","All target PTC- (0 downstream EJC)","No effectively_ptc in target","All target NMD-responsive","Category n_isoforms sum to total"],[true,true,true,true,true,true,true,true,true]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>check<\/th>\n      <th>pass<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":10,"scrollX":true,"columnDefs":[{"name":"check","targets":0},{"name":"pass","targets":1}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
+<div class="datatables html-widget html-fill-item" id="htmlwidget-a43705825cf9e1915f2f" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-a43705825cf9e1915f2f">{"x":{"filter":"none","vertical":false,"caption":"<caption>Table 5: Consistency checks (all must pass)<\/caption>","data":[["Target ⊆ universe","Target genes unique","Universe genes unique","is_target count == target genes","All target AUG-compatible","All target PTC- (0 downstream EJC)","No effectively_ptc in target","All target NMD-responsive (up)","Category n_isoforms sum to total"],[true,true,true,true,true,true,true,true,true]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>check<\/th>\n      <th>pass<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":10,"scrollX":true,"columnDefs":[{"name":"check","targets":0},{"name":"pass","targets":1}],"order":[],"autoWidth":false,"orderClasses":false}},"evals":[],"jsHooks":[]}</script>
 <p>All consistency checks pass.</p>
 <pre class="r"><code>sessionInfo()</code></pre>
 <pre><code>## R version 4.5.2 (2025-10-31)
