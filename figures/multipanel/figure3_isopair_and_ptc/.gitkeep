@@ -1,0 +1,8 @@
+# Placeholder. Folder seeded 2026-06-13.
+#
+# Planned content: combined Isopair + PTC multipanel figure.
+# Replaces old Figure 3 (Isopair splice events) + old Figure 4 (PTC analysis).
+# Old 3D (gain/loss direction) and old 4B (NMD logFC × PTC distance) move to supplement.
+#
+# Composition: matplotlib via figures/lib/ helpers (figure_primitives.py, figure_geometry.py).
+# Validator: figures/lib/validate_figure_layout.py — zero warnings required.

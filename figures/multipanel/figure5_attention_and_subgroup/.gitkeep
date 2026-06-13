@@ -1,0 +1,22 @@
+# Placeholder. Folder seeded 2026-06-13.
+#
+# Planned content: new combined multipanel for old Figure 7 + old Figure 8.
+# Old Fig 7 + Fig 8 don't have captions in the manuscript Google Doc yet
+# (Pete: "I'm just going by the ordering in the manuscript — but the legends
+#  haven't been made yet for Figure 6 onwards").
+#
+# Provisional reading (Pete to confirm):
+#   - Old Fig 7 = attention distribution (§5 paragraph 4 "Fig X panel A and B")
+#   - Old Fig 8 = mechanistic-subgroup attribution + performance (§5 paragraph 5)
+#
+# Candidate panels (all in model:orf_model_report_v5.Rmd):
+#   - fig4b_attention_by_rank (attention by rank NMD vs Control)
+#   - fig4a_entropy (attention entropy NMD vs Control)
+#   - fig6_branch_subgroup (per-subgroup branch attributions)
+#   - fig6_struct_by_subgroup (per-subgroup structural importance)
+#   - fig6c_attribution_heatmap (per-subgroup attribution heatmap)
+#   - fig7d_auc_auprc_by_subgroup (per-subgroup AUC/AUPRC)
+#   - (+others: fig6a_subgroup_counts, fig6b_utr5_by_subgroup, fig6d_attention_subgroup, fig7c_performance_by_subgroup)
+#
+# Composition: matplotlib via figures/lib/ helpers.
+# Validator: figures/lib/validate_figure_layout.py — zero warnings required.

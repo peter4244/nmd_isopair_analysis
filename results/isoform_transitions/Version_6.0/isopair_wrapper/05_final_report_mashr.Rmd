@@ -3339,6 +3339,74 @@ cat(sprintf("  NMD PTC-, ref ATG retained: %d\n", n_subgroup_retained))
 cat(sprintf("  NMD PTC-, ref ATG lost: %d\n", n_subgroup_lost))
 ```
 
+## Reference-AUG-Traceable Canonical Analysis (Figure 3 Scope)
+
+**Policy (2026-06-13):** TD2's CDS calls for novel isoforms are biased against premature stop codons (see "PTC Detection" in METHODS.md). All analyses that depend on identifying a stop codon (PTC presence, PTC distance, PTC-causing event attribution) are scoped to **pairs where reference-AUG tracing can be performed** — i.e., categories `effectively_ptc`, `no_downstream_ejc`, or `truncated_no_ejc`. This is the canonical population for the manuscript's Figure 3 panels D, E, and F.
+
+```{r sec2c-ref-aug-canonical}
+# ── Data provenance ──
+# Source: ref_atg_analysis.rds (computed in 05r_ref_atg_analysis.R)
+# Population definitions for Figure 3 (Pete 2026-06-13 policy):
+#   pop_BC        = Stage 2 gene-matched pairs (used for Panels B + C — no CDS needed)
+#   pop_traceable = pop_BC restricted to comparators with valid ref-AUG ORF stop
+#                   (categories: effectively_ptc, no_downstream_ejc, truncated_no_ejc)
+#                   Used by Panel D (stop-to-last-EJC distance density)
+#   pop_ptc_plus  = pop_traceable restricted to effectively_ptc
+#                   Used by Panels E (PTC-causing events) and F (mechanism breakdown)
+# Methods: METHODS.md § "Reference-AUG-Traceable Canonical PTC Analysis (Figure 3 Scope)"
+
+TRACEABLE_CATS_C2 <- c("effectively_ptc", "no_downstream_ejc", "truncated_no_ejc")
+
+pop_BC_c2_n <- nrow(set_results[["c2_allsamples"]]$profiles)
+pop_BC_c4_n <- nrow(set_results[["c4_allsamples"]]$profiles)
+
+c2_ref <- ref_atg$c2
+c4_ref <- ref_atg$c4
+
+pop_trace_c2_n <- sum(c2_ref$category %in% TRACEABLE_CATS_C2)
+pop_trace_c4_n <- sum(c4_ref$category %in% TRACEABLE_CATS_C2)
+
+pop_ptc_c2_n <- sum(c2_ref$category == "effectively_ptc")
+pop_ptc_c4_n <- sum(c4_ref$category == "effectively_ptc")
+
+nmd_ptc_rate <- round(100 * pop_ptc_c2_n / pop_trace_c2_n, 1)
+ctrl_ptc_rate <- round(100 * pop_ptc_c4_n / pop_trace_c4_n, 1)
+fold_enrich <- round(nmd_ptc_rate / ctrl_ptc_rate, 1)
+
+# Fisher's exact for the 2x2 PTC contingency at the ref-AUG-traceable scope
+ft_canonical <- fisher.test(matrix(c(
+  pop_ptc_c2_n, pop_trace_c2_n - pop_ptc_c2_n,
+  pop_ptc_c4_n, pop_trace_c4_n - pop_ptc_c4_n
+), nrow = 2))
+
+table10 <- data.frame(
+  scope = "ref_aug_traceable",
+  n_NMD_traceable = pop_trace_c2_n,
+  n_NMD_ptc_plus  = pop_ptc_c2_n,
+  pct_NMD_ptc     = nmd_ptc_rate,
+  n_Ctrl_traceable = pop_trace_c4_n,
+  n_Ctrl_ptc_plus  = pop_ptc_c4_n,
+  pct_Ctrl_ptc     = ctrl_ptc_rate,
+  fold_enrichment  = fold_enrich,
+  fisher_OR        = round(unname(ft_canonical$estimate), 2),
+  fisher_p         = signif(ft_canonical$p.value, 3)
+)
+write.csv(table10,
+          file.path(table_dir, "table10_ref_aug_traceable_summary.csv"),
+          row.names = FALSE)
+```
+
+**Headline numbers under the canonical Figure 3 scope:**
+
+- **`r fmt(pop_BC_c2_n)`** Stage 2 gene-matched NMD pairs (pop_BC) — used for Panels B, C
+- **`r fmt(pop_trace_c2_n)`** NMD comparators where ref-AUG tracing produced a valid ORF stop (pop_traceable) — used for Panel D
+- **`r fmt(pop_ptc_c2_n)`** NMD comparators are PTC+ under the ref-AUG-traced ORF (pop_ptc_plus) — used for Panels E, F
+- **NMD PTC rate**: `r nmd_ptc_rate`% (`r fmt(pop_ptc_c2_n)` / `r fmt(pop_trace_c2_n)`)
+- **Control PTC rate**: `r ctrl_ptc_rate`% (`r fmt(pop_ptc_c4_n)` / `r fmt(pop_trace_c4_n)`)
+- **Fold enrichment**: `r fold_enrich`× (Fisher OR `r round(ft_canonical$estimate, 2)`, p `r format.pval(ft_canonical$p.value, digits=2)`)
+
+**Cross-reference**: see `figures/multipanel/figure3_isopair_and_ptc/` for the downstream rendering (`data_export.R`, `panel_e_compute.R`, `figure3_panel{A,B,C,D,E,F}_*.{py,pdf,png}`) and per-panel methodology files. Table written to `tables/table10_ref_aug_traceable_summary.csv`.
+
 Of the `r fmt(sum(ref_cds5_2c != comp_cds5_2c, na.rm = TRUE))` pairs with a
 different CDS start, `r fmt(n_atg_avail - sum(ref_cds5_2c == comp_cds5_2c, na.rm = TRUE))`
 retain the reference ATG in shared exonic sequence. Together with the

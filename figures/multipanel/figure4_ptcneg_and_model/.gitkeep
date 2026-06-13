@@ -1,0 +1,19 @@
+# Placeholder. Folder seeded 2026-06-13.
+#
+# Planned content: new combined multipanel for old Figure 5 + old Figure 6.
+# Old 5A, 5B dropped entirely. Old 5F, 6A → supplement.
+#
+# 8 candidate panels (final layout TBD):
+#   From old Fig 5 (NMD+/PTC− analysis): C, D, E
+#     - 5C: ref-AUG PTC recovery (72%) — source: nmd:results/.../05_final_report_mashr.Rmd
+#     - 5D: TD2 length bias — source: same
+#     - 5E: Kozak strength comparison — source: same
+#   From old Fig 6 (DL model): B, C, D, E, F
+#     - 6B: AUC/AUPRC/ROC — source: model:orf_model_report_v5.Rmd (fig1*)
+#     - 6C: block-level Shapley — source: model:orf_model_report_v5.Rmd (fig2a)
+#     - 6D: structural feature importance — source: model:orf_model_report_v5.Rmd (fig2b)
+#     - 6E: START attribution + Kozak — source: model:orf_model_report_v5.Rmd (fig3, fig3a)
+#     - 6F: STOP attribution + UGA/U+4 — source: model:orf_model_report_v5.Rmd (fig4, fig4a)
+#
+# Composition: matplotlib via figures/lib/ helpers (figure_primitives.py, figure_geometry.py).
+# Validator: figures/lib/validate_figure_layout.py — zero warnings required.

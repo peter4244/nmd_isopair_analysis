@@ -1023,7 +1023,7 @@ PTCs are identified using the canonical 50-nucleotide rule: a stop codon is clas
 - `n_downstream_ejcs`: number of EJCs downstream of the stop codon
 - `stop_in_last_exon`: whether the stop codon resides in the final exon (expected for normal termination)
 
-Single-exon transcripts are classified as non-PTC (no EJCs possible). CDS annotations come from GENCODE (ENST isoforms) and SQANTI ORF predictions (novel PacBio isoforms).
+Single-exon transcripts are classified as non-PTC (no EJCs possible). CDS annotations come from GENCODE (for ENST annotated isoforms) and **TransDecoder2 (TD2)** for novel PacBio isoforms. TD2 is invoked as part of the SQANTI3 pipeline (`helpers.py::predictORF()` → `run_td2()`), but the CDS calls themselves are TD2's, not SQANTI's. The distinction matters because **TD2 has an anti-PTC bias for novel isoforms**: it scores ORFs partially by length, so when a splice event creates a frameshift that truncates the natural reading frame, TD2 may select a longer alternative ORF whose stop has no downstream EJCs — making the isoform appear PTC-negative when it is in fact a PTC substrate. This bias does not apply to GENCODE-annotated isoforms. Ref-AUG tracing (see "Reference-ATG Tracing" below) is the canonical workaround for the bias and the basis of the Figure 3 PTC analyses.
 
 ### Frameshift → PTC Funnel
 
@@ -1919,12 +1919,17 @@ GeneMarkS-T).
    comparator's transcript-space. Count junctions >50 nt downstream of the
    stop codon (the NMD rule).
 
-4. **Classification**: Pairs are classified as:
-   - `effectively_ptc`: ORF is shorter than the reference AND ≥1 downstream EJC
-   - `truncated_no_ejc`: ORF is shorter but no downstream EJC
-   - `ref_atg_lost`: Reference ATG codon not exonic in comparator
-   - `no_downstream_ejc`: ORF same or longer, no downstream EJC
-   - `same_or_longer_with_ejc`: ORF same or longer with downstream EJCs
+4. **Classification**: Pairs are classified as one of:
+   - `effectively_ptc`: ORF is shorter than the reference AND ≥1 downstream EJC. This is the **occult-PTC** call (PTC by ref-AUG tracing).
+   - `truncated_no_ejc`: ORF is shorter but no downstream EJC (truncation without canonical PTC trigger).
+   - `no_downstream_ejc`: ORF same or longer, no downstream EJC (non-PTC by ref-AUG).
+   - `ref_atg_lost`: Reference ATG codon not exonic in comparator (cannot trace).
+   - `mapping_failed`: Genomic-to-transcript coordinate mapping failed for this pair (cannot trace).
+
+**Note on category list (2026-06-13):** Earlier versions of this document also listed `same_or_longer_with_ejc` as a separate category. The current `05r_ref_atg_analysis.R` does not emit that label — pairs that would have qualified are accounted for under `no_downstream_ejc` or `effectively_ptc` depending on downstream EJC count.
+
+**Categories that have a valid ref-AUG-traced stop position** ("ref-AUG-traceable"):
+`effectively_ptc` + `no_downstream_ejc` + `truncated_no_ejc`. This **ref-AUG-traceable subset** is the canonical population for the Figure 3 PTC analyses (see "Reference-AUG-Traceable Canonical PTC Analysis (Figure 3 Scope)" below).
 
 5. **PTC-causing event attribution**: For `effectively_ptc` pairs, the
    PTC-causing splice event is identified using the same `attribute_ptc_events()`
@@ -1944,6 +1949,52 @@ ATG reveals the true reading frame and its downstream EJCs. Occult-PTC
 isoforms are the central population for the SHAP attribution dissociation
 and three-way ORF caller agreement analyses (see "Combined Prediction Model"
 above).
+
+### Reference-AUG-Traceable Canonical PTC Analysis (Figure 3 Scope)
+
+**Policy (Pete, 2026-06-13).** Because TD2's CDS calls for novel isoforms are biased against premature stop codons, **all analyses that depend on identifying a stop codon (PTC presence, PTC distance, PTC-causing event attribution) are scoped to pairs where reference-AUG tracing can be performed**. This is the canonical population for the manuscript's Figure 3 panels D, E, and F.
+
+**Three populations** are used in the manuscript's main Figure 3:
+
+| Layer | NMD n | Control n | Used by |
+|---|---|---|---|
+| **pop_BC** = Stage 2 gene-matched (`(gene_id, reference_isoform_id)` shared between c2 and c4) | 3,009 | 3,009 | Panels B (sequence similarity) and C (splice event prevalence). No CDS dependency — these analyses are at the exonic/event level. |
+| **pop_traceable** = pop_BC restricted to pairs where ref-AUG tracing produced a valid ORF stop (`category ∈ {effectively_ptc, no_downstream_ejc, truncated_no_ejc}`) | 2,289 | 1,763 | Panel D (stop-codon to last EJC distance density). For each pair the stop position is the ref-AUG-traced `comp_stop_tx_pos`. |
+| **pop_ptc_plus** = pop_traceable ∩ `category == "effectively_ptc"` | 1,912 | 288 | Panels E (PTC-causing event proportions) and F (mechanism breakdown). |
+
+**Headline rates**: NMD PTC rate = 1,912 / 2,289 = **83.5%**; Control PTC rate = 288 / 1,763 = **16.3%**; fold enrichment = **5.1×**.
+
+**Why a different denominator from `compute_ptc_rates_row()`?** The earlier `table2_ptc_rates_allsamples.csv` reported NMD PTC rate at 42.8% — that table used a different filter chain (Stage 2 gene-match + `coding-coding` filter + gene_id-only re-match) and TD2's PTC classifier. The ref-AUG-traceable scope replaces that as the canonical population for the manuscript's headline PTC story; `table2`'s numbers describe a TD2-only counterfactual and are preserved in supplementary discussion.
+
+**Mixed-source PTC attribution** (Panels E + F under the ref-AUG-traceable scope). PTC-causing event attribution for the 1,912 NMD effectively_ptc pairs combines two sources:
+
+- **(a)** For `effectively_ptc & !original_ptc` (the 900 ref-AUG-recovered pairs): attribution stored in `ref_atg_analysis$c2$attr_event` and `attr_mechanism` — produced by `05r_ref_atg_analysis.R` at ref-AUG runtime using the ref-AUG-traced stop position.
+- **(b)** For `effectively_ptc & original_ptc` (the 1,012 TD2-AND-ref-AUG-agreeing pairs): attribution produced by re-running `attribute_ptc_events()` (from `analysis_functions.R`) using TD2's stop position, plus `attribute_3utr_splice()` for the same-stop subset. This is the same chain as the original `goal2-ptc-mechanisms` Rmd chunk.
+
+Total directly-attributed PTC-causing events: **1,812** (= 845 from (a) + 928 diff-stop direct from (b) + 79 same-stop 3'UTR-splice from (b), after deduplication of pairs that appear in both diff-stop direct and same-stop attribution).
+
+**Methodological note**: The mixing of stop-position sources is a deliberate transitional choice. The cleaner long-term implementation is to re-run `attribute_ptc_events()` with ref-AUG-traced stops for ALL `effectively_ptc` pairs (not just `original_ptc=FALSE`), eliminating the dependency on TD2's stop position for the original_ptc=TRUE subset. This refactor is tracked as a follow-up task and would be implemented by passing the ref-AUG `comp_stop_genomic` column into `attribute_ptc_events()` as `ptc_genomic_pos`, replacing the TD2-derived genomic position.
+
+**Source code** for the canonical Figure 3 scope (downstream of the R-side analysis pipeline):
+
+- `figures/multipanel/figure3_isopair_and_ptc/data_export.R` — defines pop_BC, pop_traceable, pop_ptc_plus and writes per-panel TSVs.
+- `figures/multipanel/figure3_isopair_and_ptc/panel_e_compute.R` — runs the mixed-source attribution chain described above for Panels E + F.
+- `figures/multipanel/figure3_isopair_and_ptc/figure3_panel{A,B,C,D,E,F}_methodology.md` — per-panel methodology, including population, computation, and caveats.
+- Verification: `verify_pass{1,2,3,4,5}_*.{R,sh}` — five-pass scientific-report verification was run on Figure 3 on 2026-06-13.
+
+### Pair Construction and Gene-Matching — Detailed Filter Chain
+
+The Rmd's `compute_ptc_rates_row()` function in chunk `helpers` (line 105 of `05_final_report_mashr.Rmd`) applies a **three-stage filter chain** to produce its 2×2 contingency for the NMD-vs-Control PTC enrichment OR. The same chain is what produces `tables/table2_ptc_rates_allsamples.csv`. Documenting it explicitly because the chain choice has been a source of confusion:
+
+1. **Stage 2 gene-match**: Restrict both c2 and c4 to `(gene_id, reference_isoform_id)` pairs that appear in BOTH sets (already applied by the chunk `load-profiles` upstream, producing `set_results[[key]]$profiles`).
+
+2. **Coding-coding filter**: Restrict to pairs where BOTH the reference AND the comparator have `coding_status == "coding"` in `cds.rds` (i.e., a CDS prediction exists for both — see "PTC Detection" above for what determines coding status).
+
+3. **Gene_id-only re-match**: After the coding-coding filter, re-match on `gene_id` alone (not `(gene_id, reference_isoform_id)`). This step exists so that the Fisher's exact 2×2 contingency is computed on genes present in both c2 and c4 coding-coding subsets. Without it, c2 might include a gene that c4 lost during the coding-coding filter, breaking the within-gene-pair OR interpretation.
+
+**Resulting denominators (2026-06-13 data)**: 3,009 → 2,673 NMD coding-coding → 2,496 after gene_id re-match. 3,009 → 2,579 Control coding-coding → 2,496 after gene_id re-match.
+
+**This chain is for the within-Rmd `table2_ptc_rates_allsamples.csv` Fisher OR only. It is NOT the canonical scope for the manuscript's Figure 3 (which uses the ref-AUG-traceable scope above).**
 
 ### 3'UTR Length Analysis with PTC Correction
 
