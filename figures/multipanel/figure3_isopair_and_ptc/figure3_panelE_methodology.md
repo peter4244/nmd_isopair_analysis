@@ -89,3 +89,7 @@ Re-runs `attribute_ptc_events()` from `analysis_functions.R` using **TD2's stop 
 - Rmd source: `05_final_report_mashr.Rmd` chunks `goal2-ptc-mechanisms` (line ~1923), `goal2-fig5-sankey` (line ~2002), `goal2-table4b-baseline` (line ~2179)
 - `analysis_functions.R`: `attribute_ptc_events()` (line 41), `attribute_3utr_splice()` (line 177), `build_cds_lookups()`, `shorten_event_labels()`
 - `feedback_figure_sample_size_consistency` — denominator differs from B/C/D because it's event-level, and the underlying pair set differs because Panel E/F restrict to PTC+
+
+## Composite cross-reference
+
+This panel appears in the Figure 3 composite as the labeled cell — see `figure3_composite_methodology.md` for the layout and per-cell mapping. The composite embeds the panel's pre-rendered PNG (`figure3_panelE.png`); regenerating the composite does NOT re-run this panel. Re-render this panel script first if its data or rendering has changed.

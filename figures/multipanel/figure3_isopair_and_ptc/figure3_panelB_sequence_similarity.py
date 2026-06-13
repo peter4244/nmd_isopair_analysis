@@ -52,7 +52,10 @@ def load_data():
 
 
 def build_figure(df):
-    fig, ax = plt.subplots(figsize=(8, 5.5))
+    # Sized to the composite cell: 6.0 × 4.0 in = 1.5:1 aspect.
+    # All Figure-3 panels target this aspect so the 2×3 grid composes
+    # without per-row scaling — see figure3_composite_methodology.md.
+    fig, ax = plt.subplots(figsize=(6, 4))
 
     x_grid = np.linspace(0, 100, 500)
 
@@ -67,22 +70,20 @@ def build_figure(df):
                         label=f"{label} (n={len(vals):,})")
         ax.plot(x_grid, y, color=line, linewidth=1.6)
 
-    # Title — header, bold
-    ax.set_title("Sequence shared with reference", fontsize=HEADER_FS,
-                 fontweight="bold", color=C_TITLE, loc="left", pad=12)
+    # No in-panel title — caption / composite letter label carries it.
 
     # Axis labels — body
     ax.set_xlabel("Sequence shared (%)", fontsize=BODY_FS, color=C_TITLE)
-    ax.set_ylabel("Density", fontsize=BODY_FS, color=C_TITLE)
+    # No y-axis label or tick labels — absolute KDE density values aren't
+    # meaningful for shape comparison; remove for visual cleanliness.
+    ax.set_yticks([])
+    ax.tick_params(axis="x", labelsize=BODY_FS, colors=C_TITLE)
 
-    ax.tick_params(axis="both", labelsize=BODY_FS, colors=C_TITLE)
-
-    # Hide top/right spines (clean look)
-    for side in ("top", "right"):
+    # Hide top/right/left spines (clean look — no y-axis exposed)
+    for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
-    for side in ("bottom", "left"):
-        ax.spines[side].set_color("#555555")
-        ax.spines[side].set_linewidth(0.8)
+    ax.spines["bottom"].set_color("#555555")
+    ax.spines["bottom"].set_linewidth(0.8)
 
     ax.set_xlim(0, 100)
     ax.set_ylim(bottom=0)
@@ -91,7 +92,7 @@ def build_figure(df):
     for text in legend.get_texts():
         text.set_color(C_TITLE)
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.04, right=0.97, bottom=0.16, top=0.96)
     return fig
 
 
@@ -99,12 +100,15 @@ def main():
     df = load_data()
     fig = build_figure(df)
 
+    from validate_figure_layout import validate_figure_layout
+    validate_figure_layout(fig, fig.axes[0], verbose=True)
+
     out_dir = HERE.parent
     pdf_path = out_dir / "figure3_panelB_sequence_similarity.pdf"
     png_path = out_dir / "figure3_panelB_sequence_similarity.png"
 
-    fig.savefig(pdf_path, bbox_inches="tight", facecolor="white")
-    fig.savefig(png_path, dpi=300, bbox_inches="tight", facecolor="white")
+    fig.savefig(pdf_path, facecolor="white")
+    fig.savefig(png_path, dpi=300, facecolor="white")
 
     print(f"Saved: {pdf_path.name} and {png_path.name}")
 

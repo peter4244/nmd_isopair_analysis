@@ -62,3 +62,7 @@ Event types (10): `Alt_TSS`, `Alt_TES`, `A5SS`, `A3SS`, `SE`, `Missing_Internal`
 - Rmd source: `05_final_report_mashr.Rmd` chunk `goal1-table1b-event-enrichment` (line ~1338), Rmd helper `compute_event_freq()` (line ~85)
 - Isopair package: `R/event-detection.R` (upstream event-detection logic)
 - `feedback_figure_sample_size_consistency` (denominator difference vs D/E/F justified)
+
+## Composite cross-reference
+
+This panel appears in the Figure 3 composite as the labeled cell — see `figure3_composite_methodology.md` for the layout and per-cell mapping. The composite embeds the panel's pre-rendered PNG (`figure3_panelC.png`); regenerating the composite does NOT re-run this panel. Re-render this panel script first if its data or rendering has changed.

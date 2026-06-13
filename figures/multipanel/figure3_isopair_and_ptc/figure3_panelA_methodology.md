@@ -34,3 +34,7 @@ Pure ggplot/matplotlib drawing. No data computation.
 
 - `figures/lib/principles.md` — figure-making principles (two-font, validator-clean, etc.)
 - Isopair package source: `~/claude_projects/Isopair/R/pair-generation.R`, `primary-orf.R`
+
+## Composite cross-reference
+
+This panel appears in the Figure 3 composite as the labeled cell — see `figure3_composite_methodology.md` for the layout and per-cell mapping. The composite embeds the panel's pre-rendered PNG (`figure3_panelA.png`); regenerating the composite does NOT re-run this panel. Re-render this panel script first if its data or rendering has changed.

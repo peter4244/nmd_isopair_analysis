@@ -48,3 +48,7 @@ Per-pair `pct_shared` already computed by Isopair's `quantifyPairDivergence()`. 
 - Isopair package: `R/compare-sets.R` (the `quantifyPairDivergence()` function and `pct_shared` definition)
 - `feedback_nmd_analysis_scope_test_vs_all` (all data per project default)
 - `feedback_figure_sample_size_consistency` (denominator difference vs Panel D/E/F is justified by analytical need; documented above)
+
+## Composite cross-reference
+
+This panel appears in the Figure 3 composite as the labeled cell — see `figure3_composite_methodology.md` for the layout and per-cell mapping. The composite embeds the panel's pre-rendered PNG (`figure3_panelB.png`); regenerating the composite does NOT re-run this panel. Re-render this panel script first if its data or rendering has changed.

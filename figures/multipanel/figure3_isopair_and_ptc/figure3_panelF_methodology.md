@@ -70,3 +70,7 @@ Rendered as a horizontal stacked bar in matplotlib with `barh()` stacked by mech
 - Rmd source: `05_final_report_mashr.Rmd` chunks `goal2-ptc-mechanisms` (line ~1923), `goal2-fig5-sankey` (line ~2002)
 - `analysis_functions.R`: `attribute_ptc_events()`, `attribute_3utr_splice()`, `shorten_event_labels()`
 - Original render preserved: `nmd/results/isoform_transitions/Version_6.0/isopair_wrapper/figures/fig_sankey_ptcpos.{pdf,png}`
+
+## Composite cross-reference
+
+This panel appears in the Figure 3 composite as the labeled cell — see `figure3_composite_methodology.md` for the layout and per-cell mapping. The composite embeds the panel's pre-rendered PNG (`figure3_panelF.png`); regenerating the composite does NOT re-run this panel. Re-render this panel script first if its data or rendering has changed.

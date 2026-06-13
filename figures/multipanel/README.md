@@ -39,18 +39,17 @@ multipanel/
 - Panel filename: `figureN_panel<L>_<short_descriptor>.{py,pdf,png}` where `<L>` is the panel letter (A, B, C, …) and `<short_descriptor>` is snake_case.
 - Example for a hypothetical Figure 3 with panels A/B/C: `figure3_panelA_ptc_distance.py`, `figure3_panelB_event_prevalence.py`, `figure3_panelC_attribution.py`, plus `figure3_composite.py`.
 
-## Current planned figures
+## Current figures
 
 | Folder | Manuscript figure | Status |
 |---|---|---|
-| `figure3_isopair_and_ptc/` | Combined Isopair + PTC figure (merged from old Fig 3 + old Fig 4) | **In planning** — old 3D + 4B move to supplement |
+| `figure3_isopair_and_ptc/` | Combined Isopair + PTC figure (= old Fig 3 + old Fig 4) | **Built (2026-06-13).** 6 panels (A–F) at ref-AUG-traceable scope; composite 3×2; 6-pass verification protocol passed; published headline 83.5% NMD PTC vs 16.3% Control. |
+| `figure4_ptcneg_and_model/` | New Fig 4 = old Fig 5 + old Fig 6 merge | **Placeholder.** Per Pete's plan: old 5A + 5B dropped; 5F + 6A → supplement; new Fig 4 ≈ 8 panels (3 from old 5 + 5 from old 6). Awaiting kickoff. |
+| `figure5_attention_and_subgroup/` | New Fig 5 = old Fig 7 + old Fig 8 merge | **Placeholder.** Old Fig 7 (attention distribution) + old Fig 8 (mechanistic subgroup analyses) — both still needed captions in the manuscript when last checked. Awaiting kickoff. |
 | (TBD) | Figure 1 (Isoform Landscape) | TBD |
 | (TBD) | Figure 2 (Output Lost + PCI) | TBD |
-| (TBD) | Figure 5 (NMD+/PTC− subgroups) | TBD — already had panel drop done |
-| (TBD) | Figure 6 (DL model) | TBD |
-| (TBD) | Attention distribution (§5 para 4) | TBD — may be a separate figure |
 
-Pete to confirm the full list + naming when the figure plan is laid out.
+Net effect of Pete's plan: 8 original manuscript figures → 5 in the new layout (1, 2, new 3, new 4, new 5). See `paper/results_to_code_map.md` for the per-claim provenance map across the new layout.
 
 ## Validation workflow (matches grant pattern)
 

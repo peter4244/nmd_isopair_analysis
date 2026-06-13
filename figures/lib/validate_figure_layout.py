@@ -375,10 +375,10 @@ def validate_figure_layout(
     fig,
     ax,
     *,
-    collision_buffer=0.05,
-    crowding_distance=0.4,
+    collision_buffer=None,
+    crowding_distance=None,
     centering_tolerance=0.3,
-    alignment_y_tol=0.2,
+    alignment_y_tol=None,
     min_arrow_length=0.3,
     rect_padding_min=0.15,
     verbose=True,
@@ -402,14 +402,21 @@ def validate_figure_layout(
     ----------
     fig : matplotlib.figure.Figure
     ax  : matplotlib.axes.Axes
-    collision_buffer : float
-        Extra buffer around text bbox for collision detection.
-    crowding_distance : float
-        Threshold for text-segment proximity warnings.
+    collision_buffer : float | None
+        Extra buffer around text bbox for collision detection (data units).
+        If None (default), scales to 0.5% of each axis's data range, per axis.
+        This avoids the "any text falsely collides with the bottom spine"
+        problem on plots with tiny data ranges (e.g. KDE density 0–0.002),
+        and the reverse problem on plots with huge data ranges. Pass an
+        explicit float to override.
+    crowding_distance : float | None
+        Threshold for text-segment proximity warnings (data units).
+        If None (default), scales to 4% of mean axis range.
     centering_tolerance : float
         Max allowed horizontal offset of text from enclosing rect center.
-    alignment_y_tol : float
-        Tolerance for grouping texts into horizontal rows.
+    alignment_y_tol : float | None
+        Tolerance for grouping texts into horizontal rows (data units).
+        If None (default), scales to 2% of y-axis range.
     min_arrow_length : float
         Minimum acceptable arrow/segment length.
     rect_padding_min : float
@@ -432,13 +439,37 @@ def validate_figure_layout(
     # Phase A: Extract elements
     texts, segments, rects = _extract_elements(fig, ax)
 
+    # Phase B: Auto-scale tolerances when caller didn't override.
+    # Multipanel-figure panels often have wildly different data ranges
+    # (KDE density 0-0.002 in one cell, bar % 0-100 in another). Absolute
+    # default tolerances misbehave in both directions; scale them per-axis.
+    x_range = abs(ax.get_xlim()[1] - ax.get_xlim()[0])
+    y_range = abs(ax.get_ylim()[1] - ax.get_ylim()[0])
+    if collision_buffer is None:
+        # 0.5% of each axis's range, applied per-axis below.
+        collision_buffer_x = x_range * 0.005
+        collision_buffer_y = y_range * 0.005
+    else:
+        collision_buffer_x = collision_buffer
+        collision_buffer_y = collision_buffer
+    if crowding_distance is None:
+        # Use the SMALLER range as the scale — otherwise an axis with a huge
+        # data range (e.g. a schematic with x ∈ [-1200, 3600]) makes the
+        # crowding threshold so large that every text-segment pair within
+        # the panel gets flagged. Small-range axes (e.g. KDE y ∈ [0, 0.002])
+        # rarely have "crowded" pairs to flag anyway, so min is the safer
+        # default for multipanel figures.
+        crowding_distance = min(x_range, y_range) * 0.04
+    if alignment_y_tol is None:
+        alignment_y_tol = y_range * 0.02
+
     # --- Check 1: Text-segment collision (ERROR) ---
     if texts and segments:
         for te in texts:
             if te.alpha < 0.1:
                 continue
-            bb = (te.bb_xmin - collision_buffer, te.bb_xmax + collision_buffer,
-                  te.bb_ymin - collision_buffer, te.bb_ymax + collision_buffer)
+            bb = (te.bb_xmin - collision_buffer_x, te.bb_xmax + collision_buffer_x,
+                  te.bb_ymin - collision_buffer_y, te.bb_ymax + collision_buffer_y)
             for seg in segments:
                 if _segment_intersects_rect(
                         seg.x, seg.y, seg.xend, seg.yend,

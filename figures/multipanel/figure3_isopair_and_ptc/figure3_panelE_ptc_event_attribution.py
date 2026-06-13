@@ -81,7 +81,8 @@ def load_data():
 
 
 def build_figure(df):
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # Composite cell target: 6.0 × 4.0 in (1.5:1). 11 rotated categories + title+subtitle.
+    fig, ax = plt.subplots(figsize=(6, 4))
 
     n = len(df)
     x = np.arange(n)
@@ -106,19 +107,9 @@ def build_figure(df):
 
     ax.set_ylabel("% of events", fontsize=BODY_FS, color=C_TITLE)
 
-    # Pair-level PTC counts (constants from the ref-AUG effectively_ptc population
-    # — see data_export.R pop_ptc_plus). Hard-coded here because the panelE TSV
-    # is event-level, not pair-level.
-    N_PTC_NMD = 1912
-    N_PTC_CTRL = 288
-
-    ax.text(0, 1.13, "PTC-causing event attribution",
-            transform=ax.transAxes, ha="left", va="bottom",
-            fontsize=HEADER_FS, fontweight="bold", color=C_TITLE)
-    ax.text(0, 1.02,
-            f"PTCs identified: {N_PTC_NMD:,} NMD isoforms  |  {N_PTC_CTRL:,} Control isoforms",
-            transform=ax.transAxes, ha="left", va="bottom",
-            fontsize=BODY_FS, color="#666666")
+    # No in-panel title / subtitle — caption / composite letter label carries it.
+    # The "PTCs identified: 1,912 NMD | 288 Control" provenance line moves to
+    # the figure caption per the grant titleless convention.
 
     ax.set_ylim(0, y_max * 1.15)
 
@@ -132,18 +123,20 @@ def build_figure(df):
     for text in legend.get_texts():
         text.set_color(C_TITLE)
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.12, right=0.97, bottom=0.38, top=0.96)
     return fig
 
 
 def main():
     df = load_data()
     fig = build_figure(df)
+    from validate_figure_layout import validate_figure_layout
+    validate_figure_layout(fig, fig.axes[0], verbose=True)
     out_dir = HERE.parent
     fig.savefig(out_dir / "figure3_panelE_ptc_event_attribution.pdf",
-                bbox_inches="tight", facecolor="white")
+                facecolor="white")
     fig.savefig(out_dir / "figure3_panelE_ptc_event_attribution.png",
-                dpi=300, bbox_inches="tight", facecolor="white")
+                dpi=300, facecolor="white")
     print("Saved: figure3_panelE_ptc_event_attribution.pdf and .png")
 
 

@@ -48,7 +48,11 @@ MECH_COLORS = {
 }
 C_TITLE = "#222222"
 C_AXIS = "#555555"
-LABEL_MIN = 10  # only label stack segments with n >= this
+# At 6×4, the smaller bars don't have room for BODY_FS labels — restrict
+# in-segment value labels to substantial segments and shrink their font.
+LABEL_MIN = 100
+INNER_FS = 9
+LEGEND_FS = 11
 
 
 def load_data():
@@ -65,7 +69,8 @@ def load_data():
 
 
 def build_figure(piv):
-    fig, ax = plt.subplots(figsize=(10, 7))
+    # Composite cell target: 6.0 × 4.0 in (1.5:1). y-axis category labels + bottom legend.
+    fig, ax = plt.subplots(figsize=(6, 4))
 
     y = np.arange(len(piv.index))
     left = np.zeros(len(piv.index))
@@ -78,7 +83,7 @@ def build_figure(piv):
             if v >= LABEL_MIN:
                 ax.text(left[i] + v / 2, y[i], f"{int(v):,}",
                         ha="center", va="center",
-                        fontsize=BODY_FS, fontweight="bold", color="white")
+                        fontsize=INNER_FS, fontweight="bold", color="white")
         left += vals
 
     ax.set_yticks(y)
@@ -86,14 +91,9 @@ def build_figure(piv):
     ax.tick_params(axis="x", labelsize=BODY_FS, colors=C_TITLE)
 
     ax.set_xlabel("Number of pairs", fontsize=BODY_FS, color=C_TITLE)
-    n_total = int(left.sum())
-    # Title + subtitle stacked above the chart (subtitle lighter)
-    ax.text(0, 1.10, "PTC-causing splice events",
-            transform=ax.transAxes, ha="left", va="bottom",
-            fontsize=HEADER_FS, fontweight="bold", color=C_TITLE)
-    ax.text(0, 1.02, f"{n_total:,} attributed pairs  |  stacked by mechanism",
-            transform=ax.transAxes, ha="left", va="bottom",
-            fontsize=BODY_FS, color="#666666")
+    # No in-panel title / subtitle — caption / composite letter label carries it.
+    # The "1,812 attributed pairs | stacked by mechanism" provenance line moves
+    # to the figure caption per the grant titleless convention.
 
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
@@ -101,24 +101,26 @@ def build_figure(piv):
         ax.spines[side].set_color(C_AXIS)
         ax.spines[side].set_linewidth(0.8)
 
-    legend = ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.18),
-                       ncol=3, frameon=False, fontsize=BODY_FS,
-                       handlelength=1.5, columnspacing=2)
+    legend = ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.42),
+                       ncol=3, frameon=False, fontsize=LEGEND_FS,
+                       handlelength=1.2, handletextpad=0.5, columnspacing=1.0)
     for text in legend.get_texts():
         text.set_color(C_TITLE)
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.22, right=0.97, bottom=0.30, top=0.96)
     return fig
 
 
 def main():
     piv = load_data()
     fig = build_figure(piv)
+    from validate_figure_layout import validate_figure_layout
+    validate_figure_layout(fig, fig.axes[0], verbose=True)
     out_dir = HERE.parent
     fig.savefig(out_dir / "figure3_panelF_mechanism_breakdown.pdf",
-                bbox_inches="tight", facecolor="white")
+                facecolor="white")
     fig.savefig(out_dir / "figure3_panelF_mechanism_breakdown.png",
-                dpi=300, bbox_inches="tight", facecolor="white")
+                dpi=300, facecolor="white")
     print("Saved: figure3_panelF_mechanism_breakdown.pdf and .png")
 
 

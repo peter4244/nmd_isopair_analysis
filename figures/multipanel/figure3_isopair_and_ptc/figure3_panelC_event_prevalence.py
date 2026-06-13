@@ -77,7 +77,8 @@ def load_data():
 
 
 def build_figure(df):
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # Composite cell target: 6.0 × 4.0 in (1.5:1). 10 rotated categories on x.
+    fig, ax = plt.subplots(figsize=(6, 4))
 
     n = len(df)
     x = np.arange(n)
@@ -102,8 +103,7 @@ def build_figure(df):
     ax.tick_params(axis="y", labelsize=BODY_FS, colors=C_TITLE)
 
     ax.set_ylabel("Pairs with event (%)", fontsize=BODY_FS, color=C_TITLE)
-    ax.set_title("Splice event prevalence", fontsize=HEADER_FS,
-                 fontweight="bold", color=C_TITLE, loc="left", pad=12)
+    # No in-panel title — caption / composite letter label carries it.
 
     ax.set_ylim(0, y_max * 1.15)
 
@@ -117,18 +117,20 @@ def build_figure(df):
     for text in legend.get_texts():
         text.set_color(C_TITLE)
 
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.12, right=0.97, bottom=0.38, top=0.96)
     return fig
 
 
 def main():
     df = load_data()
     fig = build_figure(df)
+    from validate_figure_layout import validate_figure_layout
+    validate_figure_layout(fig, fig.axes[0], verbose=True)
     out_dir = HERE.parent
     fig.savefig(out_dir / "figure3_panelC_event_prevalence.pdf",
-                bbox_inches="tight", facecolor="white")
+                facecolor="white")
     fig.savefig(out_dir / "figure3_panelC_event_prevalence.png",
-                dpi=300, bbox_inches="tight", facecolor="white")
+                dpi=300, facecolor="white")
     print("Saved: figure3_panelC_event_prevalence.pdf and .png")
 
 

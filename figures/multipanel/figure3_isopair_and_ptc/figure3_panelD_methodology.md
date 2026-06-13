@@ -76,3 +76,7 @@ KDE density plot via `scipy.stats.gaussian_kde` with Scott's bandwidth. 50-nt PT
 - `feedback_default_match_original_figure` — Panel D's distance-density concept matches the original Rmd's `goal1-fig1-stop-dist` plot at line 1717
 - Rmd source: `05_final_report_mashr.Rmd` chunks `goal1-fig1-stop-dist` (line ~1717), `sec2c-ref-atg-load` (line 3268); driver `05r_ref_atg_analysis.R`
 - Replaces the previous (AM revision) Panel D, which was a bar chart of "TD2 → ref-AUG combined PTC rate" — that figure is now moved to a supplement (`figure3_supp_ptc_rate_by_cds.*`)
+
+## Composite cross-reference
+
+This panel appears in the Figure 3 composite as the labeled cell — see `figure3_composite_methodology.md` for the layout and per-cell mapping. The composite embeds the panel's pre-rendered PNG (`figure3_panelD.png`); regenerating the composite does NOT re-run this panel. Re-render this panel script first if its data or rendering has changed.

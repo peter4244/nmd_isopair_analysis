@@ -35,8 +35,8 @@ plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica Neue", "Helvetica", "Deja
 plt.rcParams["pdf.fonttype"] = 42
 plt.rcParams["ps.fonttype"] = 42
 
-HEADER_FS = 18
-BODY_FS = 14
+HEADER_FS = 15
+BODY_FS = 11
 
 # Colors — matched to R source for visual consistency with prior renderings
 C_REF_FILL = "#4393c3"
@@ -68,7 +68,7 @@ EVENT_BAR_OFFSET = 0.55
 EVENT_TEXT_OFFSET = 0.95
 
 BRACKET_NMD_X = 2600
-BRACKET_CTRL_X = 2780
+BRACKET_CTRL_X = 3050  # wider gap so the "NMD pair" label fits between
 TICK_LEN = 40
 
 
@@ -127,7 +127,11 @@ def draw_bracket(ax, x, y_top, y_bot, tick_len, color):
 
 
 def build_figure():
-    fig, ax = plt.subplots(figsize=(14, 6.5))
+    # Composite cell target: 6.0 × 4.0 in (1.5:1). All Figure-3 panels share
+    # this aspect so the 2×3 grid composes without per-row scaling.
+    # Font sizes scaled down (HEADER_FS=15, BODY_FS=11) so left-of-track
+    # labels still fit; xlim extends leftward to give them horizontal room.
+    fig, ax = plt.subplots(figsize=(6, 4))
 
     # Three isoform tracks
     draw_track(ax, REF_STARTS, REF_ENDS, REF_Y, C_REF_FILL)
@@ -167,30 +171,36 @@ def build_figure():
             ha="center", va="top", fontsize=BODY_FS,
             fontstyle="italic", color=C_REF_LBL)
 
-    # Title — header, bold per principles.md
-    ax.text(-250, 6.15, "Isoform pair construction",
-            ha="left", va="bottom", fontsize=HEADER_FS,
-            fontweight="bold", color=C_TITLE)
+    # No in-panel title — caption / composite letter label carries it.
+    # Per grant convention (figure_nmd_prelim_panel*.py): panels are titleless.
 
-    # Axes setup — vertical room for big track-spacing + event annotations
-    ax.set_xlim(-300, 3050)
-    ax.set_ylim(-0.5, 6.5)
+    # Axes setup — xlim extended leftward to fit left-of-track labels at
+    # the smaller 6×4 canvas. Right side keeps room for two brackets + labels.
+    ax.set_xlim(-1200, 3600)
+    ax.set_ylim(-0.5, 6.0)
     ax.set_aspect("auto")
     ax.axis("off")
 
-    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.04, top=0.94)
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98)
     return fig
 
 
 def main():
     fig = build_figure()
 
+    from validate_figure_layout import validate_figure_layout
+    result = validate_figure_layout(fig, fig.axes[0], verbose=True)
+    if result['summary']['n_errors'] > 0:
+        raise SystemExit(
+            f"Panel A validator: {result['summary']['n_errors']} errors — fix before saving"
+        )
+
     out_dir = HERE.parent
     pdf_path = out_dir / "figure3_panelA_pair_concept.pdf"
     png_path = out_dir / "figure3_panelA_pair_concept.png"
 
-    fig.savefig(pdf_path, bbox_inches="tight", facecolor="white")
-    fig.savefig(png_path, dpi=300, bbox_inches="tight", facecolor="white")
+    fig.savefig(pdf_path, facecolor="white")
+    fig.savefig(png_path, dpi=300, facecolor="white")
 
     print(f"Saved: {pdf_path.name} and {png_path.name}")
 
