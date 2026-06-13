@@ -1,6 +1,6 @@
 # NMD Mechanisms: Literature Review in Context of ORF Model Findings
 
-> **About this expanded version.** Every specific mechanistic claim below is followed by a verbatim quotation from the primary literature, shown as an indented blockquote. Quotations are drawn from Results or Discussion sections of the papers wherever possible (not abstracts). PDFs for all 39 cited references are available in the adjacent `papers/` folder. Four citation errors in the original bibliography have been corrected — see the **Citation corrections** section at the end.
+> **About this expanded version.** Every specific mechanistic claim below is followed by a verbatim quotation from the primary literature, shown as an indented blockquote. Quotations are drawn from Results or Discussion sections of the papers wherever possible (not abstracts). PDFs for all 46 cited references are available in the adjacent `papers/` folder, and every quoted passage has been verified against the downloaded PDF. Four citation errors in the original bibliography have been corrected — see the **Citation corrections** section at the end. Section 6 (translational readthrough, stop codon context, and NMD) was added 2026-06-13 to address a follow-up question; it adds 6 new references (41–46).
 
 ---
 
@@ -301,6 +301,134 @@ The one candidate mechanism that would genuinely require a non-PTC model — lon
 
 ---
 
+## 6. Translational readthrough, stop-codon context, and NMD
+
+**Motivating observation.** Our v5_4ct deep learning model assigns higher NMD probabilities to isoforms with (a) the **UGA** stop codon at the priority ORF's terminator and (b) a **U at the +4 position** immediately following the stop codon. Both features sit at the interface of translation termination and NMD recognition, where a distinct body of literature — not engaged in the previous sections — bears on interpretation. This section reviews what is established and confronts the tension between our observation pattern and a major transcriptome-wide null result.
+
+### 6.1 Translational readthrough inhibits NMD
+
+The connection between readthrough and NMD inhibition was first articulated in the same study that established UPF1 length-dependent 3'UTR binding [22], where rare readthrough was treated as a mechanism that disrupts the UPF1 mark:
+
+> "Based on our findings that rare readthrough events permit Upf1 3′UTR length-dependent accumulation in mRNPs but inhibit decay, we propose a two-step model in which Upf1 senses 3′UTR length to potentiate decay." — Hogg & Goff 2010, *Cell*, Discussion p.386 *(already cited as Ref 22 above)*
+
+The first systematic mammalian system for coordinated readthrough–NMD analysis was Baker & Hogg 2017 [41]. Their distinct contribution beyond the two-mode hypothesis (frequent readthrough displaces UPF1; inefficient readthrough leaves UPF1 bound but blocks a downstream step) was the demonstration that the readthrough rate required to stabilize a transcript scales with the distance of the suppressed termination codon from the end of the mRNA:
+
+> "We use this system to show that diverse readthrough-promoting RNA elements have similar capacities to inhibit NMD. Further, we provide evidence that the level of translational readthrough required for protection from NMD depends on the distance of the suppressed termination codon from the end of the mRNA." — Baker & Hogg 2017, *PLoS One*, Abstract
+
+> "Here, we focus on the relationship between 3'UTR length and readthrough efficiency, showing that increasing 3'UTR length reduces the effectiveness of readthrough in inhibiting decay." — Baker & Hogg 2017, *PLoS One*, Discussion p.11
+
+> "After a single readthrough event, the EJC(s) will be displaced from the RNA, leaving the RNA subject to NMD based on 3'UTR length alone." — Baker & Hogg 2017, *PLoS One*, Discussion p.11
+
+A recent review by Embree, Abu-Alhasan & Singh [42] consolidates the evidence and emphasizes how little readthrough is needed to substantially blunt decay. The quantitative thresholds differ between yeast and mammals, and the review states them separately:
+
+> "In *S. cerevisiae*, which does not rely on the EJC for NMD, a meager stop codon readthrough rate of 0.5%, or one out of every 200 ribosomes, can reduce NMD efficiency. Similarly, in mammalian cells, a readthrough rate of less than 1% is sufficient to displace the EJCs and/or UPF1 to inhibit NMD." — Embree, Abu-Alhasan & Singh 2022, *J Biol Chem*, p.8
+
+> "The UGA stop codon is more permissive to readthrough than the other two stop codons." — Embree, Abu-Alhasan & Singh 2022, *J Biol Chem*, p.9
+
+The directional logic, taken together with the kinetic-competition framework already cited in §1 [10], is therefore: **readthrough is anti-NMD; slow but productive termination is pro-NMD**. Features of a termination context that promote readthrough are expected to *reduce* NMD susceptibility, while features that slow termination without enabling productive readthrough are expected to *enhance* it.
+
+> "a kinetic competition between efficient translation termination and the assembly of a degradation-triggering NMD complex determines whether an mRNA survives or not." — Karousis, Nasif & Mühlemann 2016, *WIREs RNA*, p.667 *(already cited above as Ref 10)*
+
+It is worth noting that Embree et al. 2022 also flags ongoing controversy in the empirical underpinning of the "slow-termination" half of this logic: earlier in-extract toeprinting studies argued for slower termination at NMD stops, while more recent ribosome-profiling work has not replicated the difference [42], and the question remains unresolved in the literature.
+
+### 6.2 Stop codon identity: UGA is the leakiest
+
+The hierarchy of intrinsic termination fidelity across the three stop codons is consistent across studies. Cridge et al. 2018 [43] formalized it from systematic reporter assays in cultured mammalian cells:
+
+> "The expected hierarchy in the intrinsic fidelity of the stop codons (UAA>UAG>>UGA) was observed, with highly influential effects on termination readthrough mediated by nucleotides at position +4 and position +8." — Cridge et al. 2018, *Nucleic Acids Res*, Abstract
+
+The genome-wide ribosome-profiling analysis by Wangen & Green 2020 [44] confirmed the same hierarchy in untreated cells without exogenous readthrough drugs:
+
+> "a general trend emerged that for a particular position, UAA stop codons were least likely to be read through while UGA stop codons were most likely to be read through (readthrough likelihood: UGA > UAG > UAA)." — Wangen & Green 2020, *eLife*, p.9
+
+> "we did find that UAA and UGA stop codons were significantly more likely to be readthrough than UAG stop codons (p=1.62×10⁻³ and p=4.84×10⁻⁷, Mann-Whitney U) in untreated cells." — Wangen & Green 2020, *eLife*, p.9
+
+Baker & Hogg 2017 articulate the same hierarchy with the explicit corollary that an unfavorable downstream context can dramatically amplify UGA's intrinsic leakiness:
+
+> "UGA tends to be least efficient of the three termination codons, and this effect can be augmented greatly by an unfavorable sequence context." — Baker & Hogg 2017, *PLoS One*, p.8
+
+So at the stop-codon-identity axis alone, **UGA is the slowest of the three stops to terminate while still terminating productively** — in normal physiology, mammalian UGAs read through at well below the ~1% threshold above which readthrough is known to displace UPF1/EJCs and protect a transcript from NMD. UGA's "leakiness" ranking therefore manifests as longer ribosome dwell at the stop codon, not as a meaningful fraction of ribosomes escaping into the 3'UTR. That regime — slower termination with vanishing readthrough — is exactly where the kinetic-competition framework predicts maximal time for SURF/UPF1 commitment and enhanced NMD substrate susceptibility.
+
+### 6.3 The +4 nucleotide: pyrimidines weaken termination at UGA, purines stabilize it
+
+The +4 nucleotide (the first nucleotide of the 3'UTR, immediately following the stop codon) is by now well-established as a major modulator of termination efficiency. Two structural-mechanistic findings frame the result: eRF1 binding accommodates four nucleotides in the A site (the stop codon plus +4), and the +4 base stacks with 18S rRNA G626. Stacking is stronger with purines (A, G) at +4, stabilizing the decoding complex; pyrimidines (C, U) at +4 weaken it [43]:
+
+> "Stacking would be more stable if a purine were present in the +4 position (G626) and a purine in the +5 position (C1698), increasing the stability of the decoding complex." — Cridge et al. 2018, *Nucleic Acids Res*, Discussion p.1940
+
+This translates directly into termination efficiency at UGA. Critically, **C and U at +4 both produce weak UGA termination**; the effect is most extreme for C but is also present (and significant) for U:
+
+> "The identity of the base following the UGA stop codon (+4) had a profound effect on termination success or failure. The most dramatic example of this occurred with ⁺⁴C in this position when there was up to six-fold higher termination signal failure above the median value (Figure 2E). The other pyrimidine base, ⁺⁴U, also provided a relatively poor termination context (Supplementary Figure S1F), but not as marked as ⁺⁴C. By contrast, ⁺⁴G in this position (Figure 2F) and as well the other purine ⁺⁴A (Supplementary Figure S1E) promoted efficient termination at UGA, indicating how important purines are as the base following UGA to promote successful termination." — Cridge et al. 2018, *Nucleic Acids Res*, Results p.1931
+
+Wangen & Green 2020 corroborate this from the +4 angle at genome scale:
+
+> "For each individual 3 nt stop codon, the presence of a C in the fourth position significantly increases the likelihood of readthrough relative to all other nucleotides (p<0.01 for all stop codons, Mann-Whitney U)." — Wangen & Green 2020, *eLife*, p.10
+
+> "Generally, the presence of A's or U's increase SCR probability while C's and G's decreases SCR probability, especially in 3'UTRs, for both untreated (Figure 5A, top) and G418-treated (Figure 5A, bottom) cells." — Wangen & Green 2020, *eLife*, p.11
+
+Embree et al. 2022 explain the structural basis succinctly:
+
+> "the sequences immediately downstream of the stop codon have the strongest effect on readthrough rate. For instance, a cytosine immediately after the stop codon (at the +4 position) results in an increased readthrough rate across all eukaryotes tested. As eRF1 also recognizes the +4 nt during translation termination leading to mRNA compaction, it is conceivable that a cytosine at this position is least effective in stabilizing such a conformation, which could explain why UGAC is the most readthrough permissive stop codon context." — Embree, Abu-Alhasan & Singh 2022, *J Biol Chem*, p.9
+
+**This is the key correction to the prior section's interpretation.** The earlier draft of §6 read the literature as implying that UGA-U was a relatively *tight* combination among UGA-N contexts. Reading Cridge et al. 2018 directly shows the opposite: UGA-U is weaker than either UGA-G or UGA-A, just not as dramatically weak as UGA-C. So **both** of Pete's marginal observations (UGA over UAA/UAG; U at +4 over G/A) point the same direction — *weaker termination, more SURF/UPF1 dwell time, enhanced NMD substrate propensity*. They are not a mixed signal; they reinforce each other.
+
+### 6.4 NTC vs PTC context: selection pressure for termination efficiency
+
+Several lines of evidence converge on the idea that natural normal termination codons (NTCs) are under purifying selection for efficient termination, while premature termination codons (PTCs) — being either disease mutations or features of regulated alternative architecture — escape that selection. The composition signatures bear this out.
+
+Wangen & Green 2020 explicitly contrast NTCs with 3'UTR-internal stop codons (3'TCs), which are the natural source of stop codons not under translation-quality selection:
+
+> "Considering the influence of C's and G's in promoting efficient translation termination relative to A's and U's, we next examined the nucleotide usage of protein coding transcripts 40 nts upstream and 60 nts downstream of the stop codon (Figure 5B) ... As distance from the NTC increases, C's and G's occur less frequently until U's and A's eventually become the predominant nucleotides in 3'UTRs. **A notable exception to these trends occurs at the +4 position where G's and A's are enriched while C's and U's are depleted**, in agreement with the large influence of these nucleotides on SCR at this position." — Wangen & Green 2020, *eLife*, p.11 (emphasis added)
+
+> "stop codons in 3'UTRs were more likely to be read through with 46% of the ribosome density maintained downstream of the 3'TC. These observations are consistent with the fact that A's and U's are generally enriched in the stop codon contexts of 3'TCs ... It seems likely that purifying selection tightly maintains NTCs but not 3'TCs in mammals." — Wangen & Green 2020, *eLife*, pp.11–12
+
+Embree et al. 2022 make the same point through the NTC/PTC contrast directly:
+
+> "high GC content in regions immediately downstream of NTCs may have evolved to help prevent readthrough. When a ribosome terminates at a PTC introduced by a mutation or an error in the middle of a transcript, it is unlikely that such a GC-rich region is present immediately downstream, thus making PTCs more prone than NTCs to ribosome readthrough." — Embree, Abu-Alhasan & Singh 2022, *J Biol Chem*, p.9
+
+Cridge et al. 2018 close the loop on the functional significance: the extended termination signal may be one of the cues by which the cell tells mature stops apart from premature ones.
+
+> "Since premature termination triggers nonsense-mediated mRNA decay (NMD) (85); an extended termination signal may be important within the cell for translational machinery to distinguish between mature and premature stop codons (39)." — Cridge et al. 2018, *Nucleic Acids Res*, Discussion p.1937
+
+A separate transcriptome-wide bioinformatic analysis by Zahdeh & Carmel 2016 [45] reports an additional compositional signature — guanine enrichment immediately upstream of and along the 3'UTR of NMD substrates — interpreted as a folding-mediated termination block:
+
+> "NMD-targets are strongly enriched with G nucleotides upstream of the termination codon, and even more so along their 3'UTR. High G content around the termination codon may impede translation termination as a result of mRNA folding, thus triggering NMD." — Zahdeh & Carmel 2016, *BMC Bioinformatics*, Abstract
+
+An important caveat on Zahdeh & Carmel: their analysis is restricted to **EJC-independent** NMD targets — transcripts that lack a 3'UTR EJC and therefore degrade through the fail-safe pathway. They state this explicitly:
+
+> "Here, we analyzed data of transcript stability change following NMD repression and identified over 200 EJC-independent NMD-targets ... it is the nucleotide composition around the TC that mainly drives EJC-independent NMD." — Zahdeh & Carmel 2016, *BMC Bioinformatics*, Abstract and Conclusion
+
+This is a different mechanistic subclass from the canonical PTC+EJC NMD substrates that dominate our isopair dataset, so their G-rich signature does not necessarily extend to our population. It is cited here as supportive of the broader "stop-codon-context predicts NMD" framework rather than as direct evidence on the U+4 signal we observe.
+
+### 6.5 Reconciling our observation with the literature, including a real null result
+
+Two reads of our model's UGA + U+4 observation are now available:
+
+**Reading A (consistent with §6.1–6.4).** Both marginal signals point to *weaker termination, more SURF/UPF1 dwell, enhanced NMD*. UGA is the leakiest stop (§6.2). U at +4 is depleted at NTCs and is intermediate-but-weak for UGA termination relative to the canonical G+4 or A+4 (§6.3). The combination is a "non-canonical, slow-termination" context of exactly the kind that purifying selection appears to avoid at NTCs (§6.4) and that the kinetic-competition framework predicts is NMD-favored. There is no mixed-signal puzzle in our observation; both features point the same direction.
+
+**Reading B (a real tension with Lindeboom et al. 2016 [46]).** The largest transcriptome-wide analysis of human NMD efficiency to date — random-forest regression on 2,840 PTCs across 9,769 human cancer genomes, validated on independent germline and frameshift cohorts, explaining ~74% of attainable variance in NMD efficiency — tested both stop codon identity and sequence composition as candidate features and found neither to add information beyond architectural features:
+
+> "stop codon identity of either the PTC or wild-type stop codon did not affect NMD after controlling for other features (data not shown)." — Lindeboom, Supek & Lehner 2016, *Nat Genet*, Results p.1115
+
+> "We also tested whether sequence composition (dinucleotide frequency) and mRNA secondary structure (RNA-RNA interaction probability per nucleotide; Online Methods) influence NMD efficiency. However, we found neither factor to be associated with NMD efficiency (Supplementary Table 2), consistent with high *in vivo* efficiency of the UPF1 helicase in translocating through structured RNA." — Lindeboom, Supek & Lehner 2016, *Nat Genet*, Results p.1115
+
+So Lindeboom et al. directly tested both Pete's signal (stop codon identity) and the Zahdeh & Carmel composition signal — and rejected both. The two transcriptome-wide claims (Zahdeh and Lindeboom) are also in tension *with each other*, not just with our observation.
+
+Three readings of the Lindeboom null are worth considering:
+
+1. **Their multivariable controls absorbed the marginal stop-codon-identity signal.** Lindeboom's model explained ~74% of variance using last-exon location (45.8% of variance), PTC-to-start-codon distance (17.2%), exon length (4.0%), the 50-bp rule (3.5%), PTC-to-normal-stop distance (1.6%), mRNA half-life (1.6%), and RNA-binding motifs (0.1%). If UGA usage correlates with any of these — for example, if UGA-terminated transcripts have systematically different exon architecture — the marginal effect could be absorbed in their multivariable fit while still being detectable in a model with different feature dependencies.
+
+2. **The biology of their PTC cohort differs from our endogenous-isoform cohort.** Lindeboom et al. analyzed somatic nonsense mutations introduced *at random positions* into otherwise normal CDSs — a Monte Carlo sample over the coding genome's stop-codon and context possibilities. Our NMD-positive isoforms include uORF stops, AS-PTC stops, and 3'-end-formation-driven stops in the endogenous transcriptome — categories where the terminating codon is *part of the regulated architecture* of the host gene, not a stochastic mutation. Selection acting on architecture can produce stop-codon-identity preferences that mutation-driven PTCs cannot test.
+
+3. **The model is picking up an artifact.** Our UGA preference could reflect feature correlation in the model's input that would not survive a properly-controlled regression. This would be consistent with Lindeboom's null result.
+
+The current analysis cannot fully discriminate among these. Reading (2) is most consistent with the §6.1–6.4 mechanism, since the same biology that selected for efficient C/G context at NTCs over evolutionary time would not have shaped the stop codons of regulated uORF or AS-PTC architectures the same way. But Reading (1) and Reading (3) are not refuted by anything in our data; both should be on the table until an external test is done. The cleanest next analysis on our side would be a Lindeboom-style controlled regression of our model's stop-codon-identity and +4 features against the architectural features that absorbed those signals in their cohort — if our UGA + U+4 signals survive, that argues against Reading (1) and (3); if they don't, the result aligns with Lindeboom's null.
+
+### 6.6 A clarifying point on selenoprotein UGAs
+
+The list of NMD-inducing features in Popp & Maquat 2013 [6] includes "(e) UGA codons within certain selenoprotein-encoding mRNAs" as a special case. This is mechanistically distinct from §6.1–6.5: the selenoprotein UGA functions as a conditional sense codon (encoding selenocysteine via SECIS-element recoding) under selenium-replete conditions, and acts as a premature stop only under selenium depletion. Our model would not be expected to select for this class specifically — the selenoprotein UGA-NMD link is a conditional translational phenomenon, not a sequence-context feature the model could see at training time. The UGA preference we observe is therefore better attributed to the §6.1–6.5 biology than to selenoprotein biology, though the two share UGA as their common terminal element.
+
+---
+
 ## Citation corrections
 
 During quote extraction, four entries in the original bibliography were found to be incorrect. All four have been corrected in the reference list below; the corrections are itemized here for transparency.
@@ -313,11 +441,15 @@ During quote extraction, four entries in the original bibliography were found to
 
 4. **Ref 35 (Kebaara & Atkin 2009)** — this paper is about *3'UTR length driving NMD in yeast* and was incorrectly cited in the original Section 4 for the claim "altering translation initiation efficiency affects NMD susceptibility." The Kebaara citation has been moved to Section 3 where it correctly supports the yeast faux-3'UTR pathway. In Section 4, the translation-initiation-efficiency claim now relies on Gaba, Jacobson & Sachs 2005 (Ref 36) alone.
 
+5. **§6 mid-revision interpretive correction (2026-06-13).** An earlier draft of §6 read the +4-nucleotide literature as implying that **UGA-U is a relatively tight UGA-N combination**, framing our model's UGA + U+4 observation as a "mixed signal" requiring a complex reconciliation. On direct reading of Cridge et al. 2018 (Ref 43), this is wrong: both pyrimidines (C *and* U) at +4 weaken termination at UGA, with C the most severe but U intermediate-and-still-weak relative to the purines G and A. Our UGA + U+4 observation is therefore not a mixed signal — both features point the same direction (weaker termination, more SURF/UPF1 dwell, enhanced NMD substrate propensity). §6.3 and §6.5 of this revision are written against the corrected reading.
+
+6. **§6 references not cited despite earlier draft (2026-06-13).** Two references that appeared in an earlier draft of §6 — Karousis & Mühlemann 2019 *Cold Spring Harb Perspect Biol* and Serdar, Whiteside & Baker 2016 *Nat Commun* — were removed in the final revision because their PDFs were not available for direct verification. The kinetic-competition framework now leans on the already-cited Karousis, Nasif & Mühlemann 2016 (Ref 10) and on Embree, Abu-Alhasan & Singh 2022 (Ref 42), both of which are PDF-verified. The two omitted papers are still excellent references on this topic and could be added back if the PDFs are subsequently downloaded and the quotes verified.
+
 ---
 
 ## Papers folder
 
-PDFs for all 39 valid references are in `./papers/`. Files follow the pattern `ref{N}_FirstAuthorYear.pdf` (with minor variations where the user placed papers with slightly different naming). Every quoted passage in this review has been verified against the downloaded PDF.
+PDFs for all 46 valid references are in `./papers/`. The original 40 references follow the pattern `ref{N}_FirstAuthorYear.pdf`; the six §6 additions (refs 41–46) are stored under `FirstAuthorYear.pdf`. Every quoted passage in this review has been verified against the downloaded PDF.
 
 ---
 
@@ -402,3 +534,15 @@ PDFs for all 39 valid references are in `./papers/`. Files follow the pattern `r
 39. Kozak M. Initiation of translation in prokaryotes and eukaryotes. *Gene.* 1999;234(2):187-208. [PubMed 10395892](https://pubmed.ncbi.nlm.nih.gov/10395892/)
 
 40. Lykke-Andersen J, Shu MD, Steitz JA. Communication of the position of exon-exon junctions to the mRNA surveillance machinery by the protein RNPS1. *Science.* 2001;293(5536):1836-1839. [PubMed 11546874](https://pubmed.ncbi.nlm.nih.gov/11546874/)
+
+41. Baker SL, Hogg JR. A system for coordinated analysis of translational readthrough and nonsense-mediated mRNA decay. *PLoS One.* 2017;12(3):e0173980. [PMC5360307](https://pmc.ncbi.nlm.nih.gov/articles/PMC5360307/)
+
+42. Embree CM, Abu-Alhasan R, Singh G. Features and factors that dictate if terminating ribosomes cause or counteract nonsense-mediated mRNA decay. *J Biol Chem.* 2022;298(11):102592. [PMC9661723](https://pmc.ncbi.nlm.nih.gov/articles/PMC9661723/)
+
+43. Cridge AG, Crowe-McAuliffe C, Mathew SF, Tate WP. Eukaryotic translational termination efficiency is influenced by the 3' nucleotides within the ribosomal mRNA channel. *Nucleic Acids Res.* 2018;46(4):1927-1944. [PMC5829715](https://pmc.ncbi.nlm.nih.gov/articles/PMC5829715/)
+
+44. Wangen JR, Green R. Stop codon context influences genome-wide stimulation of termination codon readthrough by aminoglycosides. *eLife.* 2020;9:e52611. [PMC7089771](https://pmc.ncbi.nlm.nih.gov/articles/PMC7089771/)
+
+45. Zahdeh F, Carmel L. The role of nucleotide composition in premature termination codon recognition. *BMC Bioinformatics.* 2016;17:519. [PMC5142417](https://pmc.ncbi.nlm.nih.gov/articles/PMC5142417/)
+
+46. Lindeboom RGH, Supek F, Lehner B. The rules and impact of nonsense-mediated mRNA decay in human cancers. *Nat Genet.* 2016;48(10):1112-1118. [PMC5045715](https://pmc.ncbi.nlm.nih.gov/articles/PMC5045715/)
