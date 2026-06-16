@@ -72,3 +72,11 @@ isocall_dge/mashr/*.csv
 # Large HTML reports (can be regenerated)
 code/*_dge_*.html
 code/isoform_transition_*.html
+
+# Linked external repos (canonical location is sibling, not nested)
+nmd_orf_model_v5_4ct/
+
+# Verification / pre-rewrite backup snapshots (regenerable; not source of truth)
+**/.verify_pass*_backup/
+*.pre_enst_update
+*.pre_rewrite

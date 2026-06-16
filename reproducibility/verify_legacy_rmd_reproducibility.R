@@ -1,4 +1,24 @@
 #!/usr/bin/env Rscript
+# [LEGACY — DEPRECATED] Verification Pass 6 on the legacy Rmd
+# (05_final_report_mashr.html, now legacy-bannered as of 2026-06-15).
+#
+# This verifier targets the PRIOR-SUBMISSION scope. The current canonical
+# scope analyses are in
+#   results/isoform_transitions/Version_6.0/isopair_wrapper/
+#     05_final_report_gencode_scope_2026-06-15.Rmd
+# and are validated by:
+#   reproducibility/verify_pass7_new_rmd.R               (manifest, 37 checks)
+#   reproducibility/verify_cross_check_new_rmd_vs_figures.R  (cross-check, 57)
+#
+# Run this script ONLY for sensitivity analyses against the prior submission.
+# For routine validation of the current scope, use the two verifiers above.
+#
+# Moved here from figures/multipanel/figure3_isopair_and_ptc/ on 2026-06-15
+# (v4 plan §S3) so a verifier of the Rmd no longer lives in a figure folder.
+#
+# ─────────────────────────────────────────────────────────────────────
+# Original header below
+# ─────────────────────────────────────────────────────────────────────
 # Verification Pass 6 — 5-pass protocol applied to the Rmd source analyses.
 # Focused on the values that Figure 3 depends on.
 

@@ -56,6 +56,33 @@ validate_composite_layout(combined, fig_width = 16, fig_height = 18)
 
 See [`lib/ggplot2_patchwork.md`](lib/ggplot2_patchwork.md) for the full workflow.
 
+## Workflow path
+
+The figure scripts in this directory and the canonical analysis Rmd at [`results/isoform_transitions/Version_6.0/isopair_wrapper/05_final_report_gencode_scope_2026-06-15.Rmd`](../results/isoform_transitions/Version_6.0/isopair_wrapper/05_final_report_gencode_scope_2026-06-15.Rmd) are **parallel renderers** from the same upstream RDS caches in `results/isoform_transitions/Version_6.0/isopair_wrapper/data_mashr/`:
+
+```
+data_mashr/ (RDS caches: profiles_c{2,4}, cds, structures, ref_atg_analysis,
+             utr5_features_{all,refaug}, expression_data, nmd_classification, ...)
+                  │
+        ┌─────────┴──────────┐
+        ▼                    ▼
+  figure scripts        new Rmd
+  (this directory)      (canonical analysis report)
+        │                    │
+        ▼                    ▼
+  panel PNGs + TSVs    HTML with inline-R values + embedded panels
+        │                    │
+        └────────┬───────────┘
+                 ▼
+   reproducibility/verify_cross_check_new_rmd_vs_figures.R
+   (confirms both pipelines agree to the digit; 57 checks)
+```
+
+- The **Rmd is the canonical analysis report** — its inline-R values are the primary record of what was computed at which scope, with a full prose narrative anchoring each finding.
+- The **figure scripts** in `figures/multipanel/...` and `figures/SupplementalFigures/...` are downstream renderers. Each panel script reads from the same RDS caches the Rmd uses, computes its own descriptives, and writes a small TSV alongside the PNG.
+- **Drift detection** between the two sides is automated: [`reproducibility/verify_cross_check_new_rmd_vs_figures.R`](../reproducibility/verify_cross_check_new_rmd_vs_figures.R) parses the Rmd HTML and the figure-side TSVs, then asserts they agree at every shared number (counts exact, percentages ±0.1, medians ±0.5, p-values same order of magnitude). On any FAIL the verifier exits non-zero — diagnose root cause first per v4 plan §S4, never paper over a discrepancy.
+- The **legacy report** ([`05_final_report_mashr.Rmd`](../results/isoform_transitions/Version_6.0/isopair_wrapper/05_final_report_mashr.Rmd)) remains in the tree, legacy-bannered, for sensitivity analyses against the prior submission. Its companion verifier is [`reproducibility/verify_legacy_rmd_reproducibility.R`](../reproducibility/verify_legacy_rmd_reproducibility.R) (deprecated; routine use is the two new verifiers).
+
 ## How updates flow
 
 This directory mirrors Pete's personal figure-tooling helpers (originally at `~/.claude/utils/` and `~/.claude/memory/figures_*.md`). The version here is the **shared, repo-tracked** copy — when a primitive or validator is improved by either contributor, the canonical version is the one here.

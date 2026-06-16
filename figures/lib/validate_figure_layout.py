@@ -728,3 +728,259 @@ def validate_figure_layout(
         _print_report(result)
 
     return result
+
+
+# ============================================================================
+# validate_multipanel_layout
+#
+# Companion validator for matplotlib multi-panel composites (anything built
+# with plt.subplots(rows, cols, ...) or a custom Axes grid). The single-axes
+# validator above runs per-panel via validate_figure_layout(); this one
+# catches the COMPOSITE-LEVEL issues those can't see:
+#
+#   1. Text elements clipping the figure boundaries (panel labels too close
+#      to the figure top/bottom/left/right edges)
+#   2. Text from one panel overlapping content in another panel (e.g. a
+#      panel-letter D landing on top of the xtick labels of the panel above)
+#
+# Together these catch the failure mode where a multipanel figure renders
+# without per-panel validator complaints but reads as crowded or clipped
+# at the composite level.
+#
+# Tolerance policy (defaults sized for the project's standard 16-18" wide
+# composites):
+#   edge_padding = 0.005 (figure-fraction) — text bbox closer than 0.5 % of
+#                                            figure span to an edge is flagged
+#   min_gap      = 0.005 — cross-panel text pairs within 0.5 % of each
+#                          other are flagged as crowded
+#
+# Returns the same {errors, warnings, info, summary} dict shape as
+# validate_figure_layout() so callers can pattern-match either result.
+# ============================================================================
+def validate_multipanel_layout(
+    fig,
+    *,
+    edge_padding=0.005,
+    min_gap=0.005,
+    skip_internal_axes_text=True,
+    verbose=True,
+):
+    """
+    Validate composite-level layout of a multi-panel matplotlib figure.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+    edge_padding : float
+        Minimum padding from text bbox to figure edges, in figure-fraction
+        coordinates. 0.005 = 0.5 %. Text closer than this is flagged ERROR.
+    min_gap : float
+        Minimum gap between text bboxes belonging to DIFFERENT axes (or
+        between an axis text and a figure-level fig.text), in figure-
+        fraction. Below this they're flagged ERROR (overlap) or WARNING
+        (crowding) depending on whether the bboxes actually intersect.
+    skip_internal_axes_text : bool
+        If True, ignore text inside an axes that lives inside the data area
+        (i.e. text not anchored to axes coordinates) — that's per-panel
+        content and the single-axes validator handles it. The check still
+        sees tick labels, axis labels, titles, and any text with
+        `transform=ax.transAxes` (panel letters, etc.).
+    verbose : bool
+        Print formatted report.
+
+    Returns
+    -------
+    dict with keys: errors, warnings, info, summary
+    """
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    fig_w_px = fig.get_figwidth() * fig.dpi
+    fig_h_px = fig.get_figheight() * fig.dpi
+
+    errors = []
+    warnings = []
+    info = []
+
+    def _bbox_frac(t):
+        try:
+            bb_px = t.get_window_extent(renderer=renderer)
+        except Exception:
+            return None
+        if bb_px.width == 0 or bb_px.height == 0:
+            return None
+        return (bb_px.x0 / fig_w_px, bb_px.x1 / fig_w_px,
+                bb_px.y0 / fig_h_px, bb_px.y1 / fig_h_px)
+
+    def _is_axes_data_text(t, ax):
+        # transAxes annotations (panel letters, in-axes labels with axes
+        # coords) have transform == ax.transAxes; data-space text has
+        # transform == ax.transData. Skip data-space text by default —
+        # validate_figure_layout() handles in-axes per-panel checks.
+        if not skip_internal_axes_text:
+            return False
+        try:
+            return t.get_transform() is ax.transData
+        except Exception:
+            return False
+
+    # Phase A: Collect all text elements with figure-fraction bboxes.
+    items = []  # list of dicts {text, bb, owner}
+    for ax in fig.get_axes():
+        # Schematic / drawing axes use ax.set_axis_off() — their tick labels
+        # and axis labels are not visible to the reader and shouldn't be
+        # checked. matplotlib still generates phantom tick label Text objects
+        # ('0', '20', '40', ...) even with axis off, so this guard is
+        # necessary to avoid false-positive clip / overlap errors against
+        # invisible decorations.
+        axis_on = getattr(ax, "axison", True)
+        # Tick labels (x and y)
+        if axis_on:
+            for t in list(ax.get_xticklabels()) + list(ax.get_yticklabels()):
+                if not t.get_text() or not t.get_visible():
+                    continue
+                bb = _bbox_frac(t)
+                if bb is not None:
+                    items.append({"text": t.get_text(), "bb": bb,
+                                  "owner": ax, "kind": "tick"})
+            # Axis labels + title
+            for t in (ax.xaxis.label, ax.yaxis.label, ax.title):
+                if not t.get_text() or not t.get_visible():
+                    continue
+                bb = _bbox_frac(t)
+                if bb is not None:
+                    items.append({"text": t.get_text(), "bb": bb,
+                                  "owner": ax, "kind": "axislabel"})
+        # In-axes text (panel letters, annotations). Skip data-space text.
+        for t in ax.texts:
+            if not t.get_text() or not t.get_visible():
+                continue
+            if _is_axes_data_text(t, ax):
+                continue
+            bb = _bbox_frac(t)
+            if bb is not None:
+                items.append({"text": t.get_text(), "bb": bb,
+                              "owner": ax, "kind": "axes_text"})
+    # Figure-level text (suptitle, fig.text(...))
+    for t in fig.texts:
+        if not t.get_text() or not t.get_visible():
+            continue
+        bb = _bbox_frac(t)
+        if bb is not None:
+            items.append({"text": t.get_text(), "bb": bb,
+                          "owner": None, "kind": "fig_text"})
+
+    # Phase B: Edge-clip check (text bbox crossing or grazing figure edges).
+    for it in items:
+        x0, x1, y0, y1 = it["bb"]
+        label = it["text"][:40].replace("\n", " ")
+        if y1 > 1.0 - edge_padding:
+            errors.append(Issue(
+                "multipanel_clip_top", "ERROR",
+                f"Text '{label}' ({it['kind']}) crosses or touches figure "
+                f"top edge: bb_y1={y1:.4f} > 1 − {edge_padding}",
+                "Increase top margin (fig.subplots_adjust(top=...)) or "
+                "move the text down (lower transAxes y, or fig.text y)"))
+        if y0 < edge_padding:
+            errors.append(Issue(
+                "multipanel_clip_bottom", "ERROR",
+                f"Text '{label}' ({it['kind']}) crosses or touches figure "
+                f"bottom edge: bb_y0={y0:.4f} < {edge_padding}",
+                "Increase bottom margin or move text up"))
+        if x0 < edge_padding:
+            errors.append(Issue(
+                "multipanel_clip_left", "ERROR",
+                f"Text '{label}' ({it['kind']}) crosses or touches figure "
+                f"left edge: bb_x0={x0:.4f} < {edge_padding}",
+                "Increase left margin or move text right"))
+        if x1 > 1.0 - edge_padding:
+            errors.append(Issue(
+                "multipanel_clip_right", "ERROR",
+                f"Text '{label}' ({it['kind']}) crosses or touches figure "
+                f"right edge: bb_x1={x1:.4f} > 1 − {edge_padding}",
+                "Increase right margin or move text left"))
+
+    # Phase C: Cross-panel text overlap / crowding (skip pairs that share
+    # the same owner — those are within a single panel and the single-axes
+    # validator handles them).
+    #
+    # Note on tick labels: adjacent tick labels at panel edges in a grid
+    # ALWAYS sit within a few % of each other — that's just how matplotlib
+    # subplot grids work, and it isn't a layout bug. We:
+    #   - flag cross-panel OVERLAP (actually intersecting bboxes) for every
+    #     text kind, since real overlap is always wrong;
+    #   - flag CROWDING (within min_gap but not intersecting) only for
+    #     non-tick text kinds (panel letters, axis labels, titles, fig.text).
+    NON_TICK_KINDS = {"axislabel", "axes_text", "fig_text"}
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            a, b = items[i], items[j]
+            if a["owner"] is not None and a["owner"] is b["owner"]:
+                continue
+            ax0, ax1, ay0, ay1 = a["bb"]
+            bx0, bx1, by0, by1 = b["bb"]
+            # Check overlap (bboxes intersect)
+            overlap = (ax1 >= bx0 and ax0 <= bx1 and
+                       ay1 >= by0 and ay0 <= by1)
+            if overlap:
+                lab_a = a["text"][:30].replace("\n", " ")
+                lab_b = b["text"][:30].replace("\n", " ")
+                errors.append(Issue(
+                    "multipanel_cross_overlap", "ERROR",
+                    f"Cross-panel text overlap: '{lab_a}' ({a['kind']}) "
+                    f"vs '{lab_b}' ({b['kind']})",
+                    "Increase hspace/wspace in subplots_adjust, or "
+                    "reposition one of the texts"))
+                continue
+            # Crowding warning — only for structural text (panel letters,
+            # axis labels, titles, fig.text). Skip tick labels.
+            if a["kind"] not in NON_TICK_KINDS or b["kind"] not in NON_TICK_KINDS:
+                continue
+            # Gap definition:
+            #   - dx = horizontal gap (0 if bboxes overlap in x);
+            #   - dy = vertical gap   (0 if bboxes overlap in y).
+            # We only flag "crowding" when bboxes overlap in AT LEAST one
+            # axis (dx == 0 or dy == 0) — then the gap is the orthogonal
+            # axis's separation. Diagonally separated bboxes (dx > 0 AND
+            # dy > 0) are by construction in different rows AND different
+            # columns; they aren't competing for space and shouldn't be
+            # flagged.
+            dx = max(ax0 - bx1, bx0 - ax1, 0.0)
+            dy = max(ay0 - by1, by0 - ay1, 0.0)
+            if dx > 0 and dy > 0:
+                continue
+            gap = max(dx, dy)
+            if gap > 0 and gap < min_gap:
+                lab_a = a["text"][:30].replace("\n", " ")
+                lab_b = b["text"][:30].replace("\n", " ")
+                warnings.append(Issue(
+                    "multipanel_cross_crowding", "WARNING",
+                    f"Cross-panel structural-text crowding: "
+                    f"'{lab_a}' ({a['kind']}) vs '{lab_b}' ({b['kind']}) — "
+                    f"gap {gap:.4f} < min_gap {min_gap}",
+                    "Increase subplot spacing or reposition the texts"))
+
+    result = {
+        "errors": errors,
+        "warnings": warnings,
+        "info": info,
+        "summary": {
+            "n_text_items": len(items),
+            "n_axes": len(fig.get_axes()),
+            "n_errors": len(errors),
+            "n_warnings": len(warnings),
+            "n_info": len(info),
+        },
+    }
+
+    if verbose:
+        print(f"\nvalidate_multipanel_layout: "
+              f"{result['summary']['n_errors']} errors, "
+              f"{result['summary']['n_warnings']} warnings, "
+              f"across {result['summary']['n_axes']} panels "
+              f"({result['summary']['n_text_items']} text items)")
+        for e in errors:
+            print(f"  [{e.severity}] {e.check}: {e.message}")
+        for w in warnings:
+            print(f"  [{w.severity}] {w.check}: {w.message}")
+
+    return result
