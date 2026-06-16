@@ -61,6 +61,11 @@ shortread_dge/*.csv
 isocall_dge/limma/**/*.csv
 isocall_dge/mashr/*.csv
 
+# Yul-canonical DGE artifacts — final versions come from Yul's pipeline,
+# not from this repo. Pete's local copies stay out of git.
+shortread_dge/mashr/
+isocall_dge/old/
+
 # Archive folders - old versions and backups
 **/archive/
 **/archive_*/
