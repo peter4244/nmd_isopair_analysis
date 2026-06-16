@@ -1,0 +1,183 @@
+
+digraph cohort_flow {
+  graph [rankdir=TB, fontname="Helvetica", nodesep=0.30, ranksep=0.45,
+         splines=ortho, compound=true]
+  node  [shape=box, style="rounded,filled", fontname="Helvetica",
+         fontsize=14, margin="0.25,0.18"]
+  edge  [color="#666", penwidth=1.4, fontname="Helvetica",
+         fontsize=12, fontcolor="#444"]
+
+  // ─── Starting cohort + upstream classification + pair construction
+  U1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Starting cohort — 4 cell types of interest</B></TD></TR><TR><TD ALIGN="LEFT">AT (n = 6) · DD (n = 8) · FB (n = 6) · MV (n = 6) · 26 samples · 123,790 expressed isoforms</TD></TR></TABLE>>, fillcolor="#e8eef4", color="#2f4858"]
+  U2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Identify NMD-sensitive isoforms</B></TD></TR><TR><TD ALIGN="LEFT">10,864 NMD-sensitive · 40,283 non-NMD-sensitive (per-CT + 4-CT-union mashr)</TD></TR></TABLE>>, fillcolor="#fff7bc", color="#d95f0e"]
+  U3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Construct paired comparisons</B></TD></TR><TR><TD ALIGN="LEFT">per gene: dominant NMD-sensitive vs reference · two dominant non-NMD-sensitive (Control + reference) → 3,009 NMD-sensitive pairs · 8,323 Control pairs (before matching)</TD></TR></TABLE>>, fillcolor="#fff7bc", color="#d95f0e"]
+
+  U1 -> U2 -> U3
+
+  // ─── Hub: matched isoform pairs ──────────────────────────────────
+  HUB [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+                <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="18"><B>Matched isoform pairs</B></FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="white"><B>3,009 NMD-sensitive  ·  3,009 Control</B></FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="#cfd8e2" POINT-SIZE="12">one triplet per gene</FONT></TD></TR>
+              </TABLE>>,
+       fillcolor="#1f3a5f", color="#0a1a30", penwidth=2.0]
+
+  U3 -> HUB
+
+  // ─── Subset 1 cluster (left) ─────────────────────────────────────
+  subgraph cluster_S1 {
+    label = <<FONT POINT-SIZE="18"><B>Subset 1 — strict (n = 190)</B></FONT><BR/>all three transcripts in the triplet are annotated coding transcripts>
+    labelloc = "t"
+    style = "rounded,filled"
+    fillcolor = "#fef0e6"
+    color = "#7d4030"
+    fontcolor = "#5a2d1e"
+    margin = 12
+
+    S1_F1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;all three transcripts are annotated (in GENCODE)</TD></TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>301 / 301</B></FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">2,708 / 2,708</FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="12" COLOR="#444">Why: most NMD-sensitive transcripts are novel</FONT></TD>
+       </TR>
+     </TABLE>>, fillcolor="white", color="#a2604a"]
+    S1_F2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;all three transcripts have a curated coding sequence</TD></TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>190 / 190</B></FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">111 / 111</FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="12" COLOR="#444">Why: annotated non-coding transcripts (lncRNA, etc.)</FONT></TD>
+       </TR>
+     </TABLE>>, fillcolor="white", color="#a2604a"]
+
+    S1_GROUPS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+                       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Classification:</B>&nbsp;premature stop in the NMD-sensitive transcript?</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>72</B></TD><TD ALIGN="LEFT">PTC+ (38%)</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>118</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>190</B></TD><TD ALIGN="LEFT">Control</TD></TR>
+                     </TABLE>>,
+               fillcolor="#fff7bc", color="#d95f0e"]
+
+    S1_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+                     <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
+                     <TR><TD ALIGN="LEFT">Figure 3 (Panels D / E / F)</TD></TR>
+                     <TR><TD ALIGN="LEFT">Figure 4 (Panels A / B)</TD></TR>
+                     <TR><TD ALIGN="LEFT">CDS / 3′UTR supplement Row 1</TD></TR>
+                   </TABLE>>,
+             fillcolor="#eeeeee", color="#666"]
+
+    S1_F1 -> S1_F2 -> S1_GROUPS -> S1_CONS [style=dashed, color="#7d4030"]
+  }
+
+  // ─── Subset 2 cluster (right) ────────────────────────────────────
+  subgraph cluster_S2 {
+    label = <<FONT POINT-SIZE="18"><B>Subset 2 — broader (n = 1,166)</B></FONT><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
+    labelloc = "t"
+    style = "rounded,filled"
+    fillcolor = "#e6f1f8"
+    color = "#1f5570"
+    fontcolor = "#0e2c3e"
+    margin = 12
+
+    S2_F1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;reference is annotated (NMD and Control can be novel)</TD></TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>2,098 / 2,098</B></FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">911 / 911</FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="12" COLOR="#444">Why: reference itself is a novel isoform</FONT></TD>
+       </TR>
+     </TABLE>>, fillcolor="white", color="#406080"]
+    S2_F2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;the reference start codon maps onto the comparator transcript</TD></TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>1,659 NMD  ·  1,286 Control</B></FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">439 NMD  ·  812 Control</FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="12" COLOR="#444">Why: reference exon missing from comparator</FONT></TD>
+       </TR>
+     </TABLE>>, fillcolor="white", color="#406080"]
+    S2_F3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;keep only genes where both NMD and Control side passed</TD></TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>1,166 / 1,166</B></FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">493 NMD  ·  120 Control</FONT></TD>
+       </TR>
+       <TR>
+         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="12" COLOR="#444">Why: reference passed on one arm but not the other</FONT></TD>
+       </TR>
+     </TABLE>>, fillcolor="white", color="#406080"]
+
+    S2_GROUPS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+                       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Classification:</B>&nbsp;reference start codon projected to a premature stop?</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>1,050</B></TD><TD ALIGN="LEFT">PTC+ (90%)</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>116</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>1,166</B></TD><TD ALIGN="LEFT">Control</TD></TR>
+                     </TABLE>>,
+               fillcolor="#fff7bc", color="#d95f0e"]
+
+    S2_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+                     <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
+                     <TR><TD ALIGN="LEFT">Figure 4 (Panels C / D)</TD></TR>
+                     <TR><TD ALIGN="LEFT">CDS / 3′UTR supplement Row 2</TD></TR>
+                   </TABLE>>,
+             fillcolor="#eeeeee", color="#666"]
+
+    S2_F1 -> S2_F2 -> S2_F3 -> S2_GROUPS -> S2_CONS [style=dashed, color="#1f5570"]
+  }
+
+  // ─── Hidden-PTC sub-cascade ─────────────────────────────────────
+  HPTC [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+                <TR><TD ALIGN="LEFT"><B>Hidden-PTC subset (n = 492)</B></TD></TR>
+                <TR><TD ALIGN="LEFT">reference-anchored analysis flags a premature stop,</TD></TR>
+                <TR><TD ALIGN="LEFT">but the standard CDS caller (TD2) does not</TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#b22222">674 / 1,166 dropped</FONT> — no disagreement</TD></TR>
+              </TABLE>>,
+        fillcolor="#a48bbf", color="#4a3556", fontcolor="#1a0a25"]
+
+  HPTC_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+                     <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
+                     <TR><TD ALIGN="LEFT">TD2 Bias Evidence supplement</TD></TR>
+                   </TABLE>>,
+             fillcolor="#eeeeee", color="#666"]
+
+  // ─── Edges from hub into subset clusters and TD2 sub-cascade ─────
+  // HUB → cluster arrows: no tailport specifier on either edge (mixed ports
+  // like sw vs se on a single source produce visually asymmetric routes;
+  // default auto-routing under splines=ortho + symmetric cluster targets
+  // gives a balanced fan-out). minlen=2 forces each edge to span 2 ranks
+  // for visible length. Both rules enforced by
+  // figures/lib/validate_flowchart_dot.R.
+  HUB -> S1_F1 [lhead=cluster_S1, color="#7d4030", penwidth=2.0, minlen=2]
+  HUB -> S2_F1 [lhead=cluster_S2, color="#1f5570", penwidth=2.0, minlen=2]
+
+  S2_F3 -> HPTC [color="#4a3556"]
+  HPTC -> HPTC_CONS [style=dashed, color="#4a3556"]
+}

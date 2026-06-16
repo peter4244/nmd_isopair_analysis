@@ -155,9 +155,18 @@ c2_results$original_ptc <- c2_coding$comp_has_ptc[
 c4_results <- analyze_pairs(c4_coding, "Control (C4)")
 
 # ==============================================================================
-# 4. Splice event attribution for effectively-PTC cases
+# 4. Splice event attribution for ALL effectively-PTC cases
 #    (a) Truncated ORF → frameshift / in-frame stop (attribute_ptc_events)
 #    (b) Same/longer ORF with downstream EJCs → 3'UTR splice (attribute_3utr_splice)
+#
+# 2026-06-15: Extended the eff_ptc_mask to include ALL effectively_ptc cases
+# (both original_ptc=FALSE and original_ptc=TRUE). This makes ref-AUG-derived
+# attribution the canonical attribution for the entire PTC+ class under the
+# §4 framework — no TD2-PTC-stop-based path is needed downstream. The 1,012
+# original_ptc=TRUE effectively_ptc cases now also get attr_mechanism /
+# attr_event populated. The original 900 original_ptc=FALSE attributions are
+# unchanged (deterministic algorithm, same inputs).
+# See figures/multipanel/figure4_ptcneg_and_model/RATIONALE.md §3 for rationale.
 # ==============================================================================
 cat("\n=== Splice Event Attribution (Shared Function) ===\n")
 
@@ -165,10 +174,14 @@ source("analysis_functions.R")
 
 fw_c2 <- readRDS("data_mashr/analysis_cache/fw_c2_allsamples.rds")
 
-# For effectively-PTC cases in C2 (originally PTC-): map stop to genomic coords
-eff_ptc_mask <- c2_results$category == "effectively_ptc" & !c2_results$original_ptc
+# All effectively-PTC cases in C2 (ref-AUG-derived PTC determination)
+eff_ptc_mask <- c2_results$category == "effectively_ptc"
 eff_ptc_idx <- which(eff_ptc_mask)
-cat("  Reclassified effectively-PTC (originally PTC-):", length(eff_ptc_idx), "\n")
+cat("  All effectively-PTC (ref-AUG-determined):", length(eff_ptc_idx), "\n")
+cat("    of which original_ptc=TRUE: ",
+    sum(c2_results$original_ptc[eff_ptc_idx], na.rm=TRUE), "\n")
+cat("    of which original_ptc=FALSE:",
+    sum(!c2_results$original_ptc[eff_ptc_idx], na.rm=TRUE), "\n")
 
 # Map premature stop from transcript-space to genomic coordinates
 # (Isopair::transcriptToGenomic — strand-aware)
@@ -299,6 +312,129 @@ if (nrow(utr3_reclass) > 0) {
 # ==============================================================================
 # 5. Summary and save
 # ==============================================================================
+# ==============================================================================
+# 4.5 Additive fields for §4 / Figure 4 (RATIONALE.md §8 step 1).
+# Strictly additive — existing columns must remain byte-identical.
+#   ref_source              — "GENCODE" (ENST-prefixed) / "TD2" (novel) per pair
+#   comp_tx_len_nt          — transcript length of comparator isoform (nt)
+#   ref_tx_len_nt           — transcript length of reference isoform (nt)
+#   tx_len_delta_nt         — comp_tx_len_nt − ref_tx_len_nt (TES-variation flag)
+#   utr3_to_tx_end_nt       — tx_len(comp) − comp_stop_tx_pos. Translation-based
+#                             3'UTR length (the region the cell processes after
+#                             the comparator's ORF ends — IS the PTC for
+#                             effectively_ptc pairs, hence definitionally
+#                             inflated for that group; see RATIONALE §4.2).
+#   non_ptc_stop_tx_pos     — position of the first stop codon downstream of
+#                             ref-AUG that is NOT a PTC by the 50-nt rule
+#                             (i.e., has no downstream EJC > 50 nt past its
+#                             end). For non-effectively_ptc traceable categories
+#                             this equals comp_stop_tx_pos by construction.
+#                             For effectively_ptc, walks past the PTC to find
+#                             the next in-frame stop in the last exon. NA if
+#                             no such stop exists within the transcript or if
+#                             ref AUG is not traceable.
+#   utr3_via_non_ptc_stop_nt — tx_len(comp) − non_ptc_stop_tx_pos. Bias-free
+#                             3'UTR measure: defined uniformly across all
+#                             groups as "post-natural-stop region".
+# Note: `mechanism_class` is intentionally NOT added here. It is a derived
+# field computed at use-site by figures/lib/mechanism_class.R, so the
+# classification can evolve without invalidating this cache.
+# ==============================================================================
+
+# Helper: junction positions in transcript coordinates (strand-aware).
+.junction_positions <- function(exon_starts, exon_ends, strand) {
+  exon_lens <- exon_ends - exon_starts + 1L
+  if (strand == "-") exon_lens <- rev(exon_lens)
+  if (length(exon_lens) <= 1L) return(integer(0))
+  cumsum(exon_lens[-length(exon_lens)])
+}
+
+# Helper: walking downstream of a position (e.g., a PTC), find the next
+# in-frame stop codon that is NOT a PTC by the 50-nt rule. Returns the
+# 1-based transcript position of that stop, or NA if none exists.
+.next_non_ptc_stop <- function(seq, last_stop_pos, exon_starts, exon_ends,
+                               strand, ejc_threshold = 50L) {
+  if (is.na(last_stop_pos) || nchar(seq) < last_stop_pos + 5L) {
+    return(NA_integer_)
+  }
+  stops <- c("TAA", "TAG", "TGA")
+  junctions <- .junction_positions(exon_starts, exon_ends, strand)
+  tx_len <- nchar(seq)
+  current_pos <- last_stop_pos + 3L
+  while (current_pos + 2L <= tx_len) {
+    codon <- substr(seq, current_pos, current_pos + 2L)
+    if (codon %in% stops) {
+      stop_end <- current_pos + 2L
+      n_dejc <- sum(junctions > (stop_end + ejc_threshold - 1L))
+      if (n_dejc == 0L) return(as.integer(current_pos))
+    }
+    current_pos <- current_pos + 3L
+  }
+  NA_integer_
+}
+
+augment_with_additive_fields <- function(trace_df) {
+  trace_df$ref_source <- ifelse(grepl("^ENST", trace_df$reference_isoform_id),
+                                "GENCODE", "TD2")
+  trace_df$comp_tx_len_nt  <- tx_len_lookup[trace_df$comparator_isoform_id]
+  trace_df$ref_tx_len_nt   <- tx_len_lookup[trace_df$reference_isoform_id]
+  trace_df$tx_len_delta_nt <- trace_df$comp_tx_len_nt - trace_df$ref_tx_len_nt
+  utr3 <- trace_df$comp_tx_len_nt - trace_df$comp_stop_tx_pos
+  utr3[!is.na(utr3) & utr3 < 0] <- NA_integer_
+  trace_df$utr3_to_tx_end_nt <- utr3
+
+  # First non-PTC stop downstream of ref AUG.
+  # For non-effectively_ptc traceable categories: comp_stop_tx_pos IS already
+  # a non-PTC stop (by category definition, n_downstream_ejc == 0 → not a PTC).
+  # For effectively_ptc: walk past the PTC to find the next in-frame non-PTC stop.
+  # For ref_atg_lost / mapping_failed / NA: NA.
+  TRACEABLE_NON_PTC <- c("no_downstream_ejc", "truncated_no_ejc")
+  non_ptc_stop <- rep(NA_integer_, nrow(trace_df))
+
+  # Cheap path: copy comp_stop_tx_pos for categories already non-PTC
+  cheap_mask <- !is.na(trace_df$category) &
+                trace_df$category %in% TRACEABLE_NON_PTC &
+                !is.na(trace_df$comp_stop_tx_pos)
+  non_ptc_stop[cheap_mask] <- trace_df$comp_stop_tx_pos[cheap_mask]
+
+  # Walk path: effectively_ptc cases — find next non-PTC stop downstream of PTC
+  walk_mask <- !is.na(trace_df$category) & trace_df$category == "effectively_ptc" &
+               !is.na(trace_df$comp_stop_tx_pos)
+  walk_idx <- which(walk_mask)
+  for (i in walk_idx) {
+    cid <- trace_df$comparator_isoform_id[i]
+    cs <- structs_lookup[[cid]]
+    if (is.null(cs)) next
+    strand_i <- trace_df$strand[i]
+    if (is.na(strand_i) || strand_i == "") next
+    if (!cid %in% names(seq_vec)) next
+    non_ptc_stop[i] <- .next_non_ptc_stop(
+      seq_vec[cid], trace_df$comp_stop_tx_pos[i],
+      cs$starts, cs$ends, strand_i, ejc_threshold = 50L)
+  }
+  trace_df$non_ptc_stop_tx_pos <- non_ptc_stop
+
+  utr3_via_npp <- trace_df$comp_tx_len_nt - non_ptc_stop
+  utr3_via_npp[!is.na(utr3_via_npp) & utr3_via_npp < 0] <- NA_integer_
+  trace_df$utr3_via_non_ptc_stop_nt <- utr3_via_npp
+
+  trace_df
+}
+
+tx_len_lookup <- setNames(
+  vapply(seq_len(nrow(structures)),
+         function(i) sum(structures$exon_ends[[i]] -
+                         structures$exon_starts[[i]] + 1L),
+         integer(1)),
+  structures$isoform_id)
+
+c2_results <- augment_with_additive_fields(c2_results)
+c4_results <- augment_with_additive_fields(c4_results)
+
+cat("  Added additive fields: ref_source, comp_tx_len_nt, ref_tx_len_nt,",
+    "tx_len_delta_nt, utr3_to_tx_end_nt, non_ptc_stop_tx_pos,",
+    "utr3_via_non_ptc_stop_nt\n")
+
 cat("\n=== FINAL SUMMARY ===\n\n")
 
 # Three groups

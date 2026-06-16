@@ -5,6 +5,8 @@
 **Layout:** 2 columns × 3 rows (portrait)
 **Scope:** Composition only; each panel's data + computation are documented in its own `figure3_panel{A,B,C,D,E,F}_methodology.md`
 
+**Canonical analysis report:** the numbers in Panels A–F are also computed inline (independently) by [`results/isoform_transitions/Version_6.0/isopair_wrapper/05_final_report_gencode_scope_2026-06-15.Rmd`](../../../results/isoform_transitions/Version_6.0/isopair_wrapper/05_final_report_gencode_scope_2026-06-15.Rmd) — Panels A/B/C in §1, Panel D in §2a, Panels E + F in §2b. Both the figure scripts here and the Rmd consume the same upstream RDS caches; the cross-check verifier at [`reproducibility/verify_cross_check_new_rmd_vs_figures.R`](../../../reproducibility/verify_cross_check_new_rmd_vs_figures.R) confirms they agree to the digit.
+
 ## What this script does
 
 Reads the 6 pre-rendered panel PNGs (`figure3_panel{A,B,C,D,E,F}_*.png`) and composes them into a single multipanel figure. The composite does no data work — it's a layout-only deliverable.

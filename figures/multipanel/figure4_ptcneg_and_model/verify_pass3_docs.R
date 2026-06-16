@@ -1,0 +1,110 @@
+#!/usr/bin/env Rscript
+# Pass 3: Documentation accuracy (NEW 2x2 layout, 2026-06-15).
+# Verify that RATIONALE.md §11, the composite legend, and
+# paper/section4_findreplace_2026-06-15.md describe Figure 4 at its CURRENT
+# 2x2 / 1050-113-1166 state. Detect stale text from the prior 3x2 / 1489-163-1286
+# layout.
+
+suppressPackageStartupMessages({})
+
+ROOT <- "/Users/petecastaldi/claude_projects/nmd/figures/multipanel/figure4_ptcneg_and_model"
+PAPER <- "/Users/petecastaldi/claude_projects/nmd/paper"
+LEGEND <- file.path(ROOT, "figure4_composite_legend.md")
+RATIONALE <- file.path(ROOT, "RATIONALE.md")
+FINDREPLACE <- file.path(PAPER, "section4_findreplace_2026-06-15.md")
+
+read_doc <- function(p) paste(readLines(p, warn = FALSE), collapse = "\n")
+legend_txt <- read_doc(LEGEND)
+rat_txt <- read_doc(RATIONALE)
+fr_txt <- read_doc(FINDREPLACE)
+
+issues <- list()
+ok <- list()
+
+flag <- function(label, found, expected_present) {
+  if (found == expected_present) {
+    ok[[length(ok) + 1L]] <<- label
+    cat(sprintf("PASS  %s\n", label))
+  } else {
+    issues[[length(issues) + 1L]] <<- label
+    cat(sprintf("FAIL  %s\n", label))
+  }
+}
+
+cat("=== LEGEND (figure4_composite_legend.md) ===\n")
+flag("Legend mentions n = 72 NMD+/PTC+",       grepl("72 NMD\\+/PTC\\+", legend_txt), TRUE)
+flag("Legend mentions n = 118 NMD+/PTC-",      grepl("118 NMD\\+/PTC-", legend_txt), TRUE)
+flag("Legend mentions n = 190 Control",        grepl("190 Control", legend_txt), TRUE)
+flag("Legend mentions n = 1,050 (or 1050)",    grepl("1,050|1050", legend_txt), TRUE)
+flag("Legend mentions n = 113",                grepl("[^0-9]113[^0-9]", legend_txt), TRUE)
+flag("Legend mentions n = 1,166 (or 1166)",    grepl("1,166|1166", legend_txt), TRUE)
+flag("Legend mentions 2x2 / 4-panel structure (A-D)",
+     grepl("Panels A.D|four panel|2.2", legend_txt) | grepl("\\bA\\b.*\\bB\\b.*\\bC\\b.*\\bD\\b", legend_txt), TRUE)
+flag("Legend does NOT contain 1,489 (old Section C n)",  grepl("1,489|1489", legend_txt), FALSE)
+flag("Legend does NOT contain 163 (old PTC- n)",          grepl("[^0-9]163[^0-9]", legend_txt), FALSE)
+flag("Legend does NOT contain 1,286 (old Control n)",     grepl("1,286|1286", legend_txt), FALSE)
+flag("Legend mentions the consolidated TD2 supplement",   grepl("TD2BiasEvidence|consolidated.*supplemental|consolidated.*TD2", legend_txt), TRUE)
+flag("Legend describes 1:1 gene-matched re-intersection", grepl("gene-matched|re-intersect", legend_txt), TRUE)
+
+cat("\n=== RATIONALE.md §11 ===\n")
+flag("Rationale §11 mentions 2x2 composite",         grepl("2.2 composite|2.2 layout|2.2.*layout", rat_txt), TRUE)
+flag("Rationale §11 mentions 12.x8. landscape",      grepl("12.x8.|12.+x.+8|12.*8.*landscape", rat_txt), TRUE)
+flag("Rationale §11 mentions consolidated supplement", grepl("TD2BiasEvidence|consolidated", rat_txt), TRUE)
+# CRITICAL: Section C numbers should be the new 1050/113/1166, not 1489/163/1286.
+flag("Rationale §11 mentions 1,050 (new Section C PTC+ n)", grepl("1,050|1050", rat_txt), TRUE)
+flag("Rationale §11 mentions 1,166 (new Section C Control n)", grepl("1,166|1166", rat_txt), TRUE)
+# Detect stale numbers
+flag("Rationale does NOT use 1,489 for Section C PTC+ tables (line 256-258)",
+     grepl("\\| \\*\\*NMD\\+/PTC\\+\\*\\* \\| 1,489", rat_txt), FALSE)
+flag("Rationale does NOT use 1,286 for Section C Control (line 258)",
+     grepl("\\| \\*\\*Control\\*\\* \\| 1,286", rat_txt), FALSE)
+flag("Rationale does NOT use 163 for Section C PTC- (line 257)",
+     grepl("\\| \\*\\*NMD\\+/PTC-\\*\\* \\| 163", rat_txt), FALSE)
+# Also describe the re-intersection step
+flag("Rationale describes 1:1 gene-matched re-intersection", grepl("re-intersect", rat_txt), TRUE)
+# Comment in data_export.R header should not say 1,489/163/1,286
+de_txt <- paste(readLines(file.path(ROOT, "data_export.R")), collapse = "\n")
+flag("data_export.R header comment says new 1050/113/1166 (not 1489/163/1286)",
+     grepl("1,489/163/1,286|1489/163/1286", de_txt), FALSE)
+
+cat("\n=== section4_findreplace_2026-06-15.md ===\n")
+# Pair 1 (the actual replacement prose at lines ~76-80) must have the new numbers.
+flag("FindReplace Pair 1 mentions n=1,050 NMD+/PTC+",     grepl("1,050 NMD\\+/PTC\\+|n=1,050", fr_txt), TRUE)
+flag("FindReplace Pair 1 mentions n=113 NMD+/PTC-",       grepl("113 NMD\\+/PTC-|n=113", fr_txt), TRUE)
+flag("FindReplace Pair 1 mentions n=1,166 Control",       grepl("1,166 Control|n=1,166", fr_txt), TRUE)
+# Pair 1 should also include the new Section A numbers
+flag("FindReplace Pair 1 mentions n=72 NMD+/PTC+",        grepl("72 NMD\\+/PTC\\+", fr_txt), TRUE)
+flag("FindReplace Pair 1 mentions n=118 NMD+/PTC-",       grepl("118 NMD\\+/PTC-", fr_txt), TRUE)
+# Pair 2 must describe what's now in the supplement (no longer a 2-panel main fig section)
+flag("FindReplace acknowledges TD2 evidence in supplement", grepl("supplement|Fig SX|SX", fr_txt), TRUE)
+# Stale summary text
+flag("FindReplace does NOT call Figure 4 a '6-panel'",  grepl("6-panel|six-panel|six panel", fr_txt), FALSE)
+flag("FindReplace does NOT reference 3x2 / 12.x12. portrait",
+     grepl("3.2 layout|12.+x.+12.+portrait|3.2.*portrait", fr_txt), FALSE)
+flag("FindReplace summary table uses NEW Section C numbers (1,050/113/1,166)",
+     grepl("1,050|1,166", fr_txt), TRUE)
+# The summary "What §4 is now saying" block (line 17) says 1,489/163/1,286 — flag
+flag("FindReplace summary does NOT still claim Section C n=1,489/163/1,286",
+     grepl("1,489/163/1,286|n=1,489", fr_txt), FALSE)
+# Section B (TD2) is referenced as separate section in the find/replace doc summary
+flag("FindReplace does NOT describe Section B as main fig (now supplement)",
+     grepl("\\*\\*Section B \\(n=900 \\+ n=1,032", fr_txt), FALSE)
+# The Section C descriptive table in find/replace says median 460 nt for PTC- 5'UTR — old, should be 488
+flag("FindReplace Section C PTC- 5'UTR median is 488 (not 460)",
+     grepl("488", fr_txt) | !grepl("460 nt \\(231\\.5", fr_txt), TRUE)
+flag("FindReplace Section C PTC+ 5'UTR IQR uses 134/421 (new) not 137/422 (old)",
+     grepl("134.*421|421\\.75", fr_txt) | !grepl("137.422|137.422\\)", fr_txt), TRUE)
+# Files list at line 137-143 references panelC_td2 / panelD_kozak / panelE / panelF — stale
+flag("FindReplace file list does NOT reference panelC_td2_vs_refaug_length (stale)",
+     grepl("panelC_td2_vs_refaug_length", fr_txt), FALSE)
+flag("FindReplace file list does NOT reference panelD_kozak (stale)",
+     grepl("panelD_kozak", fr_txt), FALSE)
+flag("FindReplace file list does NOT reference panelE_5utr_length / panelF (stale)",
+     grepl("panelE_5utr|panelF_longest", fr_txt), FALSE)
+
+cat("\n=== SUMMARY ===\n")
+cat(sprintf("PASS: %d   FAIL: %d\n", length(ok), length(issues)))
+if (length(issues) > 0) {
+  cat("Failures:\n")
+  for (m in issues) cat(" -", m, "\n")
+}

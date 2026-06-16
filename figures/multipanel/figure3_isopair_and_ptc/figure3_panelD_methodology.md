@@ -8,7 +8,7 @@
 
 ## Headline claim
 
-Distance from each comparator isoform's stop codon to its last exon-exon junction. **Positive = upstream of last EJC = PTC direction; negative = stop in or after last exon.** NMD comparators concentrate to the right of the 50-nt PTC threshold (median far upstream, indicating PTCs); Control comparators concentrate to the left (peak around -100 nt, normal stops in the last exon).
+Distance from each comparator isoform's stop codon to its last exon-exon junction. **Positive = upstream of last EJC = PTC direction; negative = stop in or after last exon.** NMD comparators have a long right-tail extending past the 50-nt PTC threshold (37.9% PTC+, median −66 nt); Control comparators concentrate near the last-exon stop position (median −143 nt, 2.1% PTC+) — an 18-fold enrichment of PTCs in NMD substrates.
 
 ## Source data
 
@@ -20,14 +20,16 @@ Distance from each comparator isoform's stop codon to its last exon-exon junctio
 
 ## Population
 
-**Denominator: 2,289 NMD + 1,763 Control** = `pop_traceable` in `data_export.R`. Pairs where ref-AUG tracing produced a valid ORF stop position — categories: `effectively_ptc` + `no_downstream_ejc` + `truncated_no_ejc`.
+**Denominator: 190 NMD + 190 Control** = pop_BC ∩ all-3-ENST ∩ all-3-coding-CDS in `data_export.R`. Gene-matched pairs where **all three isoforms** (reference, NMD comparator, Control comparator) are GENCODE-annotated (ENST-prefixed) AND have CDS annotation (`coding_status == "coding"` in `cds.rds`).
 
-**Why this scope (not pop_BC at 3,009):** Per Pete's policy 2026-06-13: "TD2 CDS annotations are unreliable, so for all analyses that depend on identifying the stop codon, we limit to isoform pairs where reference AUG tracing can be performed." Distance to last EJC requires a defined stop position; we restrict to pairs where ref-AUG tracing gives one.
+**Stop position used:** each comparator's OWN GENCODE-annotated stop codon (computed from `cds.rds` `cds_start` / `cds_stop` mapped to transcript coordinates via `Isopair::genomicToTranscript`). No ref-AUG projection; no TD2; no `Isopair::traceReferenceAtg` — every isoform's PTC status is determined from its own curated annotation.
 
-**Pairs excluded** (NMD: 720 / Control: 1,246):
-- `ref_atg_lost`: ref AUG not exonic in comparator (351 NMD / 770 Control)
-- `mapping_failed`: tracing pipeline errored (33 NMD / 46 Control)
-- Pairs never traced (336 NMD / 430 Control): the 05r_ref_atg_analysis.R pipeline was pre-filtered to coding-coding pairs, so these never went through tracing at all. See methodology Caveat #4 for the consequence.
+**Why this scope:** Pete's clarified policy 2026-06-15 — when all three isoforms in a pair are GENCODE-annotated and have CDS, the cleanest analysis uses each isoform's own GENCODE-annotated CDS directly. No projection of the reference's start codon onto the comparator is needed (or appropriate). This produces a fully TD2-free, GENCODE-anchored analysis.
+
+**Filter cascade** (relative to pop_BC at 3,009 each):
+- Both isoforms ENST per side: NMD 525 / Control 993 (single-side)
+- All 3 ENST gene-matched: 301 NMD / 301 Control / 301 unique gene-reference combos
+- All 3 ENST + coding-CDS, re-intersected: **190 NMD / 190 Control**
 
 ## Computation
 
@@ -51,27 +53,31 @@ KDE density plot via `scipy.stats.gaussian_kde` with Scott's bandwidth. 50-nt PT
 | Column | Type | Notes |
 |---|---|---|
 | `comparator_isoform_id` | string | |
+| `gene_id` | string | |
+| `reference_isoform_id` | string | |
 | `comparison` | "NMD" \| "Control" | |
-| `distance` | float | Nucleotides; positive = upstream of last EJC (PTC direction) |
-| `category` | string | One of `effectively_ptc` / `no_downstream_ejc` / `truncated_no_ejc` |
+| `distance` | float | Nucleotides; `last_ejc_tx_pos − own_stop_tx_pos`; positive = upstream of last EJC (PTC direction) |
+| `last_ejc_tx_pos` | integer | Transcript-coordinate position of the last exon–exon junction |
+| `own_stop_tx_pos` | integer | Transcript-coordinate position of the comparator's own GENCODE-annotated stop codon |
 
 ## Headline numbers under this scope
 
-- NMD PTC rate (fraction with distance > 50 nt): **83.5%** (= 1,912 of 2,289)
-- Control PTC rate: **16.3%** (= 288 of 1,763)
-- Aligns with manuscript prose claim "≥85% explained by PTCs" (after ref-AUG tracing)
+- NMD PTC rate (fraction with distance > 50 nt under own GENCODE stop): **37.9%** (= 72 of 190)
+- Control PTC rate: **2.1%** (= 4 of 190)
+- Fold enrichment: **18×** (37.9 / 2.1)
+- Numerically distinct from the ref-AUG-projected PTC rate at the ENST-reference scope (89.8% / 16.1%, 5.6×) because (a) the all-3-ENST scope is more restrictive (1,659 → 190 NMD pairs) and (b) the GENCODE-stop measure doesn't try to project the reference's ATG into the comparator; each isoform's own annotated stop drives the PTC determination.
 
 ## Caveats / limitations
 
-1. **Axis clipping**: X-axis is `[-1000, 1500]` nt for legibility. Clipped at this render: NMD = 227 (10%), Control = 89 (5%). Clipped tail values are at very long distances where density is near zero.
+1. **Axis clipping**: X-axis is `[-1000, 1500]` nt for legibility. Clipped at this render: **NMD = 4 (2.1%), Control = 4 (2.1%)**. Clipped tail values are at very long distances where density is near zero.
 2. **KDE smoothing**: `scipy.stats.gaussian_kde` with Scott's bandwidth. Some smoothing across the 50-nt threshold is unavoidable.
-3. **The 336 NMD and 430 Control pairs never subjected to ref-AUG tracing** are excluded because the 05r pipeline pre-filtered to coding-coding pairs. To include them would require extending `05r_ref_atg_analysis.R` to run on ALL gene-matched pairs (including those where the comparator was `coding_status == "unknown"` in the initial SQANTI3+TD2 analysis). Task #23 covers this upstream extension.
+3. **Scope construction**: the all-3-ENST + coding-CDS filter cascade reduces 3,009 pop_BC pairs to 190 per side. Pairs where the reference, NMD comparator, or Control comparator is novel (non-ENST) or non-coding are excluded — they are characterized at the broader ref-AUG-traceable scope in Figure 4 Section C.
 4. **Test-only sensitivity check** not generated; primary analysis uses all data per project policy.
 
 ## Cross-references
 
 - `figures/lib/principles.md` — figure-making principles
-- `feedback_figure_sample_size_consistency` — denominator differs from B/C (3,009) and from E/F (1,912/288), but each deviation is justified by the underlying analytical need (Panel D needs stop positions; Panel E/F further restrict to PTC+)
+- `feedback_figure_sample_size_consistency` — denominator differs from B/C (3,009) and from E/F (72 PTC+ NMD, 4 PTC+ Control), but each deviation is justified by the analytical need (Panel D needs stop positions; Panel E/F further restrict to PTC+)
 - `feedback_sqanti_cds_ptc_bias` project memory — TD2's anti-PTC bias (novel isoforms) motivates ref-AUG tracing as the canonical CDS analysis
 - `feedback_default_match_original_figure` — Panel D's distance-density concept matches the original Rmd's `goal1-fig1-stop-dist` plot at line 1717
 - Rmd source: `05_final_report_mashr.Rmd` chunks `goal1-fig1-stop-dist` (line ~1717), `sec2c-ref-atg-load` (line 3268); driver `05r_ref_atg_analysis.R`

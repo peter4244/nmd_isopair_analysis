@@ -6,6 +6,10 @@
 # intermediate values — recompute from raw RDS caches.
 #
 # Output: PASS/FAIL per claim, with the independent value vs the stated value.
+#
+# Scope refresh 2026-06-15 (v2): all-3-ENST + coding-CDS + own-GENCODE-stop.
+# No ref-AUG projection; no TD2 dependency. Headline 37.9% NMD / 2.1% Control,
+# 18× enrichment, 190/190 pairs.
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -21,9 +25,6 @@ cds <- as.data.table(readRDS(file.path(DM, "cds.rds")))
 ptc <- as.data.table(readRDS(file.path(DM, "ptc.rds")))
 gm <- readRDS(file.path(DM, "gene_map.rds"))
 nmd_class <- readRDS(file.path(DM, "nmd_classification.rds"))
-ref_atg <- readRDS(file.path(CACHE, "ref_atg_analysis.rds"))
-div_c2 <- readRDS(file.path(CACHE, "div_c2_allsamples.rds"))
-div_c4 <- readRDS(file.path(CACHE, "div_c4_allsamples.rds"))
 
 # Track pass/fail
 results <- list()
@@ -40,13 +41,13 @@ check <- function(label, expected, actual, tol = 0) {
 }
 
 cat("================================================================\n")
-cat("PASS 1: Factual accuracy verification for Figure 3\n")
+cat("PASS 1: Factual accuracy verification for Figure 3 (all-3-ENST scope)\n")
 cat("================================================================\n\n")
 
 # ============================================================================
-# Section A — Gene-eligibility / pair-construction (find/replace doc + results map)
+# Section A — Gene-eligibility / pair-construction
 # ============================================================================
-cat("[A] Gene eligibility + pair counts (from find/replace doc + Rmd flowchart)\n")
+cat("[A] Gene eligibility + pair counts\n")
 nmd_genes <- unique(gm$gene_id[gm$isoform_id %in% nmd_class[["all_samples"]]$nmd])
 check("genes with >=1 NMD isoform", 5367, length(nmd_genes))
 nonnmd_per_gene <- table(gm$gene_id[gm$isoform_id %in% nmd_class[["all_samples"]]$non_nmd])
@@ -70,111 +71,160 @@ check("pop_BC NMD pairs", 3009, nrow(pop_BC_c2))
 check("pop_BC Control pairs", 3009, nrow(pop_BC_c4))
 
 # ============================================================================
-# Section C — Ref-AUG-traceable subset (pop_traceable for Panel D)
+# Section C — All-3-ENST + coding-CDS scope (Panels D/E/F universe)
 # ============================================================================
-cat("\n[C] pop_traceable = ref-AUG tracing succeeded (Panel D)\n")
-TRACEABLE <- c("effectively_ptc", "no_downstream_ejc", "truncated_no_ejc")
-ra_c2 <- as.data.table(ref_atg$c2)
-ra_c4 <- as.data.table(ref_atg$c4)
-trace_c2_ids <- ra_c2$comparator_isoform_id[ra_c2$category %in% TRACEABLE]
-trace_c4_ids <- ra_c4$comparator_isoform_id[ra_c4$category %in% TRACEABLE]
-pop_trace_c2 <- pop_BC_c2[comparator_isoform_id %in% trace_c2_ids]
-pop_trace_c4 <- pop_BC_c4[comparator_isoform_id %in% trace_c4_ids]
-check("pop_traceable NMD", 2289, nrow(pop_trace_c2))
-check("pop_traceable Control", 1763, nrow(pop_trace_c4))
+cat("\n[C] All-3-ENST gene-matched + coding-CDS (Panel D/E/F universe)\n")
+is_enst <- function(x) grepl("^ENST", x)
 
-# Category breakdown for NMD ref_atg
-cat("  Ref-AUG category counts:\n")
-cat_breakdown <- ra_c2[, .N, by = category]
-print(cat_breakdown)
-check("NMD effectively_ptc", 1912, sum(ra_c2$category == "effectively_ptc"))
-check("NMD no_downstream_ejc", 301, sum(ra_c2$category == "no_downstream_ejc"))
-check("NMD truncated_no_ejc", 76, sum(ra_c2$category == "truncated_no_ejc"))
-check("NMD ref_atg_lost", 351, sum(ra_c2$category == "ref_atg_lost"))
-check("NMD mapping_failed", 33, sum(ra_c2$category == "mapping_failed"))
-check("Control effectively_ptc", 288, sum(ra_c4$category == "effectively_ptc"))
-check("Control no_downstream_ejc", 825, sum(ra_c4$category == "no_downstream_ejc"))
-check("Control truncated_no_ejc", 650, sum(ra_c4$category == "truncated_no_ejc"))
-check("Control ref_atg_lost", 770, sum(ra_c4$category == "ref_atg_lost"))
-check("Control mapping_failed", 46, sum(ra_c4$category == "mapping_failed"))
+# Per-side ENST (reference + comparator)
+pop_BC_c2_enst <- pop_BC_c2[is_enst(reference_isoform_id) & is_enst(comparator_isoform_id)]
+pop_BC_c4_enst <- pop_BC_c4[is_enst(reference_isoform_id) & is_enst(comparator_isoform_id)]
 
-# Headline percentages
-ptc_rate_nmd <- round(100 * sum(ra_c2$category == "effectively_ptc") / nrow(pop_trace_c2), 1)
-ptc_rate_ctrl <- round(100 * sum(ra_c4$category == "effectively_ptc") / nrow(pop_trace_c4), 1)
-check("NMD PTC rate (1912/2289)", 83.5, ptc_rate_nmd)
-check("Control PTC rate (288/1763)", 16.3, ptc_rate_ctrl)
-# Fold enrichment
-fold <- round(ptc_rate_nmd / ptc_rate_ctrl, 1)
-check("Fold enrichment (NMD/Control PTC rate)", 5.1, fold)
+# Re-intersect by (gene_id, reference_isoform_id) so that all 3 isoforms
+# (reference + NMD comparator + Control comparator) are ENST.
+all3_keys <- intersect(unique(make_key(pop_BC_c2_enst)),
+                       unique(make_key(pop_BC_c4_enst)))
+all3_c2 <- pop_BC_c2_enst[make_key(pop_BC_c2_enst) %in% all3_keys]
+all3_c4 <- pop_BC_c4_enst[make_key(pop_BC_c4_enst) %in% all3_keys]
+check("all-3-ENST NMD pairs (gene-matched)", 301, nrow(all3_c2))
+check("all-3-ENST Control pairs (gene-matched)", 301, nrow(all3_c4))
+
+# Coding-CDS filter: every isoform in every pair has coding_status == "coding"
+coding_ids <- cds$isoform_id[cds$coding_status == "coding"]
+all3_coding_c2 <- all3_c2[reference_isoform_id %in% coding_ids &
+                          comparator_isoform_id %in% coding_ids]
+all3_coding_c4 <- all3_c4[reference_isoform_id %in% coding_ids &
+                          comparator_isoform_id %in% coding_ids]
+
+# Re-intersect once more after coding filter (both sides must retain the same
+# (gene, reference) key).
+final_keys <- intersect(unique(make_key(all3_coding_c2)),
+                        unique(make_key(all3_coding_c4)))
+pop_DEF_c2 <- all3_coding_c2[make_key(all3_coding_c2) %in% final_keys]
+pop_DEF_c4 <- all3_coding_c4[make_key(all3_coding_c4) %in% final_keys]
+check("all-3-ENST + coding-CDS, re-intersected NMD", 190, nrow(pop_DEF_c2))
+check("all-3-ENST + coding-CDS, re-intersected Control", 190, nrow(pop_DEF_c4))
 
 # ============================================================================
-# Section D — pop_ptc_plus (Panels E, F)
+# Section D — Panel D distance + PTC+ subset
 # ============================================================================
-cat("\n[D] pop_ptc_plus = effectively_ptc subset (Panels E, F)\n")
-pop_ptc_c2 <- pop_BC_c2[comparator_isoform_id %in%
-                         ra_c2$comparator_isoform_id[ra_c2$category == "effectively_ptc"]]
-pop_ptc_c4 <- pop_BC_c4[comparator_isoform_id %in%
-                         ra_c4$comparator_isoform_id[ra_c4$category == "effectively_ptc"]]
-check("pop_ptc_plus NMD", 1912, nrow(pop_ptc_c2))
-check("pop_ptc_plus Control", 288, nrow(pop_ptc_c4))
-
-# Split by original_ptc
-n_orig_T <- sum(ra_c2$category == "effectively_ptc" & ra_c2$original_ptc == TRUE)
-n_orig_F <- sum(ra_c2$category == "effectively_ptc" & ra_c2$original_ptc == FALSE)
-check("effectively_ptc x original_ptc=TRUE", 1012, n_orig_T)
-check("effectively_ptc x original_ptc=FALSE", 900, n_orig_F)
-
-# ============================================================================
-# Section E — Panel D distance computation sanity
-# ============================================================================
-cat("\n[E] Panel D distance stats\n")
+cat("\n[D] Panel D distance stats + PTC+ subset (own-GENCODE-stop, 50-nt rule)\n")
 panelD_tsv <- fread("data/panelD_stop_codon_distance.tsv")
-check("Panel D NMD n", 2289, sum(panelD_tsv$comparison == "NMD"))
-check("Panel D Control n", 1763, sum(panelD_tsv$comparison == "Control"))
-# Median distance (should be positive for NMD, very negative for Control)
+check("Panel D NMD n", 190, sum(panelD_tsv$comparison == "NMD"))
+check("Panel D Control n", 190, sum(panelD_tsv$comparison == "Control"))
+
+# TSV column schema: should NOT have a `category` column (own-GENCODE scope)
+expected_cols <- c("comparator_isoform_id", "gene_id", "reference_isoform_id",
+                   "comparison", "distance", "last_ejc_tx_pos", "own_stop_tx_pos")
+check("Panel D TSV columns match expected (no `category` column)",
+      paste(expected_cols, collapse = ","),
+      paste(colnames(panelD_tsv), collapse = ","))
+
+# Medians
 med_nmd <- median(panelD_tsv[comparison == "NMD"]$distance)
 med_ctrl <- median(panelD_tsv[comparison == "Control"]$distance)
-cat(sprintf("  Panel D NMD median distance: %.0f (expect strongly positive)\n", med_nmd))
-cat(sprintf("  Panel D Control median distance: %.0f (expect negative)\n", med_ctrl))
-n_pos_nmd <- sum(panelD_tsv[comparison == "NMD"]$distance > 50)
-pct_pos_nmd <- round(100 * n_pos_nmd / nrow(pop_trace_c2), 1)
-cat(sprintf("  Panel D NMD with distance > 50: %d (%.1f%%) -- should match PTC rate 83.5%%\n",
-            n_pos_nmd, pct_pos_nmd))
-check("Panel D NMD pct_pos (== effectively_ptc rate)", 83.5, pct_pos_nmd, tol = 1)
+check("Panel D NMD median distance", -66, med_nmd)
+check("Panel D Control median distance", -143, med_ctrl)
+
+# PTC+ counts (own-stop > 50 nt past last EJC == distance > 50 nt under
+# the panelD convention `distance = last_ejc_tx_pos - own_stop_tx_pos`)
+n_ptc_nmd <- sum(panelD_tsv[comparison == "NMD"]$distance > 50)
+n_ptc_ctrl <- sum(panelD_tsv[comparison == "Control"]$distance > 50)
+check("Panel D NMD PTC+ count (distance > 50)", 72, n_ptc_nmd)
+check("Panel D Control PTC+ count (distance > 50)", 4, n_ptc_ctrl)
+
+# Headline percentages
+ptc_rate_nmd <- round(100 * n_ptc_nmd / nrow(pop_DEF_c2), 1)
+ptc_rate_ctrl <- round(100 * n_ptc_ctrl / nrow(pop_DEF_c4), 1)
+check("NMD PTC rate % (72/190)", 37.9, ptc_rate_nmd)
+check("Control PTC rate % (4/190)", 2.1, ptc_rate_ctrl)
+
+# Fold enrichment (integer)
+fold <- round(ptc_rate_nmd / ptc_rate_ctrl)
+check("Fold enrichment (~18x)", 18, fold)
+
+# Clipping at [-1000, 1500]
+n_clip_nmd <- sum(panelD_tsv[comparison == "NMD"]$distance > 1500 |
+                  panelD_tsv[comparison == "NMD"]$distance < -1000)
+n_clip_ctrl <- sum(panelD_tsv[comparison == "Control"]$distance > 1500 |
+                   panelD_tsv[comparison == "Control"]$distance < -1000)
+check("Panel D NMD clipped count (axis [-1000,1500])", 4, n_clip_nmd)
+check("Panel D Control clipped count (axis [-1000,1500])", 4, n_clip_ctrl)
 
 # ============================================================================
-# Section F — Panel E + F attribution counts
+# Section E — Panel E + F attribution counts
 # ============================================================================
-cat("\n[F] Panel E/F attribution counts\n")
+cat("\n[E] Panel E/F attribution counts\n")
 panelE_tsv <- fread("data/panelE_ptc_event_attribution.tsv")
 panelF_tsv <- fread("data/panelF_mechanism_breakdown.tsv")
 n_ptc_attr <- sum(panelE_tsv$n_ptc_events)
-ctrl_total <- sum(panelE_tsv$n_ctrl_events)
-check("Panel E n_ptc_attr (NMD PTC-causing events)", 1812, n_ptc_attr)
-check("Panel E ctrl_total (Control all-events baseline)", 4525, ctrl_total)
-check("Panel F total stacked count", 1812, sum(panelF_tsv$n))
+ctrl_total_tsv <- sum(panelE_tsv$n_ctrl_events)
+check("Panel E n_ptc_attr (sum n_ptc_events)", 69, n_ptc_attr)
+# The TSV emits only the 9 event types that appear among PTC-causing events;
+# ctrl_total_tsv = 330 (subset of ctrl_total = 447 used for percentages /
+# Fisher denominators in panel_e_compute.R).
+check("Panel E n_ctrl_events sum in TSV (9 PTC-matching event types)",
+      330, ctrl_total_tsv)
+check("Panel F total attributed pairs (sum n)", 69, sum(panelF_tsv$n))
 
-# SE dominance check (from manuscript prose: "skipped exon... ~50%")
-se_pct <- panelE_tsv$pct_of_ptc[panelE_tsv$event_type == "SE"]
-cat(sprintf("  Panel E SE %% of PTC-causing: %s (manuscript: 'majority of PTCs caused by exon skipping')\n", se_pct))
+# Top event (SE)
+se_row <- panelE_tsv[event_type == "SE"]
+check("Panel E SE n_ptc_events", 30, se_row$n_ptc_events)
+check("Panel E SE pct_of_ptc", 43.5, se_row$pct_of_ptc, tol = 0.1)
+check("Panel E SE n_ctrl_events", 63, se_row$n_ctrl_events)
+check("Panel E SE pct_ctrl", 14.1, se_row$pct_ctrl, tol = 0.1)
+check("Panel E SE direction", "Enriched in PTC-causing", se_row$direction)
+# Fisher p check (log10 comparison, ~1e-7..1e-8)
+se_p <- se_row$fisher_p
+check("Panel E SE fisher_p ~ 7.98e-08", 7.98e-08, se_p, tol = 1e-08)
 
-# Panel F mechanism totals
+# A5SS row
+a5_row <- panelE_tsv[event_type == "A5SS"]
+check("Panel E A5SS n_ptc_events", 9, a5_row$n_ptc_events)
+check("Panel E A5SS pct_of_ptc", 13.0, a5_row$pct_of_ptc, tol = 0.1)
+check("Panel E A5SS n_ctrl_events", 20, a5_row$n_ctrl_events)
+check("Panel E A5SS pct_ctrl", 4.5, a5_row$pct_ctrl, tol = 0.1)
+check("Panel E A5SS direction", "Enriched in PTC-causing", a5_row$direction)
+check("Panel E A5SS fisher_p ~ 8.88e-03", 8.88e-03, a5_row$fisher_p, tol = 1e-3)
+
+# Alt_TES row (depleted)
+at_row <- panelE_tsv[event_type == "Alt_TES"]
+check("Panel E Alt_TES n_ptc_events", 4, at_row$n_ptc_events)
+check("Panel E Alt_TES pct_of_ptc", 5.8, at_row$pct_of_ptc, tol = 0.1)
+check("Panel E Alt_TES n_ctrl_events", 120, at_row$n_ctrl_events)
+check("Panel E Alt_TES pct_ctrl", 26.8, at_row$pct_ctrl, tol = 0.1)
+check("Panel E Alt_TES direction", "Depleted in PTC-causing", at_row$direction)
+check("Panel E Alt_TES fisher_p ~ 3.37e-05", 3.37e-05, at_row$fisher_p, tol = 1e-5)
+
+# Panel F mechanism totals (3 mechanisms only)
+cat("  Panel F mechanism totals:\n")
 mech_totals <- panelF_tsv[, .(n = sum(n)), by = mechanism]
 print(mech_totals)
-check("Panel F Frameshift total in F", 1117, sum(panelF_tsv$n[panelF_tsv$mechanism == "Frameshift"]))
-check("Panel F In-frame stop total in F", 587, sum(panelF_tsv$n[panelF_tsv$mechanism == "In-frame stop"]))
-check("Panel F 3'UTR splice total in F", 108, sum(panelF_tsv$n[panelF_tsv$mechanism == "3'UTR splice"]))
+check("Panel F Frameshift total", 38, sum(panelF_tsv$n[panelF_tsv$mechanism == "Frameshift"]))
+check("Panel F In-frame stop total", 23, sum(panelF_tsv$n[panelF_tsv$mechanism == "In-frame stop"]))
+check("Panel F 3'UTR splice total", 8, sum(panelF_tsv$n[panelF_tsv$mechanism == "3'UTR splice"]))
+
+# Mechanism percentages
+fs_pct <- round(100 * 38 / 69, 1)
+ifs_pct <- round(100 * 23 / 69, 1)
+utr_pct <- round(100 * 8 / 69, 1)
+check("Panel F Frameshift %", 55.1, fs_pct, tol = 0.1)
+check("Panel F In-frame stop %", 33.3, ifs_pct, tol = 0.1)
+check("Panel F 3'UTR splice %", 11.6, utr_pct, tol = 0.1)
+
+# Top event count in Panel F
+se_in_F <- sum(panelF_tsv$n[panelF_tsv$event_type == "SE"])
+check("Panel F top event SE total", 30, se_in_F)
 
 # ============================================================================
-# Section G — Panel B + C
+# Section F — Panel B + C (unchanged scope at pop_BC = 3,009 each)
 # ============================================================================
-cat("\n[G] Panel B + C sanity\n")
+cat("\n[F] Panel B + C (pop_BC = 3,009 each)\n")
 panelB_tsv <- fread("data/panelB_sequence_similarity.tsv")
 check("Panel B NMD n", 3009, sum(panelB_tsv$comparison == "NMD"))
 check("Panel B Control n", 3009, sum(panelB_tsv$comparison == "Control"))
 panelC_tsv <- fread("data/panelC_event_prevalence.tsv")
 check("Panel C # event types", 10, nrow(panelC_tsv))
-# SE event count from raw data, sanity-check Panel C TSV
 n_se_nmd <- sum(pop_BC_c2$n_se > 0)
 n_se_ctrl <- sum(pop_BC_c4$n_se > 0)
 check("Panel C SE NMD (raw count)", n_se_nmd,

@@ -9,11 +9,16 @@ ordered by total count descending — Skipped exon (SE) at top.
 Mirrors the original Figure 4 Panel D ("PTC-Causing Splice Events (PTC+
 Pairs)" / fig_sankey_ptcpos in the Rmd).
 
+Scope: ENST-only effectively_ptc with direct event attribution (n=1,434
+attributed of 1,489 effectively_ptc NMD pairs). Attribution is ref-AUG-derived
+uniformly; mechanism populated by 05r_ref_atg_analysis.R for ALL effectively_ptc
+pairs (no TD2-PTC-stop path).
+
 Data:
   ./data/panelF_mechanism_breakdown.tsv
     Long-form: event_type, mechanism, n
-    Source: all_attr from panel_e_compute.R (canonical 2,496-pair scope,
-            993 attributed PTC+ pairs in NMD).
+    Source: all_attr from panel_e_compute.R (ENST-only pop_ptc_plus,
+            1,434 attributed PTC+ pairs).
 
 Style: HEADER_FS=18 bold, BODY_FS=14 regular. Mechanism palette from the
 Rmd: 3'UTR splice teal, In-frame stop blue, Frameshift coral.

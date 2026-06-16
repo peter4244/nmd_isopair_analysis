@@ -1,6 +1,6 @@
 ---
-title: "ORF-Centric NMD Analysis"
-subtitle: "Reference-Anchored PTC Reclassification and CDS-Agnostic ORF Landscape"
+title: "[LEGACY 2026-06-13] ORF-Centric NMD Analysis"
+subtitle: "Superseded by 05_final_report_gencode_scope_2026-06-15.Rmd as of 2026-06-15. Retained for sensitivity / reproducibility of prior submission."
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -11,6 +11,19 @@ output:
     fig_width: 8
     fig_height: 5
 ---
+
+```{r legacy-banner, echo=FALSE, results='asis'}
+cat('
+<div style="background-color: #fff3cd; border-left: 6px solid #ffc107; padding: 12px; margin: 16px 0; font-size: 14px;">
+<strong>⚠ LEGACY REPORT</strong> — This report uses the two-pass TD2 → ref-AUG reclassification
+framework, which has been superseded as of 2026-06-15. The current canonical analysis is in
+<code>05_final_report_gencode_scope_2026-06-15.Rmd</code>, which uses each comparator\'s own
+GENCODE-annotated stop codon (for the all-3-ENST + coding-CDS scope) or ref-AUG projection
+on a 1:1 gene-matched re-intersected universe (for the larger Section C scope).
+The analyses in this report are retained for reproducibility of the prior submission.
+</div>
+')
+```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,

@@ -15,7 +15,7 @@ For each splice event Isopair attributes as the cause of a PTC in an NMD compara
 - **In-frame stop** (blue) — splicing keeps the original frame but introduces a premature stop within an event
 - **3'UTR splice** (teal) — comparator and reference share the same stop, but 3'UTR splicing positions a new exon-exon junction >50 nt downstream of the stop
 
-Skipped exon (SE) dominates with **~1,000 attributed pairs** — 737 Frameshift + 259 In-frame stop + a small 3'UTR-splice contribution. A3SS, A5SS, Alt TES, and IR are the next most common. The split across all events is approximately Frameshift (~62%), In-frame stop (~33%), 3'UTR splice (~5%) — confirming the manuscript's "roughly evenly split between frameshift and in-frame splicing events" needs an update to reflect the new attribution chain (which now leans more frameshift after including the 900 ref-AUG-recovered pairs, ~80% of which are frameshift-mechanism).
+Skipped exon (SE) dominates with 30 attributed pairs; A5SS (9) and A3SS (8) follow. Total = **69 attributed PTC+ pairs**. The mechanism breakdown across all events is **38 Frameshift / 23 In-frame stop / 8 3'UTR splice = 55.1% / 33.3% / 11.6%** — frameshift is the leading mechanism but in-frame stop events contribute a substantial minority.
 
 ## Source data
 
@@ -26,14 +26,15 @@ Skipped exon (SE) dominates with **~1,000 attributed pairs** — 737 Frameshift 
 
 ## Population
 
-**Denominator: 1,812 attributed PTC+ pairs** in NMD, derived from the new ref-AUG-traceable scope:
+**Denominator: 69 attributed PTC+ pairs** in NMD, derived from the all-3-ENST + coding-CDS scope:
 
 1. Stage 2 gene-matched NMD (3,009)
-2. Ref-AUG-traceable subset (`pop_traceable`, 2,289)
-3. Ref-AUG PTC+ subset (`pop_ptc_plus`, 1,912; = effectively_ptc category)
-4. Attribution chain (mixed sources, see Panel E methodology): 1,812 attributed PTC+ pairs
+2. All 3 isoforms ENST gene-matched (301 NMD / 301 Control)
+3. All 3 isoforms ENST + coding-CDS, re-intersected (**190 NMD / 190 Control**)
+4. PTC+ subset (own GENCODE stop > 50 nt past last EJC): **72 NMD / 4 Control**
+5. Attribution chain (own GENCODE stop input to `attribute_ptc_events` / `attribute_3utr_splice`): **69 directly attributed**
 
-The 100 PTC+ pairs not in `all_attr_new` are unresolved at the attribution step (PTC+ by ref-AUG classification but no specific splice event could be attributed). They're absent from Panel F by definition.
+The 3 PTC+ pairs not in `all_attr_new` (72 − 69) are unresolved at the attribution step. They're absent from Panel F by definition.
 
 ## Computation
 
@@ -57,15 +58,15 @@ Rendered as a horizontal stacked bar in matplotlib with `barh()` stacked by mech
 
 ## Caveats / limitations
 
-1. **Denominator difference from the original Rmd render:** the original `fig_sankey_ptcpos` had 1,074 attributed pairs (on the Stage 2 + coding-coding population but missing ref-AUG-recovered pairs). The new 1,812 includes both the original TD2-PTC+ attributions and the 900 ref-AUG-recovered. The relative event ordering is broadly preserved.
-2. **Mechanism shift:** because the 900 ref-AUG-recovered pairs are ~80% frameshift-mechanism (per `ref_atg_analysis$c2$attr_mechanism` distribution), the overall mechanism balance shifts toward frameshift relative to the original Rmd render (which was ~45% frameshift / 47% in-frame / 8% 3'UTR splice).
-3. **The 100 unresolved PTC+ pairs** (1,912 - 1,812) are PTC+ by ref-AUG classification but no specific splice event could be attributed. They are NOT counted in Panel F's bars but DO contribute to Panel D's distance density (since they have a defined stop position).
+1. **Denominator under all-3-ENST + coding-CDS scope (2026-06-15):** the original Rmd `fig_sankey_ptcpos` had 1,074 attributed pairs (Stage 2 coding-coding, TD2-PTC+ only). Iterations went through 1,812 (mixed source) and 1,434 (§4 ENST-reference + ref-AUG). The current Panel F at the all-3-ENST + coding-CDS scope yields **69 attributed pairs** — fully GENCODE-anchored, no TD2 anywhere, no ref-AUG projection.
+2. **Mechanism balance at this scope:** **38 Frameshift / 23 In-frame stop / 8 3'UTR splice** (= 55.1% / 33.3% / 11.6%). Frameshift is the most common but the breakdown is less extreme than at broader scopes (where Frameshift dominated 76%).
+3. **The 3 unresolved PTC+ pairs** (72 − 69) are PTC+ by GENCODE-stop classification but no specific splice event could be attributed. They are NOT counted in Panel F's bars but DO contribute to Panel D's distance density.
 4. **Test-only sensitivity check** not generated; primary analysis uses all data per project policy.
 
 ## Cross-references
 
 - `figures/lib/principles.md` — figure-making principles
-- `feedback_figure_sample_size_consistency` — denominator matches Panel E (1,812 attributed events) with the larger Panel D / E population well-documented
+- `feedback_figure_sample_size_consistency` — denominator matches Panel E (69 attributed events at all-3-ENST + coding-CDS scope) with the larger Panel D population (190 NMD / 190 Control) well-documented
 - `feedback_default_match_original_figure` — Panel F's horizontal stacked bar structure matches the original `fig_sankey_ptcpos` from the Rmd
 - Rmd source: `05_final_report_mashr.Rmd` chunks `goal2-ptc-mechanisms` (line ~1923), `goal2-fig5-sankey` (line ~2002)
 - `analysis_functions.R`: `attribute_ptc_events()`, `attribute_3utr_splice()`, `shorten_event_labels()`

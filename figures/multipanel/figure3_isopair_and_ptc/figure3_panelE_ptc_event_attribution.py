@@ -5,18 +5,22 @@ Paired barplot: among events Isopair attributes as the cause of a PTC in
 NMD comparators (NMD-causing), and among ALL splice events in Control
 comparators (the background), what fraction is each event type?
 
-Headline: skipped exon (SE) accounts for 52.8% of PTC-causing events vs
-8.9% of Control events (~6× enrichment, p ~ 10⁻²²²). A3SS and A5SS are
-also significantly enriched among PTC-causing events; terminal events
-(Alt TSS, Alt TES) are depleted because they don't typically introduce
-PTCs in the coding region.
+Headline: skipped exon (SE) accounts for 57.0% of PTC-causing events vs
+13.2% of Control events (~4× enrichment, p ≈ 2×10⁻²⁰³). A3SS (2.2×) and
+A5SS (2.5×) are also significantly enriched among PTC-causing events;
+terminal events (Alt TES) and 5'UTR-side partial-IR are depleted.
+
+Scope: ENST-only effectively_ptc (n=1,489 NMD comparators; 1,434 with direct
+event attribution) vs all detailed_events in ENST-only pop_traceable Control
+(3,218 events across 1,286 c4 pairs). Attribution is ref-AUG-derived
+uniformly — populated by 05r_ref_atg_analysis.R for ALL effectively_ptc
+pairs (no TD2-PTC-stop path).
 
 Data:
   ./data/panelE_ptc_event_attribution.tsv
     Columns: event_type, n_ptc_events, pct_of_ptc, n_ctrl_events, pct_ctrl,
              enrichment, fisher_p, direction
-    Source: isopair_wrapper/tables/table5b_ptc_event_enrichment.csv, copied
-    by ./data_export.R.
+    Source: panel_e_compute.R; output of ref-AUG-derived attribution.
 
 Style: HEADER_FS=18 bold, BODY_FS=14 regular. PTC-causing (NMD-attributed)
 coral, Control all-events light blue — matches Panels A/B/C/D.
@@ -108,8 +112,8 @@ def build_figure(df):
     ax.set_ylabel("% of events", fontsize=BODY_FS, color=C_TITLE)
 
     # No in-panel title / subtitle — caption / composite letter label carries it.
-    # The "PTCs identified: 1,912 NMD | 288 Control" provenance line moves to
-    # the figure caption per the grant titleless convention.
+    # The "PTCs identified: 1,489 NMD | 207 Control" (ENST-only) provenance
+    # line moves to the figure caption per the grant titleless convention.
 
     ax.set_ylim(0, y_max * 1.15)
 

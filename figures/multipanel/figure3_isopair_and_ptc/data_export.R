@@ -59,6 +59,11 @@ ptc <- as.data.table(readRDS(file.path(DM_DIR, "ptc.rds")))
 structures <- as.data.table(readRDS(file.path(DM_DIR, "structures.rds")))
 ref_atg <- readRDS(file.path(CACHE_DIR, "ref_atg_analysis.rds"))
 
+# Panels D/E/F now use the all-3-ENST + coding-CDS + own-GENCODE-stop scope
+# (no ref-AUG projection, no TD2 dependency). mechanism_class.R is not invoked
+# by Figure 3 — Figure 4's RATIONALE.md §11 documents the per-figure scopes.
+LIB <- normalizePath(file.path(HERE, "..", "..", "lib"))
+
 # ============================================================================
 # Population 1 — pop_BC: Stage 2 gene-matched (B + C)
 # ============================================================================
@@ -71,30 +76,140 @@ cat(sprintf("[pop_BC] Stage 2 gene-matched: NMD=%d, Control=%d\n",
             nrow(pop_BC_c2), nrow(pop_BC_c4)))
 
 # ============================================================================
-# Population 2 — pop_traceable: ref-AUG tracing succeeded
+# Population 2 — all-3-ENST. Panels D/E/F universe.
+#
+# At all-3-ENST every isoform (reference, NMD comparator, Control comparator)
+# is GENCODE-annotated, so we use each isoform's OWN GENCODE-annotated CDS
+# stop position directly — no ref-AUG-projection needed. PTC status is
+# determined per comparator from its own annotated stop's distance to the
+# last exon-exon junction (50-nt rule).
+#
+# Panels B/C remain at pop_BC scope (3,009 each); they don't depend on CDS so
+# the all-3-ENST restriction is unnecessary for them.
 # ============================================================================
-TRACEABLE_CATS <- c("effectively_ptc", "no_downstream_ejc", "truncated_no_ejc")
-ra_c2 <- as.data.table(ref_atg$c2)
-ra_c4 <- as.data.table(ref_atg$c4)
-pop_trace_c2_ids <- ra_c2$comparator_isoform_id[ra_c2$category %in% TRACEABLE_CATS]
-pop_trace_c4_ids <- ra_c4$comparator_isoform_id[ra_c4$category %in% TRACEABLE_CATS]
-pop_trace_c2 <- pop_BC_c2[comparator_isoform_id %in% pop_trace_c2_ids]
-pop_trace_c4 <- pop_BC_c4[comparator_isoform_id %in% pop_trace_c4_ids]
-cat(sprintf("[pop_traceable] ref-AUG traceable: NMD=%d, Control=%d\n",
-            nrow(pop_trace_c2), nrow(pop_trace_c4)))
+is_enst <- function(x) grepl("^ENST", x)
 
-# ============================================================================
-# Population 3 — pop_ptc_plus: ref-AUG-defined PTC+ (effectively_ptc)
-# ============================================================================
-pop_ptc_c2_ids <- ra_c2$comparator_isoform_id[ra_c2$category == "effectively_ptc"]
-pop_ptc_c4_ids <- ra_c4$comparator_isoform_id[ra_c4$category == "effectively_ptc"]
-pop_ptc_c2 <- pop_BC_c2[comparator_isoform_id %in% pop_ptc_c2_ids]
-pop_ptc_c4 <- pop_BC_c4[comparator_isoform_id %in% pop_ptc_c4_ids]
-cat(sprintf("[pop_ptc_plus] ref-AUG PTC+: NMD=%d, Control=%d\n",
-            nrow(pop_ptc_c2), nrow(pop_ptc_c4)))
-cat(sprintf("  NMD PTC rate: %.1f%% | Control PTC rate: %.1f%%\n",
-            100 * nrow(pop_ptc_c2) / nrow(pop_trace_c2),
-            100 * nrow(pop_ptc_c4) / nrow(pop_trace_c4)))
+# pop_BC + all 3 isoforms ENST + gene-matched (NMD c2 and Control c4 share gene+reference)
+pop_BC_c2_E <- pop_BC_c2[is_enst(reference_isoform_id) & is_enst(comparator_isoform_id)]
+pop_BC_c4_E <- pop_BC_c4[is_enst(reference_isoform_id) & is_enst(comparator_isoform_id)]
+joint_keys <- intersect(make_key(pop_BC_c2_E), make_key(pop_BC_c4_E))
+pop_BC_c2_tri <- pop_BC_c2_E[make_key(pop_BC_c2_E) %in% joint_keys]
+pop_BC_c4_tri <- pop_BC_c4_E[make_key(pop_BC_c4_E) %in% joint_keys]
+cat(sprintf("[all-3-ENST pre-CDS-filter] NMD=%d  Control=%d  (gene/reference combos=%d)\n",
+            nrow(pop_BC_c2_tri), nrow(pop_BC_c4_tri), length(joint_keys)))
+
+# Restrict to pairs where ALL 3 isoforms have GENCODE CDS annotation (Pete's
+# text: "all three isoforms were present in GENCODE with CDS annotation").
+coding_iso_ids <- cds$isoform_id[cds$coding_status == "coding"]
+have_cds <- function(d) {
+  d$reference_isoform_id %in% coding_iso_ids &
+    d$comparator_isoform_id %in% coding_iso_ids
+}
+pop_BC_c2_tri_pre <- pop_BC_c2_tri  # snapshot for diagnostics
+pop_BC_c2_tri <- pop_BC_c2_tri[have_cds(pop_BC_c2_tri)]
+pop_BC_c4_tri <- pop_BC_c4_tri[have_cds(pop_BC_c4_tri)]
+# Re-intersect on the (gene, reference) keys so both sides stay matched
+joint_keys2 <- intersect(make_key(pop_BC_c2_tri), make_key(pop_BC_c4_tri))
+pop_BC_c2_tri <- pop_BC_c2_tri[make_key(pop_BC_c2_tri) %in% joint_keys2]
+pop_BC_c4_tri <- pop_BC_c4_tri[make_key(pop_BC_c4_tri) %in% joint_keys2]
+cat(sprintf("[all-3-ENST + coding-CDS] NMD=%d  Control=%d  (gene/reference combos=%d)\n",
+            nrow(pop_BC_c2_tri), nrow(pop_BC_c4_tri), length(joint_keys2)))
+
+# ---- Compute each comparator's own GENCODE-annotated stop in tx coords ----
+# cds.rds has GENCODE-annotated cds_start / cds_stop for ENST isoforms
+# (SQANTI3 inherits the reference annotation for ENST-named transcripts).
+suppressPackageStartupMessages({library(Isopair)})
+
+own_stop_tx_lookup <- (function() {
+  # Build a per-isoform lookup of (transcript-position-of-stop, strand)
+  coding <- as.data.table(cds)[coding_status == "coding"]
+  struct_idx <- match(coding$isoform_id, structures$isoform_id)
+  stop_tx <- rep(NA_integer_, nrow(coding))
+  for (i in seq_len(nrow(coding))) {
+    si <- struct_idx[i]
+    if (is.na(si)) next
+    strand <- coding$strand[i]
+    if (is.na(strand) || strand == "") next
+    # GENCODE stop genomic position (3' end of CDS in transcript reading direction)
+    stop_g <- if (strand == "+") coding$cds_stop[i] else coding$cds_start[i]
+    stop_tx[i] <- Isopair::genomicToTranscript(
+      stop_g, structures$exon_starts[[si]], structures$exon_ends[[si]], strand)
+  }
+  data.table(isoform_id = coding$isoform_id,
+             own_stop_tx_pos = stop_tx,
+             strand = coding$strand)
+})()
+
+# Annotate pop_BC_c2_tri / pop_BC_c4_tri with own_stop_tx_pos + last_ejc_tx_pos
+augment_own_stop <- function(pop) {
+  d <- merge(pop[, .(gene_id, reference_isoform_id, comparator_isoform_id)],
+             own_stop_tx_lookup,
+             by.x = "comparator_isoform_id", by.y = "isoform_id",
+             all.x = TRUE)
+  d
+}
+trace_c2 <- augment_own_stop(pop_BC_c2_tri)
+trace_c4 <- augment_own_stop(pop_BC_c4_tri)
+
+# ---- PTC determination using each comparator's own GENCODE stop ----
+# Use structure-based junctions (.junction_positions equivalent) for the 50-nt rule.
+junctions_for <- function(iso_id) {
+  si <- match(iso_id, structures$isoform_id)
+  if (is.na(si)) return(integer(0))
+  exon_starts <- structures$exon_starts[[si]]
+  exon_ends   <- structures$exon_ends[[si]]
+  strand      <- structures$strand[si]
+  if (is.na(strand) || strand == "") return(integer(0))
+  exon_lens <- exon_ends - exon_starts + 1L
+  if (strand == "-") exon_lens <- rev(exon_lens)
+  if (length(exon_lens) <= 1L) return(integer(0))
+  cumsum(exon_lens[-length(exon_lens)])
+}
+
+# Compute distance to last EJC and PTC flag (50 nt rule)
+compute_ptc_info <- function(d) {
+  d[, last_ejc_tx_pos := vapply(comparator_isoform_id,
+                                 function(iso) {
+                                   junc <- junctions_for(iso)
+                                   if (length(junc) == 0L) NA_integer_ else max(junc)
+                                 }, integer(1))]
+  d[, distance := last_ejc_tx_pos - own_stop_tx_pos]
+  d[, has_ptc := !is.na(distance) & distance > 50L]
+  d
+}
+trace_c2 <- compute_ptc_info(trace_c2)
+trace_c4 <- compute_ptc_info(trace_c4)
+
+n_ptc_nmd  <- sum(trace_c2$has_ptc, na.rm = TRUE)
+n_ptc_ctrl <- sum(trace_c4$has_ptc, na.rm = TRUE)
+n_avail_nmd  <- sum(!is.na(trace_c2$distance))
+n_avail_ctrl <- sum(!is.na(trace_c4$distance))
+ptc_rate_nmd  <- 100 * n_ptc_nmd  / n_avail_nmd
+ptc_rate_ctrl <- 100 * n_ptc_ctrl / n_avail_ctrl
+fold_enrichment <- ptc_rate_nmd / ptc_rate_ctrl
+cat(sprintf("[PTC at all-3-ENST, own GENCODE stop]\n"))
+cat(sprintf("  NMD: %d/%d with PTC = %.1f%%\n", n_ptc_nmd, n_avail_nmd, ptc_rate_nmd))
+cat(sprintf("  Control: %d/%d with PTC = %.1f%%\n", n_ptc_ctrl, n_avail_ctrl, ptc_rate_ctrl))
+cat(sprintf("  Fold enrichment: %.1fx\n", fold_enrichment))
+
+# pop_traceable equivalent: pairs with computable distance (Panel D)
+pop_trace_c2 <- trace_c2[!is.na(distance)]
+pop_trace_c4 <- trace_c4[!is.na(distance)]
+# pop_ptc_plus equivalent: PTC+ pairs (Panel E/F)
+pop_ptc_c2 <- trace_c2[has_ptc == TRUE]
+pop_ptc_c4 <- trace_c4[has_ptc == TRUE]
+# pop_ptc_c2 needs to keep the profiles_c2 metadata for attribution
+# (detailed_events, n_se, etc.) — re-join from pop_BC_c2_tri
+pop_ptc_c2 <- merge(pop_BC_c2_tri,
+                    pop_ptc_c2[, .(comparator_isoform_id, own_stop_tx_pos,
+                                   last_ejc_tx_pos, distance)],
+                    by = "comparator_isoform_id")
+pop_ptc_c4 <- merge(pop_BC_c4_tri,
+                    pop_ptc_c4[, .(comparator_isoform_id, own_stop_tx_pos,
+                                   last_ejc_tx_pos, distance)],
+                    by = "comparator_isoform_id")
+cat(sprintf("[pop_ptc_plus_all3ENST (GENCODE-stop-defined)]\n"))
+cat(sprintf("  NMD: %d  Control: %d\n", nrow(pop_ptc_c2), nrow(pop_ptc_c4)))
 
 # ============================================================================
 # Panel B — sequence similarity NMD vs Control
@@ -170,55 +285,41 @@ cat(sprintf("  -> %d event types (denom=%d each)\n", nrow(panelC), N_BC))
 
 # ============================================================================
 # Panel D — Stop-to-last-EJC distance NMD vs Control
-# Population: pop_traceable (NMD=2,289 / Control=1,763)
-# Stop: ref-AUG-traced comp_stop_tx_pos
+# Population: all-3-ENST (n=301 NMD / 301 Control nominal)
+# Stop: each comparator's OWN GENCODE-annotated stop position (from cds.rds).
+# No ref-AUG-projection — all 3 isoforms are GENCODE-annotated so each has
+# its own curated CDS.
 # ============================================================================
-cat("[Panel D] Stop-to-last-EJC distance (pop_traceable, ref-AUG stops)\n")
-
-compute_last_ejc <- function(starts, ends, strand, n_exons) {
-  if (n_exons < 2) return(NA_integer_)
-  lens <- ends - starts + 1
-  if (strand == "-") lens <- rev(lens)
-  as.integer(sum(lens[1:(n_exons - 1)]))
-}
-structures[, last_ejc_tx_pos := mapply(compute_last_ejc,
-                                       exon_starts, exon_ends, strand, n_exons)]
-struct_lookup <- structures[, .(isoform_id, last_ejc_tx_pos)]
-
-build_distance_df <- function(pop, ra, label) {
-  d <- merge(pop[, .(comparator_isoform_id, gene_id, reference_isoform_id)],
-             ra[, .(comparator_isoform_id, category, comp_stop_tx_pos)],
-             by = "comparator_isoform_id")
-  d <- merge(d, struct_lookup, by.x = "comparator_isoform_id",
-             by.y = "isoform_id", all.x = TRUE)
-  # ref-AUG distance: positive = stop upstream of last EJC = PTC direction
-  d[, distance := last_ejc_tx_pos - comp_stop_tx_pos]
-  d[, comparison := label]
-  d[, .(comparator_isoform_id, comparison, distance, category)]
-}
+cat("[Panel D] Stop-to-last-EJC distance (all-3-ENST, own GENCODE stops)\n")
 panelD <- rbind(
-  build_distance_df(pop_trace_c2, ra_c2, "NMD"),
-  build_distance_df(pop_trace_c4, ra_c4, "Control")
+  trace_c2[!is.na(distance),
+           .(comparator_isoform_id, gene_id, reference_isoform_id,
+             comparison = "NMD", distance, last_ejc_tx_pos, own_stop_tx_pos)],
+  trace_c4[!is.na(distance),
+           .(comparator_isoform_id, gene_id, reference_isoform_id,
+             comparison = "Control", distance, last_ejc_tx_pos, own_stop_tx_pos)]
 )
-fwrite(panelD[!is.na(distance)],
-       file.path(OUT_DIR, "panelD_stop_codon_distance.tsv"), sep = "\t")
+fwrite(panelD, file.path(OUT_DIR, "panelD_stop_codon_distance.tsv"), sep = "\t")
 cat(sprintf("  -> NMD=%d, Control=%d non-NA distances\n",
-            sum(panelD$comparison == "NMD" & !is.na(panelD$distance)),
-            sum(panelD$comparison == "Control" & !is.na(panelD$distance))))
+            sum(panelD$comparison == "NMD"),
+            sum(panelD$comparison == "Control")))
 
 # ============================================================================
 # Panel E + F — PTC-causing event attribution + mechanism breakdown
-# Population: pop_ptc_plus (NMD=1,912 effectively_ptc)
-# Attribution sources:
-#   - For original_ptc=FALSE (900 pairs): ref_atg_analysis$c2$attr_event / attr_mechanism
-#   - For original_ptc=TRUE (1,012 pairs): goal2-ptc-mechanisms output (current all_attr)
-# Control baseline: all events in pop_trace_c4 (1,763 pairs)
+# Population: pop_ptc_plus ∩ all-3-ENST (NMD effectively_ptc, all 3 isoforms ENST)
+# Attribution source: ref-AUG-derived for ALL pairs.
+# Control baseline: all detailed_events in pop_trace_c4 ∩ all-3-ENST
 # ============================================================================
-cat("[Panel E+F] PTC-causing attribution at pop_ptc_plus scope\n")
+cat("[Panel E+F] PTC-causing attribution at pop_ptc_plus all-3-ENST scope\n")
 source(file.path(HERE, "panel_e_compute.R"))
 
 cat("\n[data_export.R] done.\n")
 cat(sprintf("Population summary:\n"))
-cat(sprintf("  pop_BC:        NMD=%d Control=%d\n", nrow(pop_BC_c2), nrow(pop_BC_c4)))
-cat(sprintf("  pop_traceable: NMD=%d Control=%d\n", nrow(pop_trace_c2), nrow(pop_trace_c4)))
-cat(sprintf("  pop_ptc_plus:  NMD=%d Control=%d\n", nrow(pop_ptc_c2), nrow(pop_ptc_c4)))
+cat(sprintf("  pop_BC:                    NMD=%d Control=%d\n",
+            nrow(pop_BC_c2), nrow(pop_BC_c4)))
+cat(sprintf("  pop_BC (all-3-ENST):       NMD=%d Control=%d\n",
+            nrow(pop_BC_c2_tri), nrow(pop_BC_c4_tri)))
+cat(sprintf("  pop_traceable all-3-ENST:  NMD=%d Control=%d\n",
+            nrow(pop_trace_c2), nrow(pop_trace_c4)))
+cat(sprintf("  pop_ptc_plus all-3-ENST:   NMD=%d Control=%d\n",
+            nrow(pop_ptc_c2), nrow(pop_ptc_c4)))

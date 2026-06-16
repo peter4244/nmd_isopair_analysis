@@ -6,21 +6,22 @@ junction. NMD comparators concentrate to the RIGHT of the 50-nt PTC threshold
 (stops downstream of the last EJC); Control comparators concentrate LEFT
 (normal stops in the last exon).
 
-Stop source: ref-AUG-traced stop where ref AUG was found in the comparator
-(categories effectively_ptc, no_downstream_ejc, truncated_no_ejc; ~86% of NMD
-and ~68% of Control). TD2 stop position elsewhere.
+Stop source: ref-AUG-traced `comp_stop_tx_pos` from ref_atg_analysis.rds.
+Scope is pop_traceable ∩ ENST-only references (categories effectively_ptc,
+no_downstream_ejc, truncated_no_ejc), matching the §4 framework
+(figures/multipanel/figure4_ptcneg_and_model/RATIONALE.md §2). No TD2 fallback
+is used — pairs without a ref-AUG-traceable stop fall outside this panel's
+scope by construction.
 
 Data:
   ./data/panelD_stop_codon_distance.tsv
     Columns: comparator_isoform_id, comparison ("NMD" | "Control"),
-             distance (int, nt), stop_source ("ref_aug_traced" | "td2"),
-             category (ref-AUG class or NA)
-    Source: cod_c2 / cod_c4 (canonical 2,496-pair gene-matched coding-coding
-            set) + structures.rds (last EJC tx position) + ref_atg_analysis
-            (ref-AUG stop) + ptc.rds (TD2 fallback distance).
-    Exported by ./data_export.R.
+             distance (int, nt), category (ref-AUG class)
+    Source: pop_traceable_ENST (NMD c2 = 1,659 / Control c4 = 1,286)
+            + structures.rds (last EJC tx position) + ref_atg_analysis.rds
+            (ref-AUG stop). Exported by ./data_export.R.
 
-Sample size: 2,496 / 2,496 (same denominator as Panels B, C, E).
+Sample size: 1,659 NMD / 1,286 Control (ENST-only pop_traceable).
 
 X-axis clipped to [-1000, 1500] nt; clipped counts printed to stdout for
 methodology file disclosure.

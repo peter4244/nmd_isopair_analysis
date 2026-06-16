@@ -1369,10 +1369,39 @@ Format: One row per (dominant, non-dominant) comparison
 
 ## Publication Report Methods (mashr Classification)
 
-### Report Structure (8 Sections, 2026-04-29)
+### Canonical GENCODE-Scope Report (2026-06-15)
 
-The publication report (`isopair_wrapper/05_final_report_mashr.Rmd`) is
-organized into eight Results sections matching the manuscript layout:
+As of 2026-06-15 the canonical analysis report for the manuscript Figure 3
+and Figure 4 numbers is
+[`isopair_wrapper/05_final_report_gencode_scope_2026-06-15.Rmd`](isopair_wrapper/05_final_report_gencode_scope_2026-06-15.Rmd).
+It is organized as **§1** Isopair construction + pop_BC cohort descriptives,
+**§2** PTC analysis at the GENCODE-only scope (n=190 all-3-ENST + coding-CDS;
+own-GENCODE-stop + 50-nt rule; attribute_ptc_events + attribute_3utr_splice;
+5'UTR/ORF/CDS/3'UTR descriptives; CDSand3UTR_GENCODEonly supplement),
+**§3** ref-AUG-traceable replication (n=1,166/1,166 re-intersected on (gene,
+reference); §3a Figure 4 Panels C/D; §3b PTC+ rate 90.1%), **§4** TD2 bias
+evidence (broad n=1,166 + occult-PTC n=492; TD2 vs ref-AUG ORF length; paired
+`Isopair::scoreKozakPWM`; TD2 ATG position; TD2BiasEvidence supplement),
+**§5** cumulative accounting / scope reconciliation, **§6** what remains in
+the legacy report.
+
+Automated verification:
+- `reproducibility/verify_pass7_new_rmd.R` — 37-check expected-value
+  manifest against the rendered HTML (Pass 1 factual accuracy).
+- `reproducibility/verify_cross_check_new_rmd_vs_figures.R` — 57 cross-checks
+  against the figure-side TSVs in `figures/multipanel/figure4_ptcneg_and_model/data/`
+  and `figures/SupplementalFigures/{TD2BiasEvidence,CDSand3UTR_GENCODEonly}/data/`.
+
+The legacy report (`05_final_report_mashr.Rmd`, legacy-bannered) is retained
+for sensitivity analyses against the prior submission and for analyses NOT in
+the new canonical Rmd (see §6 of the new Rmd for the exclusion list). Its
+verifier moved to `reproducibility/verify_legacy_rmd_reproducibility.R`.
+
+### Legacy Report Structure (8 Sections, 2026-04-29; `05_final_report_mashr.Rmd`)
+
+The legacy publication report (`isopair_wrapper/05_final_report_mashr.Rmd`,
+legacy-bannered as of 2026-06-15) is organized into eight Results sections
+matching the prior manuscript layout:
 
 | § | Title | Key METHODS subsection(s) |
 |---|---|---|
@@ -1487,7 +1516,7 @@ isoforms within a gene. The full multipanel concordance figure (which adds
 expression-magnitude correlation and per-CT scatter) is in the manuscript
 supplement (`paper_figures/FigX-SRLRConcordance_generated.pdf`).
 
-Source code: chunk `sec1-srlr-data` in `isopair_wrapper/05_final_report_mashr.Rmd`.
+Source code: chunk `sec1-srlr-data` in `isopair_wrapper/05_final_report_mashr.Rmd` (legacy report — this section is retained there only; not reproduced in the new canonical `05_final_report_gencode_scope_2026-06-15.Rmd`).
 
 ### Transcriptional Diversity Analysis (Section 2)
 
@@ -1728,7 +1757,7 @@ signal for these isoforms — even though TD2's chosen ORF has no
 downstream EJC.
 
 Source code: chunks `sec3d-attribution-discordance` and
-`sec3d-top-features-by-subset` in `isopair_wrapper/05_final_report_mashr.Rmd`.
+`sec3d-top-features-by-subset` in `isopair_wrapper/05_final_report_mashr.Rmd` (legacy report; the model analyses live in the linked repo `peter4244/NMD_orf_model_v5_4ct`, not in the new canonical Rmd).
 
 #### Three-Way ORF Caller Agreement (TD2 vs Ref-ATG vs ORFik)
 
@@ -1796,8 +1825,9 @@ tiebreaker. Switching to the continuous-PWM Kozak score
 making the `ORFik = ref-ATG` count a lower bound on agreement.
 
 Source code: chunk `sec3d-orfik-agreement` in
-`isopair_wrapper/05_final_report_mashr.Rmd`. Source rds file:
-`05s_orfik_scan.R` → `analysis_cache/orfik_scan.rds`.
+`isopair_wrapper/05_final_report_mashr.Rmd` (legacy report; the three-way
+ORF caller comparison is retained there, not re-run in the new canonical
+Rmd). Source rds file: `05s_orfik_scan.R` → `analysis_cache/orfik_scan.rds`.
 
 #### SHAP-Based Isoform Clustering
 
@@ -1928,6 +1958,28 @@ GeneMarkS-T).
 
 **Note on category list (2026-06-13):** Earlier versions of this document also listed `same_or_longer_with_ejc` as a separate category. The current `05r_ref_atg_analysis.R` does not emit that label — pairs that would have qualified are accounted for under `no_downstream_ejc` or `effectively_ptc` depending on downstream EJC count.
 
+**TES concordance threshold (50 nt).** The new canonical Rmd defines a TES-concordant flag for the 3'UTR primary analysis:
+`tes_concordant(comp_tx_len, ref_tx_len) = abs(comp_tx_len − ref_tx_len) ≤ 50 nt`
+(constant `TES_CONCORDANT_THRESHOLD_NT = 50L` in
+`figures/lib/mechanism_class.R` and replicated inline in
+`05_final_report_gencode_scope_2026-06-15.Rmd`). The same 50-nt threshold is
+the basis of the last-EJC PTC rule and is pre-registered in
+[`figures/multipanel/figure4_ptcneg_and_model/RATIONALE.md`](../../figures/multipanel/figure4_ptcneg_and_model/RATIONALE.md)
+§4.2 — sharing one threshold keeps the PTC determination and the 3'UTR
+TES-concordance definitions on the same length scale.
+
+**Mechanism classification fall-through (2026-06-15 fix).** `mechanism_class()`
+classifies pairs with `category ∈ {effectively_ptc, no_downstream_ejc,
+truncated_no_ejc}` into 5 buckets (PTC+, PTC- ORF same/extended/truncated,
+Ref AUG absent). Pairs with ndj/trc category but NA `orf_diff` (because
+`ref_orf_length` is NA in the cache) are routed to "NMD+/PTC- ORF same"
+(ndj) or "ORF truncated" (trc) — both collapse to NMD+/PTC- under
+`mechanism_class_4()`. The earlier behaviour sent these pairs to "Ref AUG
+absent", which contradicted their (definitionally ref-AUG-traceable)
+category. Affected 7 pairs in the ENST-ref + TR cohort and 3 pairs in the
+re-intersected Section C scope (n=1,166), shifting the Section C 3-group
+counts from 1,050/113/3 to 1,050/116/0.
+
 **Categories that have a valid ref-AUG-traced stop position** ("ref-AUG-traceable"):
 `effectively_ptc` + `no_downstream_ejc` + `truncated_no_ejc`. This **ref-AUG-traceable subset** is the canonical population for the Figure 3 PTC analyses (see "Reference-AUG-Traceable Canonical PTC Analysis (Figure 3 Scope)" below).
 
@@ -1950,41 +2002,85 @@ isoforms are the central population for the SHAP attribution dissociation
 and three-way ORF caller agreement analyses (see "Combined Prediction Model"
 above).
 
-### Reference-AUG-Traceable Canonical PTC Analysis (Figure 3 Scope)
+### All-3-ENST + Own-GENCODE-Stop Canonical PTC Analysis (Figure 3 Panels D/E/F)
 
-**Policy (Pete, 2026-06-13).** Because TD2's CDS calls for novel isoforms are biased against premature stop codons, **all analyses that depend on identifying a stop codon (PTC presence, PTC distance, PTC-causing event attribution) are scoped to pairs where reference-AUG tracing can be performed**. This is the canonical population for the manuscript's Figure 3 panels D, E, and F.
+**Policy (Pete, 2026-06-15).** TD2's CDS calls for novel isoforms are biased against premature stop codons (Figure 4 Panels C–D). To eliminate any TD2 dependency from Figure 3's headline PTC claim, the canonical Figure 3 D/E/F scope is restricted to isoform pairs in which the reference, NMD comparator, AND Control comparator are **all GENCODE-annotated coding isoforms**. Each comparator's PTC status is then determined from its own GENCODE-annotated stop codon — no ref-AUG projection, no TD2 prediction.
 
 **Three populations** are used in the manuscript's main Figure 3:
 
 | Layer | NMD n | Control n | Used by |
 |---|---|---|---|
 | **pop_BC** = Stage 2 gene-matched (`(gene_id, reference_isoform_id)` shared between c2 and c4) | 3,009 | 3,009 | Panels B (sequence similarity) and C (splice event prevalence). No CDS dependency — these analyses are at the exonic/event level. |
-| **pop_traceable** = pop_BC restricted to pairs where ref-AUG tracing produced a valid ORF stop (`category ∈ {effectively_ptc, no_downstream_ejc, truncated_no_ejc}`) | 2,289 | 1,763 | Panel D (stop-codon to last EJC distance density). For each pair the stop position is the ref-AUG-traced `comp_stop_tx_pos`. |
-| **pop_ptc_plus** = pop_traceable ∩ `category == "effectively_ptc"` | 1,912 | 288 | Panels E (PTC-causing event proportions) and F (mechanism breakdown). |
+| **all-3-ENST + coding-CDS** = pop_BC restricted to pairs where reference, NMD comparator, AND Control comparator are all ENST-prefixed (GENCODE-annotated) with `coding_status == "coding"`, re-intersected on `(gene_id, reference_isoform_id)` | 190 | 190 | Panel D (stop-codon to last EJC distance density). Stop position is each comparator's own GENCODE-annotated `cds_stop` mapped to transcript coordinates via `Isopair::genomicToTranscript`. |
+| **PTC+ subset** = all-3-ENST + coding-CDS ∩ `(last_ejc_tx_pos − own_stop_tx_pos) > 50` | 72 | 4 | Panels E (PTC-causing event proportions) and F (mechanism breakdown). |
 
-**Headline rates**: NMD PTC rate = 1,912 / 2,289 = **83.5%**; Control PTC rate = 288 / 1,763 = **16.3%**; fold enrichment = **5.1×**.
+**Headline rates** (Figure 3 Panel D): NMD PTC rate = 72 / 190 = **37.9%**; Control PTC rate = 4 / 190 = **2.1%**; **18× enrichment**.
 
-**Why a different denominator from `compute_ptc_rates_row()`?** The earlier `table2_ptc_rates_allsamples.csv` reported NMD PTC rate at 42.8% — that table used a different filter chain (Stage 2 gene-match + `coding-coding` filter + gene_id-only re-match) and TD2's PTC classifier. The ref-AUG-traceable scope replaces that as the canonical population for the manuscript's headline PTC story; `table2`'s numbers describe a TD2-only counterfactual and are preserved in supplementary discussion.
+**Why this scope, and why it differs from Figure 4 Section C's 90% PTC+ rate.** Figure 4 Section C uses a less restrictive ENST-reference + ref-AUG-traceable scope (n=1,166 post-re-intersection NMD / 1,166 Control; pre-re-intersection 1,659 NMD c2 / 1,286 Control c4 before the (gene, reference_isoform_id) re-intersection) with ref-AUG-projected classification, yielding 90% PTC+. Figure 3's all-3-ENST + own-GENCODE-stop scope is strictly more conservative for two reasons: (1) the classifier is stricter — a comparator is called PTC+ only if its own GENCODE-annotated stop satisfies the 50-nt rule against its own last EJC, which excludes pairs whose own annotated CDS uses a downstream start codon placing the stop in the last exon even if ref-AUG projection would hit a premature stop; (2) requiring the Control comparator to also be ENST-annotated drops the many PTC+ NMD pairs whose Control comparators are novel transcripts. The trade-off is a fully TD2-free, GENCODE-anchored analysis at smaller n. See `figures/multipanel/figure4_ptcneg_and_model/RATIONALE.md` §11 for the full reconciliation.
 
-**Mixed-source PTC attribution** (Panels E + F under the ref-AUG-traceable scope). PTC-causing event attribution for the 1,912 NMD effectively_ptc pairs combines two sources:
+**Single-source PTC attribution** (Panels E + F under all-3-ENST + own-GENCODE-stop scope). The 72 NMD PTC+ pairs are attributed by `Isopair::attribute_ptc_events()` using each comparator's own GENCODE-annotated stop genomic position (`ptc_genomic_pos = own_stop_genomic_lookup`); the same-stop subset additionally uses `Isopair::attribute_3utr_splice()`. Total directly-attributed PTC-causing events: **69** (66 direct + 8 same-stop 3′UTR splice, after deduplication; 6 unresolved). Attribution rate: 69 / 72 = 95.8%. No TD2-derived stop positions are used anywhere in the attribution chain.
 
-- **(a)** For `effectively_ptc & !original_ptc` (the 900 ref-AUG-recovered pairs): attribution stored in `ref_atg_analysis$c2$attr_event` and `attr_mechanism` — produced by `05r_ref_atg_analysis.R` at ref-AUG runtime using the ref-AUG-traced stop position.
-- **(b)** For `effectively_ptc & original_ptc` (the 1,012 TD2-AND-ref-AUG-agreeing pairs): attribution produced by re-running `attribute_ptc_events()` (from `analysis_functions.R`) using TD2's stop position, plus `attribute_3utr_splice()` for the same-stop subset. This is the same chain as the original `goal2-ptc-mechanisms` Rmd chunk.
+Control baseline (no per-pair attribution; just event frequencies across the 190 Control comparator pairs): **ctrl_total = 447** events. The panelE TSV's `n_ctrl_events` column emits only the 9 event types that also appear among PTC-causing events (sum = 330); the additional 117 Control events of types absent from the PTC set are still counted in `ctrl_total` for percentage and Fisher denominators.
 
-Total directly-attributed PTC-causing events: **1,812** (= 845 from (a) + 928 diff-stop direct from (b) + 79 same-stop 3'UTR-splice from (b), after deduplication of pairs that appear in both diff-stop direct and same-stop attribution).
+**Source code** for the canonical Figure 3 D/E/F scope:
 
-**Methodological note**: The mixing of stop-position sources is a deliberate transitional choice. The cleaner long-term implementation is to re-run `attribute_ptc_events()` with ref-AUG-traced stops for ALL `effectively_ptc` pairs (not just `original_ptc=FALSE`), eliminating the dependency on TD2's stop position for the original_ptc=TRUE subset. This refactor is tracked as a follow-up task and would be implemented by passing the ref-AUG `comp_stop_genomic` column into `attribute_ptc_events()` as `ptc_genomic_pos`, replacing the TD2-derived genomic position.
-
-**Source code** for the canonical Figure 3 scope (downstream of the R-side analysis pipeline):
-
-- `figures/multipanel/figure3_isopair_and_ptc/data_export.R` — defines pop_BC, pop_traceable, pop_ptc_plus and writes per-panel TSVs.
-- `figures/multipanel/figure3_isopair_and_ptc/panel_e_compute.R` — runs the mixed-source attribution chain described above for Panels E + F.
+- `figures/multipanel/figure3_isopair_and_ptc/data_export.R` — defines pop_BC, the all-3-ENST + coding-CDS re-intersected subset, and the PTC+ subset; writes per-panel TSVs.
+- `figures/multipanel/figure3_isopair_and_ptc/panel_e_compute.R` — runs `attribute_ptc_events()` with own-GENCODE-stop genomic positions for Panels E and F.
+- `figures/lib/mechanism_class.R` — derived helper (5-group / 4-group classification) used by Figure 4; sourced from Figure 3's `data_export.R` for cross-figure consistency but not invoked there.
 - `figures/multipanel/figure3_isopair_and_ptc/figure3_panel{A,B,C,D,E,F}_methodology.md` — per-panel methodology, including population, computation, and caveats.
-- Verification: `verify_pass{1,2,3,4,5}_*.{R,sh}` — five-pass scientific-report verification was run on Figure 3 on 2026-06-13.
+- Verification: `verify_pass{1,2,3,5}.R` — four-pass scientific-report verification was last refreshed on 2026-06-15 after the all-3-ENST scope migration.
+
+### Figure 4 / §4 — NMD+/PTC− Mechanism Inference
+
+The Figure 4 panels (A–D) characterize the 5′UTR and 5′UTR-ORF correlates of NMD+/PTC+ vs NMD+/PTC− comparators at two complementary scopes (Section A at n=190 all-3-ENST + coding-CDS, Section C at n=1,050/113/1,166 ENST-reference + ref-AUG-traceable, 1:1 gene-matched re-intersected). The TransDecoder2 (TD2) ORF-call bias evidence that motivates the GENCODE-anchored restriction is presented in a dedicated supplemental figure (`figures/SupplementalFigures/TD2BiasEvidence/`) on the same isoform universe as Figure 4 Section C (n=1,166 broad + n=492 occult-PTC subset). The full pre-registered design — including the dual classification (3-group merged for Section A's GENCODE-only scope, 4-group `mechanism_class_4` for Section C's ref-AUG scope), the 5′UTR boundary choice (ref-AUG-projected), the non-PTC-stop 3′UTR measure, and the Wilcoxon + Hodges–Lehmann + Cliff's δ + Benjamini–Hochberg statistical framework — is locked in `figures/multipanel/figure4_ptcneg_and_model/RATIONALE.md` (§§1–11). RATIONALE.md is the authoritative methodological source for Figure 4 and §4; this METHODS subsection summarizes the key computational steps.
+
+**Section A (Panels A + B; n = 72/118/190)** — all-3-ENST + coding-CDS scope (identical to Figure 3 D/E/F's denominator). 5′UTR length for each comparator is computed as the transcript-coordinate position of the comparator's own GENCODE-annotated `cds_start` (the AUG-anchored 5′UTR length, equivalent to the 5′UTR length under the comparator's own annotation). The longest 5′UTR ORF is from `utr5_features_all.rds` (TD2 / canonical-ORF scan over the 5′UTR sequence, in-frame and out-of-frame ORFs of any length ≥ 1 codon). PTC status uses the own-GENCODE-stop classifier as in Figure 3 Panel D.
+
+**Section C (Panels C + D; n = 1,050 PTC+ / 113 PTC− / 1,166 Control)** — ENST-reference + ref-AUG-traceable scope, **1:1 gene-matched re-intersected**. 5′UTR length is computed under the ref-AUG-projected start codon (`utr5_features_refaug.rds`, produced by `05k_b_utr5_refaug.R` as the ref-AUG-projected sibling of `utr5_features_all.rds`). Mechanism classification uses `figures/lib/mechanism_class.R::mechanism_class_4()` (which collapses ORF same + ORF extended + ORF truncated into a single NMD+/PTC− group for Section C symmetry with Section A's merged group). Scope construction:
+
+1. pop_BC at ENST-reference scope = 2,098 NMD c2 / 2,098 Control c4.
+2. Apply ref-AUG-traceable category filter (`category ∈ {effectively_ptc, no_downstream_ejc, truncated_no_ejc}`) independently to each side → 1,659 NMD c2 / 1,286 Control c4.
+3. **Re-intersect on `(gene_id, reference_isoform_id)` AFTER the category filter** so both panels share the same 1:1 gene-matched universe → 1,166 NMD c2 / 1,166 Control c4. The re-intersection is necessary because the category filter is asymmetric: `ref_atg_lost` is ~2.7× more common in Control comparators (488/2,098 = 23%) than in NMD comparators (185/2,098 = 9%), reflecting that non-NMD productive isoforms more often use alternative TSS or skip alternative N-terminal exons.
+4. Apply `mechanism_class_4` to the NMD c2 side: 1,050 NMD+/PTC+ + 113 NMD+/PTC− + 3 pairs routed to "Ref AUG absent" by the NA-edge-case convention.
+
+This re-intersection is implemented in `data_export.R` Section C block.
+
+**TD2-bias supplemental figure (TD2BiasEvidence)** — three orthogonal observations of TD2's PTC-avoidance bias at two complementary scopes (2×3 layout), on the **same isoform universe as Figure 4 Section C**.
+
+- **Row 1 (Supp Panels A–C; n = 1,166 broad)** — Figure 4 Section C universe (1:1 gene-matched re-intersected on `(gene_id, reference_isoform_id)`, ENST-reference, ref-AUG-traceable categories, TD2 CDS available, reference AUG exonic). Within this scope, TD2 selected the same ATG as the reference AUG in 50% of pairs (578/1,166) and a different ATG in 50% (588/1,166). TD2-selected ORF length is **4.7× longer** than the reference-AUG-anchored ORF (median 2,758 vs 588 nt; Supp Panel A); Kozak PWM is stronger at the reference AUG than at the TD2 ATG (medians 0.86 vs 0.29; paired Wilcoxon p = 1.2×10⁻³⁸; Supp Panel B); TD2 ATG is downstream of the reference AUG in 43% of pairs (496/1,166; median offset +471 nt; Supp Panel C).
+- **Row 2 (Supp Panels D–F; n = 492 occult-PTC subset)** — the subset of Row 1 with `effectively_ptc ∩ original_ptc == FALSE` (pairs in which reference-AUG tracing revealed a downstream-EJC stop that TD2's CDS call missed). In this subset TD2 ATG ≠ ref AUG by construction. TD2-selected ORF length is **7.7× longer** than the reference-AUG-anchored ORF (median 2,934 vs 380 nt; Supp Panel D); Kozak PWM is stronger at the reference AUG (medians 1.04 vs −0.35; paired Wilcoxon p = 2.6×10⁻³⁸; reference Kozak > TD2 Kozak in 78.0% of pairs; Supp Panel E); **99.0% (487/492)** of TD2 ATGs are downstream of the reference AUG (median offset +476 nt; Supp Panel F).
+
+Both rows use the same Kozak PWM scoring (log-odds of the [−6, +5] window around the candidate ATG against a position-weight matrix derived from the GENCODE start-codon training set, via `Isopair::scoreKozakPWM`). Filter and code references: `figures/SupplementalFigures/TD2BiasEvidence/data_export.R` (re-intersection + occult-PTC subset construction); `Isopair::scoreKozakPWM` for the PWM scoring.
+
+**3'UTR-length-distinct supplemental figure (CDSand3UTR_GENCODEonly)** — three-panel figure (CDS length + two 3'UTR measures) at the all-3-ENST + coding-CDS scope (n = 72 PTC+ / 118 PTC− / 190 Control, identical to Figure 3 D/E/F and Figure 4 Panels A/B). The two 3'UTR measures are: (i) the **translation-based** measure `tx_length(comparator) − own_GENCODE_stop_tx_position`, which is biased upward for PTC+ pairs because the post-stop region includes coding sequence between the PTC and the natural stop; (ii) the **non-PTC-stop-based** measure that walks in-frame downstream of the comparator's own GENCODE ATG, skipping any stop with a downstream EJC > 50 nt (i.e., itself a PTC), until reaching the first non-PTC stop, then `tx_length − that_position`. Under the bias-corrected measure, NMD+/PTC+ and Controls are indistinguishable (p = 0.90), confirming Panel B's PTC+ inflation was the measure, not biology. NMD+/PTC− retains a significantly shorter 3'UTR than Control (p = 0.03), arguing against extended 3'UTR length as the NMD mechanism for the residual NMD+/PTC− pairs. CDS length is similar across groups, ruling out a CDS-length confound. Filter and code references: `figures/SupplementalFigures/CDSand3UTR_GENCODEonly/data_export.R` and `figure_s_cds_and_3utr.py`.
+
+**Pre-registration and statistical framework.** All inferential comparisons in Sections A and C are two-sided Wilcoxon with Hodges–Lehmann shift estimator + 95% confidence interval + Cliff's delta, with Benjamini–Hochberg adjustment across the §4 mechanism panel's test family. Significance markers on panels are independent of BH (raw p): \*\*\* p < 10⁻⁴, \*\* p < 10⁻³, \* p < 0.05, n.s. otherwise. See `RATIONALE.md` §5 for the test-family definition and `RATIONALE.md` §11 for per-panel test inventories.
+
+**Source code** for Figure 4:
+
+- `figures/multipanel/figure4_ptcneg_and_model/data_export.R` — Section A + Section C scope construction; own-GENCODE-stop classifier with 50-nt rule (Section A); ref-AUG-projected mechanism classification (Section C); per-panel TSV exports.
+- `figures/multipanel/figure4_ptcneg_and_model/figure4_panel{A,B,C,D}_*.py` — render scripts (seaborn violins with `cut=0, inner='quart'`).
+- `figures/multipanel/figure4_ptcneg_and_model/figure4_composite.py` — 2×2 layout, 12″×8″ landscape.
+- `figures/multipanel/figure4_ptcneg_and_model/RATIONALE.md` — pre-registered methodological design.
+- `figures/SupplementalFigures/TD2BiasEvidence/data_export.R` + `figure_s_td2_bias.py` — consolidated TD2-bias supplement at n = 1,166 broad + n = 492 occult-PTC (2026-06-15 scope; figure-side data + canonical Rmd §4 both compute the paired Kozak PWM end-to-end via `Isopair::scoreKozakPWM` on the SQANTI-corrected FASTA, not from a pre-cached score).
+- `figures/lib/mechanism_class.R` — single source of truth for 5-group / 4-group classification.
+- `results/isoform_transitions/Version_6.0/isopair_wrapper/05r_ref_atg_analysis.R` — upstream `ref_atg_analysis.rds` driver providing ref-AUG-traced ORF metadata and the `utr3_via_non_ptc_stop_nt` 3′UTR measure.
+- `results/isoform_transitions/Version_6.0/isopair_wrapper/05k_b_utr5_refaug.R` — ref-AUG-projected 5′UTR sibling scan producing `utr5_features_refaug.rds`.
+- Verification: `verify_pass{1,2,3,4,5}_*.R` (in the figure4 folder) — five-pass scientific-report verification at 2026-06-15.
 
 ### Pair Construction and Gene-Matching — Detailed Filter Chain
 
-The Rmd's `compute_ptc_rates_row()` function in chunk `helpers` (line 105 of `05_final_report_mashr.Rmd`) applies a **three-stage filter chain** to produce its 2×2 contingency for the NMD-vs-Control PTC enrichment OR. The same chain is what produces `tables/table2_ptc_rates_allsamples.csv`. Documenting it explicitly because the chain choice has been a source of confusion:
+> _Two filter chains coexist as of 2026-06-15: the **legacy** chain below
+> (used by `05_final_report_mashr.Rmd` and producing `table2_ptc_rates_allsamples.csv`),
+> and the **canonical** Section A cascade in the new Rmd
+> (`05_final_report_gencode_scope_2026-06-15.Rmd` §2: pop_BC → all-ENST
+> (ref & comp) → coding-CDS (both sides) → re-intersect on (gene, ref)
+> → n=190 / 190). The new cascade is documented in the new Rmd's §2 chunk
+> and in `figures/multipanel/figure4_ptcneg_and_model/data_export.R`._
+
+#### Legacy chain (`05_final_report_mashr.Rmd`, retained for sensitivity)
+
+The legacy Rmd's `compute_ptc_rates_row()` function in chunk `helpers` (line 105 of `05_final_report_mashr.Rmd`) applies a **three-stage filter chain** to produce its 2×2 contingency for the NMD-vs-Control PTC enrichment OR. The same chain is what produces `tables/table2_ptc_rates_allsamples.csv`. Documenting it explicitly because the chain choice has been a source of confusion:
 
 1. **Stage 2 gene-match**: Restrict both c2 and c4 to `(gene_id, reference_isoform_id)` pairs that appear in BOTH sets (already applied by the chunk `load-profiles` upstream, producing `set_results[[key]]$profiles`).
 
