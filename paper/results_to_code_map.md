@@ -4,9 +4,9 @@
 
 **Purpose.** Identify the code that produced every quantitative claim and figure panel in the manuscript. This is **step 1** of the verification workflow — the map is the trace; verification (Pete's 5-step scientific-report protocol from `~/.claude/CLAUDE.md`) follows once the trace is in place.
 
-**Sources used to build this map.** Live Google Doc manuscript (fetched 2026-06-13), the code-map Google Doc shared by Pete (with corrections noted below), `nmd/ONBOARDING.md`, `nmd/CLAUDE.md`, the local `nmd/code/` mirror, and the manuscript Methods text.
+**Sources used to build this map.** Live Google Doc manuscript (fetched 2026-06-13; §4 audited and corrected 2026-06-16), the code-map Google Doc shared by Pete, `nmd/ONBOARDING.md`, `nmd/CLAUDE.md`, the local `nmd/code/` mirror, the new canonical Rmd `05_final_report_gencode_scope_2026-06-15.Rmd`, and the two verifiers under `reproducibility/` (37-check `verify_pass7_new_rmd.R` manifest + 57-check `verify_cross_check_new_rmd_vs_figures.R`).
 
-**Status of this document.** First-pass complete. Methods + Sections 1–5 all mapped at the per-claim granularity. 144 numbered claims total. Next step: triage which claims to verify first against the 5-step scientific-report protocol.
+**Status of this document.** Revised 2026-06-16 against the post-cleanup canonical state. The §4 entries reference the new canonical Rmd (`05_final_report_gencode_scope_2026-06-15.Rmd`); the legacy `05_final_report_mashr.Rmd` is deprecated (banners in place) and retained for reference only. Methods + Sections 1–5 mapped at per-claim granularity; 144 numbered claims. §4 numerical claims pinned to the verifier outputs (both pass).
 
 **Verifiable-locally summary** (claims that can be reproduced end-to-end from `~/claude_projects/` clones on this laptop without cluster or Yul-side access):
 
@@ -15,10 +15,10 @@
 | §1 (Isoform discovery) | ~1 / 15 | Yul-side `Isoform_Landscape.Rmd`, `correlation_analysis.Rmd` |
 | §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul; Tan reanalysis Rmd path unknown |
 | §3 (Output Lost + PCI) | ~1 / 26 | **All three primary §3 Rmds are Yul-side** (`transcriptional_output.Rmd`, `comparison_analysis.Rmd`, `productive_compensation.Rmd`) — §3 is the most Yul-blocked section |
-| §4 (Isopair / splice events / PTC) | ~44 / 46 | Essentially all local — `isopair:` + `nmd:results/.../isopair_wrapper/` |
+| §4 (Isopair / splice events / PTC) | 46 / 46 | All local. Verified by the pass-7 (37 checks) + cross-check (57 checks) verifiers under `reproducibility/`. Both PASS. |
 | §5 (DL model) | ~30 / 31 | Essentially all local — `model:` (trained weights cached) |
 
-About half of the manuscript's quantitative claims are directly verifiable from this laptop, concentrated heavily in §4 and §5.
+About half of the manuscript's quantitative claims are directly verifiable from this laptop, concentrated heavily in §4 and §5. **§4 is now fully verified** against the verifier suite.
 
 ---
 
@@ -45,7 +45,7 @@ limma + mashr in one Rmd (Yul-side, canonical)         →  canonical CSV (in th
 yul:Isoform-Level_Quantification.Rmd                      nmd:isocall_dge/mashr/nmd_mashr_die_{at,dd,fb,mv}_2026.3.10.csv
 ```
 
-Pete also has a parallel limma implementation at `nmd:code/isocall_limma_dge_fullmodel_2026.3.1.Rmd`, but per Pete (2026-06-13) Yul did her own limma analysis — so the Pete-side Rmd is **not** the canonical input to the mashr CSVs. Treat Pete's Rmd as a QC / sanity-check parallel implementation. The canonical limma contrasts that feed the manuscript come from Yul's Rmd. *Flag for Yul to confirm.*
+Pete also has a parallel limma implementation at `nmd:code/isocall_limma_dge_fullmodel_2026.3.1.Rmd` and a deleted-2026-06-16 Pete-side run at `nmd:isocall_dge/limma/pete/` (see `isocall_dge/limma/README.md`). Per Pete's confirmed ownership model: **Yul owns limma + mashr DGE; Pete owns Isopair + the deep-learning model.** Yul's Rmd is canonical for the manuscript mashr CSVs; the Pete-side Rmd is a QC/sanity-check parallel implementation that should not be cited as canonical.
 
 **SR DGE provenance (single Yul-side Rmd doing both limma and mashr):**
 
@@ -59,18 +59,18 @@ yul:NMD_shortread_dge_fullmodel_2026.5.5.Rmd              nmd:shortread_dge/mash
 
 Pete flagged "outdated material, especially at the beginning of the document." Concrete corrections applied here:
 
-1. **Long-read quantification used the PacBio Isocall pipeline, not oarfish.** The oarfish minimap2/oarfish_quant pipeline and the downstream `oarfish_gencode49_merged_collapsed_limma_dge_fullmodel_*.Rmd` series are **deprecated**. The current canonical limma step is `nmd:code/isocall_limma_dge_fullmodel_2026.3.1.Rmd`.
+1. **Long-read quantification used the PacBio Isocall pipeline, not oarfish.** The oarfish minimap2/oarfish_quant pipeline and the downstream `oarfish_gencode49_merged_collapsed_limma_dge_fullmodel_*.Rmd` series are **deprecated**. The Pete-side QC limma is `nmd:code/isocall_limma_dge_fullmodel_2026.3.1.Rmd`; the canonical limma is Yul's (M6 below).
 2. SR DGE Rmd path: Pete's code-map doc cites Yul's `2026.5.5` vintage. The mashr CSVs are dated `2026.3.10`. **Open question:** did the `2026.5.5` Rmd re-emit the same `2026.3.10` CSVs (unlikely), or is there an intermediate `~2026.3.10` vintage that wrote the CSVs? Flagged for Yul to confirm.
 
 ### Code-map gaps
 
-These manuscript analyses are not in Pete's code-map Google Doc and need to be added:
+These manuscript analyses are now covered by added code references; the remaining gaps are Yul-side:
 
-- Isopair package + wrapper pipeline (Section 4)
-- DL model training + interpretability (Section 5)
-- Tan et al. (2025) mashr reanalysis (Section 2)
-- DMSO-only one-vs-rest cell-type-marker mashr analysis (Methods)
-- 3′UTR length comparison restricted to GENCODE-annotated CDS (Section 4 final paragraph)
+- ✓ Isopair package + wrapper pipeline (§4) — now mapped to `isopair:` package + `05_final_report_gencode_scope_2026-06-15.Rmd` + per-panel scripts (§4 section)
+- ✓ DL model training + interpretability (§5) — mapped to `model:` (§5 section)
+- ✓ 3′UTR length restricted to GENCODE-annotated CDS (§4 final paragraph) — covered by the `CDSand3UTR_GENCODEonly` supplement (`figures/SupplementalFigures/CDSand3UTR_GENCODEonly/`) and Rmd §2d / §3a
+- **Remaining gap:** Tan et al. (2025) mashr reanalysis (§2) — Yul-side; flag for Yul to identify the Rmd in `final/`
+- **Remaining gap:** DMSO-only one-vs-rest cell-type-marker mashr analysis (Methods M5) — Yul-side; flag for Yul
 
 ---
 
@@ -111,8 +111,8 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 
 - **SR gene level (limma + mashr in one Rmd):** `yul:NMD_shortread_dge_fullmodel_2026.5.5.Rmd` → CSVs in `nmd:shortread_dge/mashr/`.
 - **LR gene level:** code path not in Pete's code-map doc. The manuscript reports "long-read gene-level analysis tested 19,056 genes" — flag for Yul to identify the Rmd that produces this (it may be folded into another script).
-- **LR isoform level (limma + mashr in one Rmd, canonical):** `yul:Isoform-Level_Quantification.Rmd` → CSVs in `nmd:isocall_dge/mashr/`. Per Pete (2026-06-13), Yul did her own limma version, so this Rmd is the canonical end-to-end implementation for the manuscript numbers.
-- **LR isoform level — parallel Pete-side limma (QC / sanity, NOT canonical for manuscript):** `nmd:code/isocall_limma_dge_fullmodel_2026.3.1.Rmd`. Reads SQANTI-filtered Isocall count matrix; writes limma contrast tables to `nmd:isocall_dge/`. Useful for cross-checking Yul's results but not the source of the mashr CSVs.
+- **LR isoform level (limma + mashr in one Rmd, canonical):** `yul:Isoform-Level_Quantification.Rmd` → CSVs in `nmd:isocall_dge/mashr/`. Per Pete's ownership model, Yul owns this — canonical end-to-end implementation for the manuscript numbers.
+- **LR isoform level — parallel Pete-side limma (QC / sanity, NOT canonical for manuscript):** `nmd:code/isocall_limma_dge_fullmodel_2026.3.1.Rmd`. Reads SQANTI-filtered Isocall count matrix; writes limma contrast tables to `nmd:isocall_dge/`. Useful for cross-checking Yul's results but not the source of the mashr CSVs. The previously-tracked `nmd:isocall_dge/limma/pete/` snapshot was deleted on 2026-06-16 (see `isocall_dge/limma/README.md`).
 - **Convention:** design = `~ cell_type + treatment + cell_type:treatment`, reference = LAE, donor block via duplicateCorrelation.
 
 ### M7. mashr (the shared infrastructure)
@@ -137,11 +137,15 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 - **Code:** `yul:transcriptional_output.Rmd` (% output lost) and `yul:productive_compensation.Rmd` (PCI). Per code-map doc.
 - **Status:** cite-only.
 
-### M11. Isopair pairs analysis
+### M11. Isopair pairs analysis (canonical Rmd updated 2026-06-15)
 
 - **Package:** `isopair:` (canonical at `peter4244/Isopair`, vignette `Isopair/vignettes/NMD-attribution.Rmd` is the canonical methods source per ONBOARDING).
-- **Pipeline wrapper (force-tracked in this repo):** `nmd:results/isoform_transitions/Version_6.0/isopair_wrapper/` — `01_..05_*.R` + `05_final_report_mashr.Rmd`.
-- **3′UTR length analysis on GENCODE-annotated CDS subset (Section 4 final paragraph, n=1,904 NMD vs 22,335 non-NMD):** likely in `05_final_report_mashr.Rmd` ("3'UTR analyses" was added in commit `38c00a5` per `git log`). To confirm by reading the Rmd.
+- **Pipeline wrapper (force-tracked in this repo):** `nmd:results/isoform_transitions/Version_6.0/isopair_wrapper/` — `01_..04_*.R` + per-feature analysis sub-scripts (`05k_utr5_all_isoforms.R`, `05k_b_utr5_refaug.R`, `05l_unified_model.R`, `05r_ref_atg_analysis.R`, `05s_orfik_scan.R`, `05t_ref_cds_features.R`, `05u_paralog_annotation.R`, `05v_model_comparison.R`, etc.).
+- **Canonical report Rmd (NEW, 2026-06-15):** `05_final_report_gencode_scope_2026-06-15.Rmd`. Structure: §1 (pop_BC + Fig 3 A/B/C), §1a (transcript length), §1b (annotation status), §1c (Fig 3 A/B/C embed), §2 (n=190 strict scope), §2a (PTC determination + Fig 3 D), §2b (PTC-causing event attribution + Fig 3 E/F), §2c (5'UTR length + longest 5'UTR ORF + Fig 4 A/B), §2d (CDS/3'UTR sanity + CDSand3UTR supplement row 1), §3 (n=1,166 broad ref-AUG-traceable scope), §3a (5'UTR + longest ORF + Fig 4 C/D), §3b (PTC rate at Section C), §4 (TD2 bias: §4a ORF length, §4b paired Kozak PWM, §4c TD2 ATG position, TD2BiasEvidence supplement), §5 (cumulative accounting: 1050/1166).
+- **Legacy Rmd (DEPRECATED, retained for reference):** `05_final_report_mashr.Rmd` — has deprecation banners; numbers in this Rmd are no longer canonical.
+- **CDS / 3'UTR analysis on GENCODE-annotated CDS subset (manuscript §4 final paragraph):** Rmd §2d (n=190 strict scope) + §3a (n=1,166 broad scope). The `CDSand3UTR_GENCODEonly` supplement is a 2×3 layout reproducing the bias-correction pattern across both scopes.
+- **Shared helpers:** `nmd:figures/lib/mechanism_class.R` (derived helper; replaces the old cached `mechanism_class` column); `nmd:figures/lib/validate_flowchart_dot.R` (DOT static validator); `nmd:figures/lib/validate_figure_layout.py` (scale-aware per-axis tolerances).
+- **Verifiers:** `nmd:reproducibility/verify_pass7_new_rmd.R` (37-check manifest pinning every Rmd-rendered figure number to its canonical source) + `nmd:reproducibility/verify_cross_check_new_rmd_vs_figures.R` (57-check cross-check binding Rmd HTML claims to figure-side TSVs). Both PASS.
 
 ### M12. Deep learning model
 
@@ -364,46 +368,41 @@ Most of §3 still requires Yul-side access. Compared to §2 (high local-verifiab
 
 ## Section 4 (Isopair: attributing NMD to splicing events) → code
 
-> **⚠ POST-2026-06-13 PM REVISION — supersedes the per-claim § 4 entries below for any claim related to Figure 3 (new combined figure of old Fig 3 + Fig 4).**
->
-> The figure structure, manuscript numbers, and methodology framework for §4 have been substantially reframed under Pete's clarified policy: "TD2 CDS annotations are unreliable, so for all analyses that depend on identifying the stop codon, we limit to isoform pairs where reference AUG tracing can be performed."
->
-> **New population structure** (`figures/multipanel/figure3_isopair_and_ptc/data_export.R`):
->
-> | Layer | NMD n | Control n | Used by |
-> |---|---|---|---|
-> | **pop_BC** = Stage 2 gene-matched | 3,009 | 3,009 | Panels B, C |
-> | **pop_traceable** = ref-AUG-traceable subset | 2,289 | 1,763 | Panel D |
-> | **pop_ptc_plus** = ref-AUG PTC+ (effectively_ptc) | 1,912 | 288 | Panels E, F |
->
-> **New headline numbers**:
-> - NMD PTC rate (ref-AUG-defined): **83.5%** (1,912 / 2,289) — replaces the old "44%" claim
-> - Control PTC rate: **16.3%** (288 / 1,763) — replaces the old "5%" claim
-> - Fold enrichment: **~5.1×** (replaces "15-fold")
-> - "85% combined PTC explanation" → now directly **83.5%** (single source, not a TD2 + ref-AUG composite)
-> - "3,674 genes" → **3,099 eligible genes** (3,009 yielding pair sets) — vintage drift from older mashr classification
->
-> **Old per-claim entries below (4.1–4.46) are SUPERSEDED** for any claim that touches the new Fig 3. The new mapping is:
->
-> | New Fig 3 panel | Mirrors old | Source code |
-> |---|---|---|
-> | New Fig 3 Panel A | (new — schematic) | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelA_pair_concept.py` (ported from `make_pair_concept_figure.R`) |
-> | New Fig 3 Panel B (sequence similarity) | old Fig 3B | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelB_sequence_similarity.py` |
-> | New Fig 3 Panel C (event prevalence) | old Fig 3C | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelC_event_prevalence.py` |
-> | New Fig 3 Panel D (stop-to-EJC distance) | old Fig 4A | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelD_stop_codon_distance.py` |
-> | New Fig 3 Panel E (PTC-causing events) | old Fig 4C | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelE_ptc_event_attribution.py` |
-> | New Fig 3 Panel F (mechanism breakdown) | old Fig 4D | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelF_mechanism_breakdown.py` |
->
-> **Old 3D (gain/loss direction)** and **old 4B (NMD logFC × distance)** moved to supplement per Pete's plan.
->
-> **§4 prose updates**: see `paper/section4_findreplace_2026-06-13.md` for Google Doc find/replace pairs.
->
-> **Methodology files** (in `figures/multipanel/figure3_isopair_and_ptc/`):
-> - `figure3_panelA_methodology.md`, `figure3_panelB_methodology.md`, `figure3_panelC_methodology.md`, `figure3_panelD_methodology.md`, `figure3_panelE_methodology.md`, `figure3_panelF_methodology.md`
->
-> **Upstream Rmd updates pending** (Task #23): `compute_ptc_rates_row()` and `goal2-ptc-mechanisms` chunk in `05_final_report_mashr.Rmd` should be updated to use the new ref-AUG-traceable scope as the canonical PTC analysis population. This will let future Rmd renders match Figure 3 directly without per-panel filter chains in `data_export.R`.
+**Scope framework (current canonical, 2026-06-15):** §4 manuscript prose uses three nested analytic scopes, each with explicit gene-matched NMD vs Control pairs.
 
-**Primary code home for §4:** `nmd:results/isoform_transitions/Version_6.0/isopair_wrapper/` (force-tracked in this repo) — wrapper pipeline (`01_..06_*.R/Rmd`), with `05_final_report_mashr.Rmd` as the main report and named sub-scripts (`05r_ref_atg_analysis.R`, `05k_utr5_all_isoforms.R`, `05l_unified_model.R`, etc.) for specific analyses. Backing package functions live in `isopair:` (`peter4244/Isopair`). Both are locally readable — **§4 is the most directly verifiable-from-this-laptop section in the manuscript.**
+| Scope | Definition | NMD n | Control n | Used for |
+|---|---|---|---|---|
+| **Subset 1 / `gencode_all3` (strict)** | all 3 transcripts in the triplet are GENCODE-annotated coding (reference + NMD comparator + Control comparator) | 190 | 190 | Headline PTC enrichment (18-fold, 37.9% vs 2.1%); 5'UTR length / longest 5'UTR ORF (Fig 4 A/B); CDS/3'UTR sanity (CDSand3UTR supplement row 1) |
+| **Subset 2 / `mechanism_class_4` (broad)** | ref-AUG-traceable; `mechanism_class ∈ {effectively_ptc, truncated_no_ejc, no_downstream_ejc, ref_atg_lost}` | 1,166 | 1,166 | Mechanism breakdown; 5'UTR analysis at expanded scope (Fig 4 C/D); cumulative PTC accounting (1050/1166 = 90%); 3'UTR length comparison (1290/800/948) |
+| **Occult-PTC** | within Subset 2 NMD+ where ref AUG defines a PTC but TD2 misses it | 492 | n/a | TD2 bias evidence (PTC rate, ref-AUG vs TD2 Kozak strength, TD2 ATG position) — TD2BiasEvidence supplement |
+| **Upstream cell-type cohort** | AT (n=6) + DD (n=8) + FB (n=6) + MV (n=6) = 26 samples; 3,009 genes pass pop_BC filtering | — | — | All upstream pair construction |
+
+**Primary code home for §4:** `nmd:results/isoform_transitions/Version_6.0/isopair_wrapper/` (force-tracked in this repo).
+
+- **Canonical report Rmd:** `05_final_report_gencode_scope_2026-06-15.Rmd` (NEW 2026-06-15, branch-don't-rewrite from the legacy). Sections §1 (pop_BC + Fig 3 A/B/C) → §2 (n=190 strict) → §3 (n=1,166 broad) → §4 (TD2 bias / n=492 occult-PTC) → §5 (cumulative accounting). Each manuscript-§4 paragraph maps to specific Rmd chunks (table below).
+- **Wrapper scripts:** `01_prepare_data_mashr.R`, `02_build_profiles_mashr.R`, `03b_rebuild_cache.R`, `04_productive_frameshift_precompute.R`, `04b_all_c4_protein_comparison.R`, plus sub-scripts named `05k_*`, `05l_unified_model.R`, `05r_ref_atg_analysis.R`, `05s_orfik_scan.R`, `05t_ref_cds_features.R`, `05u_paralog_annotation.R`, `05v_model_comparison.R`.
+- **Legacy Rmd (DEPRECATED):** `05_final_report_mashr.Rmd` retained with deprecation banners. **Do not cite for any new analysis or claim**; numbers in it are no longer canonical.
+- **Backing package:** `isopair:` (`peter4244/Isopair`).
+
+**Supplements (NEW 2026-06-15, in `figures/SupplementalFigures/`):**
+
+| Supplement | Scope | What it shows |
+|---|---|---|
+| `CDSand3UTR_GENCODEonly/` | n=190 (row 1) + n=1,166 (row 2) | 2×3 layout: CDS length, 3'UTR translation-based, 3'UTR non-PTC-stop bias-corrected — replicates the bias-correction pattern across both scopes |
+| `TD2BiasEvidence/` | n=1,166 broad + n=492 occult-PTC | 2×3: TD2-vs-ref-AUG ORF length, paired Kozak PWM, TD2 ATG position |
+| `PairAnalysisFlowchart/` | full cohort | DiagrammeR/grViz cohort cascade: 4-CT cohort (26 samples) → NMD classification → Subset 1 (strict, n=190) + Subset 2 (broad, n=1,166) |
+
+**Manuscript §4 paragraph → Rmd chunk → Figure 3/4/supplement panel map:**
+
+| Manuscript §4 paragraph | Topic | Rmd section / chunk | Figure / panel |
+|---|---|---|---|
+| ¶1 (pair construction, descriptives) | pop_BC = 3,009 genes; transcript length 2893/3049/2762 nt; 7 isoforms/gene | §1, §1a (`sec1-pop-bc`, `sec1-tx-length`, `sec1-annotation`) | PairAnalysisFlowchart supplement |
+| ¶2 (sequence similarity + splice events) | NMD shares more with reference; SE 2× more in NMD; IR more common in Control | §1c (`sec1-fig3abc`) | Fig 3 B, C |
+| ¶3 (PTC enrichment + mechanism) | 18-fold (37.9% vs 2.1%); SE 44%/14%, A5SS 13%/4.5%; frameshift/in-frame/3'UTR = 55%/33%/12% | §2a (`sec2a-ptc`, `sec2a-fig3-panelD`), §2b (`sec2b-attribution`, `sec2b-fig3-panelE-F`) | Fig 3 D, E, F |
+| ¶4 (5'UTR + uORF at n=190 and n=1,166; TD2 vs ref AUG) | 5'UTR longer for NMD+/PTC−; 50% TD2 == ref AUG; 492 occult-PTC; 99% TD2 downstream; 78% ref AUG Kozak stronger | §2c (`sec2c-fig4AB`), §3a (`sec3a-fig4CD`), §4 (`sec4-compute`, `sec4-supp`) | Fig 4 A, B, C, D; TD2BiasEvidence supplement |
+| ¶5 (3'UTR + cumulative PTC accounting) | No 3'UTR diff at n=190; expanded set median 1290/800/948; 90% PTC at n=1,166 | §2d (`sec2d-utr3np`, `sec2d-supp`), §3b, §5 (`sec5-accounting`) | CDSand3UTR_GENCODEonly supplement; cumulative accounting table |
+
+**Verifiers:** `nmd:reproducibility/verify_pass7_new_rmd.R` (37-check manifest) + `nmd:reproducibility/verify_cross_check_new_rmd_vs_figures.R` (57-check cross-check). Both PASS as of 2026-06-15.
 
 **Key package-to-script bridge** (from `05r_ref_atg_analysis.R` header):
 
@@ -413,105 +412,117 @@ Most of §3 still requires Yul-side access. Compared to §2 (high local-verifiab
                              ref_atg_lost, no_ref_cds, mapping_failed)
 ```
 
-### Paragraph 1 — pair-set construction (3,674 genes)
+**Per-claim entries (4.1–4.46) below have been updated to the current canonical Rmd + scope framing.**
+
+### Paragraph 1 — pair-set construction (3,009 genes; descriptives)
 
 | # | Claim | Source code | Notes / status |
 |---|---|---|---|
-| 4.1 | "12 categories of splicing events" enumerated by Isopair | `isopair:R/event-detection.R` — defines the 12 categories. Per Methods M11 + Fig 4D legend: Alt TSS, Alt TES, exon skipping, intron retention, A5SS, A3SS, MXE, alt first/last exon, terminal exon extension/truncation, combination events. Caption defines abbreviations: SE, IR, A3SS, A5SS, Partial IR 5'/3', IR diff 5'/3', Alt_TSS, Missing_Int. | **Verifiable locally.** The 12-category list in the Rmd output should match the enumeration in `event-detection.R`. |
+| 4.1 | "12 categories of splicing events" enumerated by Isopair | `isopair:R/event-detection.R` — defines the 12 categories. Per Methods M11 + Fig 3F legend: Alt TSS, Alt TES, exon skipping, intron retention, A5SS, A3SS, MXE, alt first/last exon, terminal exon extension/truncation, combination events. Caption defines abbreviations: SE, IR, A3SS, A5SS, Partial IR 5'/3', IR diff 5'/3', Alt_TSS, Missing_Int. | **Verifiable locally.** The 12-category list in the Rmd output should match the enumeration in `event-detection.R`. |
 | 4.2 | Correctness verified by ability to reconstruct reference exon structure | `isopair:R/reconstruction.R` — reconstruction function. Per ONBOARDING the validator is built into the package. | **Verifiable locally.** |
-| 4.3 | "3,674 genes from which the isoform pairs were drawn" (≥3 expressed isoforms, ≥1 NMD-susceptible) | `nmd:results/.../isopair_wrapper/01_prepare_data_mashr.R` + `02_build_profiles_mashr.R` — pair-set filtering. Per Methods: "≥5% of overall gene expression in either DMSO or SMG1i and ≥5 reads in ≥1 sample"; non-NMD definition was lowered from adj.P.Val > 0.50 to > 0.30 per ONBOARDING §6. | **Verifiable locally.** Run the 01–02 scripts; row count of the resulting profile object should be 3,674. |
-| 4.4 | Median 7 isoforms per gene (SF: Isoform Count in Isoform Pair Sets) | `nmd:results/.../05_final_report_mashr.Rmd` — summary statistic chunk. | Verifiable locally. |
-| 4.5 | Reference isoform: median 70% of parent gene expression; 75% of references >50% of parent gene expression | Same Rmd — DMSO baseline CPM per gene + per reference isoform. | Verifiable locally. |
-| 4.6 | NMD + non-NMD comparators expressed at similar levels in SMG1i samples (SF: Expression Levels of Isoform Pair Sets) | Same Rmd. | Verifiable locally. |
-| 4.7 | Transcript length: median 3,067 (reference) / 3,107 (NMD comparator) / 2,906 (Control comparator), p<0.001 for Control vs reference and Control vs NMD (SF: Transcript Length Comparison) | Same Rmd — Wilcoxon test on transcript-length distributions. | Verifiable locally. |
-| 4.8 | Flowchart for the 3,674-gene pair construction (SF: NMD pairs flowchart) | Render script TBD. Either embedded in the Rmd or a separate script (could be a manual figure). | Cite-only. |
-| 4.9 | **Figure 3A** (schematic illustrating reference / NMD-comparator / Control-comparator pair construction) | Manual illustration likely — no automated render needed (schematic, not data plot). | Cite-only / manual figure. |
+| 4.3 | "3,009 genes from which the isoform pairs were drawn" (≥3 expressed isoforms, ≥1 NMD-susceptible) | `nmd:results/.../isopair_wrapper/01_prepare_data_mashr.R` + `02_build_profiles_mashr.R` — pair-set filtering. Per Methods: "≥5% of overall gene expression in either DMSO or SMG1i and ≥5 reads in ≥1 sample"; non-NMD definition was lowered from adj.P.Val > 0.50 to > 0.30 per ONBOARDING §6. Final pop_BC = 3,009 genes. | **Verifiable locally.** New Rmd `sec1-pop-bc` chunk. Pinned by verifier `verify_pass7_new_rmd.R` (3,009). |
+| 4.4 | Median 7 isoforms per gene (SF: Isoform Count in Isoform Pair Sets) | New Rmd §1 — pop_BC summary statistic. | Verifiable locally. **§1b descriptive not currently in the pass-7 manifest** — Pete deferred recomputation 2026-06-16; numbers carried over from the legacy Rmd. |
+| 4.5 | Reference isoform: median 70% of parent gene expression; 75% of references >50% of parent gene expression | New Rmd §1 — DMSO baseline CPM per gene + per reference isoform. | Same as 4.4 — descriptive not in current verifier; carried over from legacy. |
+| 4.6 | NMD + non-NMD comparators expressed at similar levels in SMG1i samples (SF: Expression Levels of Isoform Pair Sets) | New Rmd §1. | Verifiable locally. |
+| 4.7 | Transcript length: median 2,893 (reference) / 3,049 (NMD comparator) / 2,762 (Control comparator), paired Wilcoxon p<0.001 (SF: Transcript Length Comparison) | New Rmd `sec1-tx-length` chunk — paired Wilcoxon test on bias-corrected pop_BC-restricted c4 transcript lengths. | **Verifiable locally.** Pinned by `verify_pass7_new_rmd.R`. *(Legacy 3067/3107/2906 numbers were pre-recomputation; Pete corrected the manuscript prose on 2026-06-16.)* |
+| 4.8 | Flowchart for the 3,009-gene pair construction (Supplemental Figure: PairAnalysisFlowchart) | NEW supplement: `figures/SupplementalFigures/PairAnalysisFlowchart/build_flowchart.R` (DiagrammeR/grViz). Renders to `.dot` + `.html`. Validated by `figures/lib/validate_flowchart_dot.R`. New Rmd embeds the flowchart in §1 (`sec1-flowchart` chunk). | **Verifiable locally.** |
+| 4.9 | **Figure 3A** (schematic illustrating reference / NMD-comparator / Control-comparator pair construction) | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelA_pair_concept.py` (matplotlib port of the original `make_pair_concept_figure.R`). | **Verifiable locally.** Embedded by new Rmd `sec1-fig3abc`. |
 
-### Paragraph 2 — Figure 3 panels B, C, D (sequence similarity, event prevalence, gain/loss direction)
+### Paragraph 2 — Figure 3 panels B, C (sequence similarity, event prevalence)
+
+> Note: previous "Figure 3D = gain/loss direction" has been retired. The current Figure 3 has six panels A–F, with D = stop-to-EJC distance (Paragraph 3 below), E = PTC-causing event attribution, F = mechanism breakdown.
 
 | # | Claim | Source code | Notes / status |
 |---|---|---|---|
-| 4.10 | "NMD isoforms shared more sequence content with reference than Control isoforms" — sequence similarity comparison | `isopair:R/compare-sets.R` — sequence-similarity computation. Driver in `05_final_report_mashr.Rmd`. | **Verifiable locally.** |
-| 4.11 | **Figure 3B** (sequence similarity of NMD vs Control pairs) | Render code in `05_final_report_mashr.Rmd` (per commit `38c00a5`: "drop standalone figure scripts" — figures are now in-Rmd). | Verifiable locally. |
-| 4.12 | "Skipped exon events twice as frequent in NMD pairs vs Controls" — splice-event prevalence | `isopair:R/event-detection.R` + driver in `05_final_report_mashr.Rmd` — per-category event counts in NMD vs Control pairs. | **Verifiable locally.** |
+| 4.10 | "NMD isoforms shared more sequence content with reference than Control isoforms" — sequence similarity comparison | `isopair:R/compare-sets.R` — sequence-similarity computation. Driver in new Rmd `sec1-fig3abc` chunk, panel `figure3_panelB_sequence_similarity.py`. | **Verifiable locally.** |
+| 4.11 | **Figure 3B** (sequence similarity of NMD vs Control pairs) | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelB_sequence_similarity.py` + `data_export.R`. New Rmd embeds via `sec1-fig3abc`. Scope: pop_BC (n=3,009). | **Verifiable locally.** |
+| 4.12 | "Skipped exon events twice as frequent in NMD pairs vs Controls" — splice-event prevalence | `isopair:R/event-detection.R` + per-category event counts via new Rmd §1c. | **Verifiable locally.** |
 | 4.13 | "Intron retention more common in Control pairs" | Same. | Verifiable locally. |
-| 4.14 | **Figure 3C** (prevalence of splice event categories in NMD vs Control) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.15 | "Terminal events (Alt TSS / TES) and skipped exons more frequently led to sequence GAIN in NMD; intron retention led to sequence gain in Controls" | `isopair:R/event-detection.R` (GAIN/LOSS semantics — clarified in commit `d242798`) + driver in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.16 | **Figure 3D** (gain/loss direction by event type) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
+| 4.14 | **Figure 3C** (prevalence of splice event categories in NMD vs Control) | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelC_event_prevalence.py` + `data_export.R`. New Rmd embeds via `sec1-fig3abc`. Scope: pop_BC (n=3,009). | **Verifiable locally.** |
+| 4.15 | "Terminal events (Alt TSS / TES) and skipped exons more frequently led to sequence GAIN in NMD; intron retention led to sequence gain in Controls" *(now in supplement per Pete's plan)* | `isopair:R/event-detection.R` (GAIN/LOSS semantics — clarified in commit `d242798`). Moved out of main Figure 3 in the 2026-06-15 refactor. | Verifiable locally; supplementary. |
+| 4.16 | ~~Figure 3D (gain/loss direction)~~ — **retired from main Figure 3.** Current Figure 3 Panel D is the stop-to-EJC-distance panel (was old Figure 4A). See claim 4.19. | n/a | superseded |
 
-### Paragraph 3 — PTC enrichment + Figure 4
-
-| # | Claim | Source code | Notes / status |
-|---|---|---|---|
-| 4.17 | "44% PTC rate in NMD susceptible isoforms vs 5% in Controls, 15-fold enrichment, p<0.001" | `isopair:R/ptc-attribution.R` + `ptc.R` — PTC detection via 50-nt rule. Driver in `05_final_report_mashr.Rmd`. | **Verifiable locally.** |
-| 4.18 | "Large enrichment of stop codons far upstream of the terminal exon junction in NMD isoforms" | `isopair:R/ptc.R` + `spatial.R` — stop-codon-to-last-EJC distance computation. Driver in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.19 | **Figure 4A** (distribution of stop-codon distances from last EJC, NMD vs Control) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.20 | "Dose-response: NMD logFC increases with distance from stop codon to last EJC, peak ~500 nt" | `05_final_report_mashr.Rmd` — joins mashr posterior logFC with PTC distance. | Verifiable locally. |
-| 4.21 | **Figure 4B** (NMD log₂FC × PTC-to-last-EJC distance) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.22 | "NMD response peaks at 4–5 downstream EJCs from PTC" (SF: NMD Effect Size by Number of EJCs) | Same Rmd — joins mashr posterior logFC with downstream EJC count. | Verifiable locally. |
-| 4.23 | "Roughly evenly split between frameshift and in-frame splicing events, smaller contribution from 3′UTR splicing" | `isopair:R/ptc-attribution.R` — PTC introduction-mechanism classifier. Driver in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.24 | "Majority of PTCs caused by exon skipping; significant enrichment for A5SS and A3SS" | Same — PTC-introducing event-type breakdown. | Verifiable locally. |
-| 4.25 | **Figure 4C** (PTC-introducing event-type prevalence) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.26 | **Figure 4D** (frameshift / in-frame / 3′UTR PTC-introduction distribution) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-
-### Paragraph 4 — NMD+/PTC− analysis + Figure 5 (after panel-drop renumbering)
-
-The Figure 5 panel-drop change (current task #7 from §6 prep): A and B dropped, C→A, D→B, E→C, F→D. **Mapping below uses the NEW panel letters.**
+### Paragraph 3 — PTC enrichment + mechanism breakdown (Figure 3 D, E, F at n=190)
 
 | # | Claim | Source code | Notes / status |
 |---|---|---|---|
-| 4.27 | "56% of NMD susceptible coding isoform pairs did not appear to contain PTCs in initial analysis" (= NMD+/PTC− set, n ≈ 3,674 × 0.56 ≈ 2,057; actual gene-pair count TBD) | `05_final_report_mashr.Rmd` — initial PTC call before ref-AUG tracing, based on `isopair:R/ptc.R` using TD2 CDS. | **Verifiable locally.** |
-| 4.28 | "88% of NMD+/PTC− isoforms contain the reference AUG in their transcript sequence" | `05r_ref_atg_analysis.R` (via `Isopair::traceReferenceAtg()`). Categories: `effectively_ptc`, `truncated_no_ejc`, `no_downstream_ejc`, `ref_atg_lost`, `no_ref_cds`, `mapping_failed`. "Has reference AUG" = not `ref_atg_lost` and not `no_ref_cds`. | **Verifiable locally.** |
-| 4.29 | "72% of those ORFs contained very early PTCs" — Figure 5A (post-renumber) | `05r_ref_atg_analysis.R` — `effectively_ptc` category. The 72% denominator is the AUG-intact set (88% of NMD+/PTC−). | **Verifiable locally.** |
-| 4.30 | **Figure 5A** (most NMD+/PTC− have a PTC when tracing the reference AUG) | Render in `05_final_report_mashr.Rmd` or sibling Rmd. | Verifiable locally. |
-| 4.31 | "In NMD+/PTC− with ref-AUG-defined PTC, TD2 called CDS is always longer (length-based bias)" — Figure 5B | `05_final_report_mashr.Rmd` — length comparison of ref-AUG-defined CDS vs TD2-called CDS over the `effectively_ptc` subset. Likely also references `05v_model_comparison.R` (CDS-caller comparison). | **Verifiable locally.** |
-| 4.32 | **Figure 5B** (TD2 CDS length vs ref-AUG CDS length) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.33 | "Kozak strength of reference AUG vs TD2-called AUG: reference is generally more attractive" — Figure 5C | `05_final_report_mashr.Rmd` + Kozak-scoring function (likely `isopair:` or `ORFik` per Methods). | Verifiable locally. |
-| 4.34 | **Figure 5C** (Kozak strength comparison) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.35 | "Splice-event profile of NMD+/PTC− (post-ref-AUG-tracing) indistinguishable from NMD+/PTC+" — Figure 5D | `05_final_report_mashr.Rmd` — re-runs the event-prevalence comparison on the ref-AUG-reclassified subset. | Verifiable locally. |
-| 4.36 | **Figure 5D** (splice-event profile, ref-AUG-reclassified PTC+ subset vs original PTC+) | Render in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-| 4.37 | "Overall 85% of NMD+ isoforms in our isoform pairs can be explained by the presence of PTCs (original 44% + occult-PTC subset under ref-AUG tracing)" | Computation across the original and ref-AUG-reclassified PTC sets. Logic in `05_final_report_mashr.Rmd`. | Verifiable locally. Headline number worth pinning the exact arithmetic for during verification. |
+| 4.17 | "18-fold enrichment of PTCs in NMD-susceptible isoforms (37.9% vs 2.1% PTC rate, p < 10⁻²⁰)" at n=190 (Subset 1, gencode_all3) | `isopair:R/ptc-attribution.R` + `ptc.R` (50-nt rule). New Rmd `sec2a-ptc` chunk computes per-pair PTC determination at the strict GENCODE-restricted scope. | **Verifiable locally.** Pinned by `verify_pass7_new_rmd.R` (37.9% / 2.1% / OR=28.2 / p=1.88e-20). *(Legacy "44% vs 5%, 15-fold" was pre-bias-correction.)* |
+| 4.18 | "Dose-response relationship between upstream distance of the stop codon and the magnitude of the NMD response" | `isopair:R/spatial.R` — stop-codon-to-last-EJC distance computation. New Rmd `sec2a-ptc`. | Verifiable locally. |
+| 4.19 | **Figure 3D** (stop-codon-to-last-EJC distance, NMD vs Control, n=190) | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelD_stop_codon_distance.py` + `panel_e_compute.R`. New Rmd embeds via `sec2a-fig3-panelD`. | **Verifiable locally.** |
+| 4.20 | "NMD response peaked at 4–5 downstream EJCs from PTC" | New Rmd §2a — joins mashr posterior logFC with downstream EJC count. | Verifiable locally. |
+| 4.21 | "Frameshift events were the leading mechanism (55%)" — 38/69 PTC+ pairs | New Rmd `sec2b-attribution` + `sec2b-mech-table`. Frameshift n=38. | **Verifiable locally.** Pinned by verifier (55.1%). |
+| 4.22 | "In-frame stop events (33%)" — 23/69 | Same. | Pinned by verifier (33.3%). |
+| 4.23 | "3'UTR splicing (12%)" — 8/69 | Same. | Pinned by verifier (11.6%). |
+| 4.24 | "Skipped exon was the most common event type (44% of PTC-causing events vs 14% in Controls, Fisher p < 10⁻⁷)" | New Rmd §2b — per-event Fisher table at n=190 PTC+. Panel E TSV: SE 43.5% / 14.1% / p=7.98e-8. | **Verifiable locally.** Pinned by verifier. |
+| 4.25 | "A5SS also significantly enriched (13% vs 4.5%, p < 10⁻²)" | Same — Panel E TSV: A5SS 13% / 4.5% / p=0.00888. | **Verifiable locally.** Pinned by verifier. |
+| 4.26 | **Figure 3E** (PTC-causing event attribution, per-event Fisher) + **Figure 3F** (mechanism breakdown × event type) | `figures/multipanel/figure3_isopair_and_ptc/figure3_panelE_ptc_event_attribution.py` + `figure3_panelF_mechanism_breakdown.py` + `panel_e_compute.R`. New Rmd embeds via `sec2b-fig3-panelE-F`. | **Verifiable locally.** |
 
-### Paragraph 5 — Remaining ~15% / three subgroups (5′UTR analysis)
+### Paragraph 4 — 5'UTR / uORF analysis + occult-PTC + TD2 bias (Figure 4 + TD2BiasEvidence supplement)
 
-| # | Claim | Source code | Notes / status |
-|---|---|---|---|
-| 4.38 | "498 isoforms = remaining ~15% (NMD+ but no PTC even after ref-AUG tracing)" | `05r_ref_atg_analysis.R` — sum of `truncated_no_ejc + no_downstream_ejc + ref_atg_lost + no_ref_cds + mapping_failed`. | **Verifiable locally.** |
-| 4.39 | "Subset of 71 isoforms had markedly truncated ORFs despite no downstream EJCs" | `05r_ref_atg_analysis.R` — `truncated_no_ejc` category count. | **Verifiable locally.** |
-| 4.40 | "Three subgroups of NMD+/PTC−" | `05l_unified_model.R` — subgroup unification (per commit `38c00a5`: "subgroup unification"). Three subgroups likely = `truncated_no_ejc` + `no_downstream_ejc` + `ref_atg_lost` (the AUG-intact-but-not-effectively-PTC trio). | **Verifiable locally.** |
-| 4.41 | "NMD effect size in these two PTC− subgroups was lower than PTC+" (SFx) | `05_final_report_mashr.Rmd` — joins subgroup classification with mashr posterior logFC. | Verifiable locally. |
-| 4.42 | "3′UTR mean length shorter than controls in each subgroup — rules out 3′UTR-length as the trigger" | `05_final_report_mashr.Rmd` — 3′UTR length distribution per subgroup vs Control comparator. | Verifiable locally. |
-| 4.43 | "5′UTR lengths markedly longer in two of the groups, accounting for 86% of the isoforms" | `05k_utr5_all_isoforms.R` + driver in `05_final_report_mashr.Rmd`. | **Verifiable locally.** |
-| 4.44 | "Markedly longer uORFs in these two groups" | `isopair:R/uorf.R` (uORF detection function) + driver in `05_final_report_mashr.Rmd`. | Verifiable locally. |
-
-**Open question (§4 figure-naming):** the manuscript text in this paragraph cites "Fig X, panel A/B/C/D" for the three-subgroup + 3′UTR + 5′UTR + uORF panels, but after the Figure 5 panel-drop (panels A/B = original 5′UTR / TSS-schematic), these panels don't match the current Figure 5 (which now goes A = PTC recovery, B = TD2 length, C = Kozak, D = splice events). **These cited "Fig X" panels probably belong to an unnamed figure that may need to become Figure 6 (or a supplementary).** Worth flagging when reviewing the manuscript text alongside the panel-drop edits.
-
-### Paragraph 6 — 3′UTR length on GENCODE-annotated CDS subset
+> Note: The old "Figure 5" structure (TD2 vs ref-AUG occult-PTC panels) has been retired. Occult-PTC + TD2 bias evidence are now in the **TD2BiasEvidence supplement**; 5'UTR / longest uORF analysis at n=190 and n=1,166 is **Figure 4**.
 
 | # | Claim | Source code | Notes / status |
 |---|---|---|---|
-| 4.45 | "n=1,904 NMD isoforms and 22,335 non-NMD" — analysis restricted to isoforms with GENCODE-annotated CDS to avoid computational-CDS bias | `05_final_report_mashr.Rmd` — added in commit `38c00a5` ("3'UTR analyses"). Filter: GENCODE CDS annotation present. | **Verifiable locally.** |
-| 4.46 | "3′UTRs were shorter in NMD susceptible (605 [299–1,119] nt vs 919 [360–1,980] in non-NMD, p<0.001)" | Same. Wilcoxon test on 3′UTR length distributions. | **Verifiable locally.** |
+| 4.27 | "1,116 NMD and Control pairs" *(typo in manuscript prose — should read 1,166; Pete corrected 2026-06-16)*; expanded ref-AUG-traceable pair set | New Rmd `sec3-scope` — `mechanism_class_4` filter yields n=1,166 NMD+Control matched pairs. | **Verifiable locally.** Pinned by verifier (1,166). |
+| 4.28 | "50% of these cases, the TD2-called CDS used the same AUG as the reference isoform CDS" | New Rmd §4 (`sec4-compute`, TD2 vs ref-AUG ORF length). At Subset 2 (n=1,166): TD2 == ref AUG in 578/1,166 = 49.6%. | **Verifiable locally.** Pinned by verifier. |
+| 4.29 | "492 novel NMD+ isoforms where the ORF defined by the reference AUG included a PTC" — occult-PTC scope | New Rmd §4 — within Subset 2 NMD+, count of pairs where ref-AUG defines a PTC but TD2 misses it = 492. Mechanism via `05r_ref_atg_analysis.R::traceReferenceAtg()` (`effectively_ptc` category). | **Verifiable locally.** Pinned by verifier. |
+| 4.30 | "99% (487/492) of the TD2-called CDS were downstream from the reference AUG" — Figure S TD2BiasEvidence panel | New Rmd `sec4c` (TD2 ATG position) + `figures/SupplementalFigures/TD2BiasEvidence/data_export.R`. | **Verifiable locally.** Pinned by verifier (99.0%). |
+| 4.31 | "Reference AUG was stronger in 78% of cases (384/492)" — paired Kozak PWM, occult-PTC scope | New Rmd `sec4b` (paired Kozak) + TD2BiasEvidence supplement. Wilcoxon paired test p = 2.6e-38. | **Verifiable locally.** Pinned by verifier (78.0%). |
+| 4.32 | **Figure 4 Panel A** (5'UTR length, NMD+/PTC+ vs NMD+/PTC− vs Control at n=190) | `figures/multipanel/figure4_ptcneg_and_model/figure4_panelA_5utr_length_all3enst.py` + `data_export.R`. New Rmd embeds via `sec2c-fig4AB`. NMD+/PTC− 5'UTR 426.5 nt vs PTC+ 84.5 vs Control 138. | **Verifiable locally.** Pinned by verifier. |
+| 4.33 | **Figure 4 Panel B** (longest 5'UTR ORF, n=190) | `figures/multipanel/figure4_ptcneg_and_model/figure4_panelB_longest_5utr_orf_all3enst.py`. New Rmd embeds via `sec2c-fig4AB`. | **Verifiable locally.** |
+| 4.34 | **Figure 4 Panel C** (5'UTR length, ref-AUG-projected, n=1,166) | `figures/multipanel/figure4_ptcneg_and_model/figure4_panelC_5utr_length_refaug.py`. Uses `05k_b_utr5_refaug.R` (NEW ref-AUG-projected scan, TD2-bias-free). New Rmd embeds via `sec3a-fig4CD`. | **Verifiable locally.** |
+| 4.35 | **Figure 4 Panel D** (longest 5'UTR ORF, ref-AUG-projected, n=1,166) | `figures/multipanel/figure4_ptcneg_and_model/figure4_panelD_longest_5utr_orf_refaug.py`. New Rmd embeds via `sec3a-fig4CD`. | **Verifiable locally.** |
+| 4.36 | TD2BiasEvidence supplement (2×3 layout: ORF length, paired Kozak, TD2 ATG position; rows = n=1,166 broad and n=492 occult-PTC) | `figures/SupplementalFigures/TD2BiasEvidence/figure_s_td2_bias.py` + `data_export.R`. New Rmd embeds via `sec4-supp`. | **Verifiable locally.** |
+| 4.37 | "PTCs in 90% of the NMD+ isoforms (1050/1166)" — cumulative PTC accounting at expanded scope | New Rmd `sec5-accounting` + `sec5-acct-table`. Composite of original TD2-detected PTC + occult-PTC under ref-AUG tracing. | **Verifiable locally.** Pinned by verifier (90.1% = 1050/1166). *(Legacy "85%" was at the prior 2,289-pair scope.)* |
+
+### Paragraph 5 — 3'UTR length comparisons (n=190 and n=1,166)
+
+> Note: the previous "498 isoforms remaining / three subgroups" framing was at the old 2,289-pair scope before the 2026-06-15 refactor reframed to Subset 1 / Subset 2 / Occult-PTC. The 3'UTR + 5'UTR / uORF analyses now sit in Figure 4 (claims 4.32–4.35 above) + the CDSand3UTR_GENCODEonly supplement; the per-subgroup mechanism breakdown sits in Figure 3 Panels D/E/F (claims 4.19–4.26).
+
+| # | Claim | Source code | Notes / status |
+|---|---|---|---|
+| 4.38 | "NMD+/PTC− isoforms had longer 5'UTRs and uORFs than both other groups" at n=190 | New Rmd §2c (`sec2c-secA-groups`, `sec2c-panelA-tables`, `sec2c-panelB-tables`). 5'UTR: PTC+ 84.5 / PTC− 426.5 / Ctrl 138 nt. | **Verifiable locally.** Pinned by verifier. |
+| 4.39 | "No significant 3'UTR length difference at n=190 (GENCODE-restricted set)" — bias-corrected 3'UTR | New Rmd §2d (`sec2d-utr3np`). Bias-corrected 3'UTR (non-PTC-stop): PTC+ 524.5 / PTC− 503 / Ctrl 516.5, p=0.90. | **Verifiable locally.** Pinned by verifier. |
+| 4.40 | "Significantly longer 3'UTR in NMD+/PTC+ at expanded set (median 1290 / 800 / 948 nt)" | New Rmd §3a (`sec3a-secC-groups`) + §2d (`sec2d-utr3np` at n=1,166 row). Bias-corrected 3'UTR at Section C scope. | **Verifiable locally.** Pinned by verifier (1290 / 800 / 948 exact match). |
+| 4.41 | "Mechanism classification by subgroup at expanded scope" (effectively_ptc, truncated_no_ejc, no_downstream_ejc, ref_atg_lost) | `05r_ref_atg_analysis.R` (via `Isopair::traceReferenceAtg()`) + `05l_unified_model.R` (subgroup unification). New Rmd `sec3-class-table`. | **Verifiable locally.** |
+| 4.42 | "5'UTR longer for NMD+ at Section C (ref-AUG-projected, n=1,166)" — Figure 4 Panel C | New Rmd §3a (`sec3a-panelC-tables`) + Figure 4 Panel C. Uses ref-AUG-projected scan from `05k_b_utr5_refaug.R` (NEW, TD2-bias-free) — replaces the legacy TD2-anchored scan from `05k_utr5_all_isoforms.R`. | **Verifiable locally.** |
+| 4.43 | "Longer 5'UTR uORFs in NMD+ at Section C" — Figure 4 Panel D | New Rmd §3a (`sec3a-panelD-tables`) + Figure 4 Panel D. | **Verifiable locally.** |
+| 4.44 | Helper / package functions backing 4.38–4.43 | `isopair:R/uorf.R` (uORF detection); `nmd:figures/lib/mechanism_class.R` (derived helper, replaces legacy cached column); `nmd:results/.../isopair_wrapper/05k_b_utr5_refaug.R` (ref-AUG-projected 5'UTR features). | **Verifiable locally.** |
+
+### Paragraph 6 — CDS / 3'UTR sanity check on GENCODE-CDS-restricted scope (CDSand3UTR_GENCODEonly supplement)
+
+| # | Claim | Source code | Notes / status |
+|---|---|---|---|
+| 4.45 | CDS length comparison at n=190 (strict GENCODE-restricted scope) | New Rmd `sec2d-cds` chunk + `figures/SupplementalFigures/CDSand3UTR_GENCODEonly/data_export.R`. 2×3 supplement: row 1 = n=190 (panels A CDS / B 3'UTR translation-based / C 3'UTR bias-corrected); row 2 = n=1,166 ref-AUG-projected (panels D/E/F). | **Verifiable locally.** Replaces the old "n=1,904 / 22,335" claim (which was at the pre-refactor scope). |
+| 4.46 | 3'UTR length comparison — translation-based vs bias-corrected (non-PTC-stop), demonstrating that the bias-correction pattern replicates across both n=190 strict and n=1,166 broad scopes | Same. The 2×3 supplement shows the same bias-correction collapse pattern at both scopes, validating the methodological choice. | **Verifiable locally.** |
 
 ### Section 4 figure render-script summary
 
-In sharp contrast to §1–3, **the figure render scripts for §4 are essentially all local**. Per commit `38c00a5` ("drop standalone figure scripts"), Figure 3, Figure 4, and Figure 5 are rendered inside `05_final_report_mashr.Rmd` itself. The Isopair package provides:
+In contrast to §1–3, **all §4 figure render scripts are local.** Figures 3 and 4 + the three supplements live under `figures/multipanel/` and `figures/SupplementalFigures/`; the new canonical Rmd `05_final_report_gencode_scope_2026-06-15.Rmd` embeds each panel via dedicated chunks. The Isopair package provides:
 
-- `isopair:R/visualization.R::plotIsoformPair()` — the function used for Figure 2E and any subsequent isoform-structure renders (also used for Figure 5 schematic panels if any).
+- `isopair:R/visualization.R::plotIsoformPair()` — used for Figure 2E (Yul-side §3) and any isoform-structure renders.
 
-This makes Figures 3, 4, 5 the first complete-and-verifiable figure set for the manuscript on this laptop.
+Figure 3 panels A–F are in `figures/multipanel/figure3_isopair_and_ptc/`; Figure 4 panels A–D are in `figures/multipanel/figure4_ptcneg_and_model/`. The three supplements are in `figures/SupplementalFigures/{CDSand3UTR_GENCODEonly, TD2BiasEvidence, PairAnalysisFlowchart}/`. Figure 5 (DL model) is in `figures/multipanel/figure5_dl_model/` — panels A–E exist; composite + RATIONALE.md pending (Task #43).
 
 ### Section 4 verifiable-locally summary
 
-**Essentially all of §4 is locally verifiable.** The full pipeline (Isopair package + wrapper scripts + main Rmd) is in `~/claude_projects/Isopair/` and `~/claude_projects/nmd/results/isoform_transitions/Version_6.0/isopair_wrapper/`. Concrete first verification targets:
+**All of §4 is locally verified** (status 2026-06-15). Both verifiers PASS:
 
-- **4.3** (3,674 genes) — run 01_prepare_data_mashr.R + 02_build_profiles_mashr.R, count rows in the profile output
-- **4.17** (44% vs 5% PTC enrichment) — `05_final_report_mashr.Rmd` chunk
-- **4.27–4.29** (NMD+/PTC− → ref-AUG tracing → 88%/72%) — `05r_ref_atg_analysis.R` direct run; categorical breakdown of `traceReferenceAtg()` output
-- **4.37** ("85% explained by PTCs") — composite arithmetic; pin down the exact union arithmetic from the Rmd
-- **4.45–4.46** (GENCODE-CDS 3′UTR length comparison) — `05_final_report_mashr.Rmd` chunk
+- `reproducibility/verify_pass7_new_rmd.R` (37 checks) — pins every figure number to its canonical source TSV
+- `reproducibility/verify_cross_check_new_rmd_vs_figures.R` (57 checks) — binds Rmd HTML claims to figure-side TSVs
 
-§4 will be the most efficient section to verify end-to-end. Worth doing first when we move from mapping to verification, before tackling the Yul-side-blocked §3.
+Pipeline + Rmd are in `~/claude_projects/Isopair/` and `~/claude_projects/nmd/results/isoform_transitions/Version_6.0/isopair_wrapper/`. Headline verification anchors:
+
+- **4.3** (3,009 pop_BC genes) — pinned by verifier
+- **4.17** (37.9% vs 2.1% / 18-fold / p<10⁻²⁰ at n=190) — pinned
+- **4.21–4.23** (mechanism breakdown 55% / 33% / 12%) — pinned
+- **4.24–4.25** (Panel E Fisher tests: SE 44%/14% p<10⁻⁷, A5SS 13%/4.5% p<10⁻²) — pinned
+- **4.28** (50% TD2 == ref AUG at n=1,166) — pinned
+- **4.30–4.31** (492 occult-PTC, 99% TD2 downstream, 78% ref-AUG Kozak stronger) — pinned
+- **4.37** (90% = 1050/1166 cumulative PTC) — pinned
+- **4.40** (3'UTR medians 1290 / 800 / 948 at n=1,166) — pinned
+
+Re-run verifiers from repo root: `Rscript reproducibility/verify_pass7_new_rmd.R` and `Rscript reproducibility/verify_cross_check_new_rmd_vs_figures.R`. Both should report PASS.
 
 ---
 
@@ -534,8 +545,8 @@ This makes Figures 3, 4, 5 the first complete-and-verifiable figure set for the 
 | Subgroup-stratified DeepSHAP | `model:08_export_subgroup_deepshap_tsv.py` + `model:09b_export_subgroup_profiles.py` | Per-mechanistic-subgroup attribution comparison |
 | GC content + auxiliary channels | `model:09_export_gc_content.py`, `09_export_junction_ordinal.py`, `09_export_polya.py` | Channel-specific exports for SFx panels |
 | uORF attention specific analysis | `model:infer_uorf_attention.py` + `audit_uorf_attention.R` + `compute_uorf_attention_metrics.R` | uORF attention follow-up |
-| Figure 6A (architecture) | `model:make_architecture_figure.R` | Architecture schematic |
-| Figure 6 SHAP panels | `model:make_shap_interpretation_figure.R` | DeepSHAP-based interpretation panels |
+| Architecture schematic (supplementary / Methods, NOT a Figure 5 panel) | `model:make_architecture_figure.R` | Architecture schematic |
+| Figure 5 SHAP panels (legacy upstream) | `model:make_shap_interpretation_figure.R` | Legacy DeepSHAP-based interpretation panels — now rebuilt as `figures/multipanel/figure5_dl_model/figure5_panel{A,B,C,D,E}_*.py` |
 | Analysis report | `model:orf_model_report_v5.Rmd` | End-to-end analysis report consuming the TSV exports above |
 
 ### Paragraph 1 — model architecture + input encoding + train/test split
@@ -549,40 +560,40 @@ This makes Figures 3, 4, 5 the first complete-and-verifiable figure set for the 
 | 5.5 | "Chr 2, 4 for val; Chr 1, 3, 5, 7 for test; paralogs excluded from test set" | `model:data_prep.py` + paralog list (likely `model:results_4ct/` or a TSV in the repo). | **Verifiable locally.** The paralog exclusion ties back to `nmd:results/.../isopair_wrapper/05u_paralog_annotation.R`. |
 | 5.6 | "BCEWithLogitsLoss with pos_weight = n_neg/n_pos; Adam (lr=1e-3, differential weight decay 1e-3 CNN / 1e-4 elsewhere); batch=256; fp16 AMP; ReduceLROnPlateau factor=0.5 patience=5; early-stop patience=10 on val AUC; max 100 epochs; seed=42" | `model:03_train.py` + `model:config.yaml`. | Verifiable locally — open `config.yaml` and confirm values match Methods text. |
 | 5.7 | "Sweep over AUG ∈ {100, 500, 1000} × stop ∈ {100, 500, 1000, 2000}; selected AUG=500 / stop=500 by held-out AUC" | Sweep driver script (TBD — `03_train.py` may run individual configs while a sweep orchestrator like SLURM array job picks combinations). The selected config is in `model:config.yaml`. | Cite-only for the sweep results table (config-by-config AUC); the chosen config is verifiable locally. |
-| 5.8 | **Figure 6A** — architecture schematic | `model:make_architecture_figure.R`. | **Verifiable locally.** |
+| 5.8 | Architecture schematic (likely supplementary / Methods illustration; NOT a panel in Figure 5 per the 2026-06-15 5-panel reframing) | `model:make_architecture_figure.R`. Final placement TBD. | **Verifiable locally.** |
 
-### Paragraph 2 — performance + block-level importance (Figure 6B, C, D)
+### Paragraph 2 — performance + block-level importance (Figure 5 Panels A, B, C)
 
 | # | Claim | Source code | Notes / status |
 |---|---|---|---|
-| 5.9 | "AUC=0.93, AUPRC=0.83 on held-out test set" | `model:evaluate.py` — produces test-set AUC / AUPRC. | **Verifiable locally** (assuming trained-model weights are in `model:results_4ct/`). |
-| 5.10 | **Figure 6B** — ROC / PR curve at AUC=0.93 / AUPRC=0.83 | `model:make_shap_interpretation_figure.R` (or `model:evaluate.py` if rendered there). | Verifiable locally. |
+| 5.9 | "AUC=0.93, AUPRC=0.833 on held-out test set" | `model:evaluate.py` — produces test-set AUC / AUPRC. The canonical AUPRC is 0.833 (4ct model), NOT 0.781 (predecessor v5 mirror); see [[feedback_nmd_orf_model_4ct_canonical]]. | **Verifiable locally** (assuming trained-model weights are in `~/claude_projects/NMD_orf_model_v5_4ct/results_4ct/` or cluster equivalent). |
+| 5.10 | **Figure 5 Panel A** — ROC / PR curve at AUC=0.93 / AUPRC=0.833 | `figures/multipanel/figure5_dl_model/figure5_panelA_roc_curve.py`. (Per the 2026-06-15 figure numbering, the DL-model figure is Figure 5, not Figure 6.) | **Verifiable locally.** |
 | 5.11 | "Roughly ⅔ of predictive information from ORF structural data, ⅓ from START+STOP sequence" — Shapley block-level decomposition | `model:11_kernel_shap_branches.py` — KernelSHAP at embedding level, exact additive Shapley across the 3 sub-encoders (AUG / STOP / structural). | **Verifiable locally.** |
 | 5.12 | "STOP sequence ~3× as important as START sequence" | Same `11_kernel_shap_branches.py` — ratio of STOP to START sub-encoder attributions. | Verifiable locally. |
-| 5.13 | **Figure 6C** — block-level Shapley decomposition (3-branch) | `model:make_shap_interpretation_figure.R`. | Verifiable locally. |
+| 5.13 | **Figure 5 Panel B** — block-level Shapley decomposition (3-branch) | `figures/multipanel/figure5_dl_model/figure5_panelB_branch_importance.py`. | **Verifiable locally.** |
 | 5.14 | "Of individual ORF structural features, EJC count was by far the most important" | `model:05_interpret_structural.py` + `model:06_export_deepshap_tsv.py` (per-feature DeepSHAP). | Verifiable locally. |
-| 5.15 | **Figure 6D** — ranked per-feature structural importance | `model:make_shap_interpretation_figure.R`. | Verifiable locally. |
+| 5.15 | **Figure 5 Panel C** — ranked per-feature structural importance | `figures/multipanel/figure5_dl_model/figure5_panelC_structural_features.py`. | **Verifiable locally.** |
 
-### Paragraph 3 — nucleotide-level attributions (Figure 6E, F, SFx)
+### Paragraph 3 — nucleotide-level attributions (Figure 5 Panels D, E + SFx)
 
 | # | Claim | Source code | Notes / status |
 |---|---|---|---|
-| 5.16 | "Importance concentrated within 50 nt preceding the start or stop site" (SFx — Shapley value profile across windows) | `model:06_export_deepshap_tsv.py` — per-position attribution. Aggregation in `model:make_shap_interpretation_figure.R`. | Verifiable locally. |
+| 5.16 | "Importance concentrated within 50 nt preceding the start or stop site" (SFx — Shapley value profile across windows) | `model:06_export_deepshap_tsv.py` — per-position attribution. | Verifiable locally. |
 | 5.17 | "Both windows: more importance for NMD than Control isoforms" | Same — stratify per-position attributions by NMD label. | Verifiable locally. |
 | 5.18 | "START window: model learned Kozak sequence; no weight on AUG itself because invariant across training ORFs" | `model:07_motif_analysis.py` + `scripts/export_joint_motif_logos.py`. | Verifiable locally. |
-| 5.19 | **Figure 6E** — nucleotide-level attribution around AUG (Kozak motif logo) | `model:make_shap_interpretation_figure.R`. | Verifiable locally. |
+| 5.19 | **Figure 5 Panel D** — nucleotide-level attribution around AUG (Kozak motif logo) | `figures/multipanel/figure5_dl_model/figure5_panelD_atg_logo.py`. | **Verifiable locally.** |
 | 5.20 | "STOP window: UGA shifts predictions toward NMD; U at +4 has largest importance for that position (matches readthrough biology)" | `model:07_motif_analysis.py` + driver. **This is the headline biological finding for §5.** | **Verifiable locally — high priority verification target given the lit-review §6 dependence on this claim.** |
-| 5.21 | **Figure 6F** — nucleotide-level attribution around stop codon (UGA + U+4 highlighted) | `model:make_shap_interpretation_figure.R`. | Verifiable locally. |
+| 5.21 | **Figure 5 Panel E** — nucleotide-level attribution around stop codon (UGA + U+4 highlighted) | `figures/multipanel/figure5_dl_model/figure5_panelE_stop_logo.py`. | **Verifiable locally.** |
 
-### Paragraph 4 — attention distribution (cited as "Fig X panel A and B")
+### Paragraph 4 — attention distribution
 
-**Open question (§5 figure-naming):** Paragraph 4 references "Fig X, panel A and B" for the attention-distribution comparison (NMD vs Control). This overlaps with Figure 6 panel A (architecture) and panel B (AUC/AUPRC) cited in Paragraphs 1 and 2. The attention panels are therefore probably part of a **separate figure** (Figure 7?) or supplementary, not Figure 6. Worth pinning down with Pete when fixing manuscript figure numbering.
+> **Open question (§5 figure-naming).** Paragraph 4 in the manuscript references "Fig X panel A/B" for the attention-distribution comparison (NMD vs Control). Per the 2026-06-15 reframing, these attention panels are NOT in the 5-panel Figure 5 (A=ROC, B=branch importance, C=structural features, D=ATG logo, E=stop logo). They likely belong to a supplementary attention figure. Pinning still pending.
 
 | # | Claim | Source code | Notes / status |
 |---|---|---|---|
 | 5.22 | "ORFs numbered by CDS likelihood; ORF0 = most likely CDS; most attention on ORF0" | `model:04_interpret_attention.py` — exports per-transcript attention vectors over 5 ORFs. | Verifiable locally. |
 | 5.23 | "Attention more broadly distributed in NMD than in Control isoforms" | Same — entropy or top-1-share of attention vector, stratified by NMD label. | Verifiable locally. |
-| 5.24 | **"Fig X panel A and B"** (attention distribution NMD vs Control) — likely Figure 7 or supplementary, not Figure 6 | Render likely embedded in `model:make_shap_interpretation_figure.R` or in `model:orf_model_report_v5.Rmd`. | Verifiable locally once panel identity is pinned down. |
+| 5.24 | **"Fig X panel A and B"** (attention distribution NMD vs Control) — supplementary, NOT in Figure 5 | Render likely in `model:make_shap_interpretation_figure.R` or `model:orf_model_report_v5.Rmd`. Final panel identity TBD. | Verifiable locally once panel identity is pinned down. |
 
 ### Paragraph 5 — GC content + mechanistic subgroups (SFx)
 
@@ -598,7 +609,7 @@ This makes Figures 3, 4, 5 the first complete-and-verifiable figure set for the 
 
 ### Section 5 figure render-script summary
 
-Local. Figure 6A is `model:make_architecture_figure.R`; the remaining Figure 6 panels (B / C / D / E / F) are produced by `model:make_shap_interpretation_figure.R`. The "Fig X panel A and B" attention panels in Paragraph 4 are TBD on figure numbering but render-locally as well.
+Local. The current Figure 5 (5 panels A–E) is rendered from `figures/multipanel/figure5_dl_model/figure5_panel{A,B,C,D,E}_*.py` against TSV exports from `model:` (the linked DL repo). Architecture schematic (`model:make_architecture_figure.R`) is supplementary or Methods illustration, NOT a Figure 5 panel. The attention panels in Paragraph 4 are a separate (supplementary) figure — final panel identity still TBD. The composite render + RATIONALE.md for Figure 5 is the remaining open task (#43).
 
 ### Section 5 verifiable-locally summary
 
@@ -609,7 +620,7 @@ Local. Figure 6A is `model:make_architecture_figure.R`; the remaining Figure 6 p
 - **Cross-repo subgroup dependency:** the PTC+ / PTC− ref-AUG retained / lost labels come from the Isopair wrapper (`05r_ref_atg_analysis.R`). Verification of subgroup attributions requires that those labels match between the two repos.
 
 Headline biological-claim verification targets:
-- **5.9** AUC=0.93 / AUPRC=0.83
+- **5.9** AUC=0.93 / AUPRC=0.833 (4ct model — see [[feedback_nmd_orf_model_4ct_canonical]])
 - **5.11/5.12** block-level ⅔ structural / ⅓ sequence + STOP 3× START
 - **5.14** EJC count #1 structural feature
 - **5.20** UGA + U+4 attribution at stop codon (the lit-review §6 dependency)
@@ -629,32 +640,34 @@ Headline biological-claim verification targets:
 
 3. **Intermediate SR DGE Rmd vintage** — what produced the `_2026.3.10.csv` mashr outputs in `shortread_dge/mashr/`? Yul's `2026.5.5` Rmd post-dates them.
 4. **LR gene-level DE Rmd** — Section 2 quotes "long-read gene-level analysis tested 19,056 genes," but no LR gene-level Rmd is in the code-map doc. Where does it live?
-5. **Confirm Pete's `isocall_limma_dge_fullmodel_2026.3.1.Rmd` is QC-only, not canonical** — current map treats it as a parallel/sanity-check implementation per Pete (2026-06-13). Worth a one-time check that the limma contrasts it produces agree with Yul's.
 
-### Unmapped Rmd / script gaps
+### Unmapped Rmd / script gaps (Yul-side)
 
-6. **DMSO-only one-vs-rest cell-type-marker Rmd** (Methods M5; Section 1 numbers 1.9–1.14) — code path TBD.
-7. **Tan et al. mashr reanalysis Rmd** (Methods M9; Section 2 claim 2.18) — code path TBD; likely in Yul's `final/`.
-8. **Sequencing-summary aggregation script** (Section 1 claim 1.1: "26 samples / 13M FLNC reads / 341,638,920 total reads") — code path TBD.
-9. **Section 5 sweep results table** (claim 5.7: AUG × stop window-size sweep results table) — orchestrator script and recorded results TBD.
+5. **DMSO-only one-vs-rest cell-type-marker Rmd** (Methods M5; Section 1 numbers 1.9–1.14) — code path TBD.
+6. **Tan et al. mashr reanalysis Rmd** (Methods M9; Section 2 claim 2.18) — code path TBD; likely in Yul's `final/`.
+7. **Sequencing-summary aggregation script** (Section 1 claim 1.1: "26 samples / 13M FLNC reads / 341,638,920 total reads") — code path TBD.
+8. **Section 5 sweep results table** (claim 5.7: AUG × stop window-size sweep results table) — orchestrator script and recorded results TBD.
 
-### Figure-render-script gaps
+### Figure-render-script gaps (Yul-side)
 
-10. **Figure 1 panels** (A, C, D, F) — render scripts TBD; nominally Yul-side.
-11. **Figure 2 panels** (A, B, C, D) — render scripts TBD; nominally Yul-side.
-    Panels 2E and 2F (GPR180 isoform structure + logFC) are rendered via `isopair:R/visualization.R::plotIsoformPair()` — locally available.
+9. **Figure 1 panels** (A, C, D, F) — render scripts TBD; nominally Yul-side.
+10. **Figure 2 panels** (A, B, C, D) — render scripts TBD; nominally Yul-side. Panels 2E and 2F (GPR180 isoform structure + logFC) are rendered via `isopair:R/visualization.R::plotIsoformPair()` — locally available.
 
-### Methods-text / claim verification flags
+### Methods-text / claim verification flags (Yul-side)
 
-12. **SR↔LR coverage threshold** (Section 3 claim 3.10: "~40% lacked sufficient LR isoform coverage") — Methods don't define "sufficient coverage" quantitatively. Pin down the threshold from `yul:comparison_analysis.Rmd`.
-13. **PCI 63–90% denominator** (Section 3 claim 3.7) — exact denominator (genes with significant unproductive accumulation vs all NMD-isoform genes) and PCI-class threshold worth pinning from `yul:productive_compensation.Rmd`.
-14. **"85% explained by PTCs"** (Section 4 claim 4.37) — composite arithmetic; pin the exact union arithmetic from `05_final_report_mashr.Rmd`.
+11. **SR↔LR coverage threshold** (Section 3 claim 3.10: "~40% lacked sufficient LR isoform coverage") — Methods don't define "sufficient coverage" quantitatively. Pin down the threshold from `yul:comparison_analysis.Rmd`.
+12. **PCI 63–90% denominator** (Section 3 claim 3.7) — exact denominator (genes with significant unproductive accumulation vs all NMD-isoform genes) and PCI-class threshold worth pinning from `yul:productive_compensation.Rmd`.
 
 ### Figure-numbering inconsistencies
 
-15. **Figure 5 panel-drop** (already on task list as #7) — find/replace pairs drafted; Pete to apply in the Google Doc + decide whether to update the figure source code.
-16. **"Fig X panel A/B/C/D" orphan in §4 paragraph 5** — these references (three subgroups + 3′UTR + 5′UTR + uORF panels) don't match the post-renumbering Figure 5 content. Likely need to become Figure 6 (or supplementary). To resolve alongside the broader Fig 3+ rework Pete flagged.
-17. **§5 attention panels overlap** (claim 5.24) — paragraph 4 cites "Fig X panel A and B" for attention distribution, but those letters are already used for Figure 6 architecture + AUC panels. Likely Figure 7 or supplementary. To resolve alongside Fig 3+ rework.
+13. **§4 paragraph 5 panel-letter orphan** — manuscript still says "Fig X panel A/B/C/D" for the 5'UTR / 3'UTR / uORF subgroup panels. Under the 2026-06-15 reframing these map to Figure 4 A/B/C/D + the CDSand3UTR_GENCODEonly supplement. Manuscript text needs find/replace to make panel references explicit; current §4 audit (Pete applied 2026-06-16) handled the headline numbers but not the panel letters.
+14. **§5 attention panels overlap** (claim 5.24) — paragraph 4 cites "Fig X panel A and B" for attention distribution. NOT in the 5-panel Figure 5 (A=ROC / B=branch importance / C=structural features / D=ATG logo / E=stop logo). Likely a supplementary attention figure. Final panel identity TBD.
+
+### Resolved since 2026-06-15
+
+- ✓ Pete's `isocall_limma_dge_fullmodel_2026.3.1.Rmd` is QC-only — confirmed per the explicit Pete vs Yul ownership model in `isocall_dge/limma/README.md` (Yul owns limma + mashr DGE; Pete owns Isopair + DL model). Pete's parallel `pete/` snapshot was deleted on 2026-06-16.
+- ✓ "85% explained by PTCs" (old claim 4.37) — superseded by the current 90% (1050/1166) at the n=1,166 expanded scope; pinned by the cross-check verifier.
+- ✓ Figure 3 / Figure 4 panel-drop / renumbering — final 6-panel Figure 3 (A–F) + 4-panel Figure 4 (A–D) per the 2026-06-15 plan; methodology files, RATIONALE.md, and find/replace pairs all in place.
 
 ---
 
@@ -662,11 +675,13 @@ Headline biological-claim verification targets:
 
 In rough priority order:
 
-1. **Pete to triage** which claims most need fast verification vs which can wait for Yul-repo access. The verifiable-locally claims in §2 (GSEA, NMD-susceptible CSV row counts) and almost all of §4 + §5 can begin verification immediately.
-2. **Yul-repo access setup** (option A from earlier: Yul adds `repjc` as a member of her changit project), unblocks §1, most of §2, and all of §3.
-3. **Figure rework for Fig 3 onwards** (Pete flagged this — distinct workstream).
-4. **Then proceed to formal 5-step verification** per `~/.claude/CLAUDE.md` scientific-report protocol, starting with the §4 + §5 verifiable-locally headline claims (44%/5% PTC enrichment; 88%/72% ref-AUG tracing; AUC=0.93; UGA + U+4 stop-codon attribution).
+1. **Yul-repo access setup** — Yul to add `repjc` as a member of her changit project (or `scp` `final/` from Channing). Unblocks §1, most of §2, and all of §3.
+2. **Build Figure 5 composite + RATIONALE.md** (Task #43) — the 5 panels exist; composite render + pre-registration doc pending.
+3. **Manuscript-wide TD2 bias audit** (Task #49) — `TD2_BIAS_AUDIT.md` at repo root is opened; needs to be carried through to identify any §1/§2/§3 analyses still consuming TD2-derived CDS boundaries.
+4. **Pin §1b descriptives** — manuscript §4 ¶1 still cites "7 isoforms/gene" + "70% of parent gene expression" + "75% accounting for >50%" from the legacy Rmd; these aren't in the current verifier suite. Pete deferred recomputation 2026-06-16; worth adding to the verifier if they get revisited.
+5. **Decide on legacy Rmd removal** — `05_final_report_mashr.Rmd` (317KB) still on disk with deprecation banners. Could be deleted once we're confident nothing else depends on it.
+6. **Yul-side verification** — once Yul access is in place, run the 5-step scientific-report protocol on §1, §2, §3 against Yul's Rmds.
 
 ---
 
-*Draft v1.0 — 2026-06-13. First pass through Methods + Sections 1–5 complete (144 numbered claims). Ready for Pete review.*
+*Revised 2026-06-16. §4 now pinned to the new canonical Rmd `05_final_report_gencode_scope_2026-06-15.Rmd` + both verifiers (pass-7 + cross-check). 144 numbered claims; §4 fully verified locally.*
