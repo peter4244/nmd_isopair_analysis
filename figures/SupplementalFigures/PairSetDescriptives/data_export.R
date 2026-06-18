@@ -1,24 +1,20 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# Data export — pair-set descriptive numbers for Gap-§4-A + Gap-§4-B
+# Data export — pair-set descriptive numbers for the §4¶1 / §4¶2 supplements.
 #
-# Three panels in the sibling SF (PairSetDescriptives):
-#
-#   A — Isoforms per gene (across the 3,009 genes in pop_BC).
-#   B — Reference-isoform expression as a fraction of parent-gene expression
-#       (DMSO baseline, 4-CT scope: AT, DD, FB, MV).
-#   C — Transcript length, three roles within pop_BC:
-#         NMD comparator (n = 3,009 from profiles_c2)
-#         Reference      (n = 3,009 from either profiles_c2 or profiles_c4 — same set)
-#         Control comparator (n = 3,009 from profiles_c4)
+# CANONICAL SOURCE: this script mirrors the §1a / §1c chunks in the analysis
+# report (`05_final_report_gencode_scope_2026-06-15.Rmd`) verbatim. The Rmd is
+# the single source of truth; this script reproduces the same numbers so the
+# figure can be rendered without rendering the full Rmd, but the computation
+# logic is identical (gene-matched triplet construction; paired Wilcoxon for
+# length; non-NMD-expressed-isoform filter for the count and reference-share).
 #
 # Outputs:
-#   data/isoforms_per_gene.tsv            — per-gene isoform count (3,009 rows)
-#   data/ref_expression_fraction.tsv      — per-gene reference fraction (3,009 rows)
-#   data/tx_length_by_role_long.tsv       — long form (9,027 rows) for panel C
-#   data/descriptives_summary.tsv         — single-row table of medians cited in
-#                                            Methods §1 and §4¶2
-#   data/pairwise_tx_length.tsv           — pairwise Wilcoxon for panel C
+#   data/isoforms_per_gene.tsv            — per-gene non-NMD isoform count
+#   data/ref_expression_fraction.tsv      — per-gene reference DMSO share
+#   data/tx_length_by_role_long.tsv       — long form for the violin panel
+#   data/descriptives_summary.tsv         — single-row summary
+#   data/pairwise_tx_length.tsv           — paired Wilcoxon contrasts
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -37,174 +33,144 @@ dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
 DM <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0/isopair_wrapper/data_mashr"
 
-# ── Load ──
-profiles_c2 <- as.data.table(readRDS(file.path(DM, "profiles_c2_allsamples.rds")))
-profiles_c4 <- as.data.table(readRDS(file.path(DM, "profiles_c4_allsamples.rds")))
+# ── Load (same objects as the Rmd setup chunk) ──
+profiles_c2  <- as.data.table(readRDS(file.path(DM, "profiles_c2_allsamples.rds")))
+profiles_c4  <- as.data.table(readRDS(file.path(DM, "profiles_c4_allsamples.rds")))
+structures   <- as.data.table(readRDS(file.path(DM, "structures.rds")))
+expr_mat     <- readRDS(file.path(DM, "expression_data.rds"))
+nmd_class    <- readRDS(file.path(DM, "nmd_classification.rds"))
+dmso_samples <- readRDS(file.path(DM, "dmso_samples.rds"))
 
-# Build the canonical pop_BC by intersecting the two arms on (gene_id,
-# reference_isoform_id) — the same construction used in
-# figures/multipanel/figure4_ptcneg_and_model/data_export.R.
-make_key <- function(d) paste(d$gene_id, d$reference_isoform_id, sep = "::")
-shared <- intersect(unique(make_key(profiles_c2)), unique(make_key(profiles_c4)))
-profiles_c2 <- profiles_c2[make_key(profiles_c2) %in% shared]
-profiles_c4 <- profiles_c4[make_key(profiles_c4) %in% shared]
-# Order both arms on the shared key so paired sanity-checks below align.
-setorder(profiles_c2, gene_id, reference_isoform_id)
-setorder(profiles_c4, gene_id, reference_isoform_id)
-expr   <- readRDS(file.path(DM, "expression_data.rds"))
-gm     <- as.data.table(readRDS(file.path(DM, "gene_map.rds")))
-ds     <- readRDS(file.path(DM, "dmso_samples.rds"))
+# ─── pop_BC construction — mirrors Rmd `sec1-pop-bc` chunk ───
+pop_bc_shared <- merge(
+  unique(profiles_c2[, .(gene_id, reference_isoform_id)]),
+  unique(profiles_c4[, .(gene_id, reference_isoform_id)]),
+  by = c("gene_id", "reference_isoform_id")
+)
+pop_bc_c2 <- merge(profiles_c2, pop_bc_shared,
+                   by = c("gene_id", "reference_isoform_id"))
+pop_bc_c4 <- merge(profiles_c4, pop_bc_shared,
+                   by = c("gene_id", "reference_isoform_id"))
 
-# 4-CT DMSO sample union (AT + DD + FB + MV; excludes DD_ALI / DO_ALI per
-# manuscript scope; see CLAUDE.md "Cell-type abbreviations").
-dmso_4ct <- unique(c(ds$AT, ds$DD, ds$FB, ds$MV))
-stopifnot(all(dmso_4ct %in% colnames(expr)))
+cat(sprintf("pop_BC: %d shared (gene, reference) pairs; %d NMD + %d Control comparator pairs\n",
+            nrow(pop_bc_shared), nrow(pop_bc_c2), nrow(pop_bc_c4)))
 
-cat(sprintf("pop_BC: profiles_c2 = %d rows; profiles_c4 = %d rows\n",
-            nrow(profiles_c2), nrow(profiles_c4)))
-cat(sprintf("DMSO 4-CT samples: %d (AT=%d DD=%d FB=%d MV=%d)\n",
-            length(dmso_4ct), length(ds$AT), length(ds$DD),
-            length(ds$FB), length(ds$MV)))
+# ─── §1a transcript-length — mirrors Rmd `sec1-tx-length` chunk ───
+# (paired Wilcoxon on gene-matched triplets)
+tx_lengths_all <- setNames(
+  vapply(seq_len(nrow(structures)), function(i)
+    sum(structures$exon_ends[[i]] - structures$exon_starts[[i]] + 1L),
+    integer(1)),
+  structures$isoform_id
+)
 
-# ── Universe of genes (= pop_BC) ──
-# Both arms must agree on the (gene_id, reference_isoform_id) key for a gene
-# to be in pop_BC; profiles_c2 already gives us 3,009 such gene-reference
-# entries (one row per gene because each gene has one reference isoform).
-pop_genes <- unique(profiles_c2$gene_id)
-cat(sprintf("Genes in pop_BC: %d\n", length(pop_genes)))
-stopifnot(length(pop_genes) == nrow(profiles_c2))  # exactly 1 row per gene
+pop_bc_triplets <- merge(
+  pop_bc_c2[, .(gene_id, reference_isoform_id, comparator_isoform_id)],
+  pop_bc_c4[, .(gene_id, reference_isoform_id, comparator_isoform_id)],
+  by = c("gene_id", "reference_isoform_id"),
+  suffixes = c("_nmd", "_ctrl")
+)
+pop_bc_triplets[, ref_len  := tx_lengths_all[reference_isoform_id]]
+pop_bc_triplets[, nmd_len  := tx_lengths_all[comparator_isoform_id_nmd]]
+pop_bc_triplets[, ctrl_len := tx_lengths_all[comparator_isoform_id_ctrl]]
+pop_bc_triplets <- pop_bc_triplets[
+  complete.cases(pop_bc_triplets[, .(ref_len, nmd_len, ctrl_len)])]
 
-# ── Panel A: isoforms per gene ──
-# Matches the Isopair pipeline definition (05_final_report_mashr.Rmd §2):
-# count isoforms per gene that are (a) in `structures` and `expression_data`,
-# (b) excluded if they are NMD-sensitive (nmd_classification$all_samples$nmd).
-# No additional relative-expression threshold — "in the expression matrix"
-# is the filter.
-structures <- as.data.table(readRDS(file.path(DM, "structures.rds")))
-nmd_class  <- readRDS(file.path(DM, "nmd_classification.rds"))
-nmd_iso    <- nmd_class$all_samples$nmd
+ref_lens  <- pop_bc_triplets$ref_len
+nmd_lens  <- pop_bc_triplets$nmd_len
+ctrl_lens <- pop_bc_triplets$ctrl_len
 
-exprs_iso <- rownames(expr)
-sec1_iso  <- structures[gene_id %in% pop_genes &
-                        isoform_id %in% exprs_iso &
-                        !isoform_id %in% nmd_iso,
-                        .(isoform_id, gene_id)]
-
-iso_per_gene <- sec1_iso[, .(n_isoforms = .N), by = gene_id]
-all_genes_dt <- data.table(gene_id = pop_genes)
-iso_per_gene <- merge(all_genes_dt, iso_per_gene, by = "gene_id", all.x = TRUE)
-iso_per_gene[is.na(n_isoforms), n_isoforms := 0L]
-
-fwrite(iso_per_gene, file.path(OUT_DIR, "isoforms_per_gene.tsv"), sep = "\t")
-
-# ── Panel B: reference-isoform fraction of parent gene ──
-# Same denominator: sum of DMSO 4-CT mean expression across all non-NMD
-# expressed isoforms of the gene (sec1_iso above). Numerator: the reference
-# isoform's DMSO 4-CT mean.
-dmso_mean <- rowMeans(expr[, dmso_4ct, drop = FALSE])
-sec1_iso[, mean_dmso := dmso_mean[isoform_id]]
-sec1_iso[is.na(mean_dmso), mean_dmso := 0]
-
-gene_tot <- sec1_iso[, .(gene_total = sum(mean_dmso)), by = gene_id]
-ref_fracs <- merge(
-  data.table(gene_id              = profiles_c2$gene_id,
-             reference_isoform_id = profiles_c2$reference_isoform_id),
-  gene_tot, by = "gene_id", all.x = TRUE)
-ref_fracs[, ref_dmso := dmso_mean[reference_isoform_id]]
-ref_fracs[is.na(ref_dmso), ref_dmso := 0]
-ref_fracs[, ref_fraction_of_gene := ifelse(gene_total > 0,
-                                            ref_dmso / gene_total, NA_real_)]
-fwrite(ref_fracs, file.path(OUT_DIR, "ref_expression_fraction.tsv"), sep = "\t")
-
-# ── Panel C: transcript-length descriptives ──
-# `length_ref` / `length_comp` in profiles_* are GENOMIC SPAN (tx_end − tx_start),
-# NOT the spliced transcript length. We compute the spliced tx length from
-# structures.rds = sum of exon lengths.
-spliced_len <- vapply(seq_len(nrow(structures)), function(i) {
-  s <- structures$exon_starts[[i]]; e <- structures$exon_ends[[i]]
-  if (is.null(s) || length(s) == 0L) return(NA_integer_)
-  as.integer(sum(e - s + 1L))
-}, integer(1))
-tx_len_lookup <- setNames(spliced_len, structures$isoform_id)
-
-nmd_comp_len  <- tx_len_lookup[profiles_c2$comparator_isoform_id]
-ref_len       <- tx_len_lookup[profiles_c2$reference_isoform_id]
-ctrl_comp_len <- tx_len_lookup[profiles_c4$comparator_isoform_id]
-
-# Sanity: same reference set on both arms after the pop_BC intersection
-stopifnot(identical(profiles_c2$reference_isoform_id,
-                    profiles_c4$reference_isoform_id))
-
+# Long form for the violin panel
 tx_long <- rbindlist(list(
-  data.table(role = "NMD comparator",     length_nt = nmd_comp_len),
-  data.table(role = "Reference",          length_nt = ref_len),
-  data.table(role = "Control comparator", length_nt = ctrl_comp_len)
+  data.table(role = "NMD comparator",     length_nt = nmd_lens),
+  data.table(role = "Reference",          length_nt = ref_lens),
+  data.table(role = "Control comparator", length_nt = ctrl_lens)
 ))
 tx_long[, role := factor(role,
   levels = c("NMD comparator", "Reference", "Control comparator"))]
 fwrite(tx_long, file.path(OUT_DIR, "tx_length_by_role_long.tsv"), sep = "\t")
 
-# Pairwise Wilcoxon
-pairs <- list(c("NMD comparator", "Reference"),
-              c("NMD comparator", "Control comparator"),
-              c("Reference",      "Control comparator"))
-pw <- rbindlist(lapply(pairs, function(p) {
-  x <- tx_long[role == p[1], length_nt]
-  y <- tx_long[role == p[2], length_nt]
-  wt <- wilcox.test(x, y, exact = FALSE)
-  data.table(group_x = p[1], group_y = p[2],
-             n_x = length(x), n_y = length(y),
-             median_x = median(x), median_y = median(y),
-             wilcox_p = signif(wt$p.value, 3))
-}))
+# Paired Wilcoxon — three contrasts using the gene-matched triplet design
+p_nmd_ref   <- wilcox.test(nmd_lens,  ref_lens,  paired = TRUE, exact = FALSE)$p.value
+p_nmd_ctrl  <- wilcox.test(nmd_lens,  ctrl_lens, paired = TRUE, exact = FALSE)$p.value
+p_ctrl_ref  <- wilcox.test(ctrl_lens, ref_lens,  paired = TRUE, exact = FALSE)$p.value
+pw <- data.table(
+  group_x  = c("NMD comparator", "NMD comparator", "Control comparator"),
+  group_y  = c("Reference",      "Control comparator", "Reference"),
+  n_pairs  = rep(nrow(pop_bc_triplets), 3),
+  median_x = c(median(nmd_lens), median(nmd_lens), median(ctrl_lens)),
+  median_y = c(median(ref_lens), median(ctrl_lens), median(ref_lens)),
+  paired_wilcox_p = signif(c(p_nmd_ref, p_nmd_ctrl, p_ctrl_ref), 3)
+)
 fwrite(pw, file.path(OUT_DIR, "pairwise_tx_length.tsv"), sep = "\t")
 
-# Kruskal–Wallis (test name that should be reported in the Methods if all
-# three roles are compared simultaneously)
-kw <- kruskal.test(length_nt ~ role, data = tx_long)
+# ─── §1c isoforms-per-gene — mirrors Rmd `sec1-iso-per-gene` chunk ───
+nmd_iso_set <- nmd_class[["all_samples"]]$nmd
+expr_iso    <- rownames(expr_mat)
+sec1_iso    <- structures[
+  gene_id %in% pop_bc_shared$gene_id &
+    isoform_id %in% expr_iso &
+    !isoform_id %in% nmd_iso_set,
+  .(isoform_id, gene_id)]
 
-# ── Descriptive summary (for Methods + manuscript find/replace) ──
+iso_per_gene <- sec1_iso[, .(n_isoforms = .N), by = gene_id]
+all_pop_genes <- data.table(gene_id = unique(pop_bc_shared$gene_id))
+iso_per_gene <- merge(all_pop_genes, iso_per_gene, by = "gene_id", all.x = TRUE)
+iso_per_gene[is.na(n_isoforms), n_isoforms := 0L]
+fwrite(iso_per_gene, file.path(OUT_DIR, "isoforms_per_gene.tsv"), sep = "\t")
+
+# ─── §1c reference-share — mirrors Rmd `sec1-ref-share` chunk ───
+dmso_4ct_samples <- unique(c(dmso_samples$AT, dmso_samples$DD,
+                              dmso_samples$FB, dmso_samples$MV))
+stopifnot(all(dmso_4ct_samples %in% colnames(expr_mat)))
+
+dmso_means <- rowMeans(expr_mat[, dmso_4ct_samples, drop = FALSE])
+sec1_iso[, mean_dmso := dmso_means[isoform_id]]
+sec1_iso[is.na(mean_dmso), mean_dmso := 0]
+gene_total_dmso <- sec1_iso[, .(gene_total = sum(mean_dmso)), by = gene_id]
+
+ref_share <- data.table(
+  gene_id              = pop_bc_c2$gene_id,
+  reference_isoform_id = pop_bc_c2$reference_isoform_id
+)
+ref_share <- merge(ref_share, gene_total_dmso, by = "gene_id", all.x = TRUE)
+ref_share[, ref_dmso := dmso_means[reference_isoform_id]]
+ref_share[is.na(ref_dmso), ref_dmso := 0]
+ref_share[, ref_fraction_of_gene := ifelse(gene_total > 0,
+                                            ref_dmso / gene_total, NA_real_)]
+fwrite(ref_share, file.path(OUT_DIR, "ref_expression_fraction.tsv"), sep = "\t")
+
+# ─── Descriptive summary ───
 desc <- data.table(
-  metric              = c("n_genes_in_pop_BC",
-                          "median_isoforms_per_gene",
-                          "iqr_isoforms_per_gene",
-                          "median_ref_fraction_pct",
-                          "frac_refs_above_50pct",
-                          "median_nmd_comp_length_nt",
-                          "median_ref_length_nt",
-                          "median_control_comp_length_nt",
-                          "kruskal_wallis_p"),
-  value               = c(length(pop_genes),
-                          median(iso_per_gene$n_isoforms),
-                          IQR(iso_per_gene$n_isoforms),
-                          round(100 * median(ref_fracs$ref_fraction_of_gene), 1),
-                          round(mean(ref_fracs$ref_fraction_of_gene >= 0.50), 3),
-                          median(nmd_comp_len),
-                          median(ref_len),
-                          median(ctrl_comp_len),
-                          signif(kw$p.value, 3))
+  metric = c("n_genes_in_pop_BC",
+             "median_isoforms_per_gene",
+             "iqr_isoforms_per_gene",
+             "median_ref_fraction_pct",
+             "frac_refs_above_50pct",
+             "median_nmd_comp_length_nt",
+             "median_ref_length_nt",
+             "median_control_comp_length_nt",
+             "n_pop_bc_triplets",
+             "paired_wilcox_p_nmd_vs_ref",
+             "paired_wilcox_p_nmd_vs_ctrl",
+             "paired_wilcox_p_ctrl_vs_ref"),
+  value  = c(nrow(pop_bc_shared),
+             median(iso_per_gene$n_isoforms),
+             IQR(iso_per_gene$n_isoforms),
+             round(100 * median(ref_share$ref_fraction_of_gene, na.rm = TRUE)),
+             round(100 * mean(ref_share$ref_fraction_of_gene >= 0.50,
+                              na.rm = TRUE)),
+             median(nmd_lens),
+             median(ref_lens),
+             median(ctrl_lens),
+             nrow(pop_bc_triplets),
+             signif(p_nmd_ref,  3),
+             signif(p_nmd_ctrl, 3),
+             signif(p_ctrl_ref, 3))
 )
 fwrite(desc, file.path(OUT_DIR, "descriptives_summary.tsv"), sep = "\t")
 
-cat("\n=== Descriptive summary ===\n")
+cat("\n=== Descriptive summary (matches Rmd §1a/§1c) ===\n")
 print(desc)
-
-cat("\n=== Pairwise tx-length contrasts ===\n")
+cat("\n=== Paired-Wilcoxon contrasts ===\n")
 print(pw)
-
-cat(sprintf("\nManuscript-cited medians (compare against §4¶2):\n"))
-cat(sprintf("  NMD comparator   = %d nt  (manuscript: 3,049)\n",
-            as.integer(median(nmd_comp_len))))
-cat(sprintf("  Reference        = %d nt  (manuscript: 2,893)\n",
-            as.integer(median(ref_len))))
-cat(sprintf("  Control comp.    = %d nt  (manuscript: 2,762)\n",
-            as.integer(median(ctrl_comp_len))))
-cat(sprintf("  Kruskal–Wallis p = %s\n", format(kw$p.value, digits = 3)))
-
-cat(sprintf("\nManuscript-cited descriptives (compare against §4¶1):\n"))
-cat(sprintf("  median isoforms / gene             = %d  (manuscript: 7)\n",
-            as.integer(median(iso_per_gene$n_isoforms))))
-cat(sprintf("  median ref-isoform pct of gene     = %.1f%%  (manuscript: 70%%)\n",
-            100 * median(ref_fracs$ref_fraction_of_gene)))
-cat(sprintf("  fraction of refs above 50%% of gene = %.1f%%  (manuscript: 75%%)\n",
-            100 * mean(ref_fracs$ref_fraction_of_gene >= 0.50)))

@@ -49,6 +49,7 @@ utr5_refaug <- readRDS(file.path(DM, "analysis_cache/utr5_features_refaug.rds"))
 utr5_all    <- readRDS(file.path(DM, "analysis_cache/utr5_features_all.rds"))
 expr_mat    <- readRDS(file.path(DM, "expression_data.rds"))
 nmd_class   <- readRDS(file.path(DM, "nmd_classification.rds"))
+dmso_samples <- readRDS(file.path(DM, "dmso_samples.rds"))
 
 need_in <- function(obj, cols, label) {
   missing <- setdiff(cols, colnames(obj))
@@ -510,7 +511,72 @@ The Reference %ENST and the NMD-comparator %Novel define the scope reduction
 that motivates §2 (the GENCODE-only n=190 scope: where ALL three isoforms are
 ENST-annotated, which constrains the cohort sharply).
 
-## §1c — Figure 3 Panels A/B/C
+## §1c — Per-gene isoform diversity and reference-isoform dominance
+
+The §4¶1 descriptive numbers (median expressed-isoforms per gene; reference-
+isoform share of parent-gene expression) are computed here from the same
+pop_BC universe used for transcript-length in §1a, so the SF
+*PairSetDescriptives* draws from these canonical chunks rather than
+recomputing.
+
+```{r sec1-iso-per-gene, include=FALSE}
+# Expressed non-NMD isoforms per gene across the pop_BC universe.
+# Filter: gene in pop_BC; isoform has a row in the TMM-normalized count matrix
+# (expression_data.rds); NOT classified as NMD-sensitive by mashr 4-CT union.
+nmd_iso_set <- nmd_class[["all_samples"]]$nmd
+expr_iso    <- rownames(expr_mat)
+
+sec1_iso <- data.table::as.data.table(structures)[
+  gene_id %in% pop_bc_shared$gene_id &
+    isoform_id %in% expr_iso &
+    !isoform_id %in% nmd_iso_set,
+  .(isoform_id, gene_id)]
+
+iso_per_gene <- sec1_iso[, .(n_isoforms = .N), by = gene_id]
+# Genes with zero matches keep a 0 count (rare; preserves denominator).
+all_pop_genes <- data.table::data.table(gene_id = unique(pop_bc_shared$gene_id))
+iso_per_gene <- merge(all_pop_genes, iso_per_gene, by = "gene_id", all.x = TRUE)
+iso_per_gene[is.na(n_isoforms), n_isoforms := 0L]
+
+iso_med <- as.integer(median(iso_per_gene$n_isoforms))
+iso_iqr <- as.integer(IQR(iso_per_gene$n_isoforms))
+```
+
+Across the `r format(nrow(iso_per_gene), big.mark=",")` pop_BC genes, the
+median number of expressed non-NMD isoforms per gene is **`r iso_med`**
+(IQR = `r iso_iqr`). The pop_BC ≥3-isoform inclusion criterion sets the floor.
+
+```{r sec1-ref-share, include=FALSE}
+# Reference-isoform DMSO 4-CT mean expression as a fraction of the gene's
+# total non-NMD DMSO 4-CT mean expression. The same denominator (non-NMD
+# expressed isoforms of the gene) used in sec1-iso-per-gene.
+dmso_4ct_samples <- unique(c(dmso_samples$AT, dmso_samples$DD,
+                              dmso_samples$FB, dmso_samples$MV))
+stopifnot(all(dmso_4ct_samples %in% colnames(expr_mat)))
+
+dmso_means <- rowMeans(expr_mat[, dmso_4ct_samples, drop = FALSE])
+sec1_iso[, mean_dmso := dmso_means[isoform_id]]
+sec1_iso[is.na(mean_dmso), mean_dmso := 0]
+gene_total_dmso <- sec1_iso[, .(gene_total = sum(mean_dmso)), by = gene_id]
+
+ref_share <- data.table::data.table(
+  gene_id              = pop_bc_c2$gene_id,
+  reference_isoform_id = pop_bc_c2$reference_isoform_id
+)
+ref_share <- merge(ref_share, gene_total_dmso, by = "gene_id", all.x = TRUE)
+ref_share[, ref_dmso := dmso_means[reference_isoform_id]]
+ref_share[is.na(ref_dmso), ref_dmso := 0]
+ref_share[, share := ifelse(gene_total > 0, ref_dmso / gene_total, NA_real_)]
+
+ref_share_med_pct  <- round(100 * median(ref_share$share, na.rm = TRUE))
+ref_share_ge50_pct <- round(100 * mean(ref_share$share >= 0.50, na.rm = TRUE))
+```
+
+The median reference-isoform DMSO 4-CT mean expression captures
+**`r ref_share_med_pct`%** of the parent gene's total non-NMD expression;
+**`r ref_share_ge50_pct`%** of references are above the 50% threshold.
+
+## §1d — Figure 3 Panels A/B/C
 
 Panels A (pair-set concept), B (sequence similarity), and C (event prevalence)
 characterize the pop_BC pair structure. Panel-level methodology is in
