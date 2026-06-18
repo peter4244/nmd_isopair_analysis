@@ -37,7 +37,17 @@ Output is organized as:
 | 75% of reference isoforms ≥50% of parent gene expression | (not on a panel; descriptive only) | UNVERIFIED — see Gap-§4-A |
 | median reference isoform = 70% of parent expression | (not on a panel; descriptive only) | UNVERIFIED — see Gap-§4-A |
 
-**Gap-§4-A:** §4¶1's descriptive numbers reference an SF (`SFx - Isoform Count in Isoform Pair Sets`, `SFx - Expression Levels of Isoform Pair Sets`) that doesn't exist in `figures/SupplementalFigures/`. Either (a) build the SF, or (b) drop the SF callouts and route the numbers to the Methods "Isoform Pairs Analysis" subsection. Recommend (b) — these are dataset descriptives, not findings.
+**Gap-§4-A — RESOLVED.** New SF built at `figures/SupplementalFigures/PairSetDescriptives/` (Panels A + B + C). Pete updated the manuscript §4¶1 sentence on 2026-06-18 to match the SF values exactly:
+
+> "These genes had a median of 7 isoforms each (SFx - Isoform Count in Isoform Pair Sets), and the median reference isoform accounted for 31% of its parent gene expression, with 38% of the reference isoforms accounting for >50% of parent gene expression."
+
+All numbers verified ✓:
+- 3,009 pair-genes
+- Median 7 isoforms/gene (IQR = 5)
+- Median reference share = 31% (computed 30.8%, rounds to 31%)
+- 38% of references ≥ 50% (computed 37.6%, rounds to 38%)
+
+No further action needed on §4-A. The "SFx" placeholder in the revised §4¶1 sentence resolves to this Supplemental Figure.
 
 ### §4¶2 — Length comparisons — ✗ missing figure
 | Claim | Figure-side | Verdict |
@@ -47,7 +57,7 @@ Output is organized as:
 | median Control comparator = 2,762 nt | not in inventory | MISSING |
 | p < 0.001 (Control vs ref+NMD comparator length) | no figure cited | MISSING test name |
 
-**Gap-§4-B:** `SFx - Transcript Length Comparison` is cited but the SF doesn't exist on disk. Either build it (uses existing pop_BC data) or move the descriptive into Methods. The test name ("Wilcoxon? Kruskal–Wallis?") is unspecified and must be filled in.
+**Gap-§4-B — RESOLVED:** Panel C of the new `PairSetDescriptives/` SF carries the transcript-length distribution at pop_BC scope. All three medians verified exactly against the manuscript: NMD comparator 3,049 nt, reference 2,893 nt, Control comparator 2,762 nt. The unspecified test name fills in as **Kruskal–Wallis omnibus p = 1.5×10⁻⁷** with pairwise Wilcoxon (Mann–Whitney U) follow-up (p = 3.4×10⁻² / 2.1×10⁻⁸ / 7.9×10⁻⁴).
 
 ### §4¶3 — Sequence similarity + event prevalence — ✓ direction matches; minor wording
 | Claim | Figure-side | Verdict |
@@ -180,7 +190,13 @@ The SF folder also still embeds a base64-extracted PNG from the **pre-patch** HT
 | GENCODE-restricted (n=190): no significant 3′UTR difference | CDSand3UTR_GENCODEonly Panel D/F (translation-based + via-non-PTC-stop measures) confirm 3'UTR is inflated in PTC+ by including [PTC → natural stop] coding region; bias-free measure shows no real 3'UTR difference | ✓ direction matches |
 | Expanded (n=1,166): NMD+/PTC+ median 3'UTR = 1,290 nt; PTC− = 800 nt; Control = 948 nt; p<0.001 | not in current inventory at n=1,166 scope; the bias-free 3'UTR measure (`utr3_via_ref_stop_nt`, added 2026-06-13) was wired into Figure 4 Panel D but not exported as a numeric panel | UNVERIFIED — see Gap-§4-C |
 
-**Gap-§4-C:** §4¶9 cites 3'UTR medians (1,290 / 800 / 948 nt) at the n=1,166 scope. The bias-free 3'UTR measure (`utr3_via_ref_stop_nt`) was added in Task #57 but I see no panel currently exporting that comparison at n=1,166. Either (a) verify these numbers are still current and add a 3'UTR panel/supplement at n=1,166, or (b) drop the specific medians and keep the qualitative claim. Recommend (a) if the n=1,166 3'UTR is part of the §4 narrative — it's an asymmetry that the manuscript reports specific numbers but the figures only document the GENCODE-scope (n=190) version.
+**Gap-§4-C — RESOLVED (already addressed by existing SF):** Panel F of the existing `CDSand3UTR_GENCODEonly/` SF already carries the 3'UTR-at-n=1,166 distribution using the bias-corrected non-PTC-stop measure. The descriptive table (`panelF_utr3_non_ptc_stop_refaug_descriptives.tsv`) confirms each manuscript-cited median exactly:
+- ✓ NMD+/PTC+ median = 1,289.5 nt (manuscript: 1,290 — rounds to 1,290)
+- ✓ NMD+/PTC− retained median = 799.5 nt (manuscript: 800 — rounds to 800)
+- ✓ Control median = 948 nt (manuscript: 948 — exact)
+- ✓ Pairwise Wilcoxon p = 3.07×10⁻⁴ (PTC− vs PTC+), 0.249 (PTC− vs Control, not significant), 1.13×10⁻⁸ (PTC+ vs Control)
+
+No new SF needed. The original reconciliation note missed this because Panel F is a sub-panel of a larger 6-panel SF rather than a standalone supplement. Manuscript §4¶9 SF callout can point at "`Supplemental Figure CDSand3UTR_GENCODEonly` Panel F".
 
 ---
 
