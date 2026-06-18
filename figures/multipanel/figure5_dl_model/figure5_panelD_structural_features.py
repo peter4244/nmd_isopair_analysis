@@ -1,5 +1,5 @@
 """
-Figure 5 Panel C — Per-feature DeepSHAP importance for the structural branch.
+Figure 5 Panel D — Per-feature DeepSHAP importance for the structural branch.
 
 Mirrors orf_model_report fig2b_structural_importance: mean |SHAP| per
 structural feature on NMD test transcripts, averaged across 5 DeepSHAP
@@ -7,7 +7,7 @@ runs. Downstream EJC count dominates by 15×, consistent with the
 manuscript's "EJC count was by far the most important" claim.
 
 Data:
-  ./data/panelC_structural_features.tsv
+  ./data/panelD_structural_features.tsv
     Columns: feature (friendly label), channel (raw), mean_abs_shap
     Source: deepshap_summary_atg500_stop500_run{1..5}.tsv (4ct).
     Exported by ./data_export.py.
@@ -41,7 +41,7 @@ C_AXIS = "#555555"
 
 
 def load_data():
-    return pd.read_csv(HERE.parent / "data" / "panelC_structural_features.tsv", sep="\t")
+    return pd.read_csv(HERE.parent / "data" / "panelD_structural_features.tsv", sep="\t")
 
 
 def build_figure(df):
@@ -73,7 +73,7 @@ def build_figure(df):
         ax.spines[side].set_color(C_AXIS)
         ax.spines[side].set_linewidth(0.8)
 
-    fig.subplots_adjust(left=0.34, right=0.97, bottom=0.18, top=0.96)
+    fig.subplots_adjust(left=0.42, right=0.97, bottom=0.18, top=0.96)
     return fig
 
 
@@ -85,9 +85,9 @@ def main():
     validate_figure_layout(fig, fig.axes[0], verbose=True)
 
     out_dir = HERE.parent
-    fig.savefig(out_dir / "figure5_panelC_structural_features.pdf", facecolor="white")
-    fig.savefig(out_dir / "figure5_panelC_structural_features.png", dpi=300, facecolor="white")
-    print("Saved: figure5_panelC_structural_features.pdf and .png")
+    fig.savefig(out_dir / "figure5_panelD_structural_features.pdf", facecolor="white")
+    fig.savefig(out_dir / "figure5_panelD_structural_features.png", dpi=300, facecolor="white")
+    print("Saved: figure5_panelD_structural_features.pdf and .png")
 
 
 if __name__ == "__main__":

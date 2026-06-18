@@ -58,14 +58,7 @@ EVENT_LABELS = {
 }
 
 
-def sig_stars(p):
-    if p < 0.001:
-        return "***"
-    if p < 0.01:
-        return "**"
-    if p < 0.05:
-        return "*"
-    return "ns"
+from p_to_stars import p_to_stars as sig_stars  # noqa: E402 — unified 4-tier scheme
 
 
 def load_data():

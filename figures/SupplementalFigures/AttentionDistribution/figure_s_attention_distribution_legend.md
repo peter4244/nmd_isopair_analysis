@@ -1,0 +1,5 @@
+**Supplemental Figure | Attention is concentrated on the priority ORF but is more broadly distributed in NMD than in Control isoforms.**
+
+**(A)** Attention weight per candidate ORF rank (boxplots, NMD = coral, Control = blue) on the chr-1/3/5/7 paralog-free test set. Rank 0 is the priority ORF (reference CDS > TD2 CDS > top-Kozak). Most attention concentrates at rank 0 in both classes (median weight ~0.74–0.76); NMD's rank-0 median is slightly lower and the per-isoform mass at ranks ≥1 is correspondingly higher than Control, with a long tail of NMD isoforms placing >25% of attention on a non-priority ORF. **(B)** Shannon entropy of the per-isoform attention vector across the 5 candidate ORFs (higher entropy = more broadly distributed attention; n = 15,584). The NMD density is shifted toward higher entropy than Control — quantifying the broader spread visible in Panel A.
+
+**Abbreviations.** NMD, nonsense-mediated decay; ORF, open reading frame; CDS, coding sequence; TD2, TransDecoder2; rank-0 ORF, the priority candidate ORF passed to the model (ref CDS first, then TD2 CDS, then highest Kozak among ORFik calls).

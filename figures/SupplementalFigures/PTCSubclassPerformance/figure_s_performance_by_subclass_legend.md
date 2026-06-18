@@ -1,0 +1,9 @@
+**Supplemental Figure — Deep-learning NMD-call discrimination, stratified by PTC subclass at the n = 1,166 ref-AUG-traceable scope.**
+
+Held-out test-set predictions of the trained NMD predictor (chr-1/3/5/7 paralog-free split; same model and test scope as **Figure 5 Panel B**), restricted to isoforms in the n = 1,166 ref-AUG-traceable gene-matched subset (Subset 2; same scope as Figure 4 C/D and Figure 5 Panel G) and stratified into NMD+/PTC+ (n = 255), NMD+/PTC− retained (n = 30), and Control (n = 276).
+
+**(A)** ROC curves for two contrasts using the model's predicted NMD probability as the score: NMD+/PTC+ vs Control achieves AUC = 0.96 (AUPRC = 0.94); NMD+/PTC− vs Control achieves AUC = 0.74 (AUPRC = 0.26). Discrimination drops substantially in the NMD+/PTC− contrast, indicating that ref-AUG-traceable NMD-targeted isoforms whose downstream stop codon falls within the canonical CDS (no annotated PTC) are intrinsically harder for the model to call — consistent with the loss of stop-window and structural (downstream-EJC) signal documented in the companion Branch-SHAP-by-subclass SF. Diagonal = chance.
+
+**(B)** Per-isoform NMD probability stratified by subclass. NMD+/PTC+ isoforms cluster at high probability (mean = 0.85), comfortably above the 0.5 decision threshold; Control isoforms cluster at low probability (mean = 0.19); NMD+/PTC− isoforms straddle the threshold (mean = 0.39), placing many of them on the Control side of the decision boundary. Boxplots show median, IQR, and 1.5×IQR whiskers; dashed horizontal line marks the 0.5 default decision threshold.
+
+**Abbreviations.** ROC, receiver operating characteristic; AUC, area under the ROC curve; AUPRC, area under the precision–recall curve; NMD, nonsense-mediated decay; PTC, premature termination codon; EJC, exon–exon junction complex.

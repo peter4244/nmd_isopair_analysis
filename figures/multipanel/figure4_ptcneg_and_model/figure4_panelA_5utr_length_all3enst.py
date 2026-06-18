@@ -44,16 +44,7 @@ COLORS = {
 }
 
 
-def sig_marker(p):
-    if pd.isna(p):
-        return "n.s."
-    if p < 1e-4:
-        return "***"
-    if p < 1e-3:
-        return "**"
-    if p < 0.05:
-        return "*"
-    return "n.s."
+from p_to_stars import p_to_stars as sig_marker  # noqa: E402 — unified 4-tier scheme
 
 
 def build_figure():

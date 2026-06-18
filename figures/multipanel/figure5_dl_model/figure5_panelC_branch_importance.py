@@ -1,12 +1,12 @@
 """
-Figure 5 Panel B — Branch-level Shapley importance (Structural / Stop / ATG).
+Figure 5 Panel C — Branch-level Shapley importance (Structural / Stop / ATG).
 
 Mirrors orf_model_report fig2a_branch_importance: KernelSHAP with 500
 background, exact 2^3 coalitions, on NMD test transcripts only. Bars show
 mean |SHAP| per branch; labels show the share-of-total percentage.
 
 Data:
-  ./data/panelB_branch_importance.tsv
+  ./data/panelC_branch_importance.tsv
     Columns: branch, mean_abs_shap, pct, n_nmd
     Source: kernel_shap_branch_atg500_stop500.tsv (4ct model, results_4ct/).
     Exported by ./data_export.py.
@@ -44,7 +44,7 @@ C_AXIS = "#555555"
 
 
 def load_data():
-    return pd.read_csv(HERE.parent / "data" / "panelB_branch_importance.tsv", sep="\t")
+    return pd.read_csv(HERE.parent / "data" / "panelC_branch_importance.tsv", sep="\t")
 
 
 def build_figure(df):
@@ -93,9 +93,9 @@ def main():
     validate_figure_layout(fig, fig.axes[0], verbose=True)
 
     out_dir = HERE.parent
-    fig.savefig(out_dir / "figure5_panelB_branch_importance.pdf", facecolor="white")
-    fig.savefig(out_dir / "figure5_panelB_branch_importance.png", dpi=300, facecolor="white")
-    print("Saved: figure5_panelB_branch_importance.pdf and .png")
+    fig.savefig(out_dir / "figure5_panelC_branch_importance.pdf", facecolor="white")
+    fig.savefig(out_dir / "figure5_panelC_branch_importance.png", dpi=300, facecolor="white")
+    print("Saved: figure5_panelC_branch_importance.pdf and .png")
 
 
 if __name__ == "__main__":
