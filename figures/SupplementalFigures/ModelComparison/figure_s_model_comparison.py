@@ -53,12 +53,19 @@ GROUP_LABEL = {
     "NMD+/PTC-": "NMD+/PTC−",
     "Control":   "Control",
 }
+# Local color deviation from the project palette: project canonical PTC-
+# is #d95f02 (dark orange), but in scatter plots with ~1k PTC+ orange
+# points overlapping ~100 PTC- points the two oranges blur. Swap PTC-
+# to a contrasting purple just in this figure.
 GROUP_COLOR = {
     "NMD+/PTC+": "#ef8a62",
-    "NMD+/PTC-": "#d95f02",
+    "NMD+/PTC-": "#762a83",
     "Control":   "#67a9cf",
 }
+# Plot order: heaviest-overplotted group first (Control), most-distinctive
+# group last so it lands on top of the overplot stack (PTC-).
 SUBCLASS_ORDER = ["NMD+/PTC+", "NMD+/PTC-", "Control"]
+SUBCLASS_PLOT_ORDER = ["Control", "NMD+/PTC+", "NMD+/PTC-"]
 
 MODEL_LABEL = {
     "nmdetective_b": "NMDetective-B\n(Lindeboom 2019)",
@@ -88,13 +95,22 @@ def load():
 def panel_a_scatter(ax, df, model_key):
     """One subplot in Panel A: predicted score vs gold-standard log-FC."""
     col = MODEL_SCORE_COL[model_key]
-    for sub in SUBCLASS_ORDER:
+    for sub in SUBCLASS_PLOT_ORDER:
         d = df[df["subclass"] == sub]
-        ax.scatter(
-            d[col], d["mashr_posterior_mean_logfc"],
-            color=GROUP_COLOR[sub], alpha=0.6, s=18,
-            edgecolor="none", label=GROUP_LABEL[sub],
-        )
+        # PTC- is the smallest, most-overplotted group — draw with a slight
+        # edge + higher alpha so the 95 dots stay visible against PTC+.
+        if sub == "NMD+/PTC-":
+            ax.scatter(
+                d[col], d["mashr_posterior_mean_logfc"],
+                color=GROUP_COLOR[sub], alpha=0.85, s=22,
+                edgecolor="white", linewidth=0.3, label=GROUP_LABEL[sub],
+            )
+        else:
+            ax.scatter(
+                d[col], d["mashr_posterior_mean_logfc"],
+                color=GROUP_COLOR[sub], alpha=0.5, s=16,
+                edgecolor="none", label=GROUP_LABEL[sub],
+            )
     # Pooled Spearman
     sp = df[[col, "mashr_posterior_mean_logfc"]].corr(method="spearman").iloc[0, 1]
     ax.text(
@@ -208,11 +224,22 @@ def build_figure():
         "Gold standard: mashr posterior mean\nlog fold-change under SMG1i",
         fontsize=10, color="#222222",
     )
-    # Shared legend at the bottom of the first subplot to avoid overlap
-    axes_a[0].legend(
-        loc="lower right", fontsize=8, frameon=False,
-        handlelength=1.0, handletextpad=0.4, borderaxespad=0.3,
-        title="Subclass", title_fontsize=8,
+    # Shared horizontal legend ABOVE Panel A (between the panel label
+    # row and the subplot title row). Keeps the legend out of the
+    # data area entirely.
+    handles = [
+        plt.Line2D([0], [0], marker="o", linestyle="", color="w",
+                   markerfacecolor=GROUP_COLOR[s], markersize=7,
+                   markeredgecolor="white" if s == "NMD+/PTC-" else "none",
+                   label=GROUP_LABEL[s])
+        for s in SUBCLASS_ORDER
+    ]
+    fig.legend(
+        handles=handles, loc="upper center",
+        bbox_to_anchor=(0.34, 0.96),
+        ncol=3, fontsize=9, frameon=False,
+        handlelength=1.2, handletextpad=0.4, columnspacing=1.6,
+        title=None,
     )
 
     # Panel B: stratified bars
