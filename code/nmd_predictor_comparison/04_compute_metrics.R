@@ -1,0 +1,124 @@
+#!/usr/bin/env Rscript
+# =============================================================================
+# 04_compute_metrics.R
+#
+# Join the three scoring runs (NMDetective-B, NMDEP rule baseline, our model)
+# against the per-isoform input table, compute Spearman / Pearson / R² / MAE /
+# RMSE against the gold standard (mashr posterior-mean log-FC under SMG1i),
+# stratified by subclass.
+#
+# Outputs:
+#   per_isoform_scores_2026.6.20.tsv  — combined per-isoform score table
+#   metrics_summary_2026.6.20.tsv     — pooled and stratified metrics
+# =============================================================================
+
+suppressPackageStartupMessages({
+  library(data.table)
+})
+
+HERE <- (function() {
+  args <- commandArgs(trailingOnly = FALSE)
+  fa <- args[grep("--file=", args)]
+  if (length(fa) > 0) return(dirname(normalizePath(sub("^--file=", "", fa[1]))))
+  normalizePath(getwd())
+})()
+setwd(HERE)
+
+DATESTAMP <- "2026.6.20"
+IN_FILE     <- file.path(HERE, sprintf("isoforms_%s.tsv",                  DATESTAMP))
+NMD_B_FILE  <- file.path(HERE, sprintf("nmdetective_b_scores_%s.tsv",      DATESTAMP))
+NMDEP_FILE  <- file.path(HERE, sprintf("nmdep_rule_baseline_scores_%s.tsv",DATESTAMP))
+OUT_SCORES  <- file.path(HERE, sprintf("per_isoform_scores_%s.tsv",        DATESTAMP))
+OUT_METRICS <- file.path(HERE, sprintf("metrics_summary_%s.tsv",           DATESTAMP))
+
+# ── Load + join ──
+d   <- fread(IN_FILE)
+nb  <- fread(NMD_B_FILE)
+nep <- fread(NMDEP_FILE)
+
+scores <- merge(d[, .(comparator_isoform_id, gene_id, reference_isoform_id,
+                       subclass, chr, mashr_posterior_mean_logfc,
+                       our_model_prob)],
+                 nb[, .(comparator_isoform_id, nmdetective_b_score,
+                        nmdetective_b_leaf, nmdetective_b_call)],
+                 by = "comparator_isoform_id")
+scores <- merge(scores,
+                 nep[, .(comparator_isoform_id, nmdep_rule_score,
+                         nmdep_rule_leaf, nmdep_rule_call)],
+                 by = "comparator_isoform_id")
+fwrite(scores, OUT_SCORES, sep = "\t")
+cat(sprintf("Wrote %s (%d rows)\n", basename(OUT_SCORES), nrow(scores)))
+
+# ── Metric helpers ──
+metrics_one <- function(model, gold) {
+  ok <- !is.na(model) & !is.na(gold)
+  m <- model[ok]; g <- gold[ok]
+  n <- length(m)
+  if (n < 5) {
+    return(data.table(n = n, spearman = NA_real_, pearson = NA_real_,
+                       r2 = NA_real_, mae = NA_real_, rmse = NA_real_))
+  }
+  sp <- suppressWarnings(cor(m, g, method = "spearman"))
+  pe <- suppressWarnings(cor(m, g, method = "pearson"))
+  data.table(
+    n        = n,
+    spearman = round(sp, 4),
+    pearson  = round(pe, 4),
+    r2       = round(pe^2, 4),
+    mae      = round(mean(abs(m - g)), 4),
+    rmse     = round(sqrt(mean((m - g)^2)), 4)
+  )
+}
+
+# ── Compute per-model × per-stratum metrics ──
+models <- list(
+  nmdetective_b = scores$nmdetective_b_score,
+  nmdep_rule    = scores$nmdep_rule_score,
+  our_model     = scores$our_model_prob
+)
+strata <- c("pooled", "NMD+/PTC+", "NMD+/PTC-", "Control")
+
+mk_metrics <- function(model_name, model_vec, stratum) {
+  if (stratum == "pooled") {
+    mask <- rep(TRUE, nrow(scores))
+  } else {
+    mask <- scores$subclass == stratum
+  }
+  m <- metrics_one(model_vec[mask], scores$mashr_posterior_mean_logfc[mask])
+  cbind(data.table(model = model_name, stratum = stratum), m)
+}
+
+results <- rbindlist(unlist(lapply(names(models), function(nm) {
+  lapply(strata, function(s) mk_metrics(nm, models[[nm]], s))
+}), recursive = FALSE))
+
+# ── Also report a "head-to-head" set: isoforms with all three scores ──
+hh_mask <- !is.na(scores$nmdetective_b_score) &
+           !is.na(scores$nmdep_rule_score) &
+           !is.na(scores$our_model_prob)
+cat(sprintf("\nHead-to-head intersection (all three models score the same isoform): %d\n",
+            sum(hh_mask)))
+hh_results <- rbindlist(lapply(names(models), function(nm) {
+  m <- metrics_one(models[[nm]][hh_mask],
+                    scores$mashr_posterior_mean_logfc[hh_mask])
+  cbind(data.table(model = nm, stratum = "head-to-head"), m)
+}))
+results <- rbind(results, hh_results)
+
+# Per-subclass within head-to-head set
+for (s in c("NMD+/PTC+", "NMD+/PTC-", "Control")) {
+  s_mask <- hh_mask & scores$subclass == s
+  if (sum(s_mask) < 5) next
+  sub <- rbindlist(lapply(names(models), function(nm) {
+    m <- metrics_one(models[[nm]][s_mask],
+                      scores$mashr_posterior_mean_logfc[s_mask])
+    cbind(data.table(model = nm, stratum = paste0("head-to-head:", s)), m)
+  }))
+  results <- rbind(results, sub)
+}
+
+fwrite(results, OUT_METRICS, sep = "\t")
+cat(sprintf("\nWrote %s\n", basename(OUT_METRICS)))
+
+cat("\n=== Metrics (model × stratum) ===\n")
+print(results)
