@@ -35,7 +35,10 @@ setwd(HERE)
 DM    <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0/isopair_wrapper/data_mashr"
 CACHE <- file.path(DM, "analysis_cache")
 MASHR <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/mashr_isoform_posterior_means_2026.3.10.csv"
-PREDS <- "/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/results_4ct/predictions_atg500_stop500.tsv"
+# Full-cohort predictions (split="all"): emitted by run_infer_all.py on Explorer
+# (scoring train + val + test + test_paralog isoforms in the model's H5).
+# Columns: isoform_id, chr, h5_split, label, logit, prob.
+PREDS <- file.path(HERE, "predictions_all_atg500_stop500.tsv")
 DATESTAMP <- "2026.6.20"
 
 # ── Load ──
@@ -246,9 +249,10 @@ cohort <- merge(cohort,
                  by = "comparator_isoform_id", all.x = TRUE)
 
 # ── Our model probability ──
-preds <- fread(PREDS, select = c("isoform_id", "chr", "prob"))
+preds <- fread(PREDS, select = c("isoform_id", "chr", "h5_split", "prob"))
 cohort <- merge(cohort,
                  preds[, .(comparator_isoform_id = isoform_id, chr,
+                            h5_split,
                             our_model_prob = prob)],
                  by = "comparator_isoform_id", all.x = TRUE)
 

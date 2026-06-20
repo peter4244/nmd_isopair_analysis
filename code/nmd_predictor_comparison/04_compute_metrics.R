@@ -37,7 +37,7 @@ nb  <- fread(NMD_B_FILE)
 nep <- fread(NMDEP_FILE)
 
 scores <- merge(d[, .(comparator_isoform_id, gene_id, reference_isoform_id,
-                       subclass, chr, mashr_posterior_mean_logfc,
+                       subclass, chr, h5_split, mashr_posterior_mean_logfc,
                        our_model_prob)],
                  nb[, .(comparator_isoform_id, nmdetective_b_score,
                         nmdetective_b_leaf, nmdetective_b_call)],
@@ -113,6 +113,29 @@ for (s in c("NMD+/PTC+", "NMD+/PTC-", "Control")) {
     m <- metrics_one(models[[nm]][s_mask],
                       scores$mashr_posterior_mean_logfc[s_mask])
     cbind(data.table(model = nm, stratum = paste0("head-to-head:", s)), m)
+  }))
+  results <- rbind(results, sub)
+}
+
+# ── Test-only sensitivity within head-to-head set ──
+# Our model has training-data overlap on train/val splits; rerun head-to-head
+# pooled + per-subclass metrics restricted to H5 split == "test" (chr1/3/5/7
+# holdout, never seen at training time).
+test_mask <- hh_mask & !is.na(scores$h5_split) & scores$h5_split == "test"
+cat(sprintf("\nTest-only head-to-head (H5 split == 'test'): %d\n", sum(test_mask)))
+test_pooled <- rbindlist(lapply(names(models), function(nm) {
+  m <- metrics_one(models[[nm]][test_mask],
+                    scores$mashr_posterior_mean_logfc[test_mask])
+  cbind(data.table(model = nm, stratum = "head-to-head:test"), m)
+}))
+results <- rbind(results, test_pooled)
+for (s in c("NMD+/PTC+", "NMD+/PTC-", "Control")) {
+  ts_mask <- test_mask & scores$subclass == s
+  if (sum(ts_mask) < 5) next
+  sub <- rbindlist(lapply(names(models), function(nm) {
+    m <- metrics_one(models[[nm]][ts_mask],
+                      scores$mashr_posterior_mean_logfc[ts_mask])
+    cbind(data.table(model = nm, stratum = paste0("head-to-head:test:", s)), m)
   }))
   results <- rbind(results, sub)
 }

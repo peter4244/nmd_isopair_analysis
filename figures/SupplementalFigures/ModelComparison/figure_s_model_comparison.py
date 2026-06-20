@@ -228,8 +228,9 @@ def build_figure():
 
     fig.text(
         0.5, 0.025,
-        f"Comparison restricted to the {n_hh}-isoform held-out test subset of the "
-        "n = 1,166 ref-AUG-traceable cohort (where our model's predictions are available).",
+        f"Comparison on the {n_hh}-isoform intersection of the n = 1,166 ref-AUG-traceable "
+        "cohort with the deep-learning model's H5 universe (full-cohort predictions: "
+        "train + val + test).",
         ha="center", va="bottom", fontsize=9, color="#555555", style="italic",
     )
     return fig, axes_a + [ax_b]
