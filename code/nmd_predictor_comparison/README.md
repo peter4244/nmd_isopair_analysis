@@ -14,12 +14,27 @@ No external downloads required for v1. NMDetective-A and full NMDEP are
 deferred unless their model weights / inference code prove easy to run
 (see `METHODS.md` §2.4).
 
+## Prerequisite — full-cohort model predictions
+
+Step 01 requires `predictions_all_atg500_stop500.tsv` (one row per isoform in the deep-learning model's H5 universe, split="all"). The trained model + H5 only live on Explorer (Northeastern GPU cluster), so this file is produced there and copied back. See `explorer_run/README.md`. Briefly:
+
+```bash
+# On Explorer
+cd ~/cc/nmd_orf_model_v5_4ct
+git pull
+sbatch ... run_infer_all.py --config config.yaml --atg-window 500 --stop-window 500
+# Output: results_4ct/predictions_all_atg500_stop500.tsv (~40k rows)
+
+# From laptop, scp back into this folder
+scp p.castaldi@login.explorer.northeastern.edu:~/cc/nmd_orf_model_v5_4ct/results_4ct/predictions_all_atg500_stop500.tsv .
+```
+
 ## Run order
 
 ```bash
 cd code/nmd_predictor_comparison
 
-# 1. Build the per-isoform input table — features and gold standard
+# 1. Build the per-isoform input table — features + gold standard + model prob
 Rscript 01_extract_our_isoforms.R
 
 # 2. Score each isoform with the published 4-rule NMDetective-B decision tree
@@ -28,13 +43,11 @@ Rscript 02_score_nmdetective_b.R
 # 3. Score each isoform with the NMDEP-re-thresholded 4-rule baseline
 Rscript 03_score_nmdep_rule_baseline.R
 
-# 4. Compute pooled and stratified metrics
+# 4. Compute pooled, stratified, and test-only-sensitivity metrics
 Rscript 04_compute_metrics.R
 ```
 
-Each step writes one datestamped TSV that the next step reads. The full
-pipeline runs in under a minute on a laptop — there's no external data
-download, no model inference, and no heavy compute.
+Each step writes one datestamped TSV that the next step reads. The four R scripts together run in under a minute on a laptop. Heavy compute (model inference) is the prerequisite step on Explorer.
 
 ## Outputs
 
@@ -42,9 +55,12 @@ Committed (datestamped per CLAUDE.md `yyyy.m.d` convention):
 
 | File | Produced by | Contents |
 |---|---|---|
-| `isoforms_2026.6.20.tsv` | 01 | Per-isoform input row: `gene_id`, `comparator_isoform_id`, `subclass` (PTC+ / PTC− / Control), `mashr_posterior_mean_logfc`, the four NMDetective rule features, model probability |
-| `per_isoform_scores_2026.6.20.tsv` | 03 | Per-isoform scores from each model side-by-side (`nmdetective_b_score`, `nmdep_rule_score`, `our_model_prob`) and the gold standard column |
-| `metrics_summary_2026.6.20.tsv` | 04 | Per-model × per-stratum Spearman, Pearson, R², MAE, RMSE — matches NMDEP Table 4 columns |
+| `predictions_all_atg500_stop500.tsv` | `explorer_run/run_infer_all.py` (on Explorer) | Per-isoform deep-learning model score across the full H5 universe (~40k isoforms; `isoform_id`, `chr`, `h5_split`, `label`, `logit`, `prob`) |
+| `isoforms_2026.6.20.tsv` | 01 | Per-isoform input row: `gene_id`, `comparator_isoform_id`, `subclass` (PTC+ / PTC− / Control), `stop_tx_pos_used`, the four NMDetective rule features, `mashr_posterior_mean_logfc`, `chr`, `h5_split`, `our_model_prob` |
+| `nmdetective_b_scores_2026.6.20.tsv` | 02 | Per-isoform NMDetective-B leaf assignment (`nmdetective_b_score`, `_leaf`, `_call`) |
+| `nmdep_rule_baseline_scores_2026.6.20.tsv` | 03 | Per-isoform NMDEP rule baseline leaf assignment (same columns, NMDEP thresholds) |
+| `per_isoform_scores_2026.6.20.tsv` | 04 | Joined per-isoform scores across all three models + gold standard (one row per cohort isoform) |
+| `metrics_summary_2026.6.20.tsv` | 04 | Per-model × per-stratum Spearman / Pearson / R² / MAE / RMSE — pooled, by-subclass, head-to-head intersection, and test-only sensitivity slice (`head-to-head:test:*`) |
 
 ## What "gold standard" means here
 
