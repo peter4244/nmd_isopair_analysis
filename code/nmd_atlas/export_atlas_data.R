@@ -525,6 +525,13 @@ cat(sprintf("Wrote %d chromosome shards to %s\n", n_files, CHR_SHARD_DIR))
 # Emit gene_id → chr lookup into the gene index so the client can pre-locate
 # the right chromosome file before fetching
 gene_chr_dt <- data.table(gene_id = names(gene_chr_map), chr = unname(gene_chr_map))
+# Fill in chr for undetected GENCODE-only genes from the GENCODE cache so the
+# UI can render a proper "not detected" state without an errant chr shard fetch.
+gencode_chr <- gencode[!is.na(chr), .(gc_chr = chr[1]), by = gene_id]
+gene_chr_dt <- merge(gene_chr_dt, gencode_chr, by = "gene_id", all.x = TRUE)
+gene_chr_dt[is.na(chr) | chr == "" | chr == "unknown",
+            chr := ifelse(is.na(gc_chr), "", gc_chr)]
+gene_chr_dt[, gc_chr := NULL]
 gi <- merge(gi, gene_chr_dt, by = "gene_id", all.x = TRUE)
 gi[, detected := NULL]  # UI-only helper column; not needed in the emitted index
 write_json(gi, file.path(OUT_DIR, "genes_index.json"),
@@ -537,7 +544,7 @@ manifest <- list(
   n_isoforms   = nrow(m),
   n_chromosomes = n_files,
   cell_types   = CTS,
-  data_version = "2026.7.1"
+  data_version = "2026.7.1b"
 )
 write_json(manifest, file.path(OUT_DIR, "manifest.json"), auto_unbox = TRUE)
 cat("Done.\n")

@@ -283,22 +283,46 @@ async function selectGene(geneId) {
     // Look up which chromosome this gene lives on
     const idxRow = state.genesIndex.find(g => g.gene_id === geneId);
     if (!idxRow) throw new Error(`Gene ${geneId} not in index`);
-    const chr = idxRow.chr || "unknown";
-    // Show a "loading chromosome" hint on the manifest line if we're about
-    // to fetch a large shard for the first time.
-    const cached = state.chrCache.has(chr);
-    if (!cached) {
-      document.getElementById("manifest-info").textContent =
-        `Loading chromosome ${chr} …`;
+    // Genes with no detected isoforms are not written to chr shards to keep
+    // payload sizes small. Render a "not detected" placeholder without any
+    // network fetch — the index row is all we have for these genes.
+    const isUndetected = !idxRow.chr || idxRow.chr === "unknown";
+    let shard;
+    if (isUndetected) {
+      shard = {
+        gene_id: idxRow.gene_id,
+        hgnc_symbol: idxRow.hgnc_symbol || "",
+        n_isoforms: 0,
+        isoforms: [],
+        undetected: true,
+        gencode_n_annotated: idxRow.n_isoforms || 0
+      };
+    } else {
+      const chr = idxRow.chr;
+      const cached = state.chrCache.has(chr);
+      if (!cached) {
+        document.getElementById("manifest-info").textContent =
+          `Loading chromosome ${chr} …`;
+      }
+      const chrPayload = await fetchChromosome(chr);
+      if (state.manifest) {
+        document.getElementById("manifest-info").textContent =
+          `${state.manifest.n_genes.toLocaleString()} genes · ${state.manifest.n_isoforms.toLocaleString()} isoforms · v${state.manifest.data_version}`;
+      }
+      shard = chrPayload[geneId];
+      if (!shard) {
+        // Fallback: gene was in the index but not in the shard payload —
+        // treat as undetected so the UI still renders cleanly.
+        shard = {
+          gene_id: idxRow.gene_id,
+          hgnc_symbol: idxRow.hgnc_symbol || "",
+          n_isoforms: 0,
+          isoforms: [],
+          undetected: true,
+          gencode_n_annotated: idxRow.n_isoforms || 0
+        };
+      }
     }
-    const chrPayload = await fetchChromosome(chr);
-    // Restore the manifest info line
-    if (state.manifest) {
-      document.getElementById("manifest-info").textContent =
-        `${state.manifest.n_genes.toLocaleString()} genes · ${state.manifest.n_isoforms.toLocaleString()} isoforms · v${state.manifest.data_version}`;
-    }
-    const shard = chrPayload[geneId];
-    if (!shard) throw new Error(`Gene ${geneId} not in chromosome ${chr} shard`);
     state.currentGene = shard;
     state.currentIso  = pickInitialIso(shard);
     // Clear docs hash if we were viewing an About/Methods/Cite page
@@ -360,14 +384,23 @@ function renderIsoformTable() {
       renderSelectedIso();
     } else {
       // Nothing to show — clear the detail panes and show a targeted nudge.
-      // The nudge is different depending on whether there are annotated-only
-      // isoforms the user could toggle on, vs no isoforms at all in this gene.
+      // Cases: (a) gene wasn't detected at all in this atlas; (b) gene has
+      // annotated-only GENCODE transcripts the user could toggle on;
+      // (c) filter is just too tight.
       const nAnnot = annotatedOnly.length;
-      const helpMsg = nAnnot > 0 && !state.filter.showAnnotated
-        ? `<div class="hint">No isoforms are expressed above the CPM filter in our data.
+      const nGencode = state.currentGene.gencode_n_annotated || 0;
+      let helpMsg;
+      if (state.currentGene.undetected) {
+        helpMsg = `<div class="hint"><strong>Not detected in this atlas.</strong>
+             This gene did not pass the SMG1i-vs-DMSO expression filter in AT2, LAE, Fib, or MVE cells${nGencode ? `; GENCODE v49 annotates ${nGencode} transcript${nGencode > 1 ? "s" : ""} for it.` : "."}
+             Try searching a different gene.</div>`;
+      } else if (nAnnot > 0 && !state.filter.showAnnotated) {
+        helpMsg = `<div class="hint">No isoforms are expressed above the CPM filter in our data.
              <strong>This gene has ${nAnnot} annotated GENCODE transcript${nAnnot > 1 ? "s" : ""} that aren't detected.</strong>
-             <button id="enable-annotated-nudge" class="btn-nav" style="margin-left:0.5em">Show them</button></div>`
-        : `<div class="hint">No isoforms match the current filter. Slide Min. CPM lower or check "Also show annotated but not detected."</div>`;
+             <button id="enable-annotated-nudge" class="btn-nav" style="margin-left:0.5em">Show them</button></div>`;
+      } else {
+        helpMsg = `<div class="hint">No isoforms match the current filter. Slide Min. CPM lower or check "Also show annotated but not detected."</div>`;
+      }
       document.getElementById("iso-id").innerHTML = "—";
       document.getElementById("iso-meta").innerHTML = helpMsg;
       document.getElementById("transcript-viz").innerHTML = "";
