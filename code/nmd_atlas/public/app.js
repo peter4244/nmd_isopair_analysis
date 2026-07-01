@@ -93,10 +93,27 @@ function runSearch(q) {
   const results = document.getElementById("search-results");
   if (!q) { results.innerHTML = ""; return; }
   const lc = q.toLowerCase();
-  const hits = state.genesIndex
-    .filter(g => (g.hgnc_symbol && g.hgnc_symbol.toLowerCase().includes(lc)) ||
-                 g.gene_id.toLowerCase().includes(lc))
-    .slice(0, 20);
+  // Lower score = better rank. Buckets: 0 = exact symbol / exact ENSG (with or
+  // without version); 1 = symbol prefix; 2 = ENSG prefix; 3 = substring hit.
+  // Within a bucket, detected genes come before undetected, then alphabetical.
+  const scored = [];
+  for (const g of state.genesIndex) {
+    const sym = (g.hgnc_symbol || "").toLowerCase();
+    const gid = g.gene_id.toLowerCase();
+    const gidBase = gid.replace(/\.\d+$/, "");
+    let bucket;
+    if (sym === lc || gid === lc || gidBase === lc) bucket = 0;
+    else if (sym && sym.startsWith(lc)) bucket = 1;
+    else if (gid.startsWith(lc) || gidBase.startsWith(lc)) bucket = 2;
+    else if (sym.includes(lc) || gid.includes(lc)) bucket = 3;
+    else continue;
+    scored.push({ g, bucket, undetected: !g.chr, sym });
+  }
+  scored.sort((a, b) =>
+    a.bucket - b.bucket ||
+    (a.undetected - b.undetected) ||
+    a.sym.localeCompare(b.sym));
+  const hits = scored.slice(0, 20).map(s => s.g);
   results.innerHTML = "";
   for (const g of hits) {
     const li = document.createElement("li");
