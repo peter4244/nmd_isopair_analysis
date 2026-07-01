@@ -16,13 +16,17 @@ const state = {
   genesIndex: [],
   quantiles: null,
   manifest: null,
-  currentGene: null,    // gene shard JSON
+  currentGene: null,    // gene shard JSON (extracted from the chr file)
   currentIso: null,     // selected isoform record within currentGene
   filter: {
     minCpm: 1,          // default threshold — matches the mashr-DIE inclusion floor
     showAnnotated: false,
   },
+  chrCache: new Map(),   // chr → { gene_id: shard } — small LRU (cap: 3 chromosomes)
+  chrOrder: [],          // recency of chromosome cache entries
+  chrFetches: new Map(), // chr → Promise (dedup concurrent fetches)
 };
+const CHR_CACHE_CAP = 3;
 
 // ── boot ──
 init();
@@ -183,13 +187,63 @@ function closeStackModal() {
   document.body.style.overflow = "";
 }
 
+// ── chromosome cache ──
+// Data is served in per-chromosome shards (data/chroms/<chr>.json), each
+// containing a keyed map { gene_id: <gene_shard> }. First click into a
+// chromosome fetches its shard (~15 MB gzipped for chr1, less for the rest);
+// subsequent clicks in the same chromosome are instant. We cap at 3 loaded
+// chromosomes to avoid unbounded memory growth on power users.
+async function fetchChromosome(chr) {
+  if (state.chrCache.has(chr)) {
+    // Touch recency
+    state.chrOrder = state.chrOrder.filter(c => c !== chr).concat(chr);
+    return state.chrCache.get(chr);
+  }
+  if (state.chrFetches.has(chr)) return state.chrFetches.get(chr);
+  const v = encodeURIComponent(state.manifest?.data_version || Date.now());
+  const p = fetch(`data/chroms/${encodeURIComponent(chr)}.json?v=${v}`)
+    .then(r => {
+      if (!r.ok) throw new Error(`Chromosome ${chr} not available (HTTP ${r.status})`);
+      return r.json();
+    })
+    .then(payload => {
+      state.chrCache.set(chr, payload);
+      state.chrOrder.push(chr);
+      // Evict LRU
+      while (state.chrOrder.length > CHR_CACHE_CAP) {
+        const evict = state.chrOrder.shift();
+        state.chrCache.delete(evict);
+      }
+      state.chrFetches.delete(chr);
+      return payload;
+    })
+    .catch(err => { state.chrFetches.delete(chr); throw err; });
+  state.chrFetches.set(chr, p);
+  return p;
+}
+
 // ── gene selection ──
 async function selectGene(geneId) {
   try {
-    const v = encodeURIComponent(state.manifest?.data_version || Date.now());
-    const r = await fetch(`data/genes/${encodeURIComponent(geneId)}.json?v=${v}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const shard = await r.json();
+    // Look up which chromosome this gene lives on
+    const idxRow = state.genesIndex.find(g => g.gene_id === geneId);
+    if (!idxRow) throw new Error(`Gene ${geneId} not in index`);
+    const chr = idxRow.chr || "unknown";
+    // Show a "loading chromosome" hint on the manifest line if we're about
+    // to fetch a large shard for the first time.
+    const cached = state.chrCache.has(chr);
+    if (!cached) {
+      document.getElementById("manifest-info").textContent =
+        `Loading chromosome ${chr} …`;
+    }
+    const chrPayload = await fetchChromosome(chr);
+    // Restore the manifest info line
+    if (state.manifest) {
+      document.getElementById("manifest-info").textContent =
+        `${state.manifest.n_genes.toLocaleString()} genes · ${state.manifest.n_isoforms.toLocaleString()} isoforms · v${state.manifest.data_version}`;
+    }
+    const shard = chrPayload[geneId];
+    if (!shard) throw new Error(`Gene ${geneId} not in chromosome ${chr} shard`);
     state.currentGene = shard;
     state.currentIso  = pickInitialIso(shard);
     document.getElementById("welcome").classList.add("hidden");

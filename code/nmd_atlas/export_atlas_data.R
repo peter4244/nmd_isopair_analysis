@@ -29,9 +29,9 @@ HERE <- (function() {
 })()
 REPO <- normalizePath(file.path(HERE, "..", ".."))
 
-OUT_DIR        <- file.path(HERE, "public", "data")
-GENE_SHARD_DIR <- file.path(OUT_DIR, "genes")
-dir.create(GENE_SHARD_DIR, recursive = TRUE, showWarnings = FALSE)
+OUT_DIR       <- file.path(HERE, "public", "data")
+CHR_SHARD_DIR <- file.path(OUT_DIR, "chroms")
+dir.create(CHR_SHARD_DIR, recursive = TRUE, showWarnings = FALSE)
 
 CTS <- c("AT", "DD", "FB", "MV")
 ct_lower <- tolower(CTS)
@@ -246,8 +246,8 @@ gi[is.na(any_nmd_iso), any_nmd_iso := FALSE]
 gi[, n_isoforms := pmax(n_expr_isoforms, n_gencode_isoforms)]
 # Drop internal fields the UI doesn't need — keeps genes_index.json compact
 gi <- gi[, .(gene_id, hgnc_symbol, n_isoforms, any_nmd_iso)]
-write_json(gi, file.path(OUT_DIR, "genes_index.json"),
-            auto_unbox = TRUE, dataframe = "rows", na = "null", null = "null")
+# Note: we don't write the index yet — we'll add the `chr` column after the
+# per-chromosome bucketing pass and write the final index there.
 cat(sprintf("  -> %d genes\n", nrow(gi)))
 
 # ── Per-CT CPM quantile breakpoints (for "quantile of expression" display) ──
@@ -385,8 +385,10 @@ iso_record_from_gencode <- function(g) {
     gencode_only = TRUE
   )
 }
-write_gene <- function(gene_rows, gencode_rows) {
-  gid <- gene_rows$gene_id[1]
+# Returns the per-gene shard list (does NOT write to disk — the caller
+# aggregates all shards for a chromosome, then writes one file per chr).
+# Also returns the chromosome so the aggregator can bucket correctly.
+build_gene_shard <- function(gid, gene_rows, gencode_rows) {
   # Expressed / detected isoforms — annotate with GENCODE biotype when the id matches
   gc_by_id <- setNames(split(gencode_rows, gencode_rows$transcript_id),
                         gencode_rows$transcript_id)
@@ -399,44 +401,69 @@ write_gene <- function(gene_rows, gencode_rows) {
   expr_ids <- gene_rows$isoform_id
   extra <- gencode_rows[!(transcript_id %in% expr_ids)]
   isos_extra <- lapply(seq_len(nrow(extra)), function(i) iso_record_from_gencode(extra[i]))
+  hgnc <- data.table::first(na.omit(c(gene_rows$hgnc_symbol,
+                                       if (nrow(gencode_rows) > 0) gencode_rows$gene_name)))
+  # Pick a chromosome for this gene (nearly always uniform across its isoforms)
+  chrs <- na.omit(c(gene_rows$chr, if (nrow(gencode_rows) > 0) gencode_rows$chr))
+  gene_chr <- if (length(chrs) > 0) as.character(chrs[1]) else NA_character_
   out <- list(
     gene_id     = gid,
-    hgnc_symbol = data.table::first(na.omit(c(gene_rows$hgnc_symbol,
-                                    if (nrow(gencode_rows) > 0) gencode_rows$gene_name))),
+    hgnc_symbol = hgnc,
+    chr         = gene_chr,
     isoforms    = c(isos_expr, isos_extra)
   )
-  write_json(out, file.path(GENE_SHARD_DIR, sprintf("%s.json", gid)),
-              auto_unbox = TRUE, na = "null", null = "null")
+  list(shard = out, chr = gene_chr)
 }
 
 # Set keys once — orders of magnitude faster than repeated equality filtering
 setkey(m, gene_id)
 setkey(gencode, gene_id)
 all_gene_ids <- union(unique(m$gene_id), unique(gencode$gene_id))
-n_written <- 0
+n_built <- 0
+gene_chr_map <- character(length(all_gene_ids)); names(gene_chr_map) <- all_gene_ids
+by_chr <- list()   # chr → named list of gene shards (gene_id → shard)
 for (gid in all_gene_ids) {
   gene_rows    <- m[.(gid), nomatch = 0L]
   gencode_rows <- gencode[.(gid), nomatch = 0L]
   if (nrow(gene_rows) == 0 && nrow(gencode_rows) == 0) next
-  # Stub out an expressed-side row for gene_index if this gene is GENCODE-only
-  if (nrow(gene_rows) == 0) {
-    gene_rows <- data.table(
-      isoform_id = character(0), gene_id = gid, hgnc_symbol = gencode_rows$gene_name[1]
-    )
-  }
-  write_gene(gene_rows, gencode_rows)
-  n_written <- n_written + 1
-  if (n_written %% 1000 == 0) cat(sprintf("  ...%d genes written\n", n_written))
+  built <- build_gene_shard(gid, gene_rows, gencode_rows)
+  chr_key <- if (is.na(built$chr) || is.null(built$chr)) "unknown" else built$chr
+  if (is.null(by_chr[[chr_key]])) by_chr[[chr_key]] <- list()
+  by_chr[[chr_key]][[gid]] <- built$shard
+  gene_chr_map[gid] <- chr_key
+  n_built <- n_built + 1
+  if (n_built %% 5000 == 0) cat(sprintf("  ...%d genes buffered\n", n_built))
 }
-cat(sprintf("Wrote %d per-gene shards to %s\n", n_written, GENE_SHARD_DIR))
+cat(sprintf("Buffered %d gene shards across %d chromosome groups.\n",
+            n_built, length(by_chr)))
+
+# Write one JSON file per chromosome
+n_files <- 0
+for (chr_key in names(by_chr)) {
+  out_path <- file.path(CHR_SHARD_DIR, sprintf("%s.json", chr_key))
+  write_json(by_chr[[chr_key]], out_path,
+              auto_unbox = TRUE, na = "null", null = "null")
+  size_mb <- round(file.info(out_path)$size / 1024^2, 2)
+  cat(sprintf("  %-8s  %6d genes  %.2f MB\n", chr_key, length(by_chr[[chr_key]]), size_mb))
+  n_files <- n_files + 1
+}
+cat(sprintf("Wrote %d chromosome shards to %s\n", n_files, CHR_SHARD_DIR))
+
+# Emit gene_id → chr lookup into the gene index so the client can pre-locate
+# the right chromosome file before fetching
+gene_chr_dt <- data.table(gene_id = names(gene_chr_map), chr = unname(gene_chr_map))
+gi <- merge(gi, gene_chr_dt, by = "gene_id", all.x = TRUE)
+write_json(gi, file.path(OUT_DIR, "genes_index.json"),
+            auto_unbox = TRUE, dataframe = "rows", na = "null", null = "null")
 
 # ── Manifest ──
 manifest <- list(
   generated_at = Sys.time(),
-  n_genes      = n_written,
+  n_genes      = n_built,
   n_isoforms   = nrow(m),
+  n_chromosomes = n_files,
   cell_types   = CTS,
-  data_version = "2026.6.21"
+  data_version = "2026.6.21b"
 )
 write_json(manifest, file.path(OUT_DIR, "manifest.json"), auto_unbox = TRUE)
 cat("Done.\n")
