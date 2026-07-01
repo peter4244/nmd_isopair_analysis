@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NMD Lung Atlas — 4 cell types</title>
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=11">
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
@@ -18,6 +18,9 @@
       </div>
       <nav class="topnav">
         <button id="nav-home" class="btn-nav" title="Return to search / featured genes">← Home</button>
+        <a href="#about"   class="btn-nav">About</a>
+        <a href="#methods" class="btn-nav">Methods</a>
+        <a href="#cite"    class="btn-nav">Cite</a>
       </nav>
     </div>
   </header>
@@ -99,6 +102,104 @@
       </div>
     </div>
 
+    <section id="about" class="docs-page hidden">
+      <h2>About the NMD Lung Atlas</h2>
+      <p class="docs-lead">Interactive browser for long-read isoform expression and nonsense-mediated decay (NMD) response across four primary human lung cell types under SMG1 inhibition.</p>
+
+      <h3>What's in the atlas</h3>
+      <ul>
+        <li><strong>4 primary human lung cell types</strong>, 13 donors, 26 long-read samples total (paired PacBio Iso-Seq + short-read RNA-seq):
+          <ul>
+            <li><strong>AT2</strong> — alveolar type 2 cells (3 donors × 2 conditions = 6 samples)</li>
+            <li><strong>LAE</strong> — large airway epithelial, submerged culture (4 donors × 2 = 8 samples; internal code <code>DD</code>)</li>
+            <li><strong>Fib</strong> — primary lung fibroblasts (3 donors × 2 = 6 samples; internal code <code>FB</code>)</li>
+            <li><strong>MVE</strong> — microvascular endothelial cells (3 donors × 2 = 6 samples; internal code <code>MV</code>)</li>
+          </ul>
+        </li>
+        <li><strong>Treatment</strong>: 0.3 µM SMG1 inhibitor (SMG1i) or equivalent-volume DMSO vehicle for 6 hours at 37 °C before RNA extraction.</li>
+        <li><strong>Data content</strong>: per-cell-type CPM for each detected isoform, mashr posterior-mean log₂ fold-change under SMG1i vs DMSO, mashr lfsr and limma-voom adjusted p-values, and NMD-responsive calls (<code>lfsr &lt; 0.05</code> AND positive posterior mean).</li>
+        <li><strong>Universe</strong>: 162,800 isoforms tested for SMG1i-vs-DMSO differential expression (after edgeR <code>filterByExpr</code>). Of these, 160,081 have SQANTI3 structural annotations and are displayed here (16,894 detected genes; 2,719 fusion transcripts excluded). GENCODE v49 annotated transcripts are additionally overlaid across the remaining protein-coding and lncRNA space so users can compare detected structures against annotated space.</li>
+      </ul>
+
+      <h3>How to use the atlas</h3>
+      <ol>
+        <li><strong>Search</strong> a gene by HGNC symbol or Ensembl ID (e.g., <em>SRSF8</em>, <em>ATF4</em>, <em>ENSG00000263465</em>). Genes with at least one NMD-responsive isoform carry a small orange badge.</li>
+        <li><strong>Filter</strong> which isoforms are shown by minimum CPM (slider) and whether to include GENCODE-annotated transcripts that weren't detected (checkbox).</li>
+        <li><strong>Click any isoform</strong> in the table (or a track in the stacked view below) to see its transcript structure, expression per cell type, and NMD response.</li>
+        <li><strong>Compare all</strong> isoforms for a gene in the modal — genomic coordinates, Isopair-style intron chevrons, click-to-select.</li>
+      </ol>
+
+      <h3>Data version</h3>
+      <p>This build: <code id="about-version">loading…</code>. New versions may be released as our upstream pipeline is updated. The version tag can be cited alongside the paper for exact reproducibility.</p>
+
+      <p><a href="#methods">Read the Methods →</a> or <a href="#cite">How to cite →</a></p>
+    </section>
+
+    <section id="methods" class="docs-page hidden">
+      <h2>Methods summary</h2>
+      <p class="docs-lead">Compact summary of the analytical pipeline. For the full paper Methods including donor characteristics, sequencing depth, quality control, and full statistical model specifications, see <a href="#cite">the paper</a>.</p>
+
+      <h3>Sample processing and treatment</h3>
+      <p>Primary human lung cells were isolated from tissue not used for transplant (UNC IRB protocol 03-1396). AT2, MV and FB cells were obtained from three donors each; LAE cells from four donors. LAE cells were cultured at air-liquid interface (ALI) in UNCALI media for 28–29 days; MV cells were CD31-bead-enriched from peripheral lung; FB cells were outgrown from minced distal lung; AT2 cells were expanded as HT2-280-purified alveolospheres and then plated as monolayer on 5% Matrigel. All cultures were then treated with 0.3 µM SMG1 inhibitor (SMG1i) or equivalent DMSO vehicle for six hours before RNA extraction.</p>
+
+      <h3>Long-read RNA sequencing</h3>
+      <p>PacBio Kinnex full-length cDNA libraries were prepared per PacBio protocol 103-238-700 REV07 (with SMRTbell cleanup at 1.0× and equal-mass pooling of the eight Kinnex PCR reactions) and sequenced on a <strong>PacBio Revio</strong> instrument with SMRT cells and SPRQ chemistry. Long reads were aligned to GRCh38 with <code>minimap2 -ax splice:hq --junc-bed known_junctions.bed --MD --cs=long -uf</code>. Full-length transcript isoforms were identified and quantified with the <a href="https://github.com/PacificBiosciences/isocall" target="_blank" rel="noopener">PacBio isocall pipeline</a> (<code>--seq-tech pac-bio-hifi --filter-group no-filters --model-coverage</code>) and classified with SQANTI3.</p>
+
+      <h3>Short-read RNA sequencing</h3>
+      <p>Paired-end stranded, polyA-selected libraries (NEBNext UltraExpress) were sequenced on an Illumina NovaSeq 6000 to a mean depth of ~59 M reads (mean RIN 9.3). Reads were processed with the <a href="https://nf-co.re/rnaseq/" target="_blank" rel="noopener">nf-core RNA-seq pipeline</a> v3.14.0 (Nextflow 24.04.4): Trim Galore 0.6.7 + cutadapt 4.6 for QC and trimming, STAR 2.7.10a for alignment to GRCh38 + GENCODE v49, and Salmon 1.10.1 with <code>tximport</code> for gene- and isoform-level quantification.</p>
+
+      <h3>Differential isoform expression (SMG1i vs DMSO)</h3>
+      <p>Isoform counts from the SQANTI3-classified isocall output were organised into an edgeR <code>DGEList</code>, filtered with <code>filterByExpr</code> (<code>min.count = 5, min.total.count = 10</code>) to <strong>162,800 isoforms</strong>, TMM-normalised, and fit with limma-voom under the design <code>~ cell_type + treatment + cell_type:treatment</code> with LAE as the reference cell type. The paired-donor structure was handled via <code>duplicateCorrelation</code> incorporated as a blocking factor in <code>lmFit</code>. Cell-type-specific SMG1i effects were extracted via <code>contrasts.fit</code> + <code>eBayes</code> moderation. The four per-cell-type contrast estimates were then jointly shrunk across cell types with multivariate adaptive shrinkage (<em>mashr</em>): standard errors were derived from moderated-t ratios, null correlation was estimated with <code>estimate_null_correlation_simple</code> from a random feature subset, and covariance structures included both data-driven (PCA-based from univariate <code>mash_1by1</code> at lfsr &lt; 0.05) and canonical (<code>cov_canonical</code>) matrices. An isoform is called <strong>NMD-responsive</strong> in a given cell type when its mashr <code>lfsr &lt; 0.05</code> AND its posterior-mean log₂ fold-change is positive.</p>
+
+      <h3>Transcript structures</h3>
+      <p>Exon coordinates displayed in the atlas come from:</p>
+      <ul>
+        <li>SQANTI3-corrected long-read assemblies for <strong>novel</strong> isoforms (identifiers of the form <code>ENSG00000###.#.novelN</code>);</li>
+        <li>GENCODE v49 primary_assembly annotation for <strong>annotated</strong> transcripts (identifiers of the form <code>ENST00000###.#</code>).</li>
+      </ul>
+
+      <h3>CDS provenance policy</h3>
+      <p>Because CDS calls carry different provenance and different biases, every isoform in the atlas is labelled with its CDS source (coloured banner above the transcript viz):</p>
+      <ul>
+        <li><strong>GENCODE v49</strong> — canonical annotation, used for annotated transcripts without any <code>*_NF</code> tag.</li>
+        <li><strong>GENCODE placeholder</strong> — GENCODE annotates a CDS but flags the start and/or end as "not found" (<code>cds_start_NF</code>, <code>mRNA_start_NF</code>, <code>cds_end_NF</code>, or <code>mRNA_end_NF</code>). We surface this as "no reliable CDS available"; the placeholder CDS is <em>not</em> drawn.</li>
+        <li><strong>Reference-AUG projection</strong> — for novel comparator isoforms paired to a canonical reference, we project the reference's start codon into the comparator's transcript coordinates and walk to the first in-frame stop (<em>Isopair::traceReferenceAtg()</em>). Unbiased against PTC-containing ORFs and used as the paper's ground truth for PTC-determination analyses.</li>
+        <li><strong>TD2 (caution)</strong> — fallback via SQANTI3 / TransDecoder2 (TD2)–called ORF. TD2 is known to <strong>avoid PTC-containing ORFs</strong>, so the CDS shown for NMD-substrate isoforms may not be the biologically active one. Displayed with a visible ⚠ badge.</li>
+        <li><strong>None</strong> — no CDS available (e.g., lncRNA-biotyped GENCODE transcripts, structurally short transcripts with no ORF).</li>
+      </ul>
+      <p>Cell-type expression (CPM) and NMD response (log₂FC, lfsr, NMD-responsive flag) are shown per cell type. Undetected genes (with no isoform reaching CPM &gt; 0 in any cell type) are indexed but omitted from the chromosome shards; a "not detected in our data" message and a link to external browsers is shown when such a gene is queried.</p>
+
+      <h3>Data conventions</h3>
+      <ul>
+        <li><strong>Baseline expression = DMSO samples only.</strong> The CPM values displayed reflect baseline (DMSO) abundance in each cell type.</li>
+        <li><strong>NMD-response direction</strong>: positive log₂FC = accumulates under SMG1i = substrate of NMD.</li>
+        <li><strong>Cell-type scope</strong>: 4 cell types (AT2, LAE, Fib, MVE). Two additional culture conditions (DD_ALI, DO_ALI) exist in the source data but were excluded from the manuscript scope because their short-read vs long-read effect-size correlation was lower than the 4-CT set.</li>
+      </ul>
+    </section>
+
+    <section id="cite" class="docs-page hidden">
+      <h2>How to cite</h2>
+      <p class="docs-lead">If you use this atlas in a publication, please cite the accompanying paper <strong>and</strong> the specific data version you queried.</p>
+
+      <h3>Paper citation</h3>
+      <blockquote class="cite-block">
+        Leshem O, Kasai N, …, Randell S, Castaldi PJ. Long-read characterization of nonsense-mediated decay across primary human lung cell types. <em>[Journal TBD]</em>, 2026. <span class="tbd">[DOI pending]</span>
+      </blockquote>
+
+      <h3>Data-version citation</h3>
+      <p>Include the atlas data version so a future reader can pull the exact same underlying dataset:</p>
+      <blockquote class="cite-block">
+        NMD Lung Atlas, data version <code id="cite-version">loading…</code>, generated <code id="cite-date">loading…</code>. Available at <code id="cite-url">loading…</code>.
+      </blockquote>
+
+      <h3>License</h3>
+      <p>Data displayed in this atlas is released under <strong>CC BY 4.0</strong> — you're free to reuse it with attribution to the paper citation above.</p>
+      <p>Analysis source code is available on request from the corresponding author; a public release location will be added here on publication.</p>
+
+      <h3>Report an issue</h3>
+      <p>Found something that looks wrong? Contact the corresponding author (Peter Castaldi, <a href="mailto:repjc@channing.harvard.edu">repjc@channing.harvard.edu</a>).</p>
+    </section>
+
     <section id="welcome" class="welcome">
       <h2>Welcome</h2>
       <p>This atlas accompanies <em>Leshem et al.</em> "Long-read characterization of nonsense-mediated decay
@@ -116,13 +217,11 @@
   </main>
 
   <footer>
-    <small>Source code &amp; data: <a href="https://github.com/peter4244/nmd_isopair_analysis"
-       target="_blank" rel="noopener">github.com/peter4244/nmd_isopair_analysis</a> ·
-       Manuscript: <em>Leshem et al. 2026</em></small>
+    <small>Manuscript: <em>Leshem et al. 2026</em> · Contact: <a href="mailto:repjc@channing.harvard.edu">repjc@channing.harvard.edu</a></small>
   </footer>
 
-  <script type="module" src="transcript_viz.js?v=8"></script>
-  <script type="module" src="transcript_stack.js?v=8"></script>
-  <script type="module" src="app.js?v=8"></script>
+  <script type="module" src="transcript_viz.js?v=11"></script>
+  <script type="module" src="transcript_stack.js?v=11"></script>
+  <script type="module" src="app.js?v=11"></script>
 </body>
 </html>

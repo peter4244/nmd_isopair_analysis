@@ -51,6 +51,8 @@ async function init() {
     wireNav();
     wireFilterBar();
     wireStackModal();
+    wireHashRouter();
+    populateDocsPlaceholders();
   } catch (err) {
     document.getElementById("manifest-info").textContent = "data load failed";
     console.error(err);
@@ -121,6 +123,10 @@ function wireNav() {
   document.getElementById("nav-home-title").addEventListener("click", goHome);
 }
 function resetToHome() {
+  // Clear docs hash so the router shows the app view (welcome)
+  if (window.location.hash) history.replaceState(null, "", window.location.pathname);
+  DOCS_IDS.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add("hidden"); });
+  document.querySelectorAll(".topnav a.active").forEach(a => a.classList.remove("active"));
   state.currentGene = null;
   state.currentIso  = null;
   // Reset filter UI so revisiting a gene from Home doesn't inherit the previous state
@@ -187,6 +193,55 @@ function closeStackModal() {
   document.body.style.overflow = "";
 }
 
+// ── hash-based routing for About / Methods / Cite ──
+// Users can deep-link into any docs page (#about, #methods, #cite) so paper
+// citations and internal cross-references land at the right section.
+const DOCS_IDS = ["about", "methods", "cite"];
+function wireHashRouter() {
+  window.addEventListener("hashchange", routeToHash);
+  routeToHash();
+}
+function routeToHash() {
+  const hash = (window.location.hash || "").replace(/^#/, "");
+  // Update nav active states
+  document.querySelectorAll(".topnav a[href^='#']").forEach(a => {
+    const target = a.getAttribute("href").replace(/^#/, "");
+    a.classList.toggle("active", target === hash);
+  });
+  const gene = document.getElementById("gene-panel");
+  const welcome = document.getElementById("welcome");
+  // Hide all docs pages first
+  DOCS_IDS.forEach(id => document.getElementById(id).classList.add("hidden"));
+  if (DOCS_IDS.includes(hash)) {
+    // Show requested docs section; hide the app view
+    document.getElementById(hash).classList.remove("hidden");
+    if (gene)    gene.classList.add("hidden");
+    if (welcome) welcome.classList.add("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } else {
+    // Restore the main app: gene panel if we have a gene, else welcome
+    if (state.currentGene) {
+      if (gene)    gene.classList.remove("hidden");
+      if (welcome) welcome.classList.add("hidden");
+    } else {
+      if (gene)    gene.classList.add("hidden");
+      if (welcome) welcome.classList.remove("hidden");
+    }
+  }
+}
+function populateDocsPlaceholders() {
+  const mf = state.manifest;
+  if (!mf) return;
+  const ver = mf.data_version || "unknown";
+  const date = (mf.generated_at || "").split(" ")[0] || "unknown";
+  const url = (window.location.origin + window.location.pathname).replace(/\/$/, "");
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set("about-version", `${ver} · generated ${date}`);
+  set("cite-version",  ver);
+  set("cite-date",     date);
+  set("cite-url",      url || "(atlas URL TBD)");
+}
+
 // ── chromosome cache ──
 // Data is served in per-chromosome shards (data/chroms/<chr>.json), each
 // containing a keyed map { gene_id: <gene_shard> }. First click into a
@@ -246,6 +301,12 @@ async function selectGene(geneId) {
     if (!shard) throw new Error(`Gene ${geneId} not in chromosome ${chr} shard`);
     state.currentGene = shard;
     state.currentIso  = pickInitialIso(shard);
+    // Clear docs hash if we were viewing an About/Methods/Cite page
+    if (DOCS_IDS.includes((window.location.hash || "").replace(/^#/, ""))) {
+      history.replaceState(null, "", window.location.pathname);
+      DOCS_IDS.forEach(id => document.getElementById(id).classList.add("hidden"));
+      document.querySelectorAll(".topnav a.active").forEach(a => a.classList.remove("active"));
+    }
     document.getElementById("welcome").classList.add("hidden");
     document.getElementById("gene-panel").classList.remove("hidden");
     document.getElementById("search-results").innerHTML = "";
@@ -298,13 +359,28 @@ function renderIsoformTable() {
     if (state.currentIso) {
       renderSelectedIso();
     } else {
-      // Nothing to show — clear the detail panes so they don't stay stale
+      // Nothing to show — clear the detail panes and show a targeted nudge.
+      // The nudge is different depending on whether there are annotated-only
+      // isoforms the user could toggle on, vs no isoforms at all in this gene.
+      const nAnnot = annotatedOnly.length;
+      const helpMsg = nAnnot > 0 && !state.filter.showAnnotated
+        ? `<div class="hint">No isoforms are expressed above the CPM filter in our data.
+             <strong>This gene has ${nAnnot} annotated GENCODE transcript${nAnnot > 1 ? "s" : ""} that aren't detected.</strong>
+             <button id="enable-annotated-nudge" class="btn-nav" style="margin-left:0.5em">Show them</button></div>`
+        : `<div class="hint">No isoforms match the current filter. Slide Min. CPM lower or check "Also show annotated but not detected."</div>`;
       document.getElementById("iso-id").innerHTML = "—";
-      document.getElementById("iso-meta").innerHTML =
-        '<div class="hint">No isoforms match the current filter. Slide Min. CPM lower or check "Also show annotated but not detected."</div>';
+      document.getElementById("iso-meta").innerHTML = helpMsg;
       document.getElementById("transcript-viz").innerHTML = "";
       document.getElementById("cpm-chart").innerHTML = "";
       document.getElementById("logfc-chart").innerHTML = "";
+      document.getElementById("cds-provenance").innerHTML = "";
+      document.getElementById("cds-provenance").className = "cds-provenance cds-src-none";
+      const nudge = document.getElementById("enable-annotated-nudge");
+      if (nudge) nudge.addEventListener("click", () => {
+        state.filter.showAnnotated = true;
+        document.getElementById("show-gencode-all").checked = true;
+        renderGenePanel();
+      });
     }
   }
 

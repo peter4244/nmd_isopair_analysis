@@ -37,8 +37,7 @@ CTS <- c("AT", "DD", "FB", "MV")
 ct_lower <- tolower(CTS)
 CACHE_RDS <- file.path(REPO, "nmd_orf_model_v5_4ct", "tmp",
                        "ref_orf_ptc_cache_with_nmd_2026.5.12.rds")
-STR_RDS  <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
-                      "isopair_wrapper", "data_mashr", "structures.rds")
+STR_RDS  <- NULL  # No longer used — SQANTI3 GTF is the primary structural source.
 CDS_RDS  <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
                       "isopair_wrapper", "data_mashr", "cds.rds")
 GTF      <- file.path(REPO, "reference_files",
@@ -47,6 +46,12 @@ GTF_CACHE <- file.path(HERE, ".gencode_v49_cache.rds")
 REF_ATG_RDS <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
                           "isopair_wrapper", "data_mashr", "analysis_cache",
                           "ref_atg_analysis.rds")
+# SQANTI3 sources — the paper's canonical structural + DIE-tested universe
+SQANTI_GTF   <- file.path(REPO, "sqanti", "nmd_lungcells", "results",
+                          "nmd_lungcells_corrected.sorted.gtf.gz")
+SQANTI_CLASS <- file.path(REPO, "sqanti", "nmd_lungcells", "results",
+                          "nmd_lungcells_classification.txt")
+SQANTI_CACHE <- file.path(HERE, ".sqanti3_cache.rds")
 NF_TAG_RX <- "cds_start_NF|cds_end_NF|mRNA_start_NF|mRNA_end_NF"
 
 opt_test <- "--test" %in% commandArgs(trailingOnly = TRUE)
@@ -112,9 +117,55 @@ load_gencode <- function() {
 }
 gencode <- load_gencode()
 
+# ── SQANTI3 structural cache (broadened source for the DIE-tested universe) ──
+# Every isoform tested for differential expression (162,800 total) has exon
+# coordinates and a structural_category in the SQANTI3 output; we cache that.
+build_sqanti_cache <- function(gtf_path, class_path, cache_path) {
+  cat(sprintf("Parsing SQANTI3 GTF + classification (cached to %s) ...\n",
+              basename(cache_path)))
+  suppressPackageStartupMessages({
+    library(rtracklayer)
+    library(GenomicRanges)
+  })
+  gr <- rtracklayer::import(gtf_path)
+  tx_gr <- gr[gr$type == "transcript"]
+  tx <- data.table(
+    transcript_id = tx_gr$transcript_id,
+    gene_id       = tx_gr$gene_id,
+    gene_name     = tx_gr$gene_name,
+    chr           = as.character(seqnames(tx_gr)),
+    strand        = as.character(strand(tx_gr)),
+    tx_start      = start(tx_gr),
+    tx_end        = end(tx_gr)
+  )
+  exon_gr <- gr[gr$type == "exon"]
+  exon_dt <- data.table(transcript_id = exon_gr$transcript_id,
+                         start = start(exon_gr), end = end(exon_gr))
+  setorder(exon_dt, transcript_id, start)
+  exon_agg <- exon_dt[, .(exon_starts = list(start),
+                           exon_ends   = list(end),
+                           n_exons     = .N), by = transcript_id]
+  tx <- merge(tx, exon_agg, by = "transcript_id", all.x = TRUE)
+  # Classification for structural_category + subcategory
+  cls <- fread(class_path, sep = "\t", header = TRUE, select = c(
+    "isoform", "structural_category", "subcategory"))
+  setnames(cls, c("isoform"), c("transcript_id"))
+  tx <- merge(tx, cls, by = "transcript_id", all.x = TRUE)
+  saveRDS(tx, cache_path)
+  cat(sprintf("Cached %d SQANTI3 transcripts.\n", nrow(tx)))
+  tx
+}
+load_sqanti <- function() {
+  if (file.exists(SQANTI_CACHE)) {
+    cat(sprintf("Loading SQANTI3 cache from %s ...\n", basename(SQANTI_CACHE)))
+    return(readRDS(SQANTI_CACHE))
+  }
+  build_sqanti_cache(SQANTI_GTF, SQANTI_CLASS, SQANTI_CACHE)
+}
+sqanti <- load_sqanti()
+
 # ── Load core tables ──
-cat("Loading structures + CDS ...\n")
-str <- as.data.table(readRDS(STR_RDS))
+cat("Loading CDS (TD2 called ORFs; used as fallback CDS source) ...\n")
 cds <- as.data.table(readRDS(CDS_RDS))
 
 cat("Loading per-CT mashr DIE ...\n")
@@ -186,8 +237,11 @@ m <- merge(m, es[, .(isoform_id, cpm_AT, cpm_DD, cpm_FB, cpm_MV)],
             by = "isoform_id", all.x = TRUE)
 m <- merge(m, cds[, .(isoform_id, coding_status, cds_start, cds_stop, orf_length)],
             by = "isoform_id", all.x = TRUE)
-m <- merge(m, str[, .(isoform_id, chr, strand, n_exons,
-                       exon_starts, exon_ends, tx_start, tx_end)],
+m <- merge(m, sqanti[, .(isoform_id = transcript_id,
+                          chr, strand, n_exons,
+                          exon_starts, exon_ends, tx_start, tx_end,
+                          sqanti_category = structural_category,
+                          sqanti_subcategory = subcategory)],
             by = "isoform_id", all.x = TRUE)
 m <- merge(m,
             ref_atg[, .(isoform_id = comparator_isoform_id,
@@ -200,7 +254,10 @@ has_struct  <- lengths(m$exon_starts) > 0
 has_expr    <- with(m, !(is.na(cpm_AT) & is.na(cpm_DD) & is.na(cpm_FB) & is.na(cpm_MV)))
 has_mashr   <- with(m, !(is.na(logFC_AT) & is.na(logFC_DD) &
                           is.na(logFC_FB) & is.na(logFC_MV)))
-keep <- has_struct & (has_expr | has_mashr)
+# Exclude fusion transcripts — they span multiple genes and break the
+# one-gene-per-shard mental model. Small share (~1.7% of DIE-tested).
+not_fusion  <- is.na(m$sqanti_category) | m$sqanti_category != "fusion"
+keep <- has_struct & (has_expr | has_mashr) & not_fusion
 cat(sprintf("Isoforms kept: %d / %d (with structure AND expression-or-mashr)\n",
             sum(keep), nrow(m)))
 m <- m[keep]
@@ -244,8 +301,11 @@ gi[is.na(n_expr_isoforms),    n_expr_isoforms    := 0L]
 gi[is.na(n_gencode_isoforms), n_gencode_isoforms := 0L]
 gi[is.na(any_nmd_iso), any_nmd_iso := FALSE]
 gi[, n_isoforms := pmax(n_expr_isoforms, n_gencode_isoforms)]
-# Drop internal fields the UI doesn't need — keeps genes_index.json compact
-gi <- gi[, .(gene_id, hgnc_symbol, n_isoforms, any_nmd_iso)]
+gi[, detected   := n_expr_isoforms > 0L]
+# Drop internal fields the UI doesn't need — keeps genes_index.json compact.
+# `detected` is kept only through the sharding loop; stripped again before the
+# genes_index.json write below.
+gi <- gi[, .(gene_id, hgnc_symbol, n_isoforms, any_nmd_iso, detected)]
 # Note: we don't write the index yet — we'll add the `chr` column after the
 # per-chromosome bucketing pass and write the final index there.
 cat(sprintf("  -> %d genes\n", nrow(gi)))
@@ -333,6 +393,8 @@ iso_record_from_expr_row <- function(r, gc_meta = NULL) {
     gencode_biotype = if (is.null(gc_meta)) NULL else gc_meta$tx_type,
     gencode_name    = if (is.null(gc_meta)) NULL else gc_meta$tx_name,
     tags            = if (is.null(gc_meta)) NULL else gc_meta$tags,
+    sqanti_category = if (is.na(r$sqanti_category)) NULL else r$sqanti_category,
+    sqanti_subcategory = if (is.na(r$sqanti_subcategory)) NULL else r$sqanti_subcategory,
     cpm = list(AT = round_or_null(r$cpm_AT), DD = round_or_null(r$cpm_DD),
                 FB = round_or_null(r$cpm_FB), MV = round_or_null(r$cpm_MV)),
     logfc = list(AT = round_or_null(r$logFC_AT), DD = round_or_null(r$logFC_DD),
@@ -420,12 +482,21 @@ setkey(m, gene_id)
 setkey(gencode, gene_id)
 all_gene_ids <- union(unique(m$gene_id), unique(gencode$gene_id))
 n_built <- 0
+n_skipped_undetected <- 0
 gene_chr_map <- character(length(all_gene_ids)); names(gene_chr_map) <- all_gene_ids
+detected_gids <- gi[detected == TRUE, gene_id]
+detected_set  <- new.env(hash = TRUE, size = length(detected_gids))
+for (g in detected_gids) detected_set[[g]] <- TRUE
 by_chr <- list()   # chr → named list of gene shards (gene_id → shard)
 for (gid in all_gene_ids) {
   gene_rows    <- m[.(gid), nomatch = 0L]
   gencode_rows <- gencode[.(gid), nomatch = 0L]
   if (nrow(gene_rows) == 0 && nrow(gencode_rows) == 0) next
+  # Skip zero-expression genes — front-end shows "not detected" from index alone
+  if (is.null(detected_set[[gid]])) {
+    n_skipped_undetected <- n_skipped_undetected + 1
+    next
+  }
   built <- build_gene_shard(gid, gene_rows, gencode_rows)
   chr_key <- if (is.na(built$chr) || is.null(built$chr)) "unknown" else built$chr
   if (is.null(by_chr[[chr_key]])) by_chr[[chr_key]] <- list()
@@ -434,6 +505,8 @@ for (gid in all_gene_ids) {
   n_built <- n_built + 1
   if (n_built %% 5000 == 0) cat(sprintf("  ...%d genes buffered\n", n_built))
 }
+cat(sprintf("Skipped %d undetected genes (kept in index; not written to chr shards).\n",
+            n_skipped_undetected))
 cat(sprintf("Buffered %d gene shards across %d chromosome groups.\n",
             n_built, length(by_chr)))
 
@@ -453,6 +526,7 @@ cat(sprintf("Wrote %d chromosome shards to %s\n", n_files, CHR_SHARD_DIR))
 # the right chromosome file before fetching
 gene_chr_dt <- data.table(gene_id = names(gene_chr_map), chr = unname(gene_chr_map))
 gi <- merge(gi, gene_chr_dt, by = "gene_id", all.x = TRUE)
+gi[, detected := NULL]  # UI-only helper column; not needed in the emitted index
 write_json(gi, file.path(OUT_DIR, "genes_index.json"),
             auto_unbox = TRUE, dataframe = "rows", na = "null", null = "null")
 
@@ -463,7 +537,7 @@ manifest <- list(
   n_isoforms   = nrow(m),
   n_chromosomes = n_files,
   cell_types   = CTS,
-  data_version = "2026.6.21b"
+  data_version = "2026.7.1"
 )
 write_json(manifest, file.path(OUT_DIR, "manifest.json"), auto_unbox = TRUE)
 cat("Done.\n")

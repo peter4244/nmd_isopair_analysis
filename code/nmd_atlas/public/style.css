@@ -227,6 +227,74 @@ main { padding: 1.5em 2em; max-width: 90em; margin: 0 auto; }
 .cds-src-td2 .cds-src-label::after { content: " ⚠"; }
 .cds-src-none         { background: #f9fafb; border-color: #d1d5db; }
 
+/* ── Documentation pages (About / Methods / Cite) ── */
+.docs-page {
+  max-width: 55em;
+  margin: 0 auto 3em;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 1.5em 2em;
+  line-height: 1.65;
+}
+.docs-page h2 {
+  margin: 0 0 0.4em;
+  font-size: 1.5em;
+  font-weight: 600;
+  border-bottom: 2px solid var(--c-accent);
+  padding-bottom: 0.3em;
+}
+.docs-page h3 {
+  margin: 1.3em 0 0.4em;
+  font-size: 1.05em;
+  font-weight: 600;
+  color: #374151;
+}
+.docs-page .docs-lead {
+  font-size: 1.05em;
+  color: #374151;
+  margin: 0.6em 0 1.2em;
+}
+.docs-page p { margin: 0.5em 0; }
+.docs-page ul, .docs-page ol {
+  padding-left: 1.4em;
+  margin: 0.4em 0 0.6em;
+}
+.docs-page li { margin: 0.2em 0; }
+.docs-page code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.docs-page a {
+  color: var(--c-accent);
+  text-decoration: none;
+}
+.docs-page a:hover { text-decoration: underline; }
+.docs-page blockquote.cite-block {
+  margin: 0.6em 0 1em;
+  padding: 0.8em 1.1em;
+  background: #f9fafb;
+  border-left: 3px solid var(--c-accent);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.95em;
+  color: #1f2937;
+}
+.docs-page blockquote.cite-block code { background: #e5e7eb; }
+.docs-page .tbd {
+  color: var(--c-muted);
+  font-style: italic;
+}
+
+/* Highlight the active nav link */
+.topnav a.active,
+.topnav button.active {
+  background: var(--c-accent-light);
+  border-color: var(--c-accent);
+}
+
 .welcome { background: var(--c-card); border: 1px solid var(--c-border);
   border-radius: 8px; padding: 1em 1.5em; max-width: 50em; }
 .welcome h2 { margin: 0 0 0.4em; font-size: 1.15em; }

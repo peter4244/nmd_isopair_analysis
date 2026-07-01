@@ -7,3 +7,4 @@
 # `data/quantiles.json`, and `data/genes_index.json` ARE committed so any
 # clone shows the intended shape.
 public/data/chroms/
+.sqanti3_cache.rds
