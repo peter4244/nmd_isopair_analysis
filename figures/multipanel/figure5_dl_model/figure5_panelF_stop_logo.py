@@ -1,39 +1,41 @@
 """
-Figure 5 Panel F — DRAFT placeholder using the legacy stop-codon
-signed-SHAP × input nucleotide logo (NMD samples).
+Figure 5 Panel F — Per-nucleotide signed SHAP × input around the stop
+codon, NMD class. Built natively from the joint DeepSHAP motif logo TSV.
 
-Same construction as Panel E. The legacy "fig4a_stop_logo" is a
-ggseqlogo render of mean signed SHAP × input around the stop codon
-(NMD on top, Control on bottom). It was never written to the figures
-folder as a standalone file, but it IS embedded as base64 in the
-orf_model_report_v5.html. We extract it to:
+Data:
+  data/motif_logo_stop_joint_atg500_stop500.tsv
+    Columns: relative_position, channel, nmd_mean_contrib,
+             ctrl_mean_contrib, nmd_freq, ctrl_freq, n_nmd, n_ctrl
+    Source: scripts/export_joint_motif_logos.py in the model repo
+            (5 DeepSHAP runs pooled; n_test = 2,268 NMD + 7,863 Control).
 
-    data/legacy_fig4a_stop_logo.png   (1920 × 1536, both NMD + Control)
+Coordinate system in the TSV: relative_position 0 is the MIDDLE nucleotide
+of the stop codon (for example, the G of UGA). Mapping to canonical
+stop-codon coordinates (U of the stop codon = +1):
+   TSV pos      Stop pos       Identity
+   −1           +1             U (always — the U of every stop codon)
+    0           +2             variable (G for UGA, A for UAA/UAG)
+   +1           +3             variable (A for UGA/UAA, G for UAG)
+   +2           +4             variable — the first nt AFTER the stop
+   +3           +5             variable
+   ...
 
-and crop the TOP half (NMD only) into:
+Letter height = nmd_mean_contrib (signed SHAP × input averaged across
+NMD test isoforms). Positive (above zero) = pushes prediction toward
+NMD; negative (below zero) = pushes away from NMD. The three stop-codon
+positions (−1, 0, +1 in TSV coords) are shaded with a light box; the
+−1 position is invariantly U so its attribution is zero by construction.
 
-    data/legacy_stop_logo_nmd_top.png (1920 × 768)
-
-which is then embedded here as the Panel F placeholder. Letters carry
-proper signed direction; the visual style now matches Panel E.
-
-PLACEHOLDER. When the cluster comes back up:
-  1. Re-run scripts/export_joint_motif_logos.py on Explorer to produce
-     motif_logo_stop_joint_atg500_stop500.tsv.
-  2. scp that TSV to ./data/.
-  3. Rewrite this script to draw the logo natively from that TSV (using
-     logomaker with flip_below=True).
-
-Legacy axis labels preserved as in the legacy render.
+Style overlay: publication composite cell, no in-panel title, validator-
+clean, 6 × 4 cell at 1.5:1 aspect.
 """
 
-import base64
-import re
 import sys
 from pathlib import Path
 
+import logomaker
 import matplotlib.pyplot as plt
-from PIL import Image
+import pandas as pd
 
 HERE = Path(__file__).resolve()
 LIB = HERE.parents[2] / "lib"
@@ -44,57 +46,97 @@ plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica Neue", "Helvetica", "Deja
 plt.rcParams["pdf.fonttype"] = 42
 plt.rcParams["ps.fonttype"] = 42
 
-LEGACY_HTML = Path(
-    "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/"
-    "Version_6.0/isopair_wrapper/deep_nmd_model/orf_model_report_v5.html"
-)
-LEGACY_PNG_FULL = HERE.parent / "data" / "legacy_fig4a_stop_logo.png"
-PLACEHOLDER_CROP = HERE.parent / "data" / "legacy_stop_logo_nmd_top.png"
+DATA = HERE.parent / "data" / "motif_logo_stop_joint_atg500_stop500.tsv"
+
+WINDOW_LEFT  = -10        # TSV-coordinate window for the panel
+WINDOW_RIGHT = +13
+NUC_COLORS = {
+    "A": "#109648",   # green
+    "C": "#255C99",   # blue
+    "G": "#F7B32B",   # gold
+    "U": "#D62839",   # red — RNA notation; data column is "T", display as "U"
+}
 
 
-def ensure_legacy_png():
-    """Extract the fig4a_stop_logo base64 image from the legacy HTML if
-    we haven't already."""
-    if LEGACY_PNG_FULL.exists():
-        return
-    LEGACY_PNG_FULL.parent.mkdir(parents=True, exist_ok=True)
-    html = LEGACY_HTML.read_text()
-    idx = html.find("fig4a_stop_logo")
-    sub = html[idx : idx + 6_000_000]
-    m = re.search(r"data:image/png;base64,([A-Za-z0-9+/=]+)", sub)
-    if not m:
-        raise FileNotFoundError(
-            "fig4a_stop_logo image not found in legacy HTML; cannot build placeholder."
-        )
-    LEGACY_PNG_FULL.write_bytes(base64.b64decode(m.group(1)))
+def load_letter_heights(class_col: str = "nmd_mean_contrib") -> pd.DataFrame:
+    """Build a logomaker-compatible matrix (rows = positions, cols = A/C/G/U)
+    of signed SHAP × input contributions for the chosen class column.
 
-
-def ensure_crop():
-    if PLACEHOLDER_CROP.exists():
-        return
-    ensure_legacy_png()
-    im = Image.open(LEGACY_PNG_FULL)
-    w, h = im.size
-    im.crop((0, 0, w, h // 2)).save(PLACEHOLDER_CROP)
+    The TSV stores the channel as DNA letter "T"; we relabel to RNA letter
+    "U" here so all downstream figure annotations use RNA notation.
+    """
+    df = pd.read_csv(DATA, sep="\t")
+    df = df[df["channel"].isin(["A", "C", "G", "T"])]
+    df = df[(df["relative_position"] >= WINDOW_LEFT) &
+            (df["relative_position"] <= WINDOW_RIGHT)]
+    matrix = df.pivot(index="relative_position", columns="channel",
+                      values=class_col).fillna(0.0)
+    matrix = matrix.rename(columns={"T": "U"})
+    matrix = matrix[["A", "C", "G", "U"]]
+    return matrix
 
 
 def build_figure():
-    ensure_crop()
-    img = plt.imread(PLACEHOLDER_CROP)
+    mat = load_letter_heights("nmd_mean_contrib")
 
-    fig, ax = plt.subplots(figsize=(6, 3))
-    ax.imshow(img)
-    ax.set_axis_off()
-    fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0)
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    logo = logomaker.Logo(
+        mat, ax=ax,
+        color_scheme={"A": NUC_COLORS["A"], "C": NUC_COLORS["C"],
+                      "G": NUC_COLORS["G"], "U": NUC_COLORS["U"]},
+        flip_below=True,
+        font_name="Arial",
+        stack_order="big_on_top",
+    )
+    logo.style_spines(visible=False)
+    logo.style_spines(spines=("left", "bottom"), visible=True)
+    ax.spines["left"].set_color("#555555")
+    ax.spines["left"].set_linewidth(0.8)
+    ax.spines["bottom"].set_color("#555555")
+    ax.spines["bottom"].set_linewidth(0.8)
+
+    # Shade the three stop-codon positions (-1, 0, +1 in TSV coords)
+    ax.axvspan(-1.5, 1.5, color="#EAEAEA", alpha=0.55, zorder=0)
+
+    # Zero baseline
+    ax.axhline(0, color="#555555", linewidth=0.6, zorder=1)
+
+    # X-axis: convert TSV positions to canonical stop-codon coordinates
+    # (U of stop = +1, no position 0). Piecewise just like the start-codon
+    # panel — TSV ≥ −1 → stop_pos = TSV + 2; TSV ≤ −2 → stop_pos = TSV + 1.
+    def tsv_to_stop(p):
+        return p + 2 if p >= -1 else p + 1
+
+    visible_ticks_tsv = list(range(WINDOW_LEFT, WINDOW_RIGHT + 1, 2))
+    ax.set_xticks(visible_ticks_tsv)
+    ax.set_xticklabels([tsv_to_stop(p) for p in visible_ticks_tsv],
+                       fontsize=10, color="#222222")
+    ax.set_xlabel("Position relative to stop codon (U of stop = +1)",
+                  fontsize=11, color="#222222")
+
+    ax.set_ylabel("Signed SHAP × input  (toward NMD ▲)",
+                  fontsize=11, color="#222222")
+    ax.tick_params(axis="y", labelsize=10, colors="#222222")
+
+    # Tight margins for composite use
+    fig.subplots_adjust(left=0.13, right=0.97, bottom=0.17, top=0.95)
     return fig
 
 
 def main():
     fig = build_figure()
-    out_dir = HERE.parent
-    fig.savefig(out_dir / "figure5_panelF_stop_logo.pdf", facecolor="white")
-    fig.savefig(out_dir / "figure5_panelF_stop_logo.png", dpi=300, facecolor="white")
-    print("Saved: figure5_panelF_stop_logo.pdf and .png  (DRAFT placeholder)")
+
+    try:
+        from validate_figure_layout import validate_figure_layout
+        validate_figure_layout(fig, fig.axes[0], verbose=True)
+    except Exception as e:
+        print(f"[validator] non-fatal: {e}")
+
+    out = HERE.parent / "figure5_panelF_stop_logo"
+    fig.savefig(f"{out}.pdf", facecolor="white")
+    fig.savefig(f"{out}.png", dpi=300, facecolor="white")
+    print(f"Saved: {out}.pdf and .png")
 
 
 if __name__ == "__main__":

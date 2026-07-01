@@ -22,6 +22,8 @@ code/nmd_predictor_comparison/                       ← analysis pipeline (this
 ├── nmdep_rule_baseline_scores_2026.6.20.tsv         ← committed: NMDEP rule leaf assignments
 ├── per_isoform_scores_2026.6.20.tsv                 ← committed: joined per-isoform model scores
 ├── metrics_summary_2026.6.20.tsv                    ← committed: pooled, stratified, test-only slices
+├── nmd_predictor_comparison.Rmd                     ← reproducible report (test-only primary frame)
+├── nmd_predictor_comparison_2026.6.20.html          ← rendered HTML report
 └── external/                                        ← gitignored; only if NMDetective-A is run
 
 figures/SupplementalFigures/ModelComparison/         ← rendered SF (built after the pipeline runs)
@@ -123,7 +125,9 @@ Stratified by isoform subclass (PTC+, PTC−, Control) and pooled across all thr
 
 4. **Our model scores**. Pull `prob` from `predictions_all_atg500_stop500.tsv` (full-cohort: train + val + test + test_paralog) into `01`'s output. Coverage: 2,218 of the 2,332 cohort isoforms have a model prediction (95%); the remaining 114 were dropped during the model's `data_prep` pipeline (sequence/ORF/paralog filters).
 
-5. **Metrics** (`04_compute_metrics.R`). For each model × stratum (PTC+ / PTC− / Control / pooled): Spearman, Pearson, R², MAE, RMSE against `mashr_posterior_mean_logfc`. Additionally compute the head-to-head intersection (n = 2,218) and a **test-only sensitivity slice** (n = 561, H5 split == "test"; chr1/3/5/7 holdout the model never saw at training time), so train-set inflation can be ruled out per subclass. Write `metrics_summary_2026.6.20.tsv`.
+5. **Metrics** (`04_compute_metrics.R`). For each model × stratum (PTC+ / PTC− / Control / pooled): Spearman, Pearson, R², MAE, RMSE against `mashr_posterior_mean_logfc`. The script writes pooled metrics on the full cohort, the head-to-head intersection on which all three models score the same isoform, and — the primary analytical frame for the figure and report — the **test-only head-to-head** restricted to H5 split == "test" (chr1/3/5/7 holdout the deep-learning model never saw at training time; n = 561 isoforms from 293 genes). Test-only is the right frame for a fair performance comparison: the rule-based models also see these isoforms for the first time. Write `metrics_summary_2026.6.20.tsv`.
+
+6. **Reproducible report** (`nmd_predictor_comparison.Rmd`). Knit to a self-contained HTML with inline R values, the cohort + features description, the metrics table, the embedded figure, and the deferred-models discussion. The report is the primary deliverable for collaborators wanting a single-page summary.
 
 ### 3.3 Outputs
 

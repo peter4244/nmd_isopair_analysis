@@ -1,0 +1,2 @@
+# Regenerable one-time GENCODE parse; ~27 MB and reproducible from the GTF
+.gencode_v49_cache.rds

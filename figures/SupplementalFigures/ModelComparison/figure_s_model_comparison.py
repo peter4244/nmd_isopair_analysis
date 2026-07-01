@@ -83,11 +83,15 @@ MODEL_SCORE_COL = {
 def load():
     s = pd.read_csv(SCORES, sep="\t")
     m = pd.read_csv(METRICS, sep="\t")
-    # Head-to-head intersection: isoforms with all three model scores
+    # Head-to-head intersection restricted to H5 split == "test" (chr1/3/5/7
+    # holdout the deep-learning model never saw at training time). This is
+    # the methodologically correct frame for performance comparison: the
+    # rule-based models also see these isoforms for the first time.
     mask = (
         s["nmdetective_b_score"].notna()
         & s["nmdep_rule_score"].notna()
         & s["our_model_prob"].notna()
+        & (s["h5_split"] == "test")
     )
     return s[mask].copy(), m
 
@@ -138,7 +142,7 @@ def panel_b_bars(ax, metrics, head_to_head_n):
     rows = []
     for model in MODEL_ORDER:
         for sub in SUBCLASS_ORDER:
-            key = f"head-to-head:{sub}"
+            key = f"head-to-head:test:{sub}"
             r = metrics[(metrics["model"] == model) & (metrics["stratum"] == key)]
             if r.empty:
                 continue
@@ -253,13 +257,6 @@ def build_figure():
             color="#222222",
         )
 
-    fig.text(
-        0.5, 0.025,
-        f"Comparison on the {n_hh}-isoform intersection of the n = 1,166 ref-AUG-traceable "
-        "cohort with the deep-learning model's H5 universe (full-cohort predictions: "
-        "train + val + test).",
-        ha="center", va="bottom", fontsize=9, color="#555555", style="italic",
-    )
     return fig, axes_a + [ax_b]
 
 

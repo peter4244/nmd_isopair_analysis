@@ -1,0 +1,442 @@
+#!/usr/bin/env Rscript
+# =============================================================================
+# export_atlas_data.R — Build the static JSON data files for the NMD lung atlas.
+#
+# Produces (under public/data/):
+#   genes_index.json           — gene_id, hgnc_symbol, n_isoforms, has_nmd_iso
+#   quantiles.json             — per-CT CPM quantile breakpoints (gene + isoform)
+#   genes/<gene_id>.json       — per-gene shard with all isoforms' structures +
+#                                 expression + log2FC + lfsr + GENCODE biotype
+#
+# Scope: intersection of structures.rds (long-read structures) and the per-CT
+# mashr DIE tables (NMD-response statistics). Genes with at least one isoform
+# in this intersection are exported.
+#
+# Cost target: the entire data payload is ~5 MB compressed; per-gene shards are
+# typically <10 KB each. Static-host friendly.
+# =============================================================================
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(jsonlite)
+})
+
+HERE <- (function() {
+  args <- commandArgs(trailingOnly = FALSE)
+  fa <- args[grep("--file=", args)]
+  if (length(fa) > 0) return(dirname(normalizePath(sub("^--file=", "", fa[1]))))
+  normalizePath(getwd())
+})()
+REPO <- normalizePath(file.path(HERE, "..", ".."))
+
+OUT_DIR        <- file.path(HERE, "public", "data")
+GENE_SHARD_DIR <- file.path(OUT_DIR, "genes")
+dir.create(GENE_SHARD_DIR, recursive = TRUE, showWarnings = FALSE)
+
+CTS <- c("AT", "DD", "FB", "MV")
+ct_lower <- tolower(CTS)
+CACHE_RDS <- file.path(REPO, "nmd_orf_model_v5_4ct", "tmp",
+                       "ref_orf_ptc_cache_with_nmd_2026.5.12.rds")
+STR_RDS  <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
+                      "isopair_wrapper", "data_mashr", "structures.rds")
+CDS_RDS  <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
+                      "isopair_wrapper", "data_mashr", "cds.rds")
+GTF      <- file.path(REPO, "reference_files",
+                      "gencode.v49.primary_assembly.annotation.gtf.gz")
+GTF_CACHE <- file.path(HERE, ".gencode_v49_cache.rds")
+REF_ATG_RDS <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
+                          "isopair_wrapper", "data_mashr", "analysis_cache",
+                          "ref_atg_analysis.rds")
+NF_TAG_RX <- "cds_start_NF|cds_end_NF|mRNA_start_NF|mRNA_end_NF"
+
+opt_test <- "--test" %in% commandArgs(trailingOnly = TRUE)
+
+# ── GENCODE v49 transcripts (cached; parsed once) ──
+build_gencode_cache <- function(gtf_path, cache_path) {
+  cat(sprintf("Parsing GENCODE v49 GTF (this takes a few minutes; cached to %s) ...\n",
+              basename(cache_path)))
+  suppressPackageStartupMessages({
+    library(rtracklayer)
+    library(GenomicRanges)
+  })
+  gr <- rtracklayer::import(gtf_path)
+  # Transcript-level metadata
+  tx_gr <- gr[gr$type == "transcript"]
+  tx <- data.table(
+    transcript_id = tx_gr$transcript_id,
+    gene_id        = tx_gr$gene_id,
+    gene_name      = tx_gr$gene_name,
+    tx_type        = tx_gr$transcript_type,
+    tx_name        = tx_gr$transcript_name,
+    chr            = as.character(seqnames(tx_gr)),
+    strand         = as.character(strand(tx_gr)),
+    tx_start       = start(tx_gr),
+    tx_end         = end(tx_gr),
+    tags           = vapply(tx_gr$tag,
+                             function(x) if (length(x) == 0) NA_character_ else paste(x, collapse = ","),
+                             character(1))
+  )
+  # Per-transcript exon coordinate lists (in genomic order)
+  exon_gr <- gr[gr$type == "exon"]
+  exon_dt <- data.table(
+    transcript_id = exon_gr$transcript_id,
+    start = start(exon_gr),
+    end   = end(exon_gr)
+  )
+  setorder(exon_dt, transcript_id, start)
+  exon_agg <- exon_dt[, .(exon_starts = list(start),
+                           exon_ends   = list(end),
+                           n_exons     = .N), by = transcript_id]
+  # CDS coordinates per transcript (may be absent)
+  cds_gr <- gr[gr$type == "CDS"]
+  cds_dt <- data.table(
+    transcript_id = cds_gr$transcript_id,
+    start = start(cds_gr),
+    end   = end(cds_gr)
+  )
+  cds_agg <- cds_dt[, .(cds_start = min(start),
+                         cds_stop  = max(end)),
+                     by = transcript_id]
+  tx <- merge(tx, exon_agg, by = "transcript_id", all.x = TRUE)
+  tx <- merge(tx, cds_agg,  by = "transcript_id", all.x = TRUE)
+  saveRDS(tx, cache_path)
+  cat(sprintf("Cached %d GENCODE transcripts.\n", nrow(tx)))
+  tx
+}
+load_gencode <- function() {
+  if (file.exists(GTF_CACHE)) {
+    cat(sprintf("Loading GENCODE cache from %s ...\n", basename(GTF_CACHE)))
+    return(readRDS(GTF_CACHE))
+  }
+  build_gencode_cache(GTF, GTF_CACHE)
+}
+gencode <- load_gencode()
+
+# ── Load core tables ──
+cat("Loading structures + CDS ...\n")
+str <- as.data.table(readRDS(STR_RDS))
+cds <- as.data.table(readRDS(CDS_RDS))
+
+cat("Loading per-CT mashr DIE ...\n")
+die <- list()
+for (i in seq_along(CTS)) {
+  ct <- CTS[i]
+  f  <- file.path(REPO, "isocall_dge", "mashr",
+                   sprintf("nmd_mashr_die_%s_2026.3.10.csv", ct_lower[i]))
+  d <- fread(f)
+  setnames(d, c("logFC", "adj.P.Val", "nmd_responsive"),
+              c(sprintf("logFC_%s", ct), sprintf("adjP_%s", ct),
+                sprintf("nmd_resp_%s", ct)))
+  die[[ct]] <- d[, .SD, .SDcols = c("txid", "gene_id", "hgnc_symbol",
+                                     sprintf("logFC_%s", ct),
+                                     sprintf("adjP_%s", ct),
+                                     sprintf("nmd_resp_%s", ct))]
+}
+mashr <- Reduce(function(a, b) merge(a, b, by = c("txid", "gene_id", "hgnc_symbol"),
+                                       all = TRUE), die)
+setnames(mashr, "txid", "isoform_id")
+
+cat("Loading lfsr (shared, 4-CT) ...\n")
+lfsr <- fread(file.path(REPO, "isocall_dge", "mashr",
+                         "mashr_isoform_lfsr_2026.3.10.csv"))
+setnames(lfsr, "txid", "isoform_id")
+for (ct in CTS) setnames(lfsr, sprintf("Smg1i_in_%s", ct), sprintf("lfsr_%s", ct))
+lfsr <- lfsr[, .(isoform_id,
+                  lfsr_AT, lfsr_DD, lfsr_FB, lfsr_MV)]
+
+cat("Loading expression (CPM per CT) from ref-AUG cache ...\n")
+cache <- readRDS(CACHE_RDS)
+es <- as.data.table(cache$expr_score)
+es <- es[, .(isoform_id, gene_id,
+              cpm_AT, cpm_DD, cpm_FB, cpm_MV)]
+
+# ── Reference-AUG projection lookup (paper's canonical CDS methodology) ──
+# For each novel comparator paired to a reference isoform: project the
+# reference's canonical AUG into the novel's transcript coordinates and walk
+# to the first in-frame stop. `ref_atg_analysis.rds` (from the Isopair pipeline)
+# gives us ref_atg_genomic, comp_stop_genomic, ref_atg_exonic_in_comp, category.
+# We use projections only when they're TRUE-mapped and non-mapping-failed.
+cat("Loading reference-AUG projection lookup ...\n")
+ra <- readRDS(REF_ATG_RDS)
+# Only c2 (NMD-substrate comparators) has the projected stop coord; c4
+# (Control comparators) uses their canonical CDS from cds.rds, which is
+# not subject to the TD2 PTC-avoidance bias since Controls are not
+# NMD substrates.
+ref_atg <- as.data.table(ra$c2)[, .(comparator_isoform_id, reference_isoform_id,
+                                     ref_atg_genomic, comp_stop_genomic,
+                                     ref_atg_exonic_in_comp, category)]
+ref_atg <- ref_atg[
+  ref_atg_exonic_in_comp == TRUE &
+  !is.na(ref_atg_genomic) &
+  !is.na(comp_stop_genomic) &
+  category != "mapping_failed" &
+  !is.na(category)
+]
+setkey(ref_atg, comparator_isoform_id)
+ref_atg <- unique(ref_atg, by = "comparator_isoform_id")
+setnames(ref_atg,
+          c("ref_atg_genomic", "comp_stop_genomic", "reference_isoform_id"),
+          c("refaug_cds_start_g", "refaug_cds_stop_g", "refaug_ref_iso"))
+cat(sprintf("  Reference-AUG projections available: %d\n", nrow(ref_atg)))
+
+# ── Stitch the master isoform table ──
+cat("Building master isoform table ...\n")
+m <- merge(mashr, lfsr, by = "isoform_id", all.x = TRUE)
+m <- merge(m, es[, .(isoform_id, cpm_AT, cpm_DD, cpm_FB, cpm_MV)],
+            by = "isoform_id", all.x = TRUE)
+m <- merge(m, cds[, .(isoform_id, coding_status, cds_start, cds_stop, orf_length)],
+            by = "isoform_id", all.x = TRUE)
+m <- merge(m, str[, .(isoform_id, chr, strand, n_exons,
+                       exon_starts, exon_ends, tx_start, tx_end)],
+            by = "isoform_id", all.x = TRUE)
+m <- merge(m,
+            ref_atg[, .(isoform_id = comparator_isoform_id,
+                         refaug_cds_start_g, refaug_cds_stop_g,
+                         refaug_ref_iso, refaug_category = category)],
+            by = "isoform_id", all.x = TRUE)
+
+# Scope: isoforms that have BOTH a structure AND any expression/mashr signal.
+has_struct  <- lengths(m$exon_starts) > 0
+has_expr    <- with(m, !(is.na(cpm_AT) & is.na(cpm_DD) & is.na(cpm_FB) & is.na(cpm_MV)))
+has_mashr   <- with(m, !(is.na(logFC_AT) & is.na(logFC_DD) &
+                          is.na(logFC_FB) & is.na(logFC_MV)))
+keep <- has_struct & (has_expr | has_mashr)
+cat(sprintf("Isoforms kept: %d / %d (with structure AND expression-or-mashr)\n",
+            sum(keep), nrow(m)))
+m <- m[keep]
+
+# Test scope: SRSF8 + 50 other random NMD-responsive genes for fast iteration
+if (opt_test) {
+  sample_genes <- c("ENSG00000263465.5",     # SRSF8 — featured NMD case
+                     "ENSG00000128272.20",    # ATF4 — canonical uORF/ISR
+                     "ENSG00000112081.19",    # SRSF3 — classic AS-NMD
+                     "ENSG00000115875.20",    # SRSF7 — classic AS-NMD
+                     "ENSG00000001626.19",    # CFTR
+                     "ENSG00000157106.19",    # SMG1
+                     "ENSG00000005007.15",    # UPF1
+                     "ENSG00000215301.12",    # DDX3X
+                     "ENSG00000116044.18",    # NFE2L2
+                     "ENSG00000111057.12")    # KRT18
+  m <- m[gene_id %in% sample_genes]
+  gencode <- gencode[gene_id %in% sample_genes]
+  cat(sprintf("TEST scope: %d isoforms across %d genes; %d GENCODE annotated transcripts\n",
+              nrow(m), uniqueN(m$gene_id), nrow(gencode)))
+}
+
+# ── Gene index (small file for autocomplete + search) ──
+# Union of expressed genes and GENCODE-annotated genes so users can also look up
+# genes with no detected isoform.
+cat("Writing gene index ...\n")
+gi_expr <- m[, .(
+  n_expr_isoforms = .N,
+  hgnc_symbol_expr = data.table::first(na.omit(hgnc_symbol)),
+  any_nmd_iso = any(nmd_resp_AT | nmd_resp_DD | nmd_resp_FB | nmd_resp_MV, na.rm = TRUE)
+), by = gene_id]
+gi_gc <- gencode[, .(
+  n_gencode_isoforms = uniqueN(transcript_id),
+  hgnc_symbol_gc = data.table::first(na.omit(gene_name))
+), by = gene_id]
+gi <- merge(gi_expr, gi_gc, by = "gene_id", all = TRUE)
+gi[, hgnc_symbol := ifelse(!is.na(hgnc_symbol_expr) & nzchar(hgnc_symbol_expr),
+                            hgnc_symbol_expr, hgnc_symbol_gc)]
+gi[is.na(hgnc_symbol), hgnc_symbol := ""]
+gi[is.na(n_expr_isoforms),    n_expr_isoforms    := 0L]
+gi[is.na(n_gencode_isoforms), n_gencode_isoforms := 0L]
+gi[is.na(any_nmd_iso), any_nmd_iso := FALSE]
+gi[, n_isoforms := pmax(n_expr_isoforms, n_gencode_isoforms)]
+# Drop internal fields the UI doesn't need — keeps genes_index.json compact
+gi <- gi[, .(gene_id, hgnc_symbol, n_isoforms, any_nmd_iso)]
+write_json(gi, file.path(OUT_DIR, "genes_index.json"),
+            auto_unbox = TRUE, dataframe = "rows", na = "null", null = "null")
+cat(sprintf("  -> %d genes\n", nrow(gi)))
+
+# ── Per-CT CPM quantile breakpoints (for "quantile of expression" display) ──
+cat("Computing per-CT CPM quantile breakpoints ...\n")
+qs <- list()
+for (ct in CTS) {
+  col <- sprintf("cpm_%s", ct)
+  v <- m[[col]]
+  v <- v[!is.na(v) & v > 0]
+  qs[[ct]] <- as.list(round(quantile(v, probs = seq(0, 1, 0.1)), 3))
+}
+write_json(qs, file.path(OUT_DIR, "quantiles.json"), auto_unbox = TRUE,
+            na = "null")
+
+# ── Per-gene shard JSON ──
+# Each shard contains all of the gene's isoforms with structure + expression +
+# log2FC + lfsr + flags. Kept compact via short field names and rounded values.
+cat("Writing per-gene shards ...\n")
+round_or_null <- function(x, d = 3) {
+  if (is.null(x) || length(x) == 0) return(NULL)
+  if (all(is.na(x))) return(NULL)
+  unname(round(x, d))
+}
+determine_cds_for_expr <- function(r, gc_meta) {
+  # Priority for detected isoforms:
+  #   1) GENCODE — if the isoform is in GENCODE and no *_NF tags
+  #   2) Reference-AUG projection — paper's canonical CDS
+  #   3) TD2 (cds.rds) — fallback with visible caveat
+  #   4) None
+  # GENCODE with any *_NF tag → no CDS block; user sees the biotype + tags
+  if (!is.null(gc_meta)) {
+    tags_str <- if (is.na(gc_meta$tags)) "" else gc_meta$tags
+    has_nf <- nzchar(tags_str) && grepl(NF_TAG_RX, tags_str)
+    if (has_nf) {
+      return(list(cds_start = NA_integer_, cds_stop = NA_integer_,
+                   cds_source = "gencode_nf_placeholder",
+                   cds_source_detail = "GENCODE annotates a placeholder CDS but flags the start/end as \"not found\"; no reliable CDS is available."))
+    }
+    if (!is.na(gc_meta$cds_start) && !is.na(gc_meta$cds_stop)) {
+      return(list(cds_start = as.integer(gc_meta$cds_start),
+                   cds_stop  = as.integer(gc_meta$cds_stop),
+                   cds_source = "gencode_v49",
+                   cds_source_detail = "CDS coordinates from GENCODE v49 annotation."))
+    }
+  }
+  if (!is.na(r$refaug_cds_start_g) && !is.na(r$refaug_cds_stop_g)) {
+    return(list(cds_start = as.integer(min(r$refaug_cds_start_g, r$refaug_cds_stop_g)),
+                 cds_stop  = as.integer(max(r$refaug_cds_start_g, r$refaug_cds_stop_g)),
+                 cds_source = "ref_aug_projection",
+                 cds_source_detail = sprintf(
+                   "Reference-AUG projection: canonical start codon of %s traced into this novel isoform and walked to the first in-frame stop (Isopair; unbiased against PTC-containing ORFs).",
+                   r$refaug_ref_iso)))
+  }
+  if (!is.na(r$cds_start) && !is.na(r$cds_stop) &&
+      !is.na(r$coding_status) && r$coding_status == "coding") {
+    return(list(cds_start = as.integer(r$cds_start),
+                 cds_stop  = as.integer(r$cds_stop),
+                 cds_source = "td2",
+                 cds_source_detail = "TD2 / SQANTI3-called ORF. This caller is known to avoid PTC-containing ORFs, so the CDS shown for NMD-substrate isoforms may not be the biologically active one."))
+  }
+  list(cds_start = NA_integer_, cds_stop = NA_integer_,
+        cds_source = "none",
+        cds_source_detail = NA_character_)
+}
+
+iso_record_from_expr_row <- function(r, gc_meta = NULL) {
+  cds <- determine_cds_for_expr(r, gc_meta)
+  list(
+    id      = r$isoform_id,
+    n_exons = if (is.na(r$n_exons)) NULL else as.integer(r$n_exons),
+    chr     = if (is.na(r$chr))    NULL else r$chr,
+    strand  = if (is.na(r$strand)) NULL else r$strand,
+    tx_start = if (is.na(r$tx_start)) NULL else as.integer(r$tx_start),
+    tx_end   = if (is.na(r$tx_end))   NULL else as.integer(r$tx_end),
+    exon_starts = if (is.null(r$exon_starts[[1]])) NULL else as.integer(r$exon_starts[[1]]),
+    exon_ends   = if (is.null(r$exon_ends[[1]]))   NULL else as.integer(r$exon_ends[[1]]),
+    cds_start = if (is.na(cds$cds_start)) NULL else cds$cds_start,
+    cds_stop  = if (is.na(cds$cds_stop))  NULL else cds$cds_stop,
+    cds_source        = cds$cds_source,
+    cds_source_detail = if (is.na(cds$cds_source_detail)) NULL else cds$cds_source_detail,
+    orf_length    = if (is.na(r$orf_length))    NULL else as.integer(r$orf_length),
+    coding_status = if (is.na(r$coding_status)) NULL else r$coding_status,
+    gencode_biotype = if (is.null(gc_meta)) NULL else gc_meta$tx_type,
+    gencode_name    = if (is.null(gc_meta)) NULL else gc_meta$tx_name,
+    tags            = if (is.null(gc_meta)) NULL else gc_meta$tags,
+    cpm = list(AT = round_or_null(r$cpm_AT), DD = round_or_null(r$cpm_DD),
+                FB = round_or_null(r$cpm_FB), MV = round_or_null(r$cpm_MV)),
+    logfc = list(AT = round_or_null(r$logFC_AT), DD = round_or_null(r$logFC_DD),
+                  FB = round_or_null(r$logFC_FB), MV = round_or_null(r$logFC_MV)),
+    adjP  = list(AT = round_or_null(r$adjP_AT, 6), DD = round_or_null(r$adjP_DD, 6),
+                  FB = round_or_null(r$adjP_FB, 6), MV = round_or_null(r$adjP_MV, 6)),
+    lfsr  = list(AT = round_or_null(r$lfsr_AT, 4), DD = round_or_null(r$lfsr_DD, 4),
+                  FB = round_or_null(r$lfsr_FB, 4), MV = round_or_null(r$lfsr_MV, 4)),
+    nmd_responsive = list(
+      AT = isTRUE(r$nmd_resp_AT), DD = isTRUE(r$nmd_resp_DD),
+      FB = isTRUE(r$nmd_resp_FB), MV = isTRUE(r$nmd_resp_MV))
+  )
+}
+iso_record_from_gencode <- function(g) {
+  tags_str <- if (is.na(g$tags)) "" else g$tags
+  has_nf   <- nzchar(tags_str) && grepl(NF_TAG_RX, tags_str)
+  if (has_nf) {
+    cds_s <- NA_integer_; cds_e <- NA_integer_
+    src <- "gencode_nf_placeholder"
+    src_det <- "GENCODE annotates a placeholder CDS but flags the start/end as \"not found\"; no reliable CDS is available."
+  } else if (!is.na(g$cds_start) && !is.na(g$cds_stop)) {
+    cds_s <- as.integer(g$cds_start); cds_e <- as.integer(g$cds_stop)
+    src <- "gencode_v49"
+    src_det <- "CDS coordinates from GENCODE v49 annotation."
+  } else {
+    cds_s <- NA_integer_; cds_e <- NA_integer_
+    src <- "none"; src_det <- NA_character_
+  }
+  list(
+    id      = g$transcript_id,
+    n_exons = if (is.na(g$n_exons)) NULL else as.integer(g$n_exons),
+    chr     = g$chr, strand = g$strand,
+    tx_start = as.integer(g$tx_start), tx_end = as.integer(g$tx_end),
+    exon_starts = if (is.null(g$exon_starts[[1]])) NULL else as.integer(g$exon_starts[[1]]),
+    exon_ends   = if (is.null(g$exon_ends[[1]]))   NULL else as.integer(g$exon_ends[[1]]),
+    cds_start = if (is.na(cds_s)) NULL else cds_s,
+    cds_stop  = if (is.na(cds_e)) NULL else cds_e,
+    cds_source        = src,
+    cds_source_detail = if (is.na(src_det)) NULL else src_det,
+    orf_length    = NULL,
+    coding_status = NULL,
+    gencode_biotype = g$tx_type,
+    gencode_name    = g$tx_name,
+    tags            = g$tags,
+    cpm   = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),
+    logfc = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),
+    adjP  = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),
+    lfsr  = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),
+    nmd_responsive = list(AT = FALSE, DD = FALSE, FB = FALSE, MV = FALSE),
+    gencode_only = TRUE
+  )
+}
+write_gene <- function(gene_rows, gencode_rows) {
+  gid <- gene_rows$gene_id[1]
+  # Expressed / detected isoforms — annotate with GENCODE biotype when the id matches
+  gc_by_id <- setNames(split(gencode_rows, gencode_rows$transcript_id),
+                        gencode_rows$transcript_id)
+  isos_expr <- lapply(seq_len(nrow(gene_rows)), function(i) {
+    r <- gene_rows[i]
+    gc <- gc_by_id[[r$isoform_id]]
+    iso_record_from_expr_row(r, if (is.null(gc)) NULL else gc[1])
+  })
+  # GENCODE transcripts NOT in our expressed set → include with gencode_only = TRUE
+  expr_ids <- gene_rows$isoform_id
+  extra <- gencode_rows[!(transcript_id %in% expr_ids)]
+  isos_extra <- lapply(seq_len(nrow(extra)), function(i) iso_record_from_gencode(extra[i]))
+  out <- list(
+    gene_id     = gid,
+    hgnc_symbol = data.table::first(na.omit(c(gene_rows$hgnc_symbol,
+                                    if (nrow(gencode_rows) > 0) gencode_rows$gene_name))),
+    isoforms    = c(isos_expr, isos_extra)
+  )
+  write_json(out, file.path(GENE_SHARD_DIR, sprintf("%s.json", gid)),
+              auto_unbox = TRUE, na = "null", null = "null")
+}
+
+# Set keys once — orders of magnitude faster than repeated equality filtering
+setkey(m, gene_id)
+setkey(gencode, gene_id)
+all_gene_ids <- union(unique(m$gene_id), unique(gencode$gene_id))
+n_written <- 0
+for (gid in all_gene_ids) {
+  gene_rows    <- m[.(gid), nomatch = 0L]
+  gencode_rows <- gencode[.(gid), nomatch = 0L]
+  if (nrow(gene_rows) == 0 && nrow(gencode_rows) == 0) next
+  # Stub out an expressed-side row for gene_index if this gene is GENCODE-only
+  if (nrow(gene_rows) == 0) {
+    gene_rows <- data.table(
+      isoform_id = character(0), gene_id = gid, hgnc_symbol = gencode_rows$gene_name[1]
+    )
+  }
+  write_gene(gene_rows, gencode_rows)
+  n_written <- n_written + 1
+  if (n_written %% 1000 == 0) cat(sprintf("  ...%d genes written\n", n_written))
+}
+cat(sprintf("Wrote %d per-gene shards to %s\n", n_written, GENE_SHARD_DIR))
+
+# ── Manifest ──
+manifest <- list(
+  generated_at = Sys.time(),
+  n_genes      = n_written,
+  n_isoforms   = nrow(m),
+  cell_types   = CTS,
+  data_version = "2026.6.21"
+)
+write_json(manifest, file.path(OUT_DIR, "manifest.json"), auto_unbox = TRUE)
+cat("Done.\n")
