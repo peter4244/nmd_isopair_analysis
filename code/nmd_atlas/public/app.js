@@ -22,11 +22,11 @@ const state = {
     minCpm: 1,          // default threshold — matches the mashr-DIE inclusion floor
     showAnnotated: false,
   },
-  chrCache: new Map(),   // chr → { gene_id: shard } — small LRU (cap: 3 chromosomes)
-  chrOrder: [],          // recency of chromosome cache entries
-  chrFetches: new Map(), // chr → Promise (dedup concurrent fetches)
+  geneCache: new Map(),   // gene_id → shard — small LRU (cap: 100 genes, ~1 MB)
+  geneOrder: [],          // recency of gene cache entries
+  geneFetches: new Map(), // gene_id → Promise (dedup concurrent fetches)
 };
-const CHR_CACHE_CAP = 3;
+const GENE_CACHE_CAP = 100;
 
 // ── boot ──
 init();
@@ -259,51 +259,46 @@ function populateDocsPlaceholders() {
   set("cite-url",      url || "(atlas URL TBD)");
 }
 
-// ── chromosome cache ──
-// Data is served in per-chromosome shards (data/chroms/<chr>.json), each
-// containing a keyed map { gene_id: <gene_shard> }. First click into a
-// chromosome fetches its shard (~15 MB gzipped for chr1, less for the rest);
-// subsequent clicks in the same chromosome are instant. We cap at 3 loaded
-// chromosomes to avoid unbounded memory growth on power users.
-async function fetchChromosome(chr) {
-  if (state.chrCache.has(chr)) {
-    // Touch recency
-    state.chrOrder = state.chrOrder.filter(c => c !== chr).concat(chr);
-    return state.chrCache.get(chr);
+// ── gene cache ──
+// Each gene has its own tiny JSON shard at data/genes/<gene_id>.json
+// (~5-15 KB raw, ~1-3 KB gzipped). A click is one small fetch — no whole-chr
+// download. We cache the last GENE_CACHE_CAP genes for instant revisits.
+async function fetchGeneShard(geneId) {
+  if (state.geneCache.has(geneId)) {
+    state.geneOrder = state.geneOrder.filter(g => g !== geneId).concat(geneId);
+    return state.geneCache.get(geneId);
   }
-  if (state.chrFetches.has(chr)) return state.chrFetches.get(chr);
+  if (state.geneFetches.has(geneId)) return state.geneFetches.get(geneId);
   const v = encodeURIComponent(state.manifest?.data_version || Date.now());
-  const p = fetch(`data/chroms/${encodeURIComponent(chr)}.json?v=${v}`)
+  const p = fetch(`data/genes/${encodeURIComponent(geneId)}.json?v=${v}`)
     .then(r => {
-      if (!r.ok) throw new Error(`Chromosome ${chr} not available (HTTP ${r.status})`);
+      if (!r.ok) throw new Error(`Gene shard ${geneId} not available (HTTP ${r.status})`);
       return r.json();
     })
-    .then(payload => {
-      state.chrCache.set(chr, payload);
-      state.chrOrder.push(chr);
-      // Evict LRU
-      while (state.chrOrder.length > CHR_CACHE_CAP) {
-        const evict = state.chrOrder.shift();
-        state.chrCache.delete(evict);
+    .then(shard => {
+      state.geneCache.set(geneId, shard);
+      state.geneOrder.push(geneId);
+      while (state.geneOrder.length > GENE_CACHE_CAP) {
+        const evict = state.geneOrder.shift();
+        state.geneCache.delete(evict);
       }
-      state.chrFetches.delete(chr);
-      return payload;
+      state.geneFetches.delete(geneId);
+      return shard;
     })
-    .catch(err => { state.chrFetches.delete(chr); throw err; });
-  state.chrFetches.set(chr, p);
+    .catch(err => { state.geneFetches.delete(geneId); throw err; });
+  state.geneFetches.set(geneId, p);
   return p;
 }
 
 // ── gene selection ──
 async function selectGene(geneId) {
   try {
-    // Look up which chromosome this gene lives on
     const idxRow = state.genesIndex.find(g => g.gene_id === geneId);
     if (!idxRow) throw new Error(`Gene ${geneId} not in index`);
-    // Genes with no detected isoforms are not written to chr shards to keep
-    // payload sizes small. Render a "not detected" placeholder without any
-    // network fetch — the index row is all we have for these genes.
-    const isUndetected = !idxRow.chr || idxRow.chr === "unknown";
+    // Undetected genes (GENCODE-only, e.g. many pseudogenes) have no shard
+    // file — render a "not detected" placeholder from the index alone.
+    const isUndetected = idxRow.detected === false ||
+                         !idxRow.chr || idxRow.chr === "unknown";
     let shard;
     if (isUndetected) {
       shard = {
@@ -315,27 +310,12 @@ async function selectGene(geneId) {
         gencode_n_annotated: idxRow.n_isoforms || 0
       };
     } else {
-      const chr = idxRow.chr;
-      const cached = state.chrCache.has(chr);
-      if (!cached) {
-        document.getElementById("manifest-info").textContent =
-          `Loading chromosome ${chr} …`;
-      }
-      let chrPayload = null;
       try {
-        chrPayload = await fetchChromosome(chr);
+        shard = await fetchGeneShard(geneId);
       } catch (fetchErr) {
-        // Shard may not exist for this chr name — happens when the index
-        // points to a raw chromosome (e.g. chr1) but the chromosome was
-        // split into chr1_p1/chr1_p2 and this gene was undetected so it
-        // isn't in either part. Fall through to the undetected placeholder.
         console.warn(`Falling back to undetected placeholder for ${geneId}: ${fetchErr.message}`);
+        shard = null;
       }
-      if (state.manifest) {
-        document.getElementById("manifest-info").textContent =
-          `${state.manifest.n_genes.toLocaleString()} genes · ${state.manifest.n_isoforms.toLocaleString()} isoforms · v${state.manifest.data_version}`;
-      }
-      shard = chrPayload ? chrPayload[geneId] : null;
       if (!shard) {
         shard = {
           gene_id: idxRow.gene_id,

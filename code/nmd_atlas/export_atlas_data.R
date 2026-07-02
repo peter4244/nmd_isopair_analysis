@@ -30,8 +30,8 @@ HERE <- (function() {
 REPO <- normalizePath(file.path(HERE, "..", ".."))
 
 OUT_DIR       <- file.path(HERE, "public", "data")
-CHR_SHARD_DIR <- file.path(OUT_DIR, "chroms")
-dir.create(CHR_SHARD_DIR, recursive = TRUE, showWarnings = FALSE)
+GENE_SHARD_DIR <- file.path(OUT_DIR, "genes")
+dir.create(GENE_SHARD_DIR, recursive = TRUE, showWarnings = FALSE)
 
 CTS <- c("AT", "DD", "FB", "MV")
 ct_lower <- tolower(CTS)
@@ -487,96 +487,45 @@ gene_chr_map <- character(length(all_gene_ids)); names(gene_chr_map) <- all_gene
 detected_gids <- gi[detected == TRUE, gene_id]
 detected_set  <- new.env(hash = TRUE, size = length(detected_gids))
 for (g in detected_gids) detected_set[[g]] <- TRUE
-by_chr <- list()   # chr → named list of gene shards (gene_id → shard)
+# Write one JSON per gene. Each click is a single tiny fetch (~5-15 KB raw,
+# ~1-3 KB gzipped) instead of pulling the whole chromosome. gene_chr_map is
+# kept only to populate the index's `chr` field so the "not detected" state
+# can name a location for GENCODE-only pseudogenes.
 for (gid in all_gene_ids) {
   gene_rows    <- m[.(gid), nomatch = 0L]
   gencode_rows <- gencode[.(gid), nomatch = 0L]
   if (nrow(gene_rows) == 0 && nrow(gencode_rows) == 0) next
-  # Skip zero-expression genes — front-end shows "not detected" from index alone
   if (is.null(detected_set[[gid]])) {
     n_skipped_undetected <- n_skipped_undetected + 1
     next
   }
   built <- build_gene_shard(gid, gene_rows, gencode_rows)
   chr_key <- if (is.na(built$chr) || is.null(built$chr)) "unknown" else built$chr
-  if (is.null(by_chr[[chr_key]])) by_chr[[chr_key]] <- list()
-  by_chr[[chr_key]][[gid]] <- built$shard
+  write_json(built$shard,
+             file.path(GENE_SHARD_DIR, sprintf("%s.json", gid)),
+             auto_unbox = TRUE, na = "null", null = "null")
   gene_chr_map[gid] <- chr_key
   n_built <- n_built + 1
-  if (n_built %% 5000 == 0) cat(sprintf("  ...%d genes buffered\n", n_built))
+  if (n_built %% 5000 == 0) cat(sprintf("  ...%d gene shards written\n", n_built))
 }
-cat(sprintf("Skipped %d undetected genes (kept in index; not written to chr shards).\n",
+cat(sprintf("Skipped %d undetected genes (kept in index; not written to gene shards).\n",
             n_skipped_undetected))
-cat(sprintf("Buffered %d gene shards across %d chromosome groups.\n",
-            n_built, length(by_chr)))
+cat(sprintf("Wrote %d per-gene shards to %s\n", n_built, GENE_SHARD_DIR))
 
-# Write one JSON file per chromosome, splitting any chromosome whose serialized
-# payload exceeds MAX_PART_MB into `chrN_p1`, `chrN_p2`, ... parts. Cloudflare
-# Pages rejects individual files >25 MB, so we keep everything comfortably
-# under with a 20 MB budget. Split parts are addressed identically to whole-chr
-# shards by the frontend — the gene index just stores the part name in `chr`.
-MAX_PART_MB    <- 20
-MAX_PART_BYTES <- MAX_PART_MB * 1024 * 1024
-write_part <- function(part_key, gene_map) {
-  out_path <- file.path(CHR_SHARD_DIR, sprintf("%s.json", part_key))
-  write_json(gene_map, out_path, auto_unbox = TRUE, na = "null", null = "null")
-  size_mb <- round(file.info(out_path)$size / 1024^2, 2)
-  cat(sprintf("  %-10s  %6d genes  %.2f MB\n", part_key, length(gene_map), size_mb))
-  size_mb
-}
-n_files <- 0
-for (chr_key in names(by_chr)) {
-  gene_map <- by_chr[[chr_key]]
-  gene_ids <- names(gene_map)
-  # Estimate per-gene serialized size to know if we need to split
-  sizes <- vapply(gene_ids, function(gid) {
-    nchar(toJSON(gene_map[[gid]], auto_unbox = TRUE, na = "null", null = "null"),
-          type = "bytes") + nchar(gid, type = "bytes") + 5L  # "":,  overhead
-  }, integer(1))
-  total_bytes <- sum(sizes) + 2L  # {} braces
-  if (total_bytes <= MAX_PART_BYTES) {
-    write_part(chr_key, gene_map)
-    n_files <- n_files + 1
-    next
-  }
-  # Split: greedy bin-pack in original gene order into parts under the budget
-  part_idx <- 1L
-  cur_ids  <- character(0)
-  cur_bytes <- 2L
-  for (i in seq_along(gene_ids)) {
-    if (length(cur_ids) > 0 && cur_bytes + sizes[i] > MAX_PART_BYTES) {
-      part_key <- sprintf("%s_p%d", chr_key, part_idx)
-      write_part(part_key, gene_map[cur_ids])
-      for (g in cur_ids) gene_chr_map[g] <- part_key
-      n_files <- n_files + 1
-      part_idx  <- part_idx + 1L
-      cur_ids   <- character(0)
-      cur_bytes <- 2L
-    }
-    cur_ids <- c(cur_ids, gene_ids[i])
-    cur_bytes <- cur_bytes + sizes[i]
-  }
-  if (length(cur_ids) > 0) {
-    part_key <- sprintf("%s_p%d", chr_key, part_idx)
-    write_part(part_key, gene_map[cur_ids])
-    for (g in cur_ids) gene_chr_map[g] <- part_key
-    n_files <- n_files + 1
-  }
-}
-cat(sprintf("Wrote %d chromosome shards to %s\n", n_files, CHR_SHARD_DIR))
 
-# Emit gene_id → chr lookup into the gene index so the client can pre-locate
-# the right chromosome file before fetching
+# Emit gene_id → chr lookup into the gene index. Not used for fetching (each
+# gene is its own file) — kept so the UI can display the location and the
+# "not detected" placeholder can name a chromosome.
 gene_chr_dt <- data.table(gene_id = names(gene_chr_map), chr = unname(gene_chr_map))
-# Fill in chr for undetected GENCODE-only genes from the GENCODE cache so the
-# UI can render a proper "not detected" state without an errant chr shard fetch.
+# Fill in chr for undetected GENCODE-only genes from the GENCODE cache.
 gencode_chr <- gencode[!is.na(chr), .(gc_chr = chr[1]), by = gene_id]
 gene_chr_dt <- merge(gene_chr_dt, gencode_chr, by = "gene_id", all.x = TRUE)
 gene_chr_dt[is.na(chr) | chr == "" | chr == "unknown",
             chr := ifelse(is.na(gc_chr), "", gc_chr)]
 gene_chr_dt[, gc_chr := NULL]
 gi <- merge(gi, gene_chr_dt, by = "gene_id", all.x = TRUE)
-gi[, detected := NULL]  # UI-only helper column; not needed in the emitted index
+# `detected` is emitted so the UI can skip the fetch entirely for GENCODE-only
+# genes and render the "not detected" placeholder from the index alone.
 write_json(gi, file.path(OUT_DIR, "genes_index.json"),
             auto_unbox = TRUE, dataframe = "rows", na = "null", null = "null")
 
@@ -585,9 +534,9 @@ manifest <- list(
   generated_at = Sys.time(),
   n_genes      = n_built,
   n_isoforms   = nrow(m),
-  n_chromosomes = n_files,
+  n_gene_shards = n_built,
   cell_types   = CTS,
-  data_version = "2026.7.1c"
+  data_version = "2026.7.2"
 )
 write_json(manifest, file.path(OUT_DIR, "manifest.json"), auto_unbox = TRUE)
 cat("Done.\n")
