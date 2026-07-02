@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NMD Lung Atlas — 4 cell types</title>
   <link rel="canonical" href="https://nmd-lungcells.castaldilab.org/">
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
@@ -144,7 +144,7 @@
       <p>Primary human lung cells were isolated from tissue not used for transplant (UNC IRB protocol 03-1396). AT2, MV and FB cells were obtained from three donors each; LAE cells from four donors. LAE cells were cultured at air-liquid interface (ALI) in UNCALI media for 28–29 days; MV cells were CD31-bead-enriched from peripheral lung; FB cells were outgrown from minced distal lung; AT2 cells were expanded as HT2-280-purified alveolospheres and then plated as monolayer on 5% Matrigel. All cultures were then treated with 0.3 µM SMG1 inhibitor (SMG1i) or equivalent DMSO vehicle for six hours before RNA extraction.</p>
 
       <h3>Long-read RNA sequencing</h3>
-      <p>PacBio Kinnex full-length cDNA libraries were prepared per PacBio protocol 103-238-700 REV07 (with SMRTbell cleanup at 1.0× and equal-mass pooling of the eight Kinnex PCR reactions) and sequenced on a <strong>PacBio Revio</strong> instrument with SMRT cells and SPRQ chemistry. Long reads were aligned to GRCh38 with <code>minimap2 -ax splice:hq --junc-bed known_junctions.bed --MD --cs=long -uf</code>. Full-length transcript isoforms were identified and quantified with the <a href="https://github.com/PacificBiosciences/isocall" target="_blank" rel="noopener">PacBio isocall pipeline</a> (<code>--seq-tech pac-bio-hifi --filter-group no-filters --model-coverage</code>) and classified with SQANTI3.</p>
+      <p>PacBio Kinnex full-length cDNA libraries were prepared from isolated RNA per <strong>PacBio protocol 103-238-700 REV07</strong> with two modifications: SMRTbell cleanup used <strong>1.0×</strong> beads (instead of 0.9×) to avoid enriching for long transcripts and obtain properly formed concatenated libraries, and prior to concatenation the eight Kinnex PCR reactions were pooled by <strong>equal mass</strong> (Qubit-based) rather than by fixed volume from each tube. Kinnex FL RNA libraries were sequenced on a <strong>PacBio Revio</strong> instrument with Revio SMRT cells and SPRQ chemistry to an average depth of <span class="tbd">[FLNC depth TBD]</span> FLNC reads. Long reads were aligned to GRCh38 with <code>minimap2 -ax splice:hq --junc-bed known_junctions.bed --MD --cs=long -uf</code>. Full-length transcript isoforms were identified and quantified with the <a href="https://github.com/PacificBiosciences/isocall" target="_blank" rel="noopener">PacBio isocall pipeline</a> (<code>--seq-tech pac-bio-hifi --filter-group no-filters --model-coverage</code>) and classified with SQANTI3.</p>
 
       <h3>Short-read RNA sequencing</h3>
       <p>Paired-end stranded, polyA-selected libraries (NEBNext UltraExpress) were sequenced on an Illumina NovaSeq 6000 to a mean depth of ~59 M reads (mean RIN 9.3). Reads were processed with the <a href="https://nf-co.re/rnaseq/" target="_blank" rel="noopener">nf-core RNA-seq pipeline</a> v3.14.0 (Nextflow 24.04.4): Trim Galore 0.6.7 + cutadapt 4.6 for QC and trimming, STAR 2.7.10a for alignment to GRCh38 + GENCODE v49, and Salmon 1.10.1 with <code>tximport</code> for gene- and isoform-level quantification.</p>
@@ -221,8 +221,8 @@
     <small>Manuscript: <em>Leshem et al. 2026</em> · Contact: <a href="mailto:repjc@channing.harvard.edu">repjc@channing.harvard.edu</a></small>
   </footer>
 
-  <script type="module" src="transcript_viz.js?v=17"></script>
-  <script type="module" src="transcript_stack.js?v=17"></script>
-  <script type="module" src="app.js?v=17"></script>
+  <script type="module" src="transcript_viz.js?v=18"></script>
+  <script type="module" src="transcript_stack.js?v=18"></script>
+  <script type="module" src="app.js?v=18"></script>
 </body>
 </html>
