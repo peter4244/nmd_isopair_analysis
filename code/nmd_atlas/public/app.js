@@ -321,15 +321,22 @@ async function selectGene(geneId) {
         document.getElementById("manifest-info").textContent =
           `Loading chromosome ${chr} …`;
       }
-      const chrPayload = await fetchChromosome(chr);
+      let chrPayload = null;
+      try {
+        chrPayload = await fetchChromosome(chr);
+      } catch (fetchErr) {
+        // Shard may not exist for this chr name — happens when the index
+        // points to a raw chromosome (e.g. chr1) but the chromosome was
+        // split into chr1_p1/chr1_p2 and this gene was undetected so it
+        // isn't in either part. Fall through to the undetected placeholder.
+        console.warn(`Falling back to undetected placeholder for ${geneId}: ${fetchErr.message}`);
+      }
       if (state.manifest) {
         document.getElementById("manifest-info").textContent =
           `${state.manifest.n_genes.toLocaleString()} genes · ${state.manifest.n_isoforms.toLocaleString()} isoforms · v${state.manifest.data_version}`;
       }
-      shard = chrPayload[geneId];
+      shard = chrPayload ? chrPayload[geneId] : null;
       if (!shard) {
-        // Fallback: gene was in the index but not in the shard payload —
-        // treat as undetected so the UI still renders cleanly.
         shard = {
           gene_id: idxRow.gene_id,
           hgnc_symbol: idxRow.hgnc_symbol || "",
