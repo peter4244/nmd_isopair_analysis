@@ -452,7 +452,7 @@ function renderIsoformTable() {
     </tr></thead>`;
   const rows = shown.map(iso => {
     const nmdCts = iso.nmd_responsive
-      ? (CTS.filter(ct => iso.nmd_responsive[ct]).join(",") || "—")
+      ? (CTS.filter(ct => iso.nmd_responsive[ct]).map(ct => CT_SHORT[ct]).join(",") || "—")
       : "—";
     const mx = maxCpm(iso);
     const sel = (iso.id === state.currentIso?.id) ? "selected" : "";

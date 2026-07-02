@@ -417,8 +417,10 @@ iso_record_from_expr_row <- function(r, gc_meta = NULL) {
     strand  = if (is.na(r$strand)) NULL else r$strand,
     tx_start = if (is.na(r$tx_start)) NULL else as.integer(r$tx_start),
     tx_end   = if (is.na(r$tx_end))   NULL else as.integer(r$tx_end),
-    exon_starts = if (is.null(r$exon_starts[[1]])) NULL else as.integer(r$exon_starts[[1]]),
-    exon_ends   = if (is.null(r$exon_ends[[1]]))   NULL else as.integer(r$exon_ends[[1]]),
+    # I() prevents jsonlite auto_unbox from flattening single-exon transcripts
+    # into scalars — the frontend transcript viz expects arrays even for n=1.
+    exon_starts = if (is.null(r$exon_starts[[1]])) NULL else I(as.integer(r$exon_starts[[1]])),
+    exon_ends   = if (is.null(r$exon_ends[[1]]))   NULL else I(as.integer(r$exon_ends[[1]])),
     cds_start = if (is.na(cds$cds_start)) NULL else cds$cds_start,
     cds_stop  = if (is.na(cds$cds_stop))  NULL else cds$cds_stop,
     cds_source        = cds$cds_source,
@@ -463,8 +465,10 @@ iso_record_from_gencode <- function(g) {
     n_exons = if (is.na(g$n_exons)) NULL else as.integer(g$n_exons),
     chr     = g$chr, strand = g$strand,
     tx_start = as.integer(g$tx_start), tx_end = as.integer(g$tx_end),
-    exon_starts = if (is.null(g$exon_starts[[1]])) NULL else as.integer(g$exon_starts[[1]]),
-    exon_ends   = if (is.null(g$exon_ends[[1]]))   NULL else as.integer(g$exon_ends[[1]]),
+    # I() prevents jsonlite auto_unbox from flattening single-exon transcripts
+    # into scalars — the frontend transcript viz expects arrays even for n=1.
+    exon_starts = if (is.null(g$exon_starts[[1]])) NULL else I(as.integer(g$exon_starts[[1]])),
+    exon_ends   = if (is.null(g$exon_ends[[1]]))   NULL else I(as.integer(g$exon_ends[[1]])),
     cds_start = if (is.na(cds_s)) NULL else cds_s,
     cds_stop  = if (is.na(cds_e)) NULL else cds_e,
     cds_source        = src,
@@ -571,7 +575,7 @@ manifest <- list(
   n_isoforms   = nrow(m),
   n_gene_shards = n_built,
   cell_types   = CTS,
-  data_version = "2026.7.2b"
+  data_version = "2026.7.2c"
 )
 write_json(manifest, file.path(OUT_DIR, "manifest.json"), auto_unbox = TRUE)
 cat("Done.\n")

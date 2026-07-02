@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NMD Lung Atlas — 4 cell types</title>
   <link rel="canonical" href="https://nmd-lungcells.castaldilab.org/">
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
@@ -71,7 +71,7 @@
             </div>
             <div>
               <h4>NMD response (SMG1i vs DMSO)</h4>
-              <p class="hint">Per-cell-type mashr posterior-mean log<sub>2</sub> fold-change under SMG1 inhibition. Cell types where the isoform is <strong>NMD-responsive</strong> (lfsr &lt; 0.05 and positive posterior mean) are coloured orange and marked with a star. Hover for exact values.</p>
+              <p class="hint">Per-cell-type mashr posterior-mean log<sub>2</sub> fold-change under SMG1 inhibition. Cell types where the isoform is <strong>NMD-susceptible</strong> (lfsr &lt; 0.05 and positive posterior mean) are coloured orange and marked with a star. Hover for exact values.</p>
               <div id="logfc-chart"></div>
             </div>
           </div>
@@ -87,7 +87,7 @@
             <button id="stack-expand" class="btn-nav" title="Open the full comparison view">Compare all ⤢</button>
           </div>
         </div>
-        <p class="hint">Genomic-coordinate view of every isoform matching your filter. Each track is one isoform: dark boxes = CDS, light boxes = UTR, thin line = intron. Click a track to select it for the panels above; orange dot = NMD-responsive in ≥1 cell type.</p>
+        <p class="hint">Genomic-coordinate view of every isoform matching your filter. Each track is one isoform: dark boxes = CDS, light boxes = UTR, thin line = intron. Click a track to select it for the panels above; orange dot = NMD-susceptible in ≥1 cell type.</p>
         <div id="transcript-stack"></div>
       </div>
     </section>
@@ -99,7 +99,7 @@
           <button id="modal-close" class="btn-nav" title="Close (Esc)">Close ✕</button>
         </div>
         <div id="modal-stack" class="modal-body"></div>
-        <p class="hint modal-footnote">Click a track to select it — the main-page charts will update. Genomic coordinates, common gene span. Orange dot = NMD-responsive in ≥1 cell type; muted grey rows = GENCODE-annotated but not detected in our data.</p>
+        <p class="hint modal-footnote">Click a track to select it — the main-page charts will update. Genomic coordinates, common gene span. Orange dot = NMD-susceptible in ≥1 cell type; muted grey rows = GENCODE-annotated but not detected in our data.</p>
       </div>
     </div>
 
@@ -109,22 +109,22 @@
 
       <h3>What's in the atlas</h3>
       <ul>
-        <li><strong>4 primary human lung cell types</strong>, 13 donors, 26 long-read samples total (paired PacBio Iso-Seq + short-read RNA-seq):
+        <li><strong>4 primary human lung cell types</strong>, 7 unique donors, 13 cell-type × donor pairings, 26 long-read samples total (paired PacBio Iso-Seq + short-read RNA-seq). AT2, Fib, and MVE were derived from the same 3 donors; LAE was obtained from 4 additional donors:
           <ul>
-            <li><strong>AT2</strong> — alveolar type 2 cells (3 donors × 2 conditions = 6 samples)</li>
-            <li><strong>LAE</strong> — large airway epithelial, submerged culture (4 donors × 2 = 8 samples; internal code <code>DD</code>)</li>
-            <li><strong>Fib</strong> — primary lung fibroblasts (3 donors × 2 = 6 samples; internal code <code>FB</code>)</li>
-            <li><strong>MVE</strong> — microvascular endothelial cells (3 donors × 2 = 6 samples; internal code <code>MV</code>)</li>
+            <li><strong>AT2</strong> — alveolar type 2 cells (internal code <code>AT</code>; 3 donors × 2 conditions = 6 samples)</li>
+            <li><strong>LAE</strong> — large airway epithelial, submerged culture (internal code <code>DD</code>; 4 donors × 2 = 8 samples)</li>
+            <li><strong>Fib</strong> — primary lung fibroblasts (internal code <code>FB</code>; 3 donors × 2 = 6 samples)</li>
+            <li><strong>MVE</strong> — microvascular endothelial cells (internal code <code>MV</code>; 3 donors × 2 = 6 samples)</li>
           </ul>
         </li>
         <li><strong>Treatment</strong>: 0.3 µM SMG1 inhibitor (SMG1i) or equivalent-volume DMSO vehicle for 6 hours at 37 °C before RNA extraction.</li>
-        <li><strong>Data content</strong>: per-cell-type <strong>DMSO-baseline</strong> CPM (mean across DMSO samples) for each detected isoform, mashr posterior-mean log₂ fold-change under SMG1i vs DMSO, mashr lfsr and limma-voom adjusted p-values, and NMD-responsive calls (<code>lfsr &lt; 0.05</code> AND positive posterior mean).</li>
+        <li><strong>Data content</strong>: per-cell-type <strong>DMSO-baseline</strong> CPM (mean across DMSO samples) for each detected isoform, mashr posterior-mean log₂ fold-change under SMG1i vs DMSO, mashr lfsr and limma-voom adjusted p-values, and NMD-susceptible calls (<code>lfsr &lt; 0.05</code> AND positive posterior mean).</li>
         <li><strong>Universe</strong>: 162,800 isoforms tested for SMG1i-vs-DMSO differential expression (after edgeR <code>filterByExpr</code>). Of these, 160,081 have SQANTI3 structural annotations and are displayed here (16,894 detected genes; 2,719 fusion transcripts excluded). GENCODE v49 annotated transcripts are additionally overlaid across the remaining protein-coding and lncRNA space so users can compare detected structures against annotated space.</li>
       </ul>
 
       <h3>How to use the atlas</h3>
       <ol>
-        <li><strong>Search</strong> a gene by HGNC symbol or Ensembl ID (e.g., <em>SRSF8</em>, <em>ATF4</em>, <em>ENSG00000263465</em>). Genes with at least one NMD-responsive isoform carry a small orange badge.</li>
+        <li><strong>Search</strong> a gene by HGNC symbol or Ensembl ID (e.g., <em>SRSF8</em>, <em>ATF4</em>, <em>ENSG00000263465</em>). Genes with at least one NMD-susceptible isoform carry a small orange badge.</li>
         <li><strong>Filter</strong> which isoforms are shown by minimum CPM (slider) and whether to include GENCODE-annotated transcripts that weren't detected (checkbox).</li>
         <li><strong>Click any isoform</strong> in the table (or a track in the stacked view below) to see its transcript structure, expression per cell type, and NMD response.</li>
         <li><strong>Compare all</strong> isoforms for a gene in the modal — genomic coordinates, Isopair-style intron chevrons, click-to-select.</li>
@@ -141,16 +141,16 @@
       <p class="docs-lead">Compact summary of the analytical pipeline. For the full paper Methods including donor characteristics, sequencing depth, quality control, and full statistical model specifications, see <a href="#cite">the paper</a>.</p>
 
       <h3>Sample processing and treatment</h3>
-      <p>Primary human lung cells were isolated from tissue not used for transplant (UNC IRB protocol 03-1396). AT2, MV and FB cells were obtained from three donors each; LAE cells from four donors. LAE cells were cultured at air-liquid interface (ALI) in UNCALI media for 28–29 days; MV cells were CD31-bead-enriched from peripheral lung; FB cells were outgrown from minced distal lung; AT2 cells were expanded as HT2-280-purified alveolospheres and then plated as monolayer on 5% Matrigel. All cultures were then treated with 0.3 µM SMG1 inhibitor (SMG1i) or equivalent DMSO vehicle for six hours before RNA extraction.</p>
+      <p>Primary human lung cells were isolated from tissue not used for transplant (UNC IRB protocol 03-1396). AT2, MV, and FB cells were obtained from the same three donors; LAE cells were derived from four additional donors. LAE cells were maintained in submerged culture; MV cells were CD31-bead-enriched from peripheral lung; FB cells were outgrown from minced distal lung; AT2 cells were expanded as HT2-280-purified alveolospheres and then plated as monolayer on 5% Matrigel. All cultures were then treated with 0.3 µM SMG1 inhibitor (SMG1i) or equivalent DMSO vehicle for six hours before RNA extraction.</p>
 
       <h3>Long-read RNA sequencing</h3>
-      <p>PacBio Kinnex full-length cDNA libraries were prepared from isolated RNA per <strong>PacBio protocol 103-238-700 REV07</strong> with two modifications: SMRTbell cleanup used <strong>1.0×</strong> beads (instead of 0.9×) to avoid enriching for long transcripts and obtain properly formed concatenated libraries, and prior to concatenation the eight Kinnex PCR reactions were pooled by <strong>equal mass</strong> (Qubit-based) rather than by fixed volume from each tube. Kinnex FL RNA libraries were sequenced on a <strong>PacBio Revio</strong> instrument with Revio SMRT cells and SPRQ chemistry to an average depth of <span class="tbd">[FLNC depth TBD]</span> FLNC reads. Long reads were aligned to GRCh38 with <code>minimap2 -ax splice:hq --junc-bed known_junctions.bed --MD --cs=long -uf</code>. Full-length transcript isoforms were identified and quantified with the <a href="https://github.com/PacificBiosciences/isocall" target="_blank" rel="noopener">PacBio isocall pipeline</a> (<code>--seq-tech pac-bio-hifi --filter-group no-filters --model-coverage</code>) and classified with SQANTI3.</p>
+      <p>PacBio Kinnex full-length cDNA libraries were prepared from isolated RNA per <strong>PacBio protocol 103-238-700 REV07</strong> with two modifications: SMRTbell cleanup used <strong>1.0×</strong> beads (instead of 0.9×) to avoid enriching for long transcripts and obtain properly formed concatenated libraries, and prior to concatenation the eight Kinnex PCR reactions were pooled by <strong>equal mass</strong> (Qubit-based) rather than by fixed volume from each tube. Kinnex FL RNA libraries were sequenced on a <strong>PacBio Revio</strong> instrument with Revio SMRT cells and SPRQ chemistry to an average depth of <span class="tbd">13 million</span> FLNC reads. Long reads were aligned to GRCh38 with <code>minimap2 -ax splice:hq --junc-bed known_junctions.bed --MD --cs=long -uf</code>. Full-length transcript isoforms were identified and quantified with the <a href="https://github.com/PacificBiosciences/isocall" target="_blank" rel="noopener">PacBio isocall pipeline</a> (<code>--seq-tech pac-bio-hifi --filter-group no-filters --model-coverage</code>) and classified with SQANTI3.</p>
 
       <h3>Short-read RNA sequencing</h3>
       <p>Paired-end stranded, polyA-selected libraries (NEBNext UltraExpress) were sequenced on an Illumina NovaSeq 6000 to a mean depth of ~59 M reads (mean RIN 9.3). Reads were processed with the <a href="https://nf-co.re/rnaseq/" target="_blank" rel="noopener">nf-core RNA-seq pipeline</a> v3.14.0 (Nextflow 24.04.4): Trim Galore 0.6.7 + cutadapt 4.6 for QC and trimming, STAR 2.7.10a for alignment to GRCh38 + GENCODE v49, and Salmon 1.10.1 with <code>tximport</code> for gene- and isoform-level quantification.</p>
 
       <h3>Differential isoform expression (SMG1i vs DMSO)</h3>
-      <p>Isoform counts from the SQANTI3-classified isocall output were organised into an edgeR <code>DGEList</code>, filtered with <code>filterByExpr</code> (<code>min.count = 5, min.total.count = 10</code>) to <strong>162,800 isoforms</strong>, TMM-normalised, and fit with limma-voom under the design <code>~ cell_type + treatment + cell_type:treatment</code> with LAE as the reference cell type. The paired-donor structure was handled via <code>duplicateCorrelation</code> incorporated as a blocking factor in <code>lmFit</code>. Cell-type-specific SMG1i effects were extracted via <code>contrasts.fit</code> + <code>eBayes</code> moderation. The four per-cell-type contrast estimates were then jointly shrunk across cell types with multivariate adaptive shrinkage (<em>mashr</em>): standard errors were derived from moderated-t ratios, null correlation was estimated with <code>estimate_null_correlation_simple</code> from a random feature subset, and covariance structures included both data-driven (PCA-based from univariate <code>mash_1by1</code> at lfsr &lt; 0.05) and canonical (<code>cov_canonical</code>) matrices. An isoform is called <strong>NMD-responsive</strong> in a given cell type when its mashr <code>lfsr &lt; 0.05</code> AND its posterior-mean log₂ fold-change is positive.</p>
+      <p>Isoform counts from the SQANTI3-classified isocall output were organised into an edgeR <code>DGEList</code>, filtered with <code>filterByExpr</code> (<code>min.count = 5, min.total.count = 10</code>) to <strong>162,800 isoforms</strong>, TMM-normalised, and fit with limma-voom under the design <code>~ cell_type + treatment + cell_type:treatment</code> with LAE as the reference cell type. The paired-donor structure was handled via <code>duplicateCorrelation</code> incorporated as a blocking factor in <code>lmFit</code>. Cell-type-specific SMG1i effects were extracted via <code>contrasts.fit</code> + <code>eBayes</code> moderation. The four per-cell-type contrast estimates were then jointly shrunk across cell types with multivariate adaptive shrinkage (<em>mashr</em>): standard errors were derived from moderated-t ratios, null correlation was estimated with <code>estimate_null_correlation_simple</code> from a random feature subset, and covariance structures included both data-driven (PCA-based from univariate <code>mash_1by1</code> at lfsr &lt; 0.05) and canonical (<code>cov_canonical</code>) matrices. An isoform is called <strong>NMD-susceptible</strong> in a given cell type when its mashr <code>lfsr &lt; 0.05</code> AND its posterior-mean log₂ fold-change is positive.</p>
 
       <h3>Transcript structures</h3>
       <p>Exon coordinates displayed in the atlas come from:</p>
@@ -168,7 +168,7 @@
         <li><strong>TD2 (caution)</strong> — fallback via SQANTI3 / TransDecoder2 (TD2)–called ORF. TD2 is known to <strong>avoid PTC-containing ORFs</strong>, so the CDS shown for NMD-substrate isoforms may not be the biologically active one. Displayed with a visible ⚠ badge.</li>
         <li><strong>None</strong> — no CDS available (e.g., lncRNA-biotyped GENCODE transcripts, structurally short transcripts with no ORF).</li>
       </ul>
-      <p>Cell-type <strong>DMSO-baseline CPM</strong> (mean across DMSO samples per cell type, TMM-normalized from the mashr DIE pipeline) and NMD response (log₂FC, lfsr, NMD-responsive flag) are shown per cell type. Undetected genes (no isoform reaching the mashr expression filter in any of the four cell types) are indexed but have no gene shard; a "not detected in our data" message with an Ensembl link is shown when such a gene is queried.</p>
+      <p>Cell-type <strong>DMSO-baseline CPM</strong> (mean across DMSO samples per cell type, TMM-normalized from the mashr DIE pipeline) and NMD response (log₂FC, lfsr, NMD-susceptible flag) are shown per cell type. Undetected genes (no isoform reaching the mashr expression filter in any of the four cell types) are indexed but have no gene shard; a "not detected in our data" message with an Ensembl link is shown when such a gene is queried.</p>
 
       <h3>Data conventions</h3>
       <ul>
@@ -184,7 +184,7 @@
 
       <h3>Paper citation</h3>
       <blockquote class="cite-block">
-        Leshem O, Kasai N, …, Randell S, Castaldi PJ. Long-read characterization of nonsense-mediated decay across primary human lung cell types. <em>[Journal TBD]</em>, 2026. <span class="tbd">[DOI pending]</span>
+        Leshem Y, Kasai Y, Thakur SM, Paul A, Ziniti J, Boueiz A, Saferali A, DeMarzio M, Laederach A, Randell SH, Castaldi PJ. Long-read characterization of nonsense-mediated decay across primary human lung cell types. <em>[Journal TBD]</em>, 2026. <span class="tbd">[DOI pending]</span>
       </blockquote>
 
       <h3>Data-version citation</h3>
@@ -206,8 +206,8 @@
       <p>This atlas accompanies <em>Leshem et al.</em> "Long-read characterization of nonsense-mediated decay
          across primary human lung cell types" (2026). Search a gene above to view its isoforms,
          transcript structures, expression, and NMD response under SMG1 inhibition (treatment that
-         stabilises NMD substrates) across alveolar type 2 (AT), large airway epithelial (DD), fibroblast (FB),
-         and microvascular endothelial (MV) cells.</p>
+         stabilises NMD substrates) across alveolar type 2 (AT2), large airway epithelial (LAE), fibroblast (Fib),
+         and microvascular endothelial (MVE) cells.</p>
       <p>Featured genes: <a href="#" data-gene="ENSG00000263465.5">SRSF8</a>,
          <a href="#" data-gene="ENSG00000128272.20">ATF4</a>,
          <a href="#" data-gene="ENSG00000112081.19">SRSF3</a>,
@@ -221,8 +221,8 @@
     <small>Manuscript: <em>Leshem et al. 2026</em> · Contact: <a href="mailto:repjc@channing.harvard.edu">repjc@channing.harvard.edu</a></small>
   </footer>
 
-  <script type="module" src="transcript_viz.js?v=18"></script>
-  <script type="module" src="transcript_stack.js?v=18"></script>
-  <script type="module" src="app.js?v=18"></script>
+  <script type="module" src="transcript_viz.js?v=19"></script>
+  <script type="module" src="transcript_stack.js?v=19"></script>
+  <script type="module" src="app.js?v=19"></script>
 </body>
 </html>
