@@ -1,10 +1,11 @@
 # Regenerable one-time GENCODE parse; ~27 MB and reproducible from the GTF
 .gencode_v49_cache.rds
 
-# Chromosome shards — 430 MB, regenerable in ~5 min from the R script and
-# upstream data. Kept out of git to keep the repo lean; deploy pipelines push
-# them directly to the static host. The small `data/manifest.json`,
-# `data/quantiles.json`, and `data/genes_index.json` ARE committed so any
-# clone shows the intended shape.
+# Per-gene shards — ~380 MB across ~17k files, regenerable in ~7 min from the
+# R script and upstream data. Kept out of git to keep the repo lean; deploy
+# pipelines push them directly to the static host. The small manifest,
+# quantiles, and genes_index JSONs ARE committed so any clone shows the shape.
+public/data/genes/
 public/data/chroms/
 .sqanti3_cache.rds
+.dmso_cpm_cache.rds

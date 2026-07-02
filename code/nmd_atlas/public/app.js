@@ -363,6 +363,15 @@ function renderGenePanel() {
   document.getElementById("gene-symbol").textContent = currentGene.hgnc_symbol || "(no symbol)";
   document.getElementById("gene-id").textContent = currentGene.gene_id;
 
+  // Disable the "show annotated" toggle for undetected genes — the placeholder
+  // has no GENCODE structures to reveal (we don't ship shards for the ~62 k
+  // undetected genes). The Ensembl link in the message is the way to see them.
+  const chk = document.getElementById("show-gencode-all");
+  if (chk) {
+    chk.disabled = !!currentGene.undetected;
+    chk.parentElement && chk.parentElement.classList.toggle("disabled", !!currentGene.undetected);
+  }
+
   renderIsoformTable();
   renderSelectedIso();
   renderStackedView();
@@ -395,9 +404,15 @@ function renderIsoformTable() {
       const nGencode = state.currentGene.gencode_n_annotated || 0;
       let helpMsg;
       if (state.currentGene.undetected) {
+        // Undetected genes have no per-gene shard — GENCODE annotations for
+        // them aren't in this atlas. Link users to Ensembl for the structure.
+        const gid = state.currentGene.gene_id;
+        const gidBase = gid.replace(/\.\d+$/, "");
+        const sym = state.currentGene.hgnc_symbol || gidBase;
+        const ensemblUrl = `https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=${encodeURIComponent(gidBase)}`;
         helpMsg = `<div class="hint"><strong>Not detected in this atlas.</strong>
              This gene did not pass the SMG1i-vs-DMSO expression filter in AT2, LAE, Fib, or MVE cells${nGencode ? `; GENCODE v49 annotates ${nGencode} transcript${nGencode > 1 ? "s" : ""} for it.` : "."}
-             Try searching a different gene.</div>`;
+             View <a href="${ensemblUrl}" target="_blank" rel="noopener">${escapeHtml(sym)} on Ensembl</a> for the annotated structures.</div>`;
       } else if (nAnnot > 0 && !state.filter.showAnnotated) {
         helpMsg = `<div class="hint">No isoforms are expressed above the CPM filter in our data.
              <strong>This gene has ${nAnnot} annotated GENCODE transcript${nAnnot > 1 ? "s" : ""} that aren't detected.</strong>

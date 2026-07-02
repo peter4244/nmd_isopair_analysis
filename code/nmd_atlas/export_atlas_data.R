@@ -37,6 +37,12 @@ CTS <- c("AT", "DD", "FB", "MV")
 ct_lower <- tolower(CTS)
 CACHE_RDS <- file.path(REPO, "nmd_orf_model_v5_4ct", "tmp",
                        "ref_orf_ptc_cache_with_nmd_2026.5.12.rds")
+# Full-cohort isoform-level DGEList used by the mashr DIE pipeline. Per-CT
+# DMSO-baseline CPM is derived from this — much broader than the ref-AUG
+# cache (162k+ isoforms vs 1,912) and stays in lockstep with the mashr scope.
+DGE_RDS   <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
+                       "data", "isocall", "dge_isocall_unfiltered.rds")
+CPM_CACHE <- file.path(HERE, ".dmso_cpm_cache.rds")
 STR_RDS  <- NULL  # No longer used — SQANTI3 GTF is the primary structural source.
 CDS_RDS  <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
                       "isopair_wrapper", "data_mashr", "cds.rds")
@@ -195,11 +201,41 @@ for (ct in CTS) setnames(lfsr, sprintf("Smg1i_in_%s", ct), sprintf("lfsr_%s", ct
 lfsr <- lfsr[, .(isoform_id,
                   lfsr_AT, lfsr_DD, lfsr_FB, lfsr_MV)]
 
-cat("Loading expression (CPM per CT) from ref-AUG cache ...\n")
-cache <- readRDS(CACHE_RDS)
-es <- as.data.table(cache$expr_score)
-es <- es[, .(isoform_id, gene_id,
-              cpm_AT, cpm_DD, cpm_FB, cpm_MV)]
+cat("Computing per-CT DMSO CPM from full DGEList ...\n")
+build_dmso_cpm_cache <- function() {
+  suppressPackageStartupMessages({
+    library(edgeR)
+  })
+  dge <- readRDS(DGE_RDS)
+  # Subset to the manuscript's 4-CT scope (both treatments) so we match mashr's
+  # inclusion set. filterByExpr with group = treatment×ct interaction is the
+  # same criterion mashr used to arrive at ~162,800 tested isoforms.
+  keep_samp <- dge$samples$ct %in% CTS
+  dge <- dge[, keep_samp]
+  group <- interaction(dge$samples$treatment, dge$samples$ct, drop = TRUE)
+  keep_iso <- filterByExpr(dge, group = group,
+                            min.count = 5, min.total.count = 10)
+  dge <- dge[keep_iso, , keep.lib.sizes = FALSE]
+  dge <- calcNormFactors(dge, method = "TMM")
+  cpm_mat <- cpm(dge)
+  # Compute DMSO-baseline mean CPM per CT — Pete's standing rule that baseline
+  # expression is DMSO-only (never pool with Smg1i). Isoforms that pass filter
+  # only because Smg1i induces them will legitimately show small DMSO values.
+  is_dmso <- dge$samples$treatment == "DMSO"
+  out <- data.table(isoform_id = rownames(cpm_mat))
+  for (ct in CTS) {
+    cols <- which(is_dmso & dge$samples$ct == ct)
+    out[[sprintf("cpm_%s", ct)]] <- round(rowMeans(cpm_mat[, cols, drop = FALSE]), 3)
+  }
+  cat(sprintf("  DMSO-baseline CPM: %d isoforms x %d CTs (%d DMSO of %d total samples used for the mean)\n",
+              nrow(out), length(CTS), sum(is_dmso), ncol(cpm_mat)))
+  saveRDS(out, CPM_CACHE)
+  out
+}
+es <- if (file.exists(CPM_CACHE)) {
+  cat(sprintf("  Loading DMSO CPM cache from %s ...\n", basename(CPM_CACHE)))
+  readRDS(CPM_CACHE)
+} else build_dmso_cpm_cache()
 
 # ── Reference-AUG projection lookup (paper's canonical CDS methodology) ──
 # For each novel comparator paired to a reference isoform: project the
@@ -233,8 +269,7 @@ cat(sprintf("  Reference-AUG projections available: %d\n", nrow(ref_atg)))
 # ── Stitch the master isoform table ──
 cat("Building master isoform table ...\n")
 m <- merge(mashr, lfsr, by = "isoform_id", all.x = TRUE)
-m <- merge(m, es[, .(isoform_id, cpm_AT, cpm_DD, cpm_FB, cpm_MV)],
-            by = "isoform_id", all.x = TRUE)
+m <- merge(m, es, by = "isoform_id", all.x = TRUE)
 m <- merge(m, cds[, .(isoform_id, coding_status, cds_start, cds_stop, orf_length)],
             by = "isoform_id", all.x = TRUE)
 m <- merge(m, sqanti[, .(isoform_id = transcript_id,
@@ -536,7 +571,7 @@ manifest <- list(
   n_isoforms   = nrow(m),
   n_gene_shards = n_built,
   cell_types   = CTS,
-  data_version = "2026.7.2"
+  data_version = "2026.7.2b"
 )
 write_json(manifest, file.path(OUT_DIR, "manifest.json"), auto_unbox = TRUE)
 cat("Done.\n")
