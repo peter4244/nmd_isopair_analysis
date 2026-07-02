@@ -246,17 +246,19 @@ function routeToHash() {
     }
   }
 }
+// Canonical citation URL — always shown regardless of which host the visitor
+// arrived at (pages.dev preview URLs vs. the stable custom domain).
+const CANONICAL_URL = "https://nmd-lungcells.castaldilab.org";
 function populateDocsPlaceholders() {
   const mf = state.manifest;
   if (!mf) return;
   const ver = mf.data_version || "unknown";
   const date = (mf.generated_at || "").split(" ")[0] || "unknown";
-  const url = (window.location.origin + window.location.pathname).replace(/\/$/, "");
   const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
   set("about-version", `${ver} · generated ${date}`);
   set("cite-version",  ver);
   set("cite-date",     date);
-  set("cite-url",      url || "(atlas URL TBD)");
+  set("cite-url",      CANONICAL_URL);
 }
 
 // ── gene cache ──
