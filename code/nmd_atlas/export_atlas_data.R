@@ -510,15 +510,58 @@ cat(sprintf("Skipped %d undetected genes (kept in index; not written to chr shar
 cat(sprintf("Buffered %d gene shards across %d chromosome groups.\n",
             n_built, length(by_chr)))
 
-# Write one JSON file per chromosome
+# Write one JSON file per chromosome, splitting any chromosome whose serialized
+# payload exceeds MAX_PART_MB into `chrN_p1`, `chrN_p2`, ... parts. Cloudflare
+# Pages rejects individual files >25 MB, so we keep everything comfortably
+# under with a 20 MB budget. Split parts are addressed identically to whole-chr
+# shards by the frontend — the gene index just stores the part name in `chr`.
+MAX_PART_MB    <- 20
+MAX_PART_BYTES <- MAX_PART_MB * 1024 * 1024
+write_part <- function(part_key, gene_map) {
+  out_path <- file.path(CHR_SHARD_DIR, sprintf("%s.json", part_key))
+  write_json(gene_map, out_path, auto_unbox = TRUE, na = "null", null = "null")
+  size_mb <- round(file.info(out_path)$size / 1024^2, 2)
+  cat(sprintf("  %-10s  %6d genes  %.2f MB\n", part_key, length(gene_map), size_mb))
+  size_mb
+}
 n_files <- 0
 for (chr_key in names(by_chr)) {
-  out_path <- file.path(CHR_SHARD_DIR, sprintf("%s.json", chr_key))
-  write_json(by_chr[[chr_key]], out_path,
-              auto_unbox = TRUE, na = "null", null = "null")
-  size_mb <- round(file.info(out_path)$size / 1024^2, 2)
-  cat(sprintf("  %-8s  %6d genes  %.2f MB\n", chr_key, length(by_chr[[chr_key]]), size_mb))
-  n_files <- n_files + 1
+  gene_map <- by_chr[[chr_key]]
+  gene_ids <- names(gene_map)
+  # Estimate per-gene serialized size to know if we need to split
+  sizes <- vapply(gene_ids, function(gid) {
+    nchar(toJSON(gene_map[[gid]], auto_unbox = TRUE, na = "null", null = "null"),
+          type = "bytes") + nchar(gid, type = "bytes") + 5L  # "":,  overhead
+  }, integer(1))
+  total_bytes <- sum(sizes) + 2L  # {} braces
+  if (total_bytes <= MAX_PART_BYTES) {
+    write_part(chr_key, gene_map)
+    n_files <- n_files + 1
+    next
+  }
+  # Split: greedy bin-pack in original gene order into parts under the budget
+  part_idx <- 1L
+  cur_ids  <- character(0)
+  cur_bytes <- 2L
+  for (i in seq_along(gene_ids)) {
+    if (length(cur_ids) > 0 && cur_bytes + sizes[i] > MAX_PART_BYTES) {
+      part_key <- sprintf("%s_p%d", chr_key, part_idx)
+      write_part(part_key, gene_map[cur_ids])
+      for (g in cur_ids) gene_chr_map[g] <- part_key
+      n_files <- n_files + 1
+      part_idx  <- part_idx + 1L
+      cur_ids   <- character(0)
+      cur_bytes <- 2L
+    }
+    cur_ids <- c(cur_ids, gene_ids[i])
+    cur_bytes <- cur_bytes + sizes[i]
+  }
+  if (length(cur_ids) > 0) {
+    part_key <- sprintf("%s_p%d", chr_key, part_idx)
+    write_part(part_key, gene_map[cur_ids])
+    for (g in cur_ids) gene_chr_map[g] <- part_key
+    n_files <- n_files + 1
+  }
 }
 cat(sprintf("Wrote %d chromosome shards to %s\n", n_files, CHR_SHARD_DIR))
 
@@ -544,7 +587,7 @@ manifest <- list(
   n_isoforms   = nrow(m),
   n_chromosomes = n_files,
   cell_types   = CTS,
-  data_version = "2026.7.1b"
+  data_version = "2026.7.1c"
 )
 write_json(manifest, file.path(OUT_DIR, "manifest.json"), auto_unbox = TRUE)
 cat("Done.\n")
