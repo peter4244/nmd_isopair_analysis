@@ -7,7 +7,7 @@ const IN_PANEL_STACK_CAP = 8;
 const CTS = ["AT", "DD", "FB", "MV"];
 const CT_FULL = { AT: "Alveolar type 2", DD: "Large airway epithelial",
                    FB: "Fibroblast", MV: "Microvascular endothelial" };
-const CT_SHORT = { AT: "AT2", DD: "LAE", FB: "FB", MV: "MVE" };
+const CT_SHORT = { AT: "AT2", DD: "LAE", FB: "FB", MV: "MV" };
 const CT_COLOR = { AT: "#4c72b0", DD: "#dd8452", FB: "#55a868", MV: "#c44e52" };
 const NMD_COLOR = "#ef8a62";   // canonical NMD palette
 const PLOT_FONT = { family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", size: 11, color: "#1f2937" };
@@ -413,7 +413,7 @@ function renderIsoformTable() {
         const sym = state.currentGene.hgnc_symbol || gidBase;
         const ensemblUrl = `https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=${encodeURIComponent(gidBase)}`;
         helpMsg = `<div class="hint"><strong>Not detected in this atlas.</strong>
-             This gene did not pass the SMG1i-vs-DMSO expression filter in AT2, LAE, FB, or MVE cells${nGencode ? `; GENCODE v49 annotates ${nGencode} transcript${nGencode > 1 ? "s" : ""} for it.` : "."}
+             This gene did not pass the SMG1i-vs-DMSO expression filter in AT2, LAE, FB, or MV cells${nGencode ? `; GENCODE v49 annotates ${nGencode} transcript${nGencode > 1 ? "s" : ""} for it.` : "."}
              View <a href="${ensemblUrl}" target="_blank" rel="noopener">${escapeHtml(sym)} on Ensembl</a> for the annotated structures.</div>`;
       } else if (nAnnot > 0 && !state.filter.showAnnotated) {
         helpMsg = `<div class="hint">No isoforms are expressed above the CPM filter in our data.
