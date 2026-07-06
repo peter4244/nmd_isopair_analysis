@@ -634,8 +634,8 @@ function deciles(qs, v) {
   return 10;
 }
 
-// ── log2FC chart with NMD-responsive flag ──
-// NMD-responsive cell types coloured orange and marked with a star inside the
+// ── log2FC chart with NMD susceptible flag ──
+// NMD susceptible cell types coloured orange and marked with a star inside the
 // x-axis label; the bar value is shown on hover only (no double-labeling above).
 function renderLogfcChart(iso) {
   const vals = CTS.map(ct => iso.logfc[ct] ?? 0);
@@ -649,7 +649,7 @@ function renderLogfcChart(iso) {
     x: CTS, y: vals, type: "bar",
     marker: { color: colors },
     customdata: CTS.map((ct, i) => [CT_FULL[ct], responsive[i] ? "yes" : "no"]),
-    hovertemplate: "<b>%{customdata[0]}</b><br>log₂FC: %{y:.2f}<br>NMD-responsive: %{customdata[1]}<extra></extra>",
+    hovertemplate: "<b>%{customdata[0]}</b><br>log₂FC: %{y:.2f}<br>NMD susceptible: %{customdata[1]}<extra></extra>",
   }], {
     margin: { t: 14, r: 10, b: 58, l: 64 },
     xaxis: {
