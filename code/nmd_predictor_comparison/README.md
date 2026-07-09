@@ -87,7 +87,7 @@ training domain.
 ## Cross-references
 
 - Analysis pre-registration and decision log: `METHODS.md`
-- Final paper figure: `figures/SupplementalFigures/ModelComparison/`
+- Final paper figure: `figures/SupplementalFigures/SF42_ModelComparison/`
   (created after the analysis is run and we've agreed on the panel layout)
 - Companion mainline figure: `figures/multipanel/figure5_dl_model/` (our
   model's training, architecture, and other interpretability analyses)

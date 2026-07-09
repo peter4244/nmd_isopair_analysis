@@ -22,7 +22,7 @@ library(DT)
 HERE     <- "."
 SCORES   <- file.path(HERE, "per_isoform_scores_2026.6.20.tsv")
 METRICS  <- file.path(HERE, "metrics_summary_2026.6.20.tsv")
-FIG_PNG  <- "../../figures/SupplementalFigures/ModelComparison/figure_s_model_comparison.png"
+FIG_PNG  <- "../../figures/SupplementalFigures/SF42_ModelComparison/figure_s_model_comparison.png"
 
 scores  <- fread(SCORES)
 metrics <- fread(METRICS)
@@ -229,7 +229,7 @@ outperforms both rule-based predictors:
 
 ## 6. Figure
 
-```{r figure, echo=FALSE, out.width="100%", fig.cap="Supplemental Figure S_x — see figures/SupplementalFigures/ModelComparison/figure_s_model_comparison_legend.md for the published legend."}
+```{r figure, echo=FALSE, out.width="100%", fig.cap="Supplemental Figure S_x — see figures/SupplementalFigures/SF42_ModelComparison/figure_s_model_comparison_legend.md for the published legend."}
 include_graphics(FIG_PNG)
 ```
 
@@ -298,7 +298,7 @@ All files live under `code/nmd_predictor_comparison/`:
 | this report (`.Rmd` and rendered `.html`)  | `Rscript -e 'rmarkdown::render(...)'` |
 
 Figure + legend:
-`figures/SupplementalFigures/ModelComparison/figure_s_model_comparison.{py,pdf,png,_legend.md}`.
+`figures/SupplementalFigures/SF42_ModelComparison/figure_s_model_comparison.{py,pdf,png,_legend.md}`.
 
 ```{r session-info, echo=FALSE}
 sessionInfo()

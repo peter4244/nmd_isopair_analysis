@@ -145,7 +145,7 @@ def build_figure():
         fontsize=LABEL_FS, color=C_TITLE,
     )
     ax.set_xlabel("")
-    ax.set_ylabel("Attention fraction on uORFs\n(Path B-strict)",
+    ax.set_ylabel("Attention fraction on uORFs",
                   fontsize=BODY_FS, color=C_TITLE)
     ax.set_ylim(-0.02, y_top + 2 * spacing + 4 * text_off)
     ax.tick_params(axis="y", labelsize=LABEL_FS, colors=C_TITLE)

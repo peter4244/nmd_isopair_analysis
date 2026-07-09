@@ -1,0 +1,9 @@
+**SF42 | Head-to-head correlation of three NMD predictors with the mashr gold standard, pooled and per PTC subclass.**
+
+Three NMD-prediction models are scored against the same continuous gold standard — the mashr posterior-mean log₂ fold-change of each transcript under SMG1 inhibition — on the held-out test set of long-read-observed transcripts (chromosomes 1, 3, 5, 7; n = 561 total: 255 NMD-susceptible with a premature termination codon (NMD+/PTC+), 30 NMD-susceptible without a premature termination codon (NMD+/PTC−), and 276 non-NMD Controls). The models compared are NMDetective-B (Lindeboom *et al.* 2019), the NMDEP rule-tree baseline (Saadat & Fellay 2025), and the deep-learning model developed here.
+
+**(A)** Predicted NMD score (x-axis) versus the gold-standard log fold-change (y-axis), one subpanel per model. Each point is one transcript, coloured by subclass. Pooled Spearman correlation is annotated. All three models reach a similar pooled correlation (0.76–0.77), driven by the easy separation of NMD-susceptible transcripts from Controls.
+
+**(B)** Within-subclass Spearman correlation per model — the same scoring restricted to one PTC subclass at a time, isolating each model's ability to rank-order NMD susceptibility among transcripts of the same class. The deep-learning model achieves Spearman 0.34 (PTC+), 0.51 (PTC−), and 0.23 (Control). The two rule-tree models achieve ≤0.22 within PTC+, ≤0.01 within Controls, and are anti-correlated with the gold standard within PTC− (Spearman −0.14), because every PTC− transcript is by definition not flagged as a premature stop by the rule cascade despite being a real NMD substrate.
+
+**Abbreviations.** mashr, multivariate adaptive shrinkage; NMD, nonsense-mediated decay; NMDEP, neural-network NMD efficacy predictor (Saadat & Fellay 2025); PTC, premature termination codon; SMG1, suppressor of morphogenesis in genitalia-1 (the kinase whose inhibition stabilises NMD substrates).

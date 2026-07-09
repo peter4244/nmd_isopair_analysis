@@ -1,0 +1,3 @@
+**SF37 | Stop-codon usage in NMD susceptible vs non-NMD isoforms.**  Within-class frequency of the three canonical stop codons (UGA / UAA / UAG) at the priority ORF of each transcript in the deep-learning model's held-out test cohort (n = 2,268 NMD susceptible, n = 7,863 non-NMD). Priority ORF is the reference CDS ORF (ref-AUG traced from the gene's dominant non-NMD isoform) when available, then the TransDecoder2 CDS ORF, then the highest-Kozak-scoring ORF (see Methods, Priority ORF Selection). Percentages: UGA 55.9% vs 48.1%; UAA 23.9% vs 29.9%; UAG 20.2% vs 22.0%.
+
+**Abbreviations.** NMD, nonsense-mediated decay; ORF, open reading frame; UGA / UAA / UAG, the three canonical stop codons in RNA notation.

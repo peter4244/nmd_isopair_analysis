@@ -10,7 +10,7 @@ Layout (~22.32 in × 12.00 in):
   │ Model  │ D  Structural   │  E    │
   │ arch.  │ features        │       │
   │        ├─────────────────────────┤
-  │        │ F  STOP SHAP*   │  G    │
+  │        │ F  STOP SHAP    │  G    │
   └────────┴─────────────────────────┘
 
 Right side: 3 rows × 2 cols, alphabetical order B C / D E / F G. Each
@@ -20,11 +20,6 @@ aspect.
 
 Panel A (native aspect 0.86) occupies the left column at full composite
 height (12 in), preserving its native shape (width = 0.86 × 12 ≈ 10.32 in).
-
-* E and F are draft placeholders extracted from the legacy
-  deep_nmd_model report (NMD-side, signed SHAP × input). They will be
-  re-rendered natively against motif_logo_{atg,stop}_joint_*.tsv once
-  Explorer comes back. Their .py scripts already expect that swap.
 
 Cell width W = 6.0 in (1.5:1 → cell height 4.0 in).
 """

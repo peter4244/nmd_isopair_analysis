@@ -13,8 +13,8 @@ exports into Figure 5.
 | **B** | ROC + PR inset (AUC = 0.93, AUPRC = 0.83) | `figure5_panelB_performance.py` |
 | **C** | KernelSHAP branch decomposition (Structural / Stop / ATG) | `figure5_panelC_branch_importance.py` |
 | **D** | Mean \|SHAP\| per structural feature | `figure5_panelD_structural_features.py` |
-| **E** | Per-nucleotide signed SHAP × input around AUG, NMD class — draft placeholder, see below | `figure5_panelE_atg_logo.py` |
-| **F** | Same for stop codon — draft placeholder | `figure5_panelF_stop_logo.py` |
+| **E** | Per-nucleotide signed SHAP × input around AUG, NMD class | `figure5_panelE_atg_logo.py` (reads `data/motif_logo_atg_joint_atg500_stop500.tsv`) |
+| **F** | Same for stop codon | `figure5_panelF_stop_logo.py` (reads `data/motif_logo_stop_joint_atg500_stop500.tsv`) |
 | **G** | Path B-strict uORF attention at n=1,166 Subset 2 | `figure5_panelG_uorf_attention.py` + `data_export_n1166.R` |
 
 ## Composite
@@ -30,17 +30,16 @@ Legend prose: [`figure5_composite_legend.md`](figure5_composite_legend.md).
 
 ## Status
 
-- **A, B, C, D, G — final.** Data and renders match the model exports
-  at `~/claude_projects/NMD_orf_model_v5_4ct/results_4ct/`.
-- **E and F — DRAFT placeholders.** Cropped from the legacy
-  `deep_nmd_model/figures/fig3a2_kozak_zoom.png` (Panel E) and the
-  fig4a_stop_logo embedded in `orf_model_report_v5.html` (Panel F).
-  The native source TSVs (`motif_logo_{atg,stop}_joint_*.tsv`) are not
-  on this laptop; once Explorer is back, re-run
-  `scripts/export_joint_motif_logos.py` there, scp the TSVs to
-  `data/`, and the two panel scripts (already structured for the
-  swap — see their header comments) re-render from scratch with
-  matching style (Kozak band overlay on E, our composite axis labels).
+All seven panels (A–G) are final. Data and renders match the model
+exports at `~/claude_projects/NMD_orf_model_v5_4ct/results_4ct/`. Panels
+E and F are rendered natively with `logomaker` against the pooled
+5-run DeepSHAP motif-logo TSVs (`data/motif_logo_{atg,stop}_joint_atg500_stop500.tsv`);
+they share the same coordinate convention (first nucleotide of the codon
+= +1, no position 0) so the two windows read in parallel.
+
+Style: all matplotlib panels use the shared ggplot-mimic shim
+(`figures/lib/ggplot_style.py`) and `assert_text_within_canvas` before
+`savefig`. Layout is checked by `validate_multipanel_layout`.
 
 ## Regenerating
 
@@ -62,5 +61,5 @@ python3 figure5_composite.py                      # composite
 - Manuscript §5 (Google Doc): see `paper/results_to_code_map.md` §5 entry.
 - Model architecture, training, METHODS: `NMD_orf_model_v5_4ct/METHODS.md`.
 - TD2 bias context for Panel G's strict-uORF rule:
-  `figures/SupplementalFigures/TD2BiasEvidence/README.md`,
+  `figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/README.md`,
   `TD2_BIAS_AUDIT.md` (repo root).
