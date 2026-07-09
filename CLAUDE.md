@@ -110,7 +110,8 @@ When writing or auditing methods text, pull from the linked repos' METHODS.md / 
 ## Working in this repo
 
 - **Branch from `main`** for feature work; `main` is the dual-push target.
-- **Use the figure tooling in `figures/lib/`** (not `~/.claude/`) so figures stay reproducible for both Pete and Yul.
+- **Figure work: open `~/.claude/memory/figures_workflow_INDEX.md` FIRST** for any figure task (new panel, edit, legend, mockup). It sequences the universal workflow. Publications runbook: `figures_workflow_publications.md`.
+- **Use the figure tooling in `figures/lib/`** (not `~/.claude/`) so figures stay reproducible for both Pete and Yul. `ggplot_style.py` is the SSOT for fonts/colors; `validate_figure_layout.py` has the six-validator gate.
 - **Save analysis outputs to `tmp/`** (regenerable, gitignored) or to `code/` (tracked) — never to `results/` outside the force-tracked Version_6.0 subtree.
 - **For deep-learning model work, clone `NMD_orf_model_v5_4ct` separately.** This repo doesn't contain training code; a stale local rsync mirror exists at `results/isoform_transitions/NMD_orf_model_v5/` but is not version-controlled and should not be edited.
 

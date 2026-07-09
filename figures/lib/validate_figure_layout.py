@@ -22,7 +22,9 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
+import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import matplotlib.text as mtext
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
@@ -45,6 +47,10 @@ class TextElement:
     bb_xmax: float = 0.0
     bb_ymin: float = 0.0
     bb_ymax: float = 0.0
+    # True when the text was placed with transform=ax.transAxes (panel
+    # letters, in-corner labels). Data-rect comparisons don't apply to
+    # these because their (x, y) live in axes-fraction, not data coords.
+    is_axes_frac: bool = False
 
 
 @dataclass
@@ -99,6 +105,17 @@ def _extract_elements(fig, ax):
         label = t.get_text()
         if not label or not label.strip():
             continue
+        # Detect transform=ax.transAxes text (panel letters, corner
+        # labels). We still extract them — text-text overlap and
+        # canvas-edge checks apply — but flag them so data-rect checks
+        # can skip them (their (x, y) live in axes-frac, comparing to
+        # data-coord rects like histogram bars is meaningless).
+        is_axes_frac = False
+        try:
+            if t.get_transform() is ax.transAxes:
+                is_axes_frac = True
+        except Exception:
+            pass
         alpha = t.get_alpha()
         if alpha is None:
             alpha = 1.0
@@ -114,7 +131,8 @@ def _extract_elements(fig, ax):
         va = t.get_va()
 
         te = TextElement(idx=i, x=x, y=y, label=label,
-                         fontsize=fontsize, ha=ha, va=va, alpha=alpha)
+                         fontsize=fontsize, ha=ha, va=va, alpha=alpha,
+                         is_axes_frac=is_axes_frac)
 
         # Use renderer to get actual bounding box, then convert to data coords
         try:
@@ -532,6 +550,11 @@ def validate_figure_layout(
         for te in texts:
             if te.alpha < 0.1:
                 continue
+            # Skip axes-fraction text (panel letters, corner labels) —
+            # their (x, y) is in axes-frac, comparing to data-coord rects
+            # is nonsense (see is_axes_frac note in TextElement).
+            if te.is_axes_frac:
+                continue
             best_rect = None
             best_area = float('inf')
             for r in rects:
@@ -608,6 +631,9 @@ def validate_figure_layout(
     if texts and rects:
         for te in texts:
             if te.alpha < 0.1:
+                continue
+            # Skip axes-fraction text (panel letters, corner labels).
+            if te.is_axes_frac:
                 continue
             for r in rects:
                 if r.facecolor is None:
@@ -915,7 +941,15 @@ def validate_multipanel_layout(
         for j in range(i + 1, len(items)):
             a, b = items[i], items[j]
             if a["owner"] is not None and a["owner"] is b["owner"]:
-                continue
+                # Same-axis pairs are usually skipped (adjacent ticks are
+                # inevitable in a grid) — but panel letters vs the ticks
+                # of their OWN axis is a real defect class (2026-07-09
+                # SF34 "C" overlapping ytick "60"). Keep those pairs
+                # checked; skip everything else with the same owner.
+                pair_kinds = {a["kind"], b["kind"]}
+                if not (pair_kinds == {"axes_text", "tick"} or
+                        pair_kinds == {"axes_text", "axislabel"}):
+                    continue
             ax0, ax1, ay0, ay1 = a["bb"]
             bx0, bx1, by0, by1 = b["bb"]
             # Check overlap (bboxes intersect)
@@ -984,3 +1018,464 @@ def validate_multipanel_layout(
             print(f"  [{w.severity}] {w.check}: {w.message}")
 
     return result
+
+
+# ============================================================================
+# assert_style_symmetric
+#
+# Fails if sibling axes in the same figure use different font sizes for the
+# same structural role (xtick labels, ytick labels, xaxis label, yaxis
+# label). Catches the SF33 Panel B < A/C bug — a single hardcoded local
+# override drifts one panel out of the module's shared BODY_FS.
+#
+# Rationale: `ggplot_style.py` publishes BODY_FS as the canonical size.
+# Every panel imports it. Any panel-local literal like fontsize=11 or
+# LABEL_FS=12 introduces cross-panel drift that the multipanel layout
+# validator won't catch (it checks positions, not sizes).
+#
+# The check is intentionally strict — any deviation between sibling axes on
+# the SAME role is flagged. If different roles have different sizes (xtick
+# ≠ ylabel), that's fine and expected; we only compare like to like.
+# ============================================================================
+def assert_style_symmetric(fig, *, tolerance_pt=0.5):
+    """Raise if font sizes for the same role differ across sibling axes.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+    tolerance_pt : float
+        Allowed drift between sizes for the same role before flagging.
+        Default 0.5 pt — anything larger is a real inconsistency.
+    """
+    fig.canvas.draw()
+
+    def _first_visible_size(labels):
+        for t in labels:
+            if t.get_visible() and t.get_text() and t.get_text().strip():
+                return t.get_fontsize()
+        return None
+
+    per_axis = {}
+    for i, ax in enumerate(fig.axes):
+        # Skip axes with no visible content (axis-off schematic axes).
+        if not getattr(ax, "axison", True):
+            continue
+        d = {}
+        sz = _first_visible_size(ax.get_xticklabels())
+        if sz is not None:
+            d["xtick"] = sz
+        sz = _first_visible_size(ax.get_yticklabels())
+        if sz is not None:
+            d["ytick"] = sz
+        if ax.xaxis.label.get_text() and ax.xaxis.label.get_text().strip():
+            d["xlabel"] = ax.xaxis.label.get_fontsize()
+        if ax.yaxis.label.get_text() and ax.yaxis.label.get_text().strip():
+            d["ylabel"] = ax.yaxis.label.get_fontsize()
+        if d:
+            per_axis[i] = d
+
+    if len(per_axis) < 2:
+        return  # nothing to compare
+
+    offenders = []
+    for role in ("xtick", "ytick", "xlabel", "ylabel"):
+        sizes = {}  # size -> [axis indices]
+        for i, d in per_axis.items():
+            if role in d:
+                sz = round(d[role], 1)
+                sizes.setdefault(sz, []).append(i)
+        if len(sizes) < 2:
+            continue
+        unique = sorted(sizes.keys())
+        if unique[-1] - unique[0] > tolerance_pt:
+            parts = [f"{sz}pt on axes {sizes[sz]}" for sz in unique]
+            offenders.append(f"  {role}: " + " vs ".join(parts))
+
+    if offenders:
+        raise AssertionError(
+            "Font size mismatch across sibling axes — every panel must use "
+            "the same BODY_FS from ggplot_style; remove local literals "
+            "(fontsize=11, LABEL_FS=12, BODY_FS-2, …):\n"
+            + "\n".join(offenders)
+        )
+
+
+# ============================================================================
+# assert_docx_readable
+#
+# Fails if any text in the figure renders below the readability floor
+# (PAPER_FLOOR_PT = 9 pt) when the figure is scaled to the docx content
+# width (6.5 "). Catches the "native fontsize=11 on a 16 " render reads at
+# 4.5 pt in the delivered document" class of bug that no per-panel
+# validator can see — because it depends on the docx pipeline, not the
+# per-panel layout.
+#
+# Calibration: Pete's 2026-07-09 review said SF25 (6.5 " → 14 pt effective)
+# reads plenty big, SF29 (11 " × 14 pt native → 8.3 pt effective) reads a
+# touch small, SF30 (8 " × 14 pt → 11.4 pt) reads well. So floor = 9 pt.
+# ============================================================================
+def assert_docx_readable(fig, *, native_width_in=None,
+                          floor_pt=None, content_w_in=None):
+    """Raise if any text renders below `floor_pt` at docx scale.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+    native_width_in : float | None
+        Native figure width in inches. If None, uses fig.get_figwidth().
+    floor_pt : float | None
+        Minimum acceptable docx-rendered point size. If None, uses
+        PAPER_FLOOR_PT from ggplot_style (9 pt).
+    content_w_in : float | None
+        Docx content-width to scale against. If None, uses
+        PAPER_CONTENT_W_IN from ggplot_style (6.5 ").
+    """
+    # Import here to avoid a hard cross-module dep at module load time —
+    # keeps this validator usable in isolation.
+    try:
+        from ggplot_style import PAPER_FLOOR_PT, PAPER_CONTENT_W_IN
+    except ImportError:
+        PAPER_FLOOR_PT_default = 9.0
+        PAPER_CONTENT_W_IN_default = 6.5
+        PAPER_FLOOR_PT = PAPER_FLOOR_PT_default
+        PAPER_CONTENT_W_IN = PAPER_CONTENT_W_IN_default
+
+    if floor_pt is None:
+        floor_pt = PAPER_FLOOR_PT
+    if content_w_in is None:
+        content_w_in = PAPER_CONTENT_W_IN
+    if native_width_in is None:
+        native_width_in = fig.get_figwidth()
+
+    scale = content_w_in / native_width_in
+    fig.canvas.draw()
+
+    offenders = []
+
+    def check(t, kind):
+        if not t.get_visible():
+            return
+        s = t.get_text() if hasattr(t, "get_text") else ""
+        if not s or not s.strip():
+            return
+        native_fs = t.get_fontsize()
+        docx_fs = native_fs * scale
+        if docx_fs < floor_pt:
+            label = s[:40].replace("\n", " ")
+            offenders.append(
+                f"  '{label}' ({kind}): native={native_fs:.1f}pt × "
+                f"{scale:.3f} → docx={docx_fs:.2f}pt < {floor_pt}pt"
+            )
+
+    for ax in fig.axes:
+        if not getattr(ax, "axison", True):
+            continue
+        for t in ax.get_xticklabels():
+            check(t, "xtick")
+        for t in ax.get_yticklabels():
+            check(t, "ytick")
+        check(ax.xaxis.label, "xlabel")
+        check(ax.yaxis.label, "ylabel")
+        check(ax.title, "title")
+        for t in ax.texts:
+            check(t, "annot")
+    for t in fig.texts:
+        check(t, "fig_text")
+
+    if offenders:
+        raise AssertionError(
+            f"Text below {floor_pt}pt readability floor at docx scale "
+            f"(native width {native_width_in}\" → 6.5\" content, "
+            f"scale {scale:.3f}×):\n"
+            + "\n".join(offenders)
+            + "\n\nFix: bump native fontsize (BODY_FS = docx_body_fs(width))"
+              " or shrink the native figure width."
+        )
+
+
+# ============================================================================
+# Data-occupancy mask + text-vs-data overlap validator
+#
+# Motivation: `validate_figure_layout` extracts artists as bbox rectangles
+# and treats KDE fills, violin polygons, and histogram bars as opaque
+# rectangles spanning their full envelope. That misses two important
+# cases:
+#   1. A `transform=ax.transAxes` label sitting inside a KDE fill's peak
+#      region — the label is "inside the bbox" but the bbox is the whole
+#      axes.
+#   2. Finding open space where a new label could be placed without
+#      overlap.
+#
+# Approach: rasterize the axes with text hidden, subtract the panel
+# background + gridlines, and get a boolean mask of "data-drawn" pixels.
+# Then check each text bbox against that mask. `find_open_regions` inverts
+# the mask so callers can query where a `(w, h)` text could fit.
+# ============================================================================
+def _compute_data_mask(fig, ax, *, occupied_threshold=25, dilate_px=1):
+    """Rasterize `ax` with text hidden — return a bool mask of data pixels.
+
+    Returns
+    -------
+    mask : np.ndarray of shape (H, W), dtype bool
+        True where data was drawn (curves, fills, bars, violins, scatter).
+    ax_pixel_bbox : (x0, y0, x1, y1) in figure-pixel coords
+        The pixel region the mask covers.
+    """
+    hidden = []
+    def hide(t):
+        if t is None:
+            return
+        hidden.append((t, t.get_visible()))
+        t.set_visible(False)
+    for t in ax.texts:
+        hide(t)
+    for t in ax.get_xticklabels() + ax.get_yticklabels():
+        hide(t)
+    hide(ax.xaxis.label)
+    hide(ax.yaxis.label)
+    hide(ax.title)
+
+    try:
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        bbox = ax.get_window_extent(renderer=renderer)
+        fig_w = int(round(fig.bbox.width))
+        fig_h = int(round(fig.bbox.height))
+
+        # Buffer: (H, W, 4) uint8, RGBA, y=0 is TOP row (matplotlib convention).
+        buf = np.asarray(fig.canvas.buffer_rgba())
+
+        # ax bbox is in display coords with y=0 at BOTTOM. Convert to
+        # buffer's y=0-at-top convention.
+        x0 = max(0, int(math.floor(bbox.x0)))
+        x1 = min(fig_w, int(math.ceil(bbox.x1)))
+        by0 = max(0, int(math.floor(fig_h - bbox.y1)))
+        by1 = min(fig_h, int(math.ceil(fig_h - bbox.y0)))
+        if x1 <= x0 or by1 <= by0:
+            return np.zeros((0, 0), dtype=bool), (0, 0, 0, 0)
+
+        sub = buf[by0:by1, x0:x1, :3].astype(np.int16)
+
+        # Non-background = not the panel facecolor.
+        bg_rgb = np.array(
+            [int(round(c * 255)) for c in mcolors.to_rgb(ax.get_facecolor())],
+            dtype=np.int16,
+        )
+        diff_bg = np.abs(sub - bg_rgb).sum(axis=-1)
+        mask = diff_bg > occupied_threshold
+
+        # Also exclude the ggplot-style white gridlines (structural, not
+        # data). If ax.grid was drawn in a color close to white, ignore
+        # pixels close to that color.
+        grid_rgb = np.array([255, 255, 255], dtype=np.int16)
+        diff_grid = np.abs(sub - grid_rgb).sum(axis=-1)
+        mask = mask & (diff_grid > occupied_threshold)
+
+        # Optional dilation so a thin curve isn't easily missed by bbox
+        # sampling. Cheap max-filter dilation without scipy.
+        if dilate_px > 0:
+            m = mask
+            for _ in range(dilate_px):
+                shifted = np.zeros_like(m)
+                shifted[1:, :]  |= m[:-1, :]
+                shifted[:-1, :] |= m[1:, :]
+                shifted[:, 1:]  |= m[:, :-1]
+                shifted[:, :-1] |= m[:, 1:]
+                m = m | shifted
+            mask = m
+
+        return mask, (x0, by0, x1, by1)
+    finally:
+        for t, v in hidden:
+            t.set_visible(v)
+        fig.canvas.draw()
+
+
+def assert_data_free(fig, ax, *, max_occupied_frac=0.15,
+                     tick_labels_too=False):
+    """Raise if any in-axes text sits on data-drawn pixels.
+
+    Parameters
+    ----------
+    max_occupied_frac : float
+        Allowed fraction of a text bbox's area that may overlap data
+        pixels. Default 0.15 (15 %). Catches labels buried in a KDE peak
+        or violin body while tolerating peripheral captions that graze a
+        few short bars.
+    tick_labels_too : bool
+        If True, also check tick labels. Default False — tick labels are
+        typically placed outside the plot area by matplotlib and rarely
+        collide with data.
+    """
+    mask, (mx0, my0, mx1, my1) = _compute_data_mask(fig, ax)
+    if mask.size == 0:
+        return
+
+    fig_h = int(round(fig.bbox.height))
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    axes_area = float(mask.shape[0] * mask.shape[1])
+
+    def _check(t, kind):
+        if not t.get_visible():
+            return None
+        s = t.get_text() if hasattr(t, "get_text") else ""
+        if not s or not s.strip():
+            return None
+        # Skip texts with an opaque bbox background — they visually mask
+        # the data beneath them, so overlap doesn't hide the label. Common
+        # for annotation boxes with `bbox=dict(facecolor="white", ...)`.
+        try:
+            bp = t.get_bbox_patch()
+        except Exception:
+            bp = None
+        if bp is not None and bp.get_visible():
+            fc = bp.get_facecolor()
+            if fc is not None and len(fc) == 4 and fc[3] > 0.5:
+                return None
+        try:
+            tb = t.get_window_extent(renderer=renderer)
+        except Exception:
+            return None
+        # Convert text bbox from display (y=0 at bottom) to mask coords
+        # (y=0 at top), then subtract mask origin.
+        tx0 = max(0, int(math.floor(tb.x0 - mx0)))
+        tx1 = min(mask.shape[1], int(math.ceil(tb.x1 - mx0)))
+        ty1 = max(0, int(math.floor(fig_h - tb.y1 - my0)))
+        ty0 = min(mask.shape[0], int(math.ceil(fig_h - tb.y0 - my0)))
+        if tx1 <= tx0 or ty0 <= ty1:
+            return None
+        sub = mask[ty1:ty0, tx0:tx1]
+        if sub.size == 0:
+            return None
+        # Skip small data markers (median values on violins, count labels
+        # on bar tops, etc.). Two heuristics — pass either → skip:
+        #   1. bbox < 1.5 % of axes area (small in absolute terms)
+        #   2. text ≤ 8 chars (single number / short value label)
+        # These catch the common "0.86" / "n=190" / "1,166" style markers
+        # that panel code intentionally places on data. Longer floating
+        # annotations still get checked.
+        if sub.size / axes_area < 0.015:
+            return None
+        if len(s.strip()) <= 8:
+            return None
+        occ = float(sub.sum()) / sub.size
+        return (s, kind, occ)
+
+    offenders = []
+    for t in ax.texts:
+        r = _check(t, "axes_text")
+        if r is not None and r[2] > max_occupied_frac:
+            offenders.append(r)
+    if tick_labels_too:
+        for t in ax.get_xticklabels() + ax.get_yticklabels():
+            r = _check(t, "tick")
+            if r is not None and r[2] > max_occupied_frac:
+                offenders.append(r)
+
+    if offenders:
+        lines = [
+            f"  '{s[:40]}' ({k}): {occ*100:.1f}% of bbox area sits on data"
+            for (s, k, occ) in offenders
+        ]
+        raise AssertionError(
+            "In-axes text overlaps data-drawn pixels (KDE fill, violin body, "
+            "bars, curve). Threshold: "
+            f"{max_occupied_frac*100:.0f}%.\n"
+            + "\n".join(lines)
+            + "\n\nFix: move the text into a data-free region "
+              "(call find_open_regions(fig, ax) to locate one), lift the axes "
+              "ylim above the peak, or place the text in an ax.legend() "
+              "outside the plot area."
+        )
+
+
+def find_open_regions(fig, ax, *, min_run_px=None):
+    """Return the un-occupied region of `ax` as an axes-fraction bbox list.
+
+    Rasterizes the axes (via `_compute_data_mask`) and returns the largest
+    rectangle of un-occupied pixels in each of nine quadrant-anchor slots
+    (TL, TC, TR, ML, MC, MR, BL, BC, BR) — expressed in axes-fraction
+    coords `(x0, y0, x1, y1)` with (0,0)=bottom-left, (1,1)=top-right of
+    the axes, matching `transform=ax.transAxes`.
+
+    Callers can pick the slot whose free region fits their text's needs:
+
+        free = find_open_regions(fig, ax)
+        top_left = free["TL"]        # (x0, y0, x1, y1) in axes fraction
+        if top_left is not None and (top_left[3] - top_left[1]) > my_height:
+            ax.text(top_left[0] + 0.02, top_left[3] - 0.02,
+                    "my label", transform=ax.transAxes,
+                    ha="left", va="top")
+
+    Slots with no clear region return None.
+    """
+    mask, (mx0, my0, mx1, my1) = _compute_data_mask(fig, ax)
+    if mask.size == 0:
+        return {k: None for k in
+                ("TL", "TC", "TR", "ML", "MC", "MR", "BL", "BC", "BR")}
+    H, W = mask.shape
+    if min_run_px is None:
+        min_run_px = max(10, min(H, W) // 20)
+
+    def _largest_free_rect_in(sub):
+        """Return the largest all-False axis-aligned rectangle in `sub`.
+
+        Uses the classical maximal-rectangle-in-histogram DP. Returns
+        (r0, c0, r1, c1) in local sub-array coords, or None.
+        """
+        if sub.size == 0 or sub.all():
+            return None
+        rows, cols = sub.shape
+        heights = np.zeros(cols, dtype=np.int32)
+        best = (0, 0, 0, 0, 0)  # area, r0, c0, r1, c1
+        for r in range(rows):
+            # heights[c] = current column's un-occupied run height ending at r
+            for c in range(cols):
+                heights[c] = 0 if sub[r, c] else heights[c] + 1
+            # Largest rectangle in histogram `heights`
+            stack = []
+            for c in range(cols + 1):
+                cur_h = heights[c] if c < cols else 0
+                start = c
+                while stack and stack[-1][1] > cur_h:
+                    idx, h = stack.pop()
+                    area = h * (c - idx)
+                    if area > best[0] and h >= min_run_px and (c - idx) >= min_run_px:
+                        # r0 = r - h + 1, r1 = r
+                        best = (area, r - h + 1, idx, r, c - 1)
+                    start = idx
+                stack.append((start, cur_h))
+        if best[0] == 0:
+            return None
+        return best[1:]  # (r0, c0, r1, c1)
+
+    def _slot_to_frac(rect_local, x_off, y_off_top):
+        if rect_local is None:
+            return None
+        r0, c0, r1, c1 = rect_local
+        # Convert to axes-frac coords (0,0)=bottom-left, (1,1)=top-right.
+        x0f = (c0 + x_off) / W
+        x1f = (c1 + 1 + x_off) / W
+        # Rows count from top of image; ax fraction Y counts from bottom.
+        y0f = 1.0 - (r1 + 1 + y_off_top) / H
+        y1f = 1.0 - (r0 + y_off_top) / H
+        return (x0f, y0f, x1f, y1f)
+
+    # Divide the axes into nine quadrants and find largest free rect in each.
+    Hs = [(0, H // 3), (H // 3, 2 * H // 3), (2 * H // 3, H)]
+    Ws = [(0, W // 3), (W // 3, 2 * W // 3), (2 * W // 3, W)]
+    names = [
+        ("TL", 0, 0), ("TC", 0, 1), ("TR", 0, 2),
+        ("ML", 1, 0), ("MC", 1, 1), ("MR", 1, 2),
+        ("BL", 2, 0), ("BC", 2, 1), ("BR", 2, 2),
+    ]
+    out = {}
+    for name, ri, ci in names:
+        r0, r1 = Hs[ri]
+        c0, c1 = Ws[ci]
+        sub = mask[r0:r1, c0:c1]
+        rect = _largest_free_rect_in(sub)
+        out[name] = _slot_to_frac(rect, c0, r0) if rect else None
+    return out

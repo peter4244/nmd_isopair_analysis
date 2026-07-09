@@ -1,34 +1,29 @@
 """
-Supplemental Figure — Attention distribution: NMD vs Control.
+SF38 — Attention distribution across the model's five candidate ORFs,
+NMD susceptible vs non-NMD.
 
-Companion to the manuscript sentence in §5:
+Renders natively from the current 4CT model's per-isoform attention weights
+(`uorf_attention_predictions.tsv`, columns attn_0…attn_4). Replaces the
+earlier legacy-PNG placeholder that carried stale 10-ORF ranks, "SQANTI CDS"
+subtitle, and a pre-4CT-switch n = 15,584 cohort.
 
-   "Attention analysis demonstrated that, while most of the attention was
-   focused on ORF0 (the most likely CDS), attention was more broadly
-   distributed for NMD than Control isoforms (SFx, panel A and B)."
+Population: held-out test split (chr 1/3/5/7), excluding the "test_paralog"
+partition per the training-time paralog dedup convention.
 
-Two panels:
-  A — Attention weight per ORF rank (boxplots, NMD vs Control). Most
-      mass is at rank 0 (the model's priority ORF — ref CDS > TD2 CDS >
-      top-Kozak). NMD has a slightly lower median attention at rank 0
-      and slightly more mass at ranks ≥1 vs Control.
-  B — Shannon entropy of the per-isoform attention vector across the 5
-      candidate ORFs. NMD's distribution is shifted toward higher entropy
-      (more broadly distributed attention) compared to Control.
-
-Both panels are extracted from the legacy deep_nmd_model report
-(`fig5b_attention_by_rank.png`, `fig5a_entropy.png`). The underlying
-computations don't depend on the stop-codon bug fix and are therefore
-canonical as-is. When the cluster is back, the report's `fig5*` chunks
-can be re-rendered natively against the latest model outputs.
+Panels:
+  (A) Attention weight per candidate ORF rank, by class (boxplot).
+  (B) Shannon entropy of the per-isoform attention vector across the five
+      candidates, KDE per class.
 """
 
+from __future__ import annotations
 import sys
 from pathlib import Path
 
-import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
+import numpy as np
+import pandas as pd
+from scipy.stats import gaussian_kde
 
 HERE = Path(__file__).resolve()
 LIB = HERE.parents[2] / "lib"
@@ -36,59 +31,176 @@ sys.path.insert(0, str(LIB))
 
 from ggplot_style import (
     apply_ggplot_rcparams,
-    panel_letter,
+    style_axes_ggplot,
     assert_text_within_canvas,
+    panel_letter,
+    TITLE_C,
+    AXIS_C,
 )
 apply_ggplot_rcparams()
+from validate_figure_layout import validate_multipanel_layout
 
-# Each panel is 2400×1500 native (aspect 1.6:1). Two side-by-side
-# panels at cell 5.5 × 3.4 in (1.6:1).
-CELL_W = 5.5
-CELL_H = 3.4
-FIG_W = CELL_W * 2     # 11.0
-FIG_H = CELL_H         # 3.4
+BODY_FS = 17
+LABEL_FS = 14
 
-PANELS = {
-    "A": "data/legacy_fig5b_attention_by_rank.png",
-    "B": "data/legacy_fig5a_entropy.png",
-}
+DATA_ATTN = Path("/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/"
+                 "results_4ct/uorf_attention_predictions.tsv")
+DATA_LABELS = Path("/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/"
+                   "results_4ct/predictions_atg500_stop500.tsv")
+
+# Main-paper Fig 4 / Fig 5G palette
+COLOR_NMD  = "#ef8a62"   # coral
+COLOR_CTRL = "#92c5de"   # light blue
+
+N_ORFS = 5
+
+# Test split = chr 1 / 3 / 5 / 7 (train-time held-out set). We take labels
+# from predictions_atg500_stop500.tsv (canonical training-time source, also
+# used by SF36 / SF37 / SF40 / SF41) rather than the attention TSV's own
+# label column — 4 isoforms disagree between the two, and standardising on
+# one source lets all SF36-SF42 cite the same 2,268 / 7,863 test-set n's.
+TEST_CHRS = {"chr1", "chr3", "chr5", "chr7"}
 
 
-def add_panel(fig, gs_slot, letter, paths):
-    ax = fig.add_subplot(gs_slot)
-    img = mpimg.imread(str(paths[letter]))
-    ax.imshow(img, aspect="auto")
-    ax.set_xticks([]); ax.set_yticks([])
-    for s in ax.spines.values():
-        s.set_visible(False)
-    panel_letter(ax, letter, x=0.0, y=1.01)
+def load():
+    attn = pd.read_csv(DATA_ATTN, sep="\t")
+    labels = pd.read_csv(DATA_LABELS, sep="\t")
+    labels = labels[labels["chr"].isin(TEST_CHRS)][["isoform_id", "label"]]
+    # Drop the attention TSV's own label; use labels from the canonical file.
+    attn = attn.drop(columns=[c for c in ["label"] if c in attn.columns])
+    df = attn.merge(labels, on="isoform_id", how="inner")
+    return df
+
+
+def shannon_entropy(row):
+    p = np.array([row[f"attn_{k}"] for k in range(N_ORFS)], dtype=float)
+    p = p[p > 0]
+    if p.size == 0:
+        return 0.0
+    return float(-(p * np.log2(p)).sum())
+
+
+def render_panel_A(ax, df):
+    style_axes_ggplot(ax, xgrid=False, ygrid=True)
+
+    n_nmd  = int((df["label"] == 1).sum())
+    n_ctrl = int((df["label"] == 0).sum())
+
+    positions_ctrl = np.arange(N_ORFS) * 3 - 0.55
+    positions_nmd  = np.arange(N_ORFS) * 3 + 0.55
+
+    data_ctrl = [df.loc[df["label"] == 0, f"attn_{k}"].to_numpy() for k in range(N_ORFS)]
+    data_nmd  = [df.loc[df["label"] == 1, f"attn_{k}"].to_numpy() for k in range(N_ORFS)]
+
+    def draw_boxes(data, positions, color):
+        ax.boxplot(
+            data, positions=positions, widths=0.85,
+            patch_artist=True, showfliers=False,
+            boxprops=dict(facecolor=color, edgecolor=TITLE_C, linewidth=0.9),
+            medianprops=dict(color=TITLE_C, linewidth=1.4),
+            whiskerprops=dict(color=TITLE_C, linewidth=0.9),
+            capprops=dict(color=TITLE_C, linewidth=0.9),
+            zorder=3,
+        )
+
+    draw_boxes(data_ctrl, positions_ctrl, COLOR_CTRL)
+    draw_boxes(data_nmd,  positions_nmd,  COLOR_NMD)
+
+    ax.set_xticks(np.arange(N_ORFS) * 3)
+    ax.set_xticklabels([str(k) for k in range(N_ORFS)],
+                        fontsize=BODY_FS, color=TITLE_C)
+    ax.set_xlim(-2, (N_ORFS - 1) * 3 + 2)
+    ax.set_ylim(-0.03, 1.03)
+    ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax.set_xlabel("Candidate ORF rank (0 = highest-priority)",
+                   fontsize=BODY_FS, color=TITLE_C)
+    ax.set_ylabel("Attention weight",
+                   fontsize=BODY_FS, color=TITLE_C)
+    ax.tick_params(axis="y", labelsize=BODY_FS, colors=TITLE_C)
+
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_NMD,  edgecolor=TITLE_C,
+                      linewidth=0.9, label=f"NMD susceptible (n = {n_nmd:,})"),
+        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_CTRL, edgecolor=TITLE_C,
+                      linewidth=0.9, label=f"Control (n = {n_ctrl:,})"),
+    ]
+    ax.legend(handles=handles, loc="upper right", frameon=True,
+              facecolor="white", edgecolor="none",
+              fontsize=12)
+
+
+def render_panel_B(ax, df):
+    style_axes_ggplot(ax, xgrid=False, ygrid=True)
+
+    df["entropy"] = df.apply(shannon_entropy, axis=1)
+    e_nmd  = df.loc[df["label"] == 1, "entropy"].to_numpy()
+    e_ctrl = df.loc[df["label"] == 0, "entropy"].to_numpy()
+
+    max_ent = float(np.log2(N_ORFS))
+    x_grid = np.linspace(0, max_ent, 300)
+
+    for e, color in [(e_nmd, COLOR_NMD), (e_ctrl, COLOR_CTRL)]:
+        kde = gaussian_kde(e, bw_method="scott")
+        y = kde(x_grid)
+        ax.fill_between(x_grid, y, alpha=0.55, color=color,
+                        edgecolor=TITLE_C, linewidth=0.9, zorder=3)
+
+    ax.axvline(max_ent, linestyle="--", color=AXIS_C, linewidth=0.8, zorder=2)
+    # Use mathtext for the subscript — the Unicode ₂ glyph is missing in
+    # the current font (Arial), so matplotlib substitutes a fallback box.
+    ax.text(max_ent - 0.02, ax.get_ylim()[1] * 0.55,
+            f"max entropy = $\\log_2({N_ORFS})$\n$\\approx$ {max_ent:.2f}",
+            ha="right", va="center",
+            fontsize=10, color=AXIS_C)
+
+    ax.set_xlim(0, max_ent * 1.02)
+    ax.set_xlabel("Per-isoform attention entropy (bits)",
+                   fontsize=BODY_FS, color=TITLE_C)
+    ax.set_ylabel("Density", fontsize=BODY_FS, color=TITLE_C)
+    ax.tick_params(axis="both", labelsize=BODY_FS, colors=TITLE_C)
+
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_NMD,  edgecolor=TITLE_C,
+                      linewidth=0.9, label=f"NMD susceptible (n = {len(e_nmd):,})"),
+        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_CTRL, edgecolor=TITLE_C,
+                      linewidth=0.9, label=f"Control (n = {len(e_ctrl):,})"),
+    ]
+    ax.legend(handles=handles, loc="upper right", frameon=True,
+              facecolor="white", edgecolor="none",
+              fontsize=12)
 
 
 def build_figure():
-    paths = {k: HERE.parent / v for k, v in PANELS.items()}
+    df = load()
 
-    fig = plt.figure(figsize=(FIG_W, FIG_H))
-    gs = GridSpec(
-        1, 2, figure=fig,
-        left=0.01, right=0.99, top=0.90, bottom=0.02,
-        wspace=0.04,
-    )
-    add_panel(fig, gs[0, 0], "A", paths)
-    add_panel(fig, gs[0, 1], "B", paths)
-    return fig
+    fig, (axA, axB) = plt.subplots(1, 2, figsize=(11, 4.8))
+    fig.subplots_adjust(left=0.09, right=0.95, top=0.80, bottom=0.20,
+                        wspace=0.32)
+
+    render_panel_A(axA, df)
+    render_panel_B(axB, df)
+
+    panel_letter(axA, "A", x=-0.14, y=1.22)
+    panel_letter(axB, "B", x=-0.14, y=1.22)
+
+    return fig, df
 
 
 def main():
-    fig = build_figure()
-
-    from validate_figure_layout import validate_multipanel_layout
-    validate_multipanel_layout(fig, verbose=True)
+    fig, df = build_figure()
     assert_text_within_canvas(fig)
-
-    out_dir = HERE.parent
-    fig.savefig(out_dir / "figure_s_attention_distribution.pdf", facecolor="white")
-    fig.savefig(out_dir / "figure_s_attention_distribution.png", dpi=300, facecolor="white")
-    print(f"Saved: figure_s_attention_distribution.pdf and .png  ({FIG_W:.1f} × {FIG_H:.1f} in)")
+    _mp = validate_multipanel_layout(fig)
+    if _mp["summary"]["n_errors"] > 0:
+        msgs = "\n".join(f"  [{e.check}] {e.message}" for e in _mp["errors"])
+        raise AssertionError(f"validate_multipanel_layout: "
+                             f"{_mp['summary']['n_errors']} errors:\n{msgs}")
+    out = HERE.parent
+    fig.savefig(out / "figure_s_attention_distribution.pdf", facecolor="white")
+    fig.savefig(out / "figure_s_attention_distribution.png",
+                dpi=300, facecolor="white")
+    print(f"Saved figure_s_attention_distribution.{{pdf,png}}")
+    print(f"  NMD:     n = {int((df['label'] == 1).sum()):,}")
+    print(f"  Control: n = {int((df['label'] == 0).sum()):,}")
 
 
 if __name__ == "__main__":

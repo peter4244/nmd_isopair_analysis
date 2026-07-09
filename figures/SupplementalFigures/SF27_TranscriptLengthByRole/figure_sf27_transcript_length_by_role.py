@@ -35,11 +35,14 @@ from ggplot_style import (
     REF_COLOR,
     AXIS_C,
     TITLE_C,
-    BODY_FS,
+    BODY_FS as _BODY_FS,
     HEADER_FS,
 )
 
+BODY_FS = 13
+
 apply_ggplot_rcparams()
+from validate_figure_layout import validate_figure_layout
 
 DATA = HERE / "data"
 
@@ -57,8 +60,8 @@ def main():
     summary = pd.read_csv(DATA / "descriptives_summary.tsv", sep="\t").set_index("metric")["value"]
     n_triplets = int(summary.loc["n_pop_bc_triplets"])
 
-    fig, ax = plt.subplots(figsize=(6.5, 4.2))
-    fig.subplots_adjust(left=0.13, right=0.97, top=0.90, bottom=0.16)
+    fig, ax = plt.subplots(figsize=(6.5, 4.6))
+    fig.subplots_adjust(left=0.19, right=0.97, top=0.92, bottom=0.19)
 
     style_axes_ggplot(ax)
 
@@ -76,13 +79,8 @@ def main():
     for i, r in enumerate(ROLES):
         vals = txl.loc[txl["role"] == r, "length_nt"].values
         med = float(np.median(vals))
-        q25, q75 = np.percentile(vals, [25, 75])
         ax.plot([i - 0.20, i + 0.20], [np.log10(med + 1)] * 2,
                 color=TITLE_C, lw=1.6, zorder=5)
-        ax.plot([i - 0.15, i + 0.15], [np.log10(q25 + 1)] * 2,
-                color=TITLE_C, lw=0.9, linestyle=":", zorder=5)
-        ax.plot([i - 0.15, i + 0.15], [np.log10(q75 + 1)] * 2,
-                color=TITLE_C, lw=0.9, linestyle=":", zorder=5)
         ax.text(i, np.log10(med + 1) + 0.045, f"{int(med):,}",
                 ha="center", va="bottom", fontsize=BODY_FS,
                 fontweight="bold", color=TITLE_C, zorder=6)
@@ -97,6 +95,7 @@ def main():
 
     # No overall figure title — caption carries the title role (Yul-style).
     assert_text_within_canvas(fig)
+    validate_figure_layout(fig, ax)
 
     out_png = HERE / "figure_sf27_transcript_length_by_role.png"
     out_pdf = HERE / "figure_sf27_transcript_length_by_role.pdf"

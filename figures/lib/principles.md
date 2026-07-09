@@ -22,6 +22,9 @@ Applies to publication / grant figures regardless of tooling. Language-specific 
 - **Two font sizes only.** One header size, one body size — no third. Mixing more sizes weakens the hierarchy. Typical: HEADER ≈ 18, BODY ≈ 14.
 - **Headers bold; body never bold.** Mixing bold body with bold headers kills the visual hierarchy.
 - **Tag/label fonts consistent across panels.** Same size and face for A/B/C tags everywhere.
+- **No fontsize literals in panel code.** Everything — xticks, yticks, xlabel, ylabel, annotations, medians, brackets — imports `BODY_FS` (or `HEADER_FS`) from `figures/lib/ggplot_style.py`. Local overrides like `fontsize=11`, `LABEL_FS = 12`, or `BODY_FS - 2` create silent cross-panel drift and defeat the single-source-of-truth the module provides. If a size feels wrong, bump the shared constant for this panel; don't sprinkle a one-off.
+- **Native font size scales with figure width.** The docx pipeline scales every figure to a 6.5 " content width. A 14 pt native BODY_FS on an 11 " render reads at only 8.3 pt in the delivered docx. Every panel that will end up in the paper's supplemental doc sets its own `BODY_FS = docx_body_fs(NATIVE_W)` at the top so the effective docx size hits the 10 pt target regardless of native width. Floor: 9 pt effective. Ceiling: ~14 pt effective. `assert_docx_readable(fig)` catches violations at write time.
+- **Font-size symmetry is a validator target, not a review target.** Call `assert_style_symmetric(fig)` alongside `assert_text_within_canvas(fig)` before every `savefig`. It fails if sibling axes disagree on the same role (xtick vs xtick, ylabel vs ylabel).
 
 ## Layout & symmetry
 

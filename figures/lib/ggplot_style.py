@@ -42,10 +42,81 @@ STRIP_BG   = "#D9D9D9"   # facet strip background
 TITLE_C    = "#222222"   # near-black for chart text
 AXIS_C     = "#555555"   # spine + tick lines
 
-# Font sizes: reader spec is two sizes only per figures_principles.md
-HEADER_FS = 14
-BODY_FS   = 11
-PANEL_LETTER_FS = 18  # bold A/B/C labels top-left of each panel
+# Font sizes: matched to Fig 3/4/5 (HEADER_FS=18, BODY_FS=14) so SFs read at
+# the same scale as the main paper figures. Two sizes only per
+# figures_principles.md.
+HEADER_FS = 18
+BODY_FS   = 14
+PANEL_LETTER_FS = 20  # bold A/B/C labels top-left of each panel
+
+# ─── Docx-scale readability accounting ─────────────────────────────────
+# The supplemental-figures Word document scales every embedded figure to a
+# fixed 6.5 " content width, so effective font size in the reader's docx is
+#   effective_pt = native_pt × (6.5 / native_width_in)
+# A figure rendered at 16 " with native BODY_FS = 14 pt reads at only 5.7 pt
+# in the docx — unreadable. Calibrated empirically against Pete's SF25 /
+# SF29 / SF30 review (2026-07-09): target = 10 pt effective, floor = 9 pt,
+# ceiling ~14 pt before text starts to dominate the panel.
+PAPER_CONTENT_W_IN = 6.5
+PAPER_TARGET_PT    = 10.0
+PAPER_FLOOR_PT     = 9.0
+
+
+def docx_body_fs(native_width_in, *, target_pt=PAPER_TARGET_PT):
+    """Native BODY_FS that renders at `target_pt` in the 6.5 " docx.
+
+    Every panel that will be embedded in the supplemental Word doc SHOULD
+    set its own BODY_FS via this helper at the top of the module, e.g.
+
+        NATIVE_W = 11.0
+        BODY_FS  = docx_body_fs(NATIVE_W)
+
+    rather than accepting the shared 14-pt constant blindly — the shared
+    constant is calibrated for a 6.5 "-wide render, not a 16 "-wide one.
+    """
+    return int(round(target_pt * native_width_in / PAPER_CONTENT_W_IN))
+
+
+def docx_effective_pt(native_pt, native_width_in):
+    """Effective docx-rendered point size of `native_pt` at scale."""
+    return native_pt * PAPER_CONTENT_W_IN / native_width_in
+
+
+# ─── NIH grant-figure readability accounting ───────────────────────────
+# NIH R01 single-column page content width is 7.5 " after the 0.5 "
+# margins. Figures placed edge-to-edge span 8.5 " (rare). Calibrated
+# empirically 2026-07-09 against the submitted 2026 NMD grant figures:
+#   figure_aim1.py     (8.5 ", BODY_FS=10)   → 10 pt effective — reads clean
+#   figure_overview.py (15.5 ", BODY_FS=21)  → 10 pt effective — reads clean
+#   figure_saec_lineage.py (15 ", BODY_FS=17) → 8.5 pt — clean but tight
+# Target 11 pt body / 13 pt header at page scale. Floor 8 pt (looser than
+# publications' 9 pt because grant figures are schematic — text anchors
+# to labeled regions, not competing with dense data plotting).
+GRANT_PAGE_W_IN     = 7.5      # NIH single-column content width
+GRANT_TARGET_PT     = 11.0     # body text target
+GRANT_HEADER_PT     = 13.0     # header text target
+GRANT_FLOOR_PT      = 8.0      # readability floor
+
+
+def grant_body_fs(native_width_in, *, target_pt=GRANT_TARGET_PT,
+                   page_w_in=GRANT_PAGE_W_IN):
+    """Native BODY_FS that renders at `target_pt` on the NIH grant page.
+
+    Use inside grant figures:
+
+        NATIVE_W = 15.5
+        BODY_FS  = grant_body_fs(NATIVE_W)       # → 23 at 15.5"
+
+    If the figure spans the full 8.5" page edge-to-edge (rare), pass
+    page_w_in=8.5.
+    """
+    return int(round(target_pt * native_width_in / page_w_in))
+
+
+def grant_effective_pt(native_pt, native_width_in,
+                        *, page_w_in=GRANT_PAGE_W_IN):
+    """Effective NIH-page point size of `native_pt` at grant page scale."""
+    return native_pt * page_w_in / native_width_in
 
 
 def apply_ggplot_rcparams():

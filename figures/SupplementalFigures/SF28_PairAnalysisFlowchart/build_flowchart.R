@@ -96,7 +96,7 @@ filter_node <- function(what, kept, dropped, why) {
          <TD ALIGN="LEFT"><FONT COLOR="#b22222">%s</FONT></TD>
        </TR>
        <TR>
-         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="14" COLOR="#444">Why: %s</FONT></TD>
+         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="18" COLOR="#444">Why: %s</FONT></TD>
        </TR>
      </TABLE>>', what, kept, dropped, why)
 }
@@ -107,7 +107,7 @@ upstream_node <- function(stage, detail, what_dropped = NULL) {
     stage, detail)
   if (!is.null(what_dropped)) {
     rows <- paste0(rows, sprintf(
-      '<TR><TD ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#444">%s</FONT></TD></TR>',
+      '<TR><TD ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#444">%s</FONT></TD></TR>',
       what_dropped))
   }
   sprintf('<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">%s</TABLE>>', rows)
@@ -115,12 +115,12 @@ upstream_node <- function(stage, detail, what_dropped = NULL) {
 
 dot_spec <- sprintf('
 digraph cohort_flow {
-  graph [rankdir=TB, fontname="Helvetica", nodesep=0.30, ranksep=0.45,
+  graph [rankdir=TB, fontname="Helvetica", nodesep=0.20, ranksep=0.35,
          splines=ortho, compound=true]
   node  [shape=box, style="rounded,filled", fontname="Helvetica",
-         fontsize=18, margin="0.25,0.18"]
+         fontsize=18, margin="0.15,0.12"]
   edge  [color="#666", penwidth=1.4, fontname="Helvetica",
-         fontsize=14, fontcolor="#444"]
+         fontsize=18, fontcolor="#444"]
 
   // ─── Starting cohort + upstream classification + pair construction
   U1 [label=%s, fillcolor="#e8eef4", color="#2f4858"]
@@ -133,7 +133,7 @@ digraph cohort_flow {
   HUB [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                 <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="22"><B>Matched isoform pairs</B></FONT></TD></TR>
                 <TR><TD ALIGN="CENTER"><FONT COLOR="white"><B>3,009 NMD susceptible  ·  3,009 Control</B></FONT></TD></TR>
-                <TR><TD ALIGN="CENTER"><FONT COLOR="#cfd8e2" POINT-SIZE="14">one triplet per gene</FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="#cfd8e2" POINT-SIZE="18">one triplet per gene</FONT></TD></TR>
               </TABLE>>,
        fillcolor="#1f3a5f", color="#0a1a30", penwidth=2.0]
 
@@ -141,7 +141,7 @@ digraph cohort_flow {
 
   // ─── Subset 1 cluster (left) ─────────────────────────────────────
   subgraph cluster_S1 {
-    label = <<FONT POINT-SIZE="22"><B>GENCODE-restricted subset (n = 190)</B></FONT><BR/>all three transcripts in the triplet are annotated coding transcripts>
+    label = <<FONT POINT-SIZE="22"><B>GENCODE-restricted subset (n = 190)</B></FONT><BR/><BR/>all three transcripts in the triplet are annotated coding transcripts>
     labelloc = "t"
     style = "rounded,filled"
     fillcolor = "#fef0e6"
@@ -173,7 +173,7 @@ digraph cohort_flow {
 
   // ─── Subset 2 cluster (right) ────────────────────────────────────
   subgraph cluster_S2 {
-    label = <<FONT POINT-SIZE="22"><B>Reference-AUG-traceable subset (n = 1,166)</B></FONT><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
+    label = <<FONT POINT-SIZE="22"><B>Reference AUG-traceable subset (n = 1,166)</B></FONT><BR/><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
     labelloc = "t"
     style = "rounded,filled"
     fillcolor = "#e6f1f8"
@@ -197,7 +197,7 @@ digraph cohort_flow {
                      <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
                      <TR><TD ALIGN="LEFT">Figure 4 (Panels C / D)</TD></TR>
                      <TR><TD ALIGN="LEFT">SF30 / SF31</TD></TR>
-                     <TR><TD ALIGN="LEFT">SF35</TD></TR>
+                     <TR><TD ALIGN="LEFT">SF33 / SF35</TD></TR>
                    </TABLE>>,
              fillcolor="#eeeeee", color="#666"]
 
@@ -215,17 +215,22 @@ digraph cohort_flow {
 
   HPTC_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                      <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
-                     <TR><TD ALIGN="LEFT">SF33 / SF34</TD></TR>
+                     <TR><TD ALIGN="LEFT">SF34</TD></TR>
                    </TABLE>>,
              fillcolor="#eeeeee", color="#666"]
 
   // ─── Direct-from-hub consumers (whole pair set, no further narrowing) ─
   HUB_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
-                    <TR><TD ALIGN="LEFT"><B>Used by (whole pair set):</B></TD></TR>
+                    <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
                     <TR><TD ALIGN="LEFT">SF25 / SF26 / SF27</TD></TR>
                     <TR><TD ALIGN="LEFT">SF29</TD></TR>
                   </TABLE>>,
             fillcolor="#eeeeee", color="#666"]
+
+  // Invisible spacer to force horizontal breathing room on the HUB→HUB_CONS
+  // arrow; without it, rank=same pins HUB_CONS one nodesep (0.20) from HUB
+  // and the arrow visually collapses.
+  HUB_PAD [style=invis, width=1.4, height=0.01, label=""]
 
   // ─── Edges from hub into subset clusters and TD2 sub-cascade ─────
   // HUB → cluster arrows: no tailport specifier on either edge (mixed ports
@@ -239,20 +244,25 @@ digraph cohort_flow {
   // HUB_CONS placed to the RIGHT of HUB (same rank), not below — the
   // whole-pair-set descriptive analyses are a sibling of the two subset
   // narrowings, so a lateral placement reads more accurately.
-  HUB -> HUB_CONS [style=dashed, color="#555", constraint=false]
-  { rank = same; HUB; HUB_CONS }
+  HUB -> HUB_PAD [style=invis]
+  HUB_PAD -> HUB_CONS [style=invis]
+  // Solid arrow — HUB_CONS is a peer consumer of the HUB (same class as
+  // HUB → S1 / HUB → S2), so it takes the main-flow edge style. Dashed
+  // is reserved for edges inside a cluster (…_GROUPS → …_CONS).
+  HUB -> HUB_CONS [color="#555", constraint=false]
+  { rank = same; HUB; HUB_PAD; HUB_CONS }
 
-  S2_F3 -> HPTC [color="#4a3556"]
+  S2_F3 -> HPTC [color="#4a3556", minlen=3]
   HPTC -> HPTC_CONS [style=dashed, color="#4a3556"]
 }',
   upstream_node("Starting cohort",
-                sprintf("AT (n = 6) · DD (n = 8) · FB (n = 6) · MV (n = 6) · %d samples · %s expressed isoforms",
+                sprintf("AT (n = 6) · DD (n = 8) · FB (n = 6) · MV (n = 6) · %d samples<BR/>%s non-fusion isoforms (≥5%% of gene CPM in ≥1 DMSO or SMG1i sample)",
                         N_4CT_SMP, fmt(N_FILTER_ISO))),
   upstream_node("Identify NMD susceptible isoforms",
                 sprintf("%s NMD susceptible · %s non-NMD",
                         fmt(N_NMD_AS), fmt(N_NONNMD_AS))),
   upstream_node("Construct paired comparisons",
-                sprintf("per gene: dominant NMD-susceptible vs reference · two dominant non-NMD (Control + reference) → %s NMD-susceptible pairs · %s Control pairs (before matching)",
+                sprintf("per gene: dominant NMD-susceptible vs reference · two dominant non-NMD (Control + reference)<BR/>→ %s NMD-susceptible pairs · %s Control pairs (before matching)",
                         fmt(N_C2), fmt(N_C4))),
 
   # Subset 1 filter nodes — Why = single clause, no in-cell line wrapping
