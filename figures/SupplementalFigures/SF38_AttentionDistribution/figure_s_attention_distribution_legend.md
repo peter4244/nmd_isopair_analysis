@@ -1,9 +1,9 @@
 **SF38 | Attention distribution across the model's five candidate open reading frames, NMD susceptible vs non-NMD.**
 
-The deep-learning model evaluates each transcript at up to five candidate open reading frames and learns an attention weight for each. The candidate ORFs are ranked by a priority rule that prefers the annotated coding sequence first, then the standard caller's choice, then the open reading frame with the strongest Kozak start context. Most attention concentrates at the priority ORF in both classes.
+The deep-learning model evaluates each transcript at up to five candidate open reading frames and learns an attention weight for each. The candidates are ranked by a priority rule that prefers the annotated reference CDS first (projected from the gene's dominant non-NMD isoform when available), then the TransDecoder2-called CDS, then the open reading frame with the strongest Kozak start context. Most attention concentrates at the main (rank-0) open reading frame in both classes.
 
-**(A)** Attention weight per candidate-ORF rank, by class (NMD-susceptible in coral, non-NMD controls in blue). Most attention concentrates at the priority ORF (rank 0) in both classes (median ~0.74–0.76). The median rank-0 attention is slightly lower in NMD, with a corresponding shift of attention onto non-priority ORFs at ranks 1–4 and a long tail of NMD isoforms placing more than 25% of attention on a non-priority candidate.
+**(A)** Attention weight per candidate open reading frame rank, by class (NMD susceptible in coral, non-NMD in blue). Most attention concentrates at the rank-0 open reading frame in both classes (median ~0.74–0.76). The median rank-0 attention is slightly lower in NMD, with a corresponding shift of attention onto ranks 1–4 and a long tail of NMD isoforms placing more than 25 % of attention on a non-rank-0 candidate.
 
-**(B)** Shannon entropy of the per-isoform attention vector across the five candidate ORFs (higher entropy = more broadly distributed attention). The NMD density is shifted toward higher entropy than the Control density, quantifying the broader spread shown in Panel A.
+**(B)** Shannon entropy of the per-isoform attention vector across the five candidate open reading frames (higher entropy, more broadly distributed attention). The NMD density is shifted toward higher entropy than the Control density, quantifying the broader spread shown in Panel A.
 
-**Abbreviations.** NMD, nonsense-mediated decay; ORF, open reading frame.
+**Abbreviations.** NMD, nonsense-mediated decay.
