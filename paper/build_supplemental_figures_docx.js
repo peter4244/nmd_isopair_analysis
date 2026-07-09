@@ -14,7 +14,9 @@
  *     that closes the title), followed by the rest of the caption prose.
  *     Multi-paragraph captions preserve their paragraph breaks.
  *
- * Output: /tmp/nmd_supplemental_figures_sf24_sf42.docx
+ * Output: ~/claude_projects/nmd/paper/nmd_supplemental_figures_sf24_sf42.docx
+ * (Co-located with the manuscript, generator, and other paper artifacts —
+ * NOT Desktop; see feedback_default_output_location memory rule.)
  */
 
 const fs = require('fs');
@@ -25,7 +27,7 @@ const {
 } = require('docx');
 
 const SFROOT = '/Users/petecastaldi/claude_projects/nmd/figures/SupplementalFigures';
-const OUTPUT = '/tmp/nmd_supplemental_figures_sf24_sf42.docx';
+const OUTPUT = '/Users/petecastaldi/claude_projects/nmd/paper/nmd_supplemental_figures_sf24_sf42.docx';
 
 // Manifest: manuscript order → dir + png filename + legend filename
 const SFS = [

@@ -113,19 +113,7 @@ def main():
     ax.legend(loc="upper right", frameon=True, facecolor="white",
               edgecolor="none", fontsize=BODY_FS)
 
-    fig.text(
-        0.5, 0.94,
-        "GAIN direction by event type — NMD vs Control (3,009 pair-set triplets)",
-        ha="center", va="center",
-        fontsize=HEADER_FS, fontweight="bold", color=TITLE_C,
-    )
-    fig.text(
-        0.5, 0.90,
-        r"$***\ p<10^{-4},\ **\ p<10^{-3},\ *\ p<0.05$   (Fisher's exact test on GAIN/LOSS × NMD/Control)",
-        ha="center", va="center",
-        fontsize=BODY_FS - 1, color=TITLE_C, style="italic",
-    )
-
+    # No overall figure title or subtitle — caption carries both roles (Yul-style).
     assert_text_within_canvas(fig)
 
     out_png = HERE / "figure_sf29_gain_direction_by_event.png"

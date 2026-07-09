@@ -175,18 +175,7 @@ def build_figure():
     for ax, letter in zip(axes, ["A", "B", "C"]):
         panel_letter(ax, letter, x=-0.04, y=1.15)
 
-    # Footnote
-    pct_atg_pos = summaries["NMD+/PTC+"].loc[
-        summaries["NMD+/PTC+"]["branch"] == "ATG", "pct"].iloc[0]
-    pct_atg_neg = summaries["NMD+/PTC- retained"].loc[
-        summaries["NMD+/PTC- retained"]["branch"] == "ATG", "pct"].iloc[0]
-    fig.text(
-        0.5, 0.018,
-        f"ATG-branch share of subgroup total: NMD+/PTC− = {pct_atg_neg:.1f}% "
-        f"vs NMD+/PTC+ = {pct_atg_pos:.1f}%  →  {pct_atg_neg/pct_atg_pos:.1f}× higher in PTC−"
-        f"  (n = 1,016 / 95 / 1,107 isoforms; full n = 1,166 subset).",
-        ha="center", va="bottom", fontsize=11, style="italic", color=C_TITLE,
-    )
+    # No footnote — caption carries the key numbers (Yul-style).
     return fig, axes
 
 

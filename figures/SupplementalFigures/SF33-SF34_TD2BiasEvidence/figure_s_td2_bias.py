@@ -243,17 +243,7 @@ def build_figure():
         for ci in range(3):
             panel_letter(axes[ri, ci], letters[ri][ci], x=-0.20, y=1.04)
 
-    # Row-group titles placed in figure coords, clearly above each row's
-    # panel-label band.
-    fig.text(0.525, 0.95,
-             "1:1 gene-matched NMD comparators — Figure 4 Section C scope (n = 1,166)",
-             ha="center", va="center",
-             fontsize=BODY_FS + 2, fontweight="bold", color=C_TITLE)
-    fig.text(0.525, 0.475,
-             "Occult-PTC subset — TD2 missed a PTC that ref-AUG tracing revealed (n = 492)",
-             ha="center", va="center",
-             fontsize=BODY_FS + 2, fontweight="bold", color=C_TITLE)
-
+    # No row-group titles — caption identifies the two cohorts (Yul-style).
     return fig
 
 

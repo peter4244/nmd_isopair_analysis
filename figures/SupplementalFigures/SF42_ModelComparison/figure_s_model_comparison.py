@@ -127,8 +127,12 @@ def panel_a_scatter(ax, df, model_key):
         va="top", ha="left",
         bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#999", lw=0.5),
     )
-    ax.set_title(MODEL_LABEL[model_key], fontsize=11, color="#222222", pad=4)
-    ax.set_xlabel("Predicted NMD score", fontsize=10, color="#222222")
+    # No subpanel title — fold the model identity into the x-axis label so the
+    # reader can still tell the three sub-panels apart (Yul-style).
+    ax.set_xlabel(
+        f"Predicted NMD score\n{MODEL_LABEL[model_key]}",
+        fontsize=10, color="#222222",
+    )
     if model_key == "our_model":
         ax.set_xticks([0.0, 0.25, 0.5, 0.75, 1.0])
     else:

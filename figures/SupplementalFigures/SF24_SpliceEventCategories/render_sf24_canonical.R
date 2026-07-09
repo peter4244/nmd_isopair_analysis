@@ -20,11 +20,12 @@ suppressPackageStartupMessages({
 VIS <- "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/Version_6.0/isopair_wrapper/visualization_functions.R"
 source(VIS)
 
-# Convenience helper — same signature the Rmd glossary chunks use.
+# Convenience helper. Per Yul-style convention, no titles or subtitles on the
+# figure itself — the composite caption identifies the panels.
 glossary_plot <- function(ref_s, ref_e, comp_s, comp_e, title, subtitle) {
   plot_ucsc_pair(ref_s, ref_e, comp_s, comp_e, strand = "+",
                  ref_label = "Reference", comp_label = "Comparator",
-                 title = title, subtitle = subtitle)
+                 title = NULL, subtitle = NULL)
 }
 
 # 12 event definitions — coordinates verbatim from the Rmd Event Type Glossary.

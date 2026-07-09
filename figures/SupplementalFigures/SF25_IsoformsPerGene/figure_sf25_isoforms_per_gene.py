@@ -68,16 +68,7 @@ def main():
     ax.set_ylabel("Number of genes", fontsize=BODY_FS)
     ax.set_xlim(0.5, max_bin + 0.5)
 
-    # Header title (ggplot-style bold, above the plot; not an in-axes title)
-    fig.text(
-        0.5, 0.955,
-        f"Isoforms per gene ({n_genes:,} pair-set genes)",
-        ha="center", va="center",
-        fontsize=HEADER_FS,
-        fontweight="bold",
-        color=TITLE_C,
-    )
-
+    # No overall figure title — caption carries the title role (Yul-style).
     assert_text_within_canvas(fig)
 
     out_png = HERE / "figure_sf25_isoforms_per_gene.png"

@@ -80,15 +80,7 @@ def main():
     ax.set_xlim(0, 100)
     ax.set_xticks([0, 25, 50, 75, 100])
 
-    fig.text(
-        0.5, 0.955,
-        f"Reference share of gene expression ({n_genes:,} pair-set genes)",
-        ha="center", va="center",
-        fontsize=HEADER_FS,
-        fontweight="bold",
-        color=TITLE_C,
-    )
-
+    # No overall figure title — caption carries the title role (Yul-style).
     assert_text_within_canvas(fig)
 
     out_png = HERE / "figure_sf26_reference_share.png"

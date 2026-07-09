@@ -95,15 +95,7 @@ def main():
     ax.set_yticklabels(["10", "100", "1,000", "10,000", "100,000"])
     ax.set_xlim(-0.6, len(ROLES) - 0.4)
 
-    fig.text(
-        0.5, 0.955,
-        f"Transcript length by pair role ({n_triplets:,} triplets)",
-        ha="center", va="center",
-        fontsize=HEADER_FS,
-        fontweight="bold",
-        color=TITLE_C,
-    )
-
+    # No overall figure title — caption carries the title role (Yul-style).
     assert_text_within_canvas(fig)
 
     out_png = HERE / "figure_sf27_transcript_length_by_role.png"

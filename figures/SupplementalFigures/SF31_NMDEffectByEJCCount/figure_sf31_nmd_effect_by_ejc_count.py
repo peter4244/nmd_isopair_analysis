@@ -99,13 +99,7 @@ def main():
     ax.set_ylim(y_lo, y_hi)
     ax.set_xlim(-0.6, len(order) - 0.4)
 
-    fig.text(
-        0.5, 0.94,
-        f"NMD effect size by downstream EJC count (PTC+ comparators, n = {len(df):,})",
-        ha="center", va="center",
-        fontsize=HEADER_FS, fontweight="bold", color=TITLE_C,
-    )
-
+    # No overall figure title — caption carries the title role (Yul-style).
     assert_text_within_canvas(fig)
 
     out_png = HERE / "figure_sf31_nmd_effect_by_ejc_count.png"

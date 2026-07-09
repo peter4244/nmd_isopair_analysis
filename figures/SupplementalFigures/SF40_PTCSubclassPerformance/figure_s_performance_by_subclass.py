@@ -117,7 +117,7 @@ def build_figure():
     axA.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
     axA.set_xlabel("False positive rate", fontsize=9)
     axA.set_ylabel("True positive rate", fontsize=9)
-    axA.set_title("Discrimination vs Control", fontsize=10, pad=4)
+    # No subpanel title — caption identifies Panel A (Yul-style).
     axA.tick_params(axis="both", labelsize=8)
     axA.legend(loc="lower right", fontsize=7.5, frameon=True, framealpha=0.9,
                facecolor="white", edgecolor="none", handlelength=2.0,
@@ -164,20 +164,14 @@ def build_figure():
     axB.set_ylim(-0.03, 1.03)
     axB.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
     axB.set_ylabel("Model NMD probability  P(NMD | x)", fontsize=9)
-    axB.set_title("Predicted probability per subclass", fontsize=10, pad=4)
+    # No subpanel title — caption identifies Panel B (Yul-style).
     axB.tick_params(axis="y", labelsize=8)
 
     # Panel labels
     panel_letter(axA, "A", x=-0.13, y=1.02)
     panel_letter(axB, "B", x=-0.13, y=1.02)
 
-    # Footnote
-    fig.text(
-        0.5, 0.025,
-        f"AUC drops from {auc1:.2f} (NMD+/PTC+ vs Ctrl) to {auc2:.2f} "
-        "(NMD+/PTC− vs Ctrl) — held-out test set, chr-1/3/5/7 paralog-free.",
-        ha="center", va="bottom", fontsize=8, style="italic",
-    )
+    # No footnote — caption carries the key numbers (Yul-style).
     return fig, (axA, axB)
 
 

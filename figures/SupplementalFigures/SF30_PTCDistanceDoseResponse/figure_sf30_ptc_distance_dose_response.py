@@ -149,13 +149,7 @@ def main():
              bbox=dict(facecolor="white", edgecolor="none", alpha=0.85,
                        boxstyle="square,pad=0.4"))
 
-    fig.text(
-        0.5, 0.94,
-        "NMD response magnitude vs stop-codon distance to last EJC",
-        ha="center", va="center",
-        fontsize=HEADER_FS, fontweight="bold", color=TITLE_C,
-    )
-
+    # No overall figure title — caption carries the title role (Yul-style).
     assert_text_within_canvas(fig)
 
     out_png = HERE / "figure_sf30_ptc_distance_dose_response.png"
