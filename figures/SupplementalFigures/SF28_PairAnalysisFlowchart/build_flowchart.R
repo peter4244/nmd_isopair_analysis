@@ -96,7 +96,7 @@ filter_node <- function(what, kept, dropped, why) {
          <TD ALIGN="LEFT"><FONT COLOR="#b22222">%s</FONT></TD>
        </TR>
        <TR>
-         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="12" COLOR="#444">Why: %s</FONT></TD>
+         <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="14" COLOR="#444">Why: %s</FONT></TD>
        </TR>
      </TABLE>>', what, kept, dropped, why)
 }
@@ -107,7 +107,7 @@ upstream_node <- function(stage, detail, what_dropped = NULL) {
     stage, detail)
   if (!is.null(what_dropped)) {
     rows <- paste0(rows, sprintf(
-      '<TR><TD ALIGN="LEFT"><FONT POINT-SIZE="12" COLOR="#444">%s</FONT></TD></TR>',
+      '<TR><TD ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#444">%s</FONT></TD></TR>',
       what_dropped))
   }
   sprintf('<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">%s</TABLE>>', rows)
@@ -118,9 +118,9 @@ digraph cohort_flow {
   graph [rankdir=TB, fontname="Helvetica", nodesep=0.30, ranksep=0.45,
          splines=ortho, compound=true]
   node  [shape=box, style="rounded,filled", fontname="Helvetica",
-         fontsize=14, margin="0.25,0.18"]
+         fontsize=18, margin="0.25,0.18"]
   edge  [color="#666", penwidth=1.4, fontname="Helvetica",
-         fontsize=12, fontcolor="#444"]
+         fontsize=14, fontcolor="#444"]
 
   // ─── Starting cohort + upstream classification + pair construction
   U1 [label=%s, fillcolor="#e8eef4", color="#2f4858"]
@@ -131,9 +131,9 @@ digraph cohort_flow {
 
   // ─── Hub: matched isoform pairs ──────────────────────────────────
   HUB [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
-                <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="18"><B>Matched isoform pairs</B></FONT></TD></TR>
-                <TR><TD ALIGN="CENTER"><FONT COLOR="white"><B>3,009 NMD-sensitive  ·  3,009 Control</B></FONT></TD></TR>
-                <TR><TD ALIGN="CENTER"><FONT COLOR="#cfd8e2" POINT-SIZE="12">one triplet per gene</FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="22"><B>Matched isoform pairs</B></FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="white"><B>3,009 NMD susceptible  ·  3,009 Control</B></FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="#cfd8e2" POINT-SIZE="14">one triplet per gene</FONT></TD></TR>
               </TABLE>>,
        fillcolor="#1f3a5f", color="#0a1a30", penwidth=2.0]
 
@@ -141,7 +141,7 @@ digraph cohort_flow {
 
   // ─── Subset 1 cluster (left) ─────────────────────────────────────
   subgraph cluster_S1 {
-    label = <<FONT POINT-SIZE="18"><B>Subset 1 — strict (n = 190)</B></FONT><BR/>all three transcripts in the triplet are annotated coding transcripts>
+    label = <<FONT POINT-SIZE="22"><B>GENCODE-restricted subset (n = 190)</B></FONT><BR/>all three transcripts in the triplet are annotated coding transcripts>
     labelloc = "t"
     style = "rounded,filled"
     fillcolor = "#fef0e6"
@@ -153,7 +153,7 @@ digraph cohort_flow {
     S1_F2 [label=%s, fillcolor="white", color="#a2604a"]
 
     S1_GROUPS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
-                       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Classification:</B>&nbsp;premature stop in the NMD-sensitive transcript?</TD></TR>
+                       <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Classification:</B>&nbsp;premature stop in the NMD-susceptible transcript?</TD></TR>
                        <TR><TD ALIGN="RIGHT"><B>72</B></TD><TD ALIGN="LEFT">PTC+ (38%%)</TD></TR>
                        <TR><TD ALIGN="RIGHT"><B>118</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
                        <TR><TD ALIGN="RIGHT"><B>190</B></TD><TD ALIGN="LEFT">Control</TD></TR>
@@ -164,7 +164,7 @@ digraph cohort_flow {
                      <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
                      <TR><TD ALIGN="LEFT">Figure 3 (Panels D / E / F)</TD></TR>
                      <TR><TD ALIGN="LEFT">Figure 4 (Panels A / B)</TD></TR>
-                     <TR><TD ALIGN="LEFT">CDS / 3′UTR supplement Row 1</TD></TR>
+                     <TR><TD ALIGN="LEFT">SF32</TD></TR>
                    </TABLE>>,
              fillcolor="#eeeeee", color="#666"]
 
@@ -173,7 +173,7 @@ digraph cohort_flow {
 
   // ─── Subset 2 cluster (right) ────────────────────────────────────
   subgraph cluster_S2 {
-    label = <<FONT POINT-SIZE="18"><B>Subset 2 — broader (n = 1,166)</B></FONT><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
+    label = <<FONT POINT-SIZE="22"><B>Reference-AUG-traceable subset (n = 1,166)</B></FONT><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
     labelloc = "t"
     style = "rounded,filled"
     fillcolor = "#e6f1f8"
@@ -196,7 +196,8 @@ digraph cohort_flow {
     S2_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                      <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
                      <TR><TD ALIGN="LEFT">Figure 4 (Panels C / D)</TD></TR>
-                     <TR><TD ALIGN="LEFT">CDS / 3′UTR supplement Row 2</TD></TR>
+                     <TR><TD ALIGN="LEFT">SF30 / SF31</TD></TR>
+                     <TR><TD ALIGN="LEFT">SF35</TD></TR>
                    </TABLE>>,
              fillcolor="#eeeeee", color="#666"]
 
@@ -205,18 +206,26 @@ digraph cohort_flow {
 
   // ─── Hidden-PTC sub-cascade ─────────────────────────────────────
   HPTC [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
-                <TR><TD ALIGN="LEFT"><B>Hidden-PTC subset (n = 492)</B></TD></TR>
+                <TR><TD ALIGN="LEFT"><B>Occult-PTC subset (n = 492)</B></TD></TR>
                 <TR><TD ALIGN="LEFT">reference-anchored analysis flags a premature stop,</TD></TR>
-                <TR><TD ALIGN="LEFT">but the standard CDS caller (TD2) does not</TD></TR>
+                <TR><TD ALIGN="LEFT">but the TransDecoder2 CDS caller does not</TD></TR>
                 <TR><TD ALIGN="LEFT"><FONT COLOR="#b22222">674 / 1,166 dropped</FONT> — no disagreement</TD></TR>
               </TABLE>>,
         fillcolor="#a48bbf", color="#4a3556", fontcolor="#1a0a25"]
 
   HPTC_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                      <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
-                     <TR><TD ALIGN="LEFT">TD2 Bias Evidence supplement</TD></TR>
+                     <TR><TD ALIGN="LEFT">SF33 / SF34</TD></TR>
                    </TABLE>>,
              fillcolor="#eeeeee", color="#666"]
+
+  // ─── Direct-from-hub consumers (whole pair set, no further narrowing) ─
+  HUB_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
+                    <TR><TD ALIGN="LEFT"><B>Used by (whole pair set):</B></TD></TR>
+                    <TR><TD ALIGN="LEFT">SF25 / SF26 / SF27</TD></TR>
+                    <TR><TD ALIGN="LEFT">SF29</TD></TR>
+                  </TABLE>>,
+            fillcolor="#eeeeee", color="#666"]
 
   // ─── Edges from hub into subset clusters and TD2 sub-cascade ─────
   // HUB → cluster arrows: no tailport specifier on either edge (mixed ports
@@ -227,24 +236,29 @@ digraph cohort_flow {
   // figures/lib/validate_flowchart_dot.R.
   HUB -> S1_F1 [lhead=cluster_S1, color="#7d4030", penwidth=2.0, minlen=2]
   HUB -> S2_F1 [lhead=cluster_S2, color="#1f5570", penwidth=2.0, minlen=2]
+  // HUB_CONS placed to the RIGHT of HUB (same rank), not below — the
+  // whole-pair-set descriptive analyses are a sibling of the two subset
+  // narrowings, so a lateral placement reads more accurately.
+  HUB -> HUB_CONS [style=dashed, color="#555", constraint=false]
+  { rank = same; HUB; HUB_CONS }
 
   S2_F3 -> HPTC [color="#4a3556"]
   HPTC -> HPTC_CONS [style=dashed, color="#4a3556"]
 }',
-  upstream_node("Starting cohort — 4 cell types of interest",
+  upstream_node("Starting cohort",
                 sprintf("AT (n = 6) · DD (n = 8) · FB (n = 6) · MV (n = 6) · %d samples · %s expressed isoforms",
                         N_4CT_SMP, fmt(N_FILTER_ISO))),
-  upstream_node("Identify NMD-sensitive isoforms",
-                sprintf("%s NMD-sensitive · %s non-NMD-sensitive (per-CT + 4-CT-union mashr)",
+  upstream_node("Identify NMD susceptible isoforms",
+                sprintf("%s NMD susceptible · %s non-NMD",
                         fmt(N_NMD_AS), fmt(N_NONNMD_AS))),
   upstream_node("Construct paired comparisons",
-                sprintf("per gene: dominant NMD-sensitive vs reference · two dominant non-NMD-sensitive (Control + reference) → %s NMD-sensitive pairs · %s Control pairs (before matching)",
+                sprintf("per gene: dominant NMD-susceptible vs reference · two dominant non-NMD (Control + reference) → %s NMD-susceptible pairs · %s Control pairs (before matching)",
                         fmt(N_C2), fmt(N_C4))),
 
   # Subset 1 filter nodes — Why = single clause, no in-cell line wrapping
   filter_node("all three transcripts are annotated (in GENCODE)",
               "301 / 301", "2,708 / 2,708",
-              "most NMD-sensitive transcripts are novel"),
+              "most NMD-susceptible transcripts are novel"),
   filter_node("all three transcripts have a curated coding sequence",
               "190 / 190", "111 / 111",
               "annotated non-coding transcripts (lncRNA, etc.)"),
@@ -279,7 +293,7 @@ cat(sprintf("[dot]  → %s\n", dot_path))
 # font sizes — prevents the htmlwidget's small default container from
 # scaling the SVG (which makes fonts look microscopic). Width/height in
 # pixels; if you bump font sizes or add more nodes, bump these too.
-widget <- DiagrammeR::grViz(dot_spec, width = 1500, height = 2000)
+widget <- DiagrammeR::grViz(dot_spec, width = 1800, height = 2200)
 htmlwidgets::saveWidget(widget, html_path,
                          selfcontained = TRUE,
                          title = "Pair-analysis cohort flowchart")

@@ -5,7 +5,7 @@
 # flowcharts (the canonical example being figures/SupplementalFigures/
 # PairAnalysisFlowchart/build_flowchart.R):
 #
-#   1. POINT-SIZE drift outside the 3-tier hierarchy (12 / 14 / 18)
+#   1. POINT-SIZE drift outside the 3-tier hierarchy (14 / 18 / 22)
 #   2. In-cell <BR ALIGN="LEFT"/> wrapping (causes asymmetric row heights)
 #   3. Count-immediately-followed-by-label patterns like "<B>72</B> PTC+"
 #      that graphviz collapses to "72PTC+" or near-zero kerning
@@ -21,7 +21,7 @@
 # Returns a list with $errors (character vector) and $warnings (character
 # vector). Caller decides whether to raise or proceed.
 
-validate_flowchart_dot <- function(dot, allowed_point_sizes = c(12, 14, 18),
+validate_flowchart_dot <- function(dot, allowed_point_sizes = c(14, 18, 22),
                                     verbose = TRUE) {
   errors <- character(0)
   warnings <- character(0)

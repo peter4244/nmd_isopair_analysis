@@ -1,15 +1,24 @@
 """SF30 — NMD-response magnitude vs stop-codon distance to the last EJC.
 
-Scatter of mashr posterior-mean logFC (SMG1i vs DMSO, averaged across the
-four cell types AT2, LAE, FB, MV) against distance from the comparator's
-stop codon to the last exon-junction complex. Loess overlay + 95% CI band.
-Vertical dashed line at 50 nt marks the operational PTC threshold.
+Scatter of mashr posterior-mean logFC (SMG1i vs DMSO, averaged across AT2,
+LAE, FB, MV) against distance from the comparator's stop codon to the last
+exon-junction complex. Loess overlay + 95% CI band. Vertical dashed line at
+50 nt marks the operational PTC threshold.
+
+Stop anchor: reference-AUG-traced (unbiased). The comparator's stop codon
+is defined as the first in-frame stop reached by projecting the reference
+gene's AUG onto the comparator, and the distance to the last EJC is
+computed from the comparator's exon structure. This avoids the TD2-CDS
+attenuation that would arise from anchoring on the TD2-called stop for
+occult-PTC isoforms.
+
+No rank-correlation statistic is annotated: the phenomenon is a
+threshold-like ~50 nt EJC-rule response, not a monotone-scaled quantity.
+Summary badge reports the Wilcoxon comparison of logFC above vs at/below
+the 50 nt threshold.
 
 Data source: `sf30_ptc_distance_logfc.tsv` (produced by data_export.R from
-the Isopair pipeline's canonical gene-matched C2 comparators + ptc.rds +
-mashr_isoform_model_2026.3.10.rds). Matches the population and derivation
-of the Rmd chunk `goal1-fig2-logfc-dist` in
-`05_final_report_mashr.Rmd` § "NMD Response vs Stop Codon Distance".
+`ref_atg_analysis.rds$c2` + `structures.rds` + mashr posterior means).
 """
 
 from __future__ import annotations
@@ -19,7 +28,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
+from scipy.stats import mannwhitneyu
 
 HERE = Path(__file__).resolve().parent
 LIB  = HERE.parents[1] / "lib"
@@ -34,6 +43,7 @@ from ggplot_style import (
     BODY_FS,
     HEADER_FS,
 )
+from validate_figure_layout import validate_figure_layout
 
 apply_ggplot_rcparams()
 
@@ -105,17 +115,26 @@ def loess_with_ci(x, y, frac=0.30, n_boot=200, seed=42, n_grid=200):
 
 def main():
     df = pd.read_csv(DATA / "sf30_ptc_distance_logfc.tsv", sep="\t")
-    df = df.dropna(subset=["ptc_distance", "mean_logFC"])
+    df = df.dropna(subset=["stop_to_last_ejc_via_ref_nt", "mean_logFC"])
 
-    # x-axis clip 1st/99th centile (matches Rmd)
-    x_lo, x_hi = df["ptc_distance"].quantile([0.01, 0.99]).values
-    plot_df = df[(df["ptc_distance"] >= x_lo) & (df["ptc_distance"] <= x_hi)].copy()
+    # x-axis clip 1st/99th centile
+    x_lo, x_hi = df["stop_to_last_ejc_via_ref_nt"].quantile([0.01, 0.99]).values
+    plot_df = df[(df["stop_to_last_ejc_via_ref_nt"] >= x_lo)
+                 & (df["stop_to_last_ejc_via_ref_nt"] <= x_hi)].copy()
     n_plot = len(plot_df)
 
-    rho, p = spearmanr(df["ptc_distance"], df["mean_logFC"])
-
-    x = plot_df["ptc_distance"].to_numpy()
+    x = plot_df["stop_to_last_ejc_via_ref_nt"].to_numpy()
     y = plot_df["mean_logFC"].to_numpy()
+
+    # Threshold comparison: > 50 nt vs ≤ 50 nt (the operational EJC-rule cutoff)
+    above = df.loc[df["stop_to_last_ejc_via_ref_nt"] >  50, "mean_logFC"].to_numpy()
+    at_or_below = df.loc[df["stop_to_last_ejc_via_ref_nt"] <= 50, "mean_logFC"].to_numpy()
+    med_above = float(np.median(above)) if above.size else np.nan
+    med_below = float(np.median(at_or_below)) if at_or_below.size else np.nan
+    if above.size and at_or_below.size:
+        _, p_thr = mannwhitneyu(above, at_or_below, alternative="greater")
+    else:
+        p_thr = np.nan
 
     fig, ax = plt.subplots(figsize=(8.0, 5.0))
     fig.subplots_adjust(left=0.10, right=0.98, top=0.86, bottom=0.14)
@@ -129,21 +148,31 @@ def main():
     ax.plot(xg, yfit, color=NMD_COLOR, linewidth=2.0, zorder=5)
 
     ax.axvline(50, linestyle="--", color="#c0392b", linewidth=1.0, zorder=2)
-    ax.text(52, ax.get_ylim()[1] * 0.98, "PTC threshold (50 nt)",
+    # Place label a visible gap right of the threshold line (~3% of x-axis span
+    # in data coords, y in axes coords so it stays pinned near the top).
+    ax.text(50 + 0.03 * (x_hi - x_lo), 0.97,
+            "PTC threshold (50 nt)",
+            transform=ax.get_xaxis_transform(),
             ha="left", va="top", fontsize=BODY_FS - 1, color="#c0392b")
 
-    ax.set_xlabel("Distance from stop codon to last EJC (nt)",
+    ax.set_xlabel("Distance from stop codon (reference-AUG-traced) to last EJC (nt)",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylabel("Mean logFC (mashr posterior mean)",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_xlim(x_lo, x_hi)
 
-    # Correlation annotation
-    p_str = "< 10⁻¹⁶⁰" if p < 1e-160 else f"= {p:.2g}"
+    # Threshold-honest summary: median logFC above vs at/below 50 nt + Wilcoxon p.
+    if np.isnan(p_thr):
+        p_str = "n/a"
+    elif p_thr < 1e-160:
+        p_str = "< 10⁻¹⁶⁰"
+    else:
+        p_str = f"= {p_thr:.2g}"
     ax.text(0.98, 0.04,
-             f"Spearman ρ = {rho:.3f}\n"
-             f"n = {n_plot:,} shown / {len(df):,} total\n"
-             f"p {p_str}",
+             f"median logFC > 50 nt = {med_above:.2f}  (n = {above.size:,})\n"
+             f"median logFC ≤ 50 nt = {med_below:.2f}  (n = {at_or_below.size:,})\n"
+             f"Wilcoxon p (one-sided) {p_str}\n"
+             f"total n = {len(df):,}  (shown: {n_plot:,})",
              transform=ax.transAxes, ha="right", va="bottom",
              fontsize=BODY_FS - 1, color=TITLE_C,
              bbox=dict(facecolor="white", edgecolor="none", alpha=0.85,
@@ -151,6 +180,7 @@ def main():
 
     # No overall figure title — caption carries the title role (Yul-style).
     assert_text_within_canvas(fig)
+    validate_figure_layout(fig, ax)
 
     out_png = HERE / "figure_sf30_ptc_distance_dose_response.png"
     out_pdf = HERE / "figure_sf30_ptc_distance_dose_response.pdf"
@@ -159,7 +189,7 @@ def main():
     print(f"wrote {out_png.name} and {out_pdf.name}")
     print(f"  n comparators total: {len(df):,}")
     print(f"  n shown (1st-99th centile): {n_plot:,}")
-    print(f"  Spearman rho = {rho:.4f}   p = {p:.2e}")
+    print(f"  median logFC >50 / ≤50 nt = {med_above:.3f} / {med_below:.3f}   p = {p_thr:.2e}")
 
 
 if __name__ == "__main__":

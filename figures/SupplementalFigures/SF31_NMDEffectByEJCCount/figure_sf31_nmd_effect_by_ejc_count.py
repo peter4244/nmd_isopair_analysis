@@ -2,13 +2,14 @@
 
 Violin + box distributions of mashr posterior-mean logFC (SMG1i vs DMSO,
 averaged across AT2/LAE/FB/MV) as a function of the comparator's number of
-downstream EJCs. Restricted to PTC-positive NMD comparators (has_ptc == TRUE)
-from SF30's population. EJC counts ≥ 7 collapsed into a "7+" bin.
+downstream EJCs. Restricted to comparators with at least one downstream
+EJC from SF30's population. EJC counts ≥ 7 collapsed into a "7+" bin.
 
-Data source: `sf31_ejc_count_logfc.tsv` (produced by data_export.R alongside
-SF30's TSV). Matches the population and derivation of the Rmd chunk
-`goal1-fig3-ejc-boxplot` in `05_final_report_mashr.Rmd`
-§ "NMD Strength by Downstream EJC Count".
+Downstream-EJC count is measured against the reference-AUG-traced stop
+codon (unbiased) — same anchor used by SF30. This avoids the TD2-CDS
+attenuation that would arise from anchoring on the TD2-called stop.
+
+Data source: `sf31_ejc_count_logfc.tsv` (produced by data_export.R).
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from ggplot_style import (
     BODY_FS,
     HEADER_FS,
 )
+from validate_figure_layout import validate_figure_layout
 
 apply_ggplot_rcparams()
 
@@ -41,11 +43,11 @@ DATA = HERE / "data"
 
 def main():
     df = pd.read_csv(DATA / "sf31_ejc_count_logfc.tsv", sep="\t")
-    df = df.dropna(subset=["mean_logFC", "n_downstream_ejcs"])
+    df = df.dropna(subset=["mean_logFC", "n_downstream_ejc"])
 
     # 7+ bin
-    df["ejc_bin"] = np.where(df["n_downstream_ejcs"] >= 7, "7+",
-                              df["n_downstream_ejcs"].astype(int).astype(str))
+    df["ejc_bin"] = np.where(df["n_downstream_ejc"] >= 7, "7+",
+                              df["n_downstream_ejc"].astype(int).astype(str))
     order = [str(i) for i in range(1, 7)] + ["7+"]
     df = df[df["ejc_bin"].isin(order)].copy()
 
@@ -73,14 +75,6 @@ def main():
                 capprops=dict(color=TITLE_C, linewidth=1.0),
                 zorder=5)
 
-    # n = labels above each violin
-    ymax = df["mean_logFC"].quantile(0.98)
-    y_label = ymax + 0.35
-    for i, b in enumerate(order):
-        n = len(df.loc[df["ejc_bin"] == b])
-        ax.text(positions[i], y_label, f"n = {n:,}",
-                ha="center", va="bottom", fontsize=BODY_FS - 1, color=TITLE_C)
-
     # Median line
     medians = [np.median(d) for d in data]
     ax.plot(positions, medians, color="#c0392b", linewidth=1.2,
@@ -88,19 +82,24 @@ def main():
     ax.legend(loc="lower right", frameon=True, facecolor="white",
               edgecolor="none", fontsize=BODY_FS - 1)
 
+    # Sample sizes folded into the x-tick labels (below the axis) — avoids
+    # the collision with violin outlines that above-violin placement causes.
+    n_by_bin = [len(df.loc[df["ejc_bin"] == b]) for b in order]
     ax.set_xticks(positions)
-    ax.set_xticklabels(order, fontsize=BODY_FS, color=TITLE_C)
-    ax.set_xlabel("Number of downstream EJCs (comparator)",
+    ax.set_xticklabels([f"{b}\n(n = {n:,})" for b, n in zip(order, n_by_bin)],
+                        fontsize=BODY_FS, color=TITLE_C)
+    ax.set_xlabel("Number of downstream EJCs (reference-AUG-traced stop)",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylabel("Mean logFC (mashr posterior mean)",
                    fontsize=BODY_FS, color=TITLE_C)
-    y_hi = max(df["mean_logFC"].quantile(0.995), y_label + 0.6)
+    y_hi = df["mean_logFC"].quantile(0.995) + 0.2
     y_lo = df["mean_logFC"].quantile(0.005) - 0.2
     ax.set_ylim(y_lo, y_hi)
     ax.set_xlim(-0.6, len(order) - 0.4)
 
     # No overall figure title — caption carries the title role (Yul-style).
     assert_text_within_canvas(fig)
+    validate_figure_layout(fig, ax)
 
     out_png = HERE / "figure_sf31_nmd_effect_by_ejc_count.png"
     out_pdf = HERE / "figure_sf31_nmd_effect_by_ejc_count.pdf"
