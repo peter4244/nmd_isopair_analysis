@@ -67,6 +67,7 @@ def render_length_kde(ax, tsv_name):
     y_max = max(p[1] for p in peaks.values())
     ax.set_ylim(0, y_max * 1.65)
     ax.set_xlabel("ORF length (nt, log scale)", fontsize=BODY_FS, color=TITLE_C)
+    ax.set_ylabel("Density", fontsize=BODY_FS, color=TITLE_C)
     ax.set_yticks([])
     ax.tick_params(axis="x", labelsize=BODY_FS, colors=TITLE_C)
     # Curve labels — one line each, no (n=...) tag. Sample size lives in
