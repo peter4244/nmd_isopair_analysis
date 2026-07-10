@@ -24,9 +24,7 @@ RMD_HTML <- file.path(NMD_ROOT,
 FIG3 <- file.path(NMD_ROOT, "figures/multipanel/figure3_isopair_and_ptc/data")
 FIG4 <- file.path(NMD_ROOT, "figures/multipanel/figure4_ptcneg_and_model/data")
 SUPP_CDS <- file.path(NMD_ROOT,
-  "figures/SupplementalFigures/SF32-SF35_CDSand3UTR_GENCODEonly/data")
-SUPP_TD2 <- file.path(NMD_ROOT,
-  "figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/data")
+  "figures/SupplementalFigures/SF32_CdsAnd3UTR_GENCODE/data")
 
 stopifnot(file.exists(RMD_HTML))
 
