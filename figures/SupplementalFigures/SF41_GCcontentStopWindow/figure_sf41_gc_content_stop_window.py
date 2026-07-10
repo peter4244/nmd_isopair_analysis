@@ -95,8 +95,8 @@ def main():
     draw_panel(axes[1], stop, codon_label="stop codon")
     axes[1].set_ylabel("")
 
-    facet_header(axes[0], "Start (AUG) window", height=0.08)
-    facet_header(axes[1], "Stop codon window",   height=0.08)
+    facet_header(axes[0], "Start codon window", height=0.08)
+    facet_header(axes[1], "Stop codon window",  height=0.08)
 
     panel_letter(axes[0], "A", x=-0.07, y=1.14)
     panel_letter(axes[1], "B", x=-0.07, y=1.14)
