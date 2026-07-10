@@ -59,13 +59,13 @@ DISPLAY_LABEL = {
     "A5SS":             "A5SS",
     "A3SS":             "A3SS",
     "SE":               "SE",
-    "Missing_Internal": "Missing\nInternal",
-    "Partial_IR_5":     "Partial\nIR 5′",
-    "Partial_IR_3":     "Partial\nIR 3′",
+    "Missing_Internal": "Missing Internal",
+    "Partial_IR_5":     "Partial IR 5′",
+    "Partial_IR_3":     "Partial IR 3′",
     "IR":               "Full IR",
     "IR_diff_5":        "IR diff 5′",
     "IR_diff_3":        "IR diff 3′",
-    "IR_diff_5_3":      "IR diff\n5′+3′",
+    "IR_diff_5_3":      "IR diff 5′+3′",
 }
 
 
@@ -78,7 +78,7 @@ def main():
     bar_width = 0.38
 
     fig, ax = plt.subplots(figsize=(NATIVE_W, 5.4))
-    fig.subplots_adjust(left=0.08, right=0.98, top=0.85, bottom=0.20)
+    fig.subplots_adjust(left=0.08, right=0.98, top=0.85, bottom=0.33)
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
 
     bars_nmd = ax.bar(x - bar_width / 2, df["pct_NMD_GAIN"], width=bar_width,
@@ -101,7 +101,9 @@ def main():
 
     ax.set_xticks(x)
     ax.set_xticklabels([DISPLAY_LABEL.get(e, e) for e in events],
-                       fontsize=BODY_FS - 1, color=TITLE_C, rotation=0)
+                       fontsize=BODY_FS - 1, color=TITLE_C,
+                       rotation=90, ha="right", va="center",
+                       rotation_mode="anchor")
     ax.set_xlabel("")
     ax.set_ylabel("Events with Gain direction (%)", fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylim(0, 100)
