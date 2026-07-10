@@ -1479,3 +1479,69 @@ def find_open_regions(fig, ax, *, min_run_px=None):
         rect = _largest_free_rect_in(sub)
         out[name] = _slot_to_frac(rect, c0, r0) if rect else None
     return out
+
+
+def assert_tick_labels_disjoint(fig, *, tol_px=1.0):
+    """Raise if two tick labels of the same axis overlap in bbox.
+
+    Matplotlib does not auto-rotate or truncate colliding tick labels;
+    long two-line xticklabels can silently overlap adjacent ticks. This
+    check walks adjacent same-axis tick-label pairs and flags overlap.
+
+    Parameters
+    ----------
+    tol_px : float
+        Bbox overlap smaller than this (in display pixels) is treated
+        as touching-not-overlapping and ignored.
+    """
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    def _bbox(t):
+        try:
+            bb = t.get_window_extent(renderer=renderer)
+        except Exception:
+            return None
+        if bb.width == 0 or bb.height == 0:
+            return None
+        return (bb.x0, bb.y0, bb.x1, bb.y1)
+
+    def _overlaps(a, b, tol):
+        return (a[0] < b[2] - tol and a[2] > b[0] + tol and
+                a[1] < b[3] - tol and a[3] > b[1] + tol)
+
+    offenders = []
+    for ax_idx, ax in enumerate(fig.axes):
+        if not getattr(ax, "axison", True):
+            continue
+        for side, get_labels in (
+            ("xtick", ax.get_xticklabels),
+            ("ytick", ax.get_yticklabels),
+        ):
+            labels = [
+                t for t in get_labels()
+                if t.get_visible()
+                and t.get_text() is not None
+                and t.get_text().strip()
+            ]
+            # Only adjacent pairs — same axis, tick positions are ordered,
+            # a label pair that's not adjacent almost never overlaps.
+            for i in range(len(labels) - 1):
+                bb1 = _bbox(labels[i])
+                bb2 = _bbox(labels[i + 1])
+                if bb1 is None or bb2 is None:
+                    continue
+                if _overlaps(bb1, bb2, tol_px):
+                    offenders.append(
+                        f"  ax{ax_idx} {side}: "
+                        f"'{labels[i].get_text()[:24]}' overlaps "
+                        f"'{labels[i + 1].get_text()[:24]}'"
+                    )
+
+    if offenders:
+        raise AssertionError(
+            "Tick labels overlap within an axis (matplotlib doesn't "
+            "auto-rotate/truncate). Fix: rotate xticks, shorten labels, "
+            "widen the axis, or thin the tick set.\n"
+            + "\n".join(offenders)
+        )

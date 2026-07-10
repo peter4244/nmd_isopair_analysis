@@ -35,6 +35,16 @@ CT_COLORS = {
 }
 CT_ORDER = ["AT2", "LAE", "FB", "MV"]
 
+# PTC-subgroup palette (matches project_nmd_figure_palette memory).
+# Keys use the Unicode minus (U+2212) in "NMD+/PTC−" to match Yul-style
+# canonical labelling; figure scripts that load ASCII-hyphen data should
+# remap "-" → "−" before joining against this palette.
+SUBGROUP_PAL = {
+    "NMD+/PTC+": "#ef8a62",   # peach — matches binary NMD_COLOR
+    "NMD+/PTC−": "#d95f02",   # orange — ColorBrewer Dark2 (ref-ATG-retained)
+    "Control":   "#67a9cf",   # blue  — matches binary CONTROL_COLOR
+}
+
 # Structural colours for the theme itself.
 PANEL_BG   = "#EBEBEB"   # ggplot theme_grey panel background
 GRID_COLOR = "#FFFFFF"   # ggplot theme_grey major grid
@@ -59,7 +69,12 @@ PANEL_LETTER_FS = 20  # bold A/B/C labels top-left of each panel
 # ceiling ~14 pt before text starts to dominate the panel.
 PAPER_CONTENT_W_IN = 6.5
 PAPER_TARGET_PT    = 10.0
-PAPER_FLOOR_PT     = 9.0
+# Floor lowered from 9 → 7 on 2026-07-10 to accommodate Yul-style
+# xtick labels on 3-group violins (SF32/SF35), which need ~7 pt
+# effective to fit tilted 2-row labels without overlap. Body text
+# still targets 10 pt via docx_body_fs(NATIVE_W); the floor is only
+# for tick labels and secondary annotations.
+PAPER_FLOOR_PT     = 7.0
 
 
 def docx_body_fs(native_width_in, *, target_pt=PAPER_TARGET_PT):
@@ -80,6 +95,103 @@ def docx_body_fs(native_width_in, *, target_pt=PAPER_TARGET_PT):
 def docx_effective_pt(native_pt, native_width_in):
     """Effective docx-rendered point size of `native_pt` at scale."""
     return native_pt * PAPER_CONTENT_W_IN / native_width_in
+
+
+def place_violin_median_label(ax, i, v_log, m_raw, m_log, body_fs, native_w,
+                              *, min_effective_pt=PAPER_FLOOR_PT,
+                              peak_width=0.8, width_margin=0.85):
+    """Place a numeric median label inside a violin at position `i`.
+
+    The label serves as the median marker (no separate tick line needed).
+    Font is shrunk progressively — from `body_fs` down to the effective-
+    readability floor at `native_w` — until the label bbox fits within
+    the violin's width.
+
+    **Width check is at the label's TOP edge**, not at the median.
+    Violins ALWAYS taper above the median, so the top of the label bbox
+    is where the width constraint bites. Same at the bottom edge in case
+    the KDE peak sits above the median. The narrower of the two applies.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Panel axes.
+    i : int
+        Group index (x-position of the violin).
+    v_log : array-like
+        Y-values (e.g., log10 of the raw values) for the group's data —
+        the KDE is fit to these.
+    m_raw : float
+        Raw (un-logged) median to display.
+    m_log : float
+        Y-position of the median in the plotting scale (typically
+        median of `v_log`).
+    body_fs : int
+        Native font size to try first.
+    native_w : float
+        Figure native width in inches (for docx-scale floor calc).
+    min_effective_pt : float
+        Readability floor at docx scale (default: PAPER_FLOOR_PT).
+    peak_width : float
+        Seaborn violinplot peak width (default 0.8 matches seaborn's
+        default `width=0.8`).
+    width_margin : float
+        Safety factor — label width must be < this fraction of violin
+        width at the narrower of top/bottom of the label bbox.
+
+    Returns
+    -------
+    ('inside', native_pt) if the label fits inside the violin.
+    ('fallback', None)    if no font from body_fs down to the readability
+                           floor fits — caller places the label elsewhere
+                           (below xtick as 'median = X' first choice,
+                           above violin second choice).
+    """
+    import numpy as np
+    from scipy.stats import gaussian_kde
+
+    label = f"{int(round(m_raw)):,}"
+    v_arr = np.asarray(v_log, dtype=float)
+    if len(v_arr) < 3:
+        return "fallback", None
+
+    kde = gaussian_kde(v_arr)
+    y_min, y_max = float(v_arr.min()), float(v_arr.max())
+    y_grid = np.linspace(y_min, y_max, 200)
+    max_d = float(kde.evaluate(y_grid).max())
+
+    def _violin_w_at(y):
+        d = float(kde.evaluate([y])[0])
+        return peak_width * (d / max_d)
+
+    floor_native = int(np.ceil(min_effective_pt * native_w / PAPER_CONTENT_W_IN))
+    fig = ax.figure
+
+    for fs in range(int(round(body_fs)), floor_native - 1, -1):
+        tmp = ax.text(0, 0, label, fontsize=fs, fontweight="bold",
+                      ha="center", va="center", alpha=0)
+        fig.canvas.draw()
+        bb = tmp.get_window_extent(renderer=fig.canvas.get_renderer())
+        tmp.remove()
+        inv = ax.transData.inverted()
+        (x0, y0), (x1, y1) = inv.transform([(bb.x0, bb.y0), (bb.x1, bb.y1)])
+        label_w = abs(x1 - x0)
+        label_h_half = abs(y1 - y0) / 2.0
+
+        # Width at TOP of label (violin narrower above median — Pete 2026-07-10).
+        y_top = min(m_log + label_h_half, y_max)
+        w_top = _violin_w_at(y_top)
+        # Width at BOTTOM of label (in case KDE peak sits above median).
+        y_bot = max(m_log - label_h_half, y_min)
+        w_bot = _violin_w_at(y_bot)
+        min_w = min(w_top, w_bot) * width_margin
+
+        if label_w < min_w:
+            ax.text(i, m_log, label, ha="center", va="center",
+                    fontsize=fs, fontweight="bold", color=TITLE_C, zorder=6)
+            return "inside", fs
+
+    return "fallback", None
 
 
 # ─── NIH grant-figure readability accounting ───────────────────────────
