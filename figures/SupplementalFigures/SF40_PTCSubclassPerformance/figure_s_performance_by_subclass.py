@@ -150,9 +150,6 @@ def build_figure():
         zorder=3,
     )
 
-    axB.axhline(0.5, color="#aa6600", lw=0.9, ls="--", zorder=1)
-    axB.text(2.45, 0.51, "decision\nthreshold (0.5)", color="#aa6600",
-             fontsize=BODY_FS - 3, ha="right", va="bottom", style="italic")
     axB.set_xticks(positions)
     axB.set_xticklabels([
         f"{GROUP_LABEL[g]}\n(n = {int((df['group'] == g).sum()):,})"
