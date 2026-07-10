@@ -48,7 +48,7 @@ GROUP_LABEL_REMAP = {"NMD+/PTC-": "NMD+/PTC−"}
 PANELS = [
     {"letter": "A", "slug": "panelD_cds_length_refaug",
      "value_col": "cds_nt",
-     "ylabel": "CDS length (ref-AUG ORF; nt, log10)"},
+     "ylabel": "CDS length (ref AUG ORF; nt, log10)"},
     {"letter": "B", "slug": "panelE_utr3_translation_refaug",
      "value_col": "utr3_to_tx_end_nt",
      "ylabel": "3'UTR length, translation (nt, log10)"},
