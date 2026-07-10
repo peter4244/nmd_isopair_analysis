@@ -84,9 +84,6 @@ def shannon_entropy(row):
 def render_panel_A(ax, df):
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
 
-    n_nmd  = int((df["label"] == 1).sum())
-    n_ctrl = int((df["label"] == 0).sum())
-
     positions_ctrl = np.arange(N_ORFS) * 3 - 0.55
     positions_nmd  = np.arange(N_ORFS) * 3 + 0.55
 
@@ -113,21 +110,11 @@ def render_panel_A(ax, df):
     ax.set_xlim(-2, (N_ORFS - 1) * 3 + 2)
     ax.set_ylim(-0.03, 1.03)
     ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
-    ax.set_xlabel("Candidate ORF rank (0 = highest-priority)",
+    ax.set_xlabel("Candidate ORF rank (0 = main ORF)",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylabel("Attention weight",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.tick_params(axis="y", labelsize=BODY_FS, colors=TITLE_C)
-
-    handles = [
-        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_NMD,  edgecolor=TITLE_C,
-                      linewidth=0.9, label=f"NMD susceptible (n = {n_nmd:,})"),
-        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_CTRL, edgecolor=TITLE_C,
-                      linewidth=0.9, label=f"Control (n = {n_ctrl:,})"),
-    ]
-    ax.legend(handles=handles, loc="upper right", frameon=True,
-              facecolor="white", edgecolor="none",
-              fontsize=BODY_FS - 2)
 
 
 def render_panel_B(ax, df):
@@ -146,36 +133,18 @@ def render_panel_B(ax, df):
         ax.fill_between(x_grid, y, alpha=0.55, color=color,
                         edgecolor=TITLE_C, linewidth=0.9, zorder=3)
 
-    ax.axvline(max_ent, linestyle="--", color=AXIS_C, linewidth=0.8, zorder=2)
-    # Use mathtext for the subscript — the Unicode ₂ glyph is missing in
-    # the current font (Arial), so matplotlib substitutes a fallback box.
-    ax.text(max_ent - 0.02, ax.get_ylim()[1] * 0.55,
-            f"max entropy = $\\log_2({N_ORFS})$\n$\\approx$ {max_ent:.2f}",
-            ha="right", va="center",
-            fontsize=BODY_FS - 3, color=AXIS_C)
-
     ax.set_xlim(0, max_ent * 1.02)
     ax.set_xlabel("Per-isoform attention entropy (bits)",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylabel("Density", fontsize=BODY_FS, color=TITLE_C)
     ax.tick_params(axis="both", labelsize=BODY_FS, colors=TITLE_C)
 
-    handles = [
-        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_NMD,  edgecolor=TITLE_C,
-                      linewidth=0.9, label=f"NMD susceptible (n = {len(e_nmd):,})"),
-        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_CTRL, edgecolor=TITLE_C,
-                      linewidth=0.9, label=f"Control (n = {len(e_ctrl):,})"),
-    ]
-    ax.legend(handles=handles, loc="upper right", frameon=True,
-              facecolor="white", edgecolor="none",
-              fontsize=BODY_FS - 2)
-
 
 def build_figure():
     df = load()
 
     fig, (axA, axB) = plt.subplots(1, 2, figsize=(NATIVE_W, 4.8))
-    fig.subplots_adjust(left=0.09, right=0.95, top=0.80, bottom=0.20,
+    fig.subplots_adjust(left=0.09, right=0.95, top=0.80, bottom=0.22,
                         wspace=0.32)
 
     render_panel_A(axA, df)
@@ -183,6 +152,18 @@ def build_figure():
 
     panel_letter(axA, "A", x=-0.14, y=1.22)
     panel_letter(axB, "B", x=-0.14, y=1.22)
+
+    # Shared legend in the bottom margin — both panels share the same two
+    # series; per-panel legends overlapped the boxes/density. Sample sizes
+    # live in the caption, so the legend carries only the class colors.
+    handles = [
+        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_NMD,  edgecolor=TITLE_C,
+                      linewidth=0.9, label="NMD susceptible"),
+        plt.Rectangle((0, 0), 1, 1, facecolor=COLOR_CTRL, edgecolor=TITLE_C,
+                      linewidth=0.9, label="Control"),
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False,
+               fontsize=BODY_FS, bbox_to_anchor=(0.5, 0.01))
 
     return fig, df
 
