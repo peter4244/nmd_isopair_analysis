@@ -8,7 +8,7 @@ The three functions to call from a panel script:
   - `apply_ggplot_rcparams()` at import time to set font + fonttype.
   - `style_axes_ggplot(ax)` inside the panel render, right after building
     the axes. Applies the grey panel background and white gridlines.
-  - `facet_header(ax, text)` to place a ggplot-style grey-strip header
+  - `facet_header(ax, text)` to place a plain bold panel header
     above an axes (matches the "AT2 / LAE / FB / MV" strip you see in
     SF1, SF3, SF19, SF22, etc.).
 
@@ -402,15 +402,11 @@ def style_axes_ggplot(ax, *, xgrid=True, ygrid=True, minor=False):
 
 
 def facet_header(ax, text, *, height=0.06):
-    """Place a ggplot-style facet strip header above an axes.
+    """Place a panel header above an axes as plain bold text.
 
-    Draws a grey rectangle sitting on top of the axes with `text` in
-    bold black — mimics the strip labels you see above each facet in
-    SF1 / SF3 / SF19 (e.g., "AT2", "LAE", "FB", "MV").
-
-    `height` is the strip height in axes-relative coordinates
-    (fraction of the plot area). Default 0.06 works for cells around
-    2 inches tall; increase for bigger cells.
+    Renders `text` in bold above the axes with no background box (the
+    old grey strip read as clutter). `height` sets the header's vertical
+    offset above the axes in axes-relative coordinates.
     """
     ax.text(
         0.5, 1.0 + height / 2,
@@ -420,11 +416,6 @@ def facet_header(ax, text, *, height=0.06):
         fontsize=HEADER_FS - 1,
         fontweight="bold",
         color=TITLE_C,
-        bbox=dict(
-            facecolor=STRIP_BG,
-            edgecolor="none",
-            boxstyle="square,pad=0.4",
-        ),
     )
 
 

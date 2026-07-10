@@ -78,7 +78,7 @@ def main():
     stop = load_window("stop")
 
     fig, axes = plt.subplots(1, 2, figsize=(NATIVE_W, 4.8))
-    fig.subplots_adjust(left=0.09, right=0.96, top=0.82, bottom=0.12, wspace=0.28)
+    fig.subplots_adjust(left=0.09, right=0.96, top=0.82, bottom=0.22, wspace=0.28)
 
     draw_panel(axes[0], atg, codon_label="start codon")
     draw_panel(axes[1], stop, codon_label="stop codon")
@@ -89,9 +89,12 @@ def main():
     panel_letter(axes[0], "A", x=-0.07, y=1.14)
     panel_letter(axes[1], "B", x=-0.07, y=1.14)
 
-    # Legend in the top-right of the second panel
-    axes[1].legend(loc="upper right", frameon=True, framealpha=0.9,
-                    edgecolor="none", facecolor="white", fontsize=BODY_FS)
+    # Shared legend in the bottom margin — the |SHAP| curves fill both
+    # panels, so an in-panel legend can't clear the data; both panels share
+    # the same two series, so one figure-level legend below is cleaner.
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=2, frameon=False,
+               fontsize=BODY_FS, bbox_to_anchor=(0.5, 0.01))
 
     # Facet headers extend past the axis edges by design — the per-axis
     # text-vs-spine check fires a false positive on them.
