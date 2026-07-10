@@ -208,17 +208,20 @@ def build_figure():
     df, metrics = load()
     n_hh = len(df)
 
-    fig = plt.figure(figsize=(16, 5.5))
+    # 2-row layout matches the docx-approved SF42: Panel A (3 scatter
+    # subpanels) on TOP row spanning full width, Panel B (grouped bar
+    # chart) on BOTTOM row also full width. Restored 2026-07-10 after
+    # an earlier session inadvertently flattened to 1-row wide layout.
+    fig = plt.figure(figsize=(12, 12))
     gs_outer = fig.add_gridspec(
-        nrows=1, ncols=2,
-        width_ratios=[3.0, 1.55],
-        wspace=0.38, left=0.055, right=0.985, bottom=0.17, top=0.84,
+        nrows=2, ncols=1,
+        height_ratios=[1.0, 1.0],
+        hspace=0.35, left=0.09, right=0.96, bottom=0.06, top=0.94,
     )
     gs_a = gs_outer[0, 0].subgridspec(nrows=1, ncols=3, wspace=0.45)
-    gs = [gs_a[0, 0], gs_a[0, 1], gs_a[0, 2], gs_outer[0, 1]]
 
-    axes_a = [fig.add_subplot(gs[i]) for i in range(3)]
-    ax_b = fig.add_subplot(gs[3])
+    axes_a = [fig.add_subplot(gs_a[0, i]) for i in range(3)]
+    ax_b = fig.add_subplot(gs_outer[1, 0])
 
     # Panel A: scatter per model
     for ax, m in zip(axes_a, MODEL_ORDER):
@@ -239,7 +242,7 @@ def build_figure():
     ]
     fig.legend(
         handles=handles, loc="upper center",
-        bbox_to_anchor=(0.34, 0.96),
+        bbox_to_anchor=(0.5, 0.98),
         ncol=3, fontsize=9, frameon=False,
         handlelength=1.2, handletextpad=0.4, columnspacing=1.6,
         title=None,
@@ -248,9 +251,12 @@ def build_figure():
     # Panel B: stratified bars
     panel_b_bars(ax_b, metrics, n_hh)
 
-    # Panel labels
-    for ax, letter in zip([axes_a[0], ax_b], ["A", "B"]):
-        panel_letter(ax, letter, x=-0.13, y=1.06)
+    # Panel labels — Panel A[0] is a narrow subplot in a 3-col subgrid,
+    # so -0.15 axes-fraction is a small absolute distance; Panel B spans
+    # the full figure width, so its letter needs a smaller axes-fraction
+    # offset to stay inside the canvas.
+    panel_letter(axes_a[0], "A", x=-0.15, y=1.08)
+    panel_letter(ax_b, "B", x=-0.05, y=1.08)
 
     return fig, axes_a + [ax_b]
 
