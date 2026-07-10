@@ -68,6 +68,10 @@ BRANCH_COLORS = {
 
 BRANCH_ORDER = ["Structural", "Stop", "ATG"]
 
+# Display labels: the start-codon branch is stored as "ATG" in the data but
+# shown as "AUG" (RNA, not DNA).
+BRANCH_DISPLAY = {"Structural": "Structural", "Stop": "Stop", "ATG": "AUG"}
+
 DATA = HERE.parent / "data" / "branch_shap_by_subclass_n1166.tsv"
 
 GROUP_ORDER = ["NMD+/PTC+", "NMD+/PTC- retained", "Control"]
@@ -129,7 +133,8 @@ def draw_panel(ax, summary: pd.DataFrame, group_label: str, n: int, y_top: float
                     fontsize=BODY_FS - 2, fontweight="bold", color=C_TITLE)
 
     ax.set_xticks(list(x))
-    ax.set_xticklabels(branches, fontsize=BODY_FS, color=C_TITLE)
+    ax.set_xticklabels([BRANCH_DISPLAY[b] for b in branches],
+                       fontsize=BODY_FS, color=C_TITLE)
     ax.tick_params(axis="y", labelsize=BODY_FS, colors=C_TITLE)
     ax.set_ylim(0, y_top)
 
