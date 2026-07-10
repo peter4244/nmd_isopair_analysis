@@ -27,16 +27,18 @@ sys.path.insert(0, str(LIB))
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     CONTROL_COLOR,
     AXIS_C,
     TITLE_C,
-    BODY_FS,
     HEADER_FS,
 )
-from validate_figure_layout import validate_figure_layout
 
 apply_ggplot_rcparams()
+
+NATIVE_W = 9.0
+BODY_FS = docx_body_fs(NATIVE_W)
 
 DATA = HERE / "data"
 
@@ -51,7 +53,7 @@ def main():
     order = [str(i) for i in range(1, 7)] + ["7+"]
     df = df[df["ejc_bin"].isin(order)].copy()
 
-    fig, ax = plt.subplots(figsize=(9.0, 5.0))
+    fig, ax = plt.subplots(figsize=(NATIVE_W, 5.0))
     fig.subplots_adjust(left=0.09, right=0.97, top=0.86, bottom=0.14)
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
 
@@ -98,14 +100,8 @@ def main():
     ax.set_xlim(-0.6, len(order) - 0.4)
 
     # No overall figure title — caption carries the title role (Yul-style).
-    assert_text_within_canvas(fig)
-    validate_figure_layout(fig, ax)
-
-    out_png = HERE / "figure_sf31_nmd_effect_by_ejc_count.png"
-    out_pdf = HERE / "figure_sf31_nmd_effect_by_ejc_count.pdf"
-    fig.savefig(out_png, dpi=200, facecolor="white")
-    fig.savefig(out_pdf, facecolor="white")
-    print(f"wrote {out_png.name} and {out_pdf.name}")
+    render_and_validate(fig, HERE / "figure_sf31_nmd_effect_by_ejc_count",
+                        native_width_in=NATIVE_W)
     print(f"  medians: {[round(m,2) for m in medians]}")
     print(f"  n_by_bin: {[len(d) for d in data]}")
 

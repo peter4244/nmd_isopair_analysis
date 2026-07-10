@@ -29,20 +29,20 @@ sys.path.insert(0, str(LIB))
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     NMD_COLOR,
     CONTROL_COLOR,
     REF_COLOR,
     AXIS_C,
     TITLE_C,
-    BODY_FS as _BODY_FS,
     HEADER_FS,
 )
 
-BODY_FS = 13
-
 apply_ggplot_rcparams()
-from validate_figure_layout import validate_figure_layout
+
+NATIVE_W = 6.5
+BODY_FS = docx_body_fs(NATIVE_W)
 
 DATA = HERE / "data"
 
@@ -60,7 +60,7 @@ def main():
     summary = pd.read_csv(DATA / "descriptives_summary.tsv", sep="\t").set_index("metric")["value"]
     n_triplets = int(summary.loc["n_pop_bc_triplets"])
 
-    fig, ax = plt.subplots(figsize=(6.5, 4.6))
+    fig, ax = plt.subplots(figsize=(NATIVE_W, 4.6))
     fig.subplots_adjust(left=0.19, right=0.97, top=0.92, bottom=0.19)
 
     style_axes_ggplot(ax)
@@ -94,14 +94,8 @@ def main():
     ax.set_xlim(-0.6, len(ROLES) - 0.4)
 
     # No overall figure title — caption carries the title role (Yul-style).
-    assert_text_within_canvas(fig)
-    validate_figure_layout(fig, ax)
-
-    out_png = HERE / "figure_sf27_transcript_length_by_role.png"
-    out_pdf = HERE / "figure_sf27_transcript_length_by_role.pdf"
-    fig.savefig(out_png, dpi=200, facecolor="white")
-    fig.savefig(out_pdf, facecolor="white")
-    print(f"wrote {out_png.name} and {out_pdf.name}")
+    render_and_validate(fig, HERE / "figure_sf27_transcript_length_by_role",
+                        native_width_in=NATIVE_W)
     for r in ROLES:
         med = int(np.median(txl.loc[txl["role"] == r, "length_nt"].values))
         print(f"  median {r}: {med:,}")

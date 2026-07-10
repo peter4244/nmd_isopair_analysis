@@ -98,7 +98,8 @@ def docx_effective_pt(native_pt, native_width_in):
 
 
 def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
-                        run_data_free=True, run_tick_disjoint=True):
+                        run_data_free=True, run_tick_disjoint=True,
+                        strict_per_axis=True):
     """Run the full seven-validator gate + save the figure in one call.
 
     This is the SSOT for the figure-shipping contract. Every figure's
@@ -163,13 +164,16 @@ def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
         )
 
     for ax in fig.axes:
-        r = validate_figure_layout(fig, ax, verbose=False)
-        if r["summary"]["n_errors"] > 0:
-            msgs = "\n".join(f"  [{e.check}] {e.message}" for e in r["errors"])
-            raise AssertionError(
-                f"validate_figure_layout: "
-                f"{r['summary']['n_errors']} errors on {ax}:\n{msgs}"
-            )
+        if strict_per_axis:
+            r = validate_figure_layout(fig, ax, verbose=False)
+            if r["summary"]["n_errors"] > 0:
+                msgs = "\n".join(
+                    f"  [{e.check}] {e.message}" for e in r["errors"]
+                )
+                raise AssertionError(
+                    f"validate_figure_layout: "
+                    f"{r['summary']['n_errors']} errors on {ax}:\n{msgs}"
+                )
         if run_data_free:
             assert_data_free(fig, ax)
 

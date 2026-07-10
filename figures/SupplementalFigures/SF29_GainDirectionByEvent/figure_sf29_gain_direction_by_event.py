@@ -28,15 +28,18 @@ sys.path.insert(0, str(LIB))
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     NMD_COLOR,
     CONTROL_COLOR,
     TITLE_C,
-    BODY_FS,
     HEADER_FS,
 )
 
 apply_ggplot_rcparams()
+
+NATIVE_W = 11.0
+BODY_FS = docx_body_fs(NATIVE_W)
 
 DATA = HERE / "data"
 
@@ -74,7 +77,7 @@ def main():
     x = np.arange(len(events))
     bar_width = 0.38
 
-    fig, ax = plt.subplots(figsize=(11.0, 5.4))
+    fig, ax = plt.subplots(figsize=(NATIVE_W, 5.4))
     fig.subplots_adjust(left=0.08, right=0.98, top=0.85, bottom=0.20)
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
 
@@ -98,8 +101,9 @@ def main():
 
     # 50% reference line — the "no preference between GAIN and LOSS" line
     ax.axhline(50, linestyle="--", linewidth=0.8, color="#c0392b", zorder=2)
-    ax.text(len(events) - 0.5, 51, "50% (no preference)",
-            ha="right", va="bottom", fontsize=BODY_FS - 2, color="#c0392b")
+    ax.text(0.99, 0.94, "50% (no preference)",
+            transform=ax.transAxes,
+            ha="right", va="top", fontsize=BODY_FS - 2, color="#c0392b")
 
     ax.set_xticks(x)
     ax.set_xticklabels([DISPLAY_LABEL.get(e, e) for e in events],
@@ -114,13 +118,8 @@ def main():
               edgecolor="none", fontsize=BODY_FS)
 
     # No overall figure title or subtitle — caption carries both roles (Yul-style).
-    assert_text_within_canvas(fig)
-
-    out_png = HERE / "figure_sf29_gain_direction_by_event.png"
-    out_pdf = HERE / "figure_sf29_gain_direction_by_event.pdf"
-    fig.savefig(out_png, dpi=200, facecolor="white")
-    fig.savefig(out_pdf, facecolor="white")
-    print(f"wrote {out_png.name} and {out_pdf.name}")
+    render_and_validate(fig, HERE / "figure_sf29_gain_direction_by_event",
+                        native_width_in=NATIVE_W)
     print(f"  events: {len(events)}")
 
 

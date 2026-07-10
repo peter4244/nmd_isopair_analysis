@@ -34,16 +34,19 @@ from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
     facet_header,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     NMD_COLOR,
     CONTROL_COLOR,
     TITLE_C,
-    BODY_FS,
     HEADER_FS,
     panel_letter,
 )
 
 apply_ggplot_rcparams()
+
+NATIVE_W = 11.5
+BODY_FS = docx_body_fs(NATIVE_W)
 
 DATA = HERE / "data"
 
@@ -76,6 +79,7 @@ def draw_panel(ax, df, *, codon_label):
     ax.set_xlabel(f"Position relative to {codon_label} (nt)", fontsize=BODY_FS)
     ax.set_ylabel("Mean GC content (50-nt window)", fontsize=BODY_FS)
     ax.set_xlim(df["rel_mid"].min(), df["rel_mid"].max())
+    ax.set_xticks([-200, -100, 0, 100, 200])
     ax.set_ylim(0.35, 0.60)
     return ax
 
@@ -84,8 +88,8 @@ def main():
     atg  = load("atg")
     stop = load("stop")
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.8), sharey=True)
-    fig.subplots_adjust(left=0.07, right=0.985, top=0.82, bottom=0.12, wspace=0.06)
+    fig, axes = plt.subplots(1, 2, figsize=(NATIVE_W, 4.8), sharey=True)
+    fig.subplots_adjust(left=0.09, right=0.96, top=0.82, bottom=0.12, wspace=0.28)
 
     draw_panel(axes[0], atg,  codon_label="start codon")
     draw_panel(axes[1], stop, codon_label="stop codon")
@@ -100,13 +104,9 @@ def main():
     axes[1].legend(loc="upper right", frameon=True, framealpha=0.9,
                     edgecolor="none", facecolor="white", fontsize=BODY_FS)
 
-    assert_text_within_canvas(fig)
-
-    out_png = HERE / "figure_sf41_gc_content_stop_window.png"
-    out_pdf = HERE / "figure_sf41_gc_content_stop_window.pdf"
-    fig.savefig(out_png, dpi=200, facecolor="white")
-    fig.savefig(out_pdf, facecolor="white")
-    print(f"wrote {out_png.name} and {out_pdf.name}")
+    # Facet headers extend past axis edges by design.
+    render_and_validate(fig, HERE / "figure_sf41_gc_content_stop_window",
+                        native_width_in=NATIVE_W, strict_per_axis=False)
     print(f"  ATG rows: {len(atg)}   STOP rows: {len(stop)}")
 
 

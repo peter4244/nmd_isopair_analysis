@@ -24,14 +24,17 @@ sys.path.insert(0, str(LIB))
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     BAR_COLOR,
     TITLE_C,
-    BODY_FS,
     HEADER_FS,
 )
 
 apply_ggplot_rcparams()
+
+NATIVE_W = 6.5
+BODY_FS = docx_body_fs(NATIVE_W)
 
 DATA = HERE / "data"
 
@@ -42,8 +45,8 @@ def main():
     n_genes = int(summary.loc["n_genes_in_pop_BC"])
     med     = int(summary.loc["median_isoforms_per_gene"])
 
-    fig, ax = plt.subplots(figsize=(6.5, 4.0))
-    fig.subplots_adjust(left=0.11, right=0.97, top=0.90, bottom=0.14)
+    fig, ax = plt.subplots(figsize=(NATIVE_W, 4.0))
+    fig.subplots_adjust(left=0.11, right=0.90, top=0.88, bottom=0.14)
 
     style_axes_ggplot(ax)
 
@@ -67,15 +70,11 @@ def main():
     ax.set_xlabel("Number of expressed isoforms per gene", fontsize=BODY_FS)
     ax.set_ylabel("Number of genes", fontsize=BODY_FS)
     ax.set_xlim(0.5, max_bin + 0.5)
+    ax.set_xticks([1, 5, 10, 15, 20, 25, 30])
 
     # No overall figure title — caption carries the title role (Yul-style).
-    assert_text_within_canvas(fig)
-
-    out_png = HERE / "figure_sf25_isoforms_per_gene.png"
-    out_pdf = HERE / "figure_sf25_isoforms_per_gene.pdf"
-    fig.savefig(out_png, dpi=200, facecolor="white")
-    fig.savefig(out_pdf, facecolor="white")
-    print(f"wrote {out_png.name} and {out_pdf.name}")
+    render_and_validate(fig, HERE / "figure_sf25_isoforms_per_gene",
+                        native_width_in=NATIVE_W)
     print(f"  n_genes = {n_genes:,}  median = {med}  max bin shown = {max_bin}")
 
 

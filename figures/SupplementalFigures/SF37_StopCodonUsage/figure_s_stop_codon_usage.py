@@ -39,9 +39,13 @@ sys.path.insert(0, str(LIB))
 
 from ggplot_style import (
     apply_ggplot_rcparams,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
 )
 apply_ggplot_rcparams()
+
+NATIVE_W = 5.5
+BODY_FS = docx_body_fs(NATIVE_W)
 
 LEGACY_HTML = Path(
     "/Users/petecastaldi/claude_projects/nmd/results/isoform_transitions/"
@@ -90,7 +94,7 @@ def build_figure():
     img = plt.imread(PLACEHOLDER_PNG)
 
     # Aspect after crop: 1344 / 1055 ≈ 1.274
-    fig, ax = plt.subplots(figsize=(5.5, 4.3))
+    fig, ax = plt.subplots(figsize=(NATIVE_W, 4.3))
     ax.imshow(img)
     ax.set_axis_off()
     fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0)
@@ -99,11 +103,15 @@ def build_figure():
 
 def main():
     fig = build_figure()
-    assert_text_within_canvas(fig)
-    out_dir = HERE.parent
-    fig.savefig(out_dir / "figure_s_stop_codon_usage.pdf", facecolor="white")
-    fig.savefig(out_dir / "figure_s_stop_codon_usage.png", dpi=300, facecolor="white")
-    print("Saved: figure_s_stop_codon_usage.pdf and .png  (DRAFT placeholder)")
+    # SF37 is a placeholder that embeds a legacy PNG via imshow — the
+    # whole "data" is the image bitmap, so data-free and per-axis text
+    # checks don't apply. Once the native render replaces this
+    # placeholder, remove these flags.
+    render_and_validate(fig, HERE.parent / "figure_s_stop_codon_usage",
+                        native_width_in=NATIVE_W,
+                        run_data_free=False, strict_per_axis=False,
+                        run_tick_disjoint=False)
+    print("(DRAFT placeholder — legacy PNG embed)")
 
 
 if __name__ == "__main__":

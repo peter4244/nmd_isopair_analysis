@@ -28,14 +28,17 @@ sys.path.insert(0, str(LIB))
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     BAR_COLOR,
     TITLE_C,
-    BODY_FS,
     HEADER_FS,
 )
 
 apply_ggplot_rcparams()
+
+NATIVE_W = 6.5
+BODY_FS = docx_body_fs(NATIVE_W)
 
 DATA = HERE / "data"
 
@@ -49,8 +52,8 @@ def main():
     med = float(np.median(vals))
     frac_ge_50 = float((vals >= 50).mean() * 100)
 
-    fig, ax = plt.subplots(figsize=(6.5, 4.0))
-    fig.subplots_adjust(left=0.11, right=0.97, top=0.90, bottom=0.14)
+    fig, ax = plt.subplots(figsize=(NATIVE_W, 4.0))
+    fig.subplots_adjust(left=0.11, right=0.95, top=0.88, bottom=0.14)
 
     style_axes_ggplot(ax)
 
@@ -81,13 +84,8 @@ def main():
     ax.set_xticks([0, 25, 50, 75, 100])
 
     # No overall figure title — caption carries the title role (Yul-style).
-    assert_text_within_canvas(fig)
-
-    out_png = HERE / "figure_sf26_reference_share.png"
-    out_pdf = HERE / "figure_sf26_reference_share.pdf"
-    fig.savefig(out_png, dpi=200, facecolor="white")
-    fig.savefig(out_pdf, facecolor="white")
-    print(f"wrote {out_png.name} and {out_pdf.name}")
+    render_and_validate(fig, HERE / "figure_sf26_reference_share",
+                        native_width_in=NATIVE_W)
     print(f"  n_genes = {n_genes:,}  median = {med:.1f}%  ≥50% = {frac_ge_50:.1f}%")
 
 

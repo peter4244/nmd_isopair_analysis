@@ -37,13 +37,15 @@ sys.path.insert(0, str(LIB))
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     NMD_COLOR,
     TITLE_C,
-    BODY_FS,
     HEADER_FS,
 )
-from validate_figure_layout import validate_figure_layout
+
+NATIVE_W = 8.0
+BODY_FS = docx_body_fs(NATIVE_W)
 
 apply_ggplot_rcparams()
 
@@ -136,8 +138,8 @@ def main():
     else:
         p_thr = np.nan
 
-    fig, ax = plt.subplots(figsize=(8.0, 5.0))
-    fig.subplots_adjust(left=0.10, right=0.98, top=0.86, bottom=0.14)
+    fig, ax = plt.subplots(figsize=(NATIVE_W, 5.0))
+    fig.subplots_adjust(left=0.12, right=0.92, top=0.86, bottom=0.14)
     style_axes_ggplot(ax)
 
     ax.scatter(x, y, s=6, alpha=0.18, color="#3a3a3a",
@@ -160,6 +162,7 @@ def main():
     ax.set_ylabel("Mean logFC (mashr posterior mean)",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_xlim(x_lo, x_hi)
+    ax.set_xticks([-500, 0, 500, 1000, 1500, 2000, 2500])
 
     # Threshold-honest summary: median logFC above vs at/below 50 nt + Wilcoxon p.
     if np.isnan(p_thr):
@@ -179,14 +182,8 @@ def main():
                        boxstyle="square,pad=0.4"))
 
     # No overall figure title — caption carries the title role (Yul-style).
-    assert_text_within_canvas(fig)
-    validate_figure_layout(fig, ax)
-
-    out_png = HERE / "figure_sf30_ptc_distance_dose_response.png"
-    out_pdf = HERE / "figure_sf30_ptc_distance_dose_response.pdf"
-    fig.savefig(out_png, dpi=200, facecolor="white")
-    fig.savefig(out_pdf, facecolor="white")
-    print(f"wrote {out_png.name} and {out_pdf.name}")
+    render_and_validate(fig, HERE / "figure_sf30_ptc_distance_dose_response",
+                        native_width_in=NATIVE_W)
     print(f"  n comparators total: {len(df):,}")
     print(f"  n shown (1st-99th centile): {n_plot:,}")
     print(f"  median logFC >50 / ≤50 nt = {med_above:.3f} / {med_below:.3f}   p = {p_thr:.2e}")

@@ -32,16 +32,17 @@ sys.path.insert(0, str(LIB))
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     panel_letter,
     TITLE_C,
     AXIS_C,
 )
 apply_ggplot_rcparams()
-from validate_figure_layout import validate_multipanel_layout
 
-BODY_FS = 17
-LABEL_FS = 14
+NATIVE_W = 11.0
+BODY_FS = docx_body_fs(NATIVE_W)
+LABEL_FS = BODY_FS - 2
 
 DATA_ATTN = Path("/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/"
                  "results_4ct/uorf_attention_predictions.tsv")
@@ -126,7 +127,7 @@ def render_panel_A(ax, df):
     ]
     ax.legend(handles=handles, loc="upper right", frameon=True,
               facecolor="white", edgecolor="none",
-              fontsize=12)
+              fontsize=BODY_FS - 2)
 
 
 def render_panel_B(ax, df):
@@ -151,7 +152,7 @@ def render_panel_B(ax, df):
     ax.text(max_ent - 0.02, ax.get_ylim()[1] * 0.55,
             f"max entropy = $\\log_2({N_ORFS})$\n$\\approx$ {max_ent:.2f}",
             ha="right", va="center",
-            fontsize=10, color=AXIS_C)
+            fontsize=BODY_FS - 3, color=AXIS_C)
 
     ax.set_xlim(0, max_ent * 1.02)
     ax.set_xlabel("Per-isoform attention entropy (bits)",
@@ -167,13 +168,13 @@ def render_panel_B(ax, df):
     ]
     ax.legend(handles=handles, loc="upper right", frameon=True,
               facecolor="white", edgecolor="none",
-              fontsize=12)
+              fontsize=BODY_FS - 2)
 
 
 def build_figure():
     df = load()
 
-    fig, (axA, axB) = plt.subplots(1, 2, figsize=(11, 4.8))
+    fig, (axA, axB) = plt.subplots(1, 2, figsize=(NATIVE_W, 4.8))
     fig.subplots_adjust(left=0.09, right=0.95, top=0.80, bottom=0.20,
                         wspace=0.32)
 
@@ -188,16 +189,8 @@ def build_figure():
 
 def main():
     fig, df = build_figure()
-    assert_text_within_canvas(fig)
-    _mp = validate_multipanel_layout(fig)
-    if _mp["summary"]["n_errors"] > 0:
-        msgs = "\n".join(f"  [{e.check}] {e.message}" for e in _mp["errors"])
-        raise AssertionError(f"validate_multipanel_layout: "
-                             f"{_mp['summary']['n_errors']} errors:\n{msgs}")
-    out = HERE.parent
-    fig.savefig(out / "figure_s_attention_distribution.pdf", facecolor="white")
-    fig.savefig(out / "figure_s_attention_distribution.png",
-                dpi=300, facecolor="white")
+    render_and_validate(fig, HERE.parent / "figure_s_attention_distribution",
+                        native_width_in=NATIVE_W)
     print(f"Saved figure_s_attention_distribution.{{pdf,png}}")
     print(f"  NMD:     n = {int((df['label'] == 1).sum()):,}")
     print(f"  Control: n = {int((df['label'] == 0).sum()):,}")

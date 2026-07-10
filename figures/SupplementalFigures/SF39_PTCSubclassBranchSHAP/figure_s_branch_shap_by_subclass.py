@@ -44,25 +44,21 @@ HERE = Path(__file__).resolve()
 LIB = HERE.parents[2] / "lib"
 sys.path.insert(0, str(LIB))
 
-try:
-    from validate_figure_layout import validate_multipanel_layout
-except Exception:
-    validate_multipanel_layout = None
-
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
     facet_header,
     panel_letter,
-    assert_text_within_canvas,
+    render_and_validate,
+    docx_body_fs,
     TITLE_C as C_TITLE,
     AXIS_C as C_AXIS,
 )
 apply_ggplot_rcparams()
 
-# ── Panel C branch palette (kept local — not in the standard SF palette) ──
-HEADER_FS = 16
-BODY_FS = 12
+NATIVE_W = 15.0
+BODY_FS = docx_body_fs(NATIVE_W)
+HEADER_FS = BODY_FS + 4
 
 BRANCH_COLORS = {
     "Structural": "#d95f02",
@@ -156,8 +152,8 @@ def build_figure():
 
     # Three Panel-C-style mini-panels side by side. Width per panel
     # matches Panel C's 6×4 sizing; total width 18 in.
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.6), sharey=True)
-    fig.subplots_adjust(left=0.06, right=0.985, bottom=0.13, top=0.80,
+    fig, axes = plt.subplots(1, 3, figsize=(NATIVE_W, 5.4), sharey=True)
+    fig.subplots_adjust(left=0.08, right=0.985, bottom=0.16, top=0.80,
                         wspace=0.16)
 
     for ax, group in zip(axes, GROUP_ORDER):
@@ -165,8 +161,8 @@ def build_figure():
                    n_by_group[group], y_top)
 
     # Y-axis label only on leftmost panel (matches Panel C).
-    axes[0].set_ylabel("Within-subgroup share of |SHAP|  (%)",
-                       fontsize=BODY_FS, color=C_TITLE)
+    axes[0].set_ylabel("Within-subgroup share of |SHAP| (%)",
+                       fontsize=BODY_FS - 2, color=C_TITLE)
     # Tick marks every 20% — clean for a 0–75% range.
     for ax in axes:
         ax.set_yticks([0, 20, 40, 60])
@@ -181,16 +177,9 @@ def build_figure():
 
 def main():
     fig, axes = build_figure()
-    if validate_multipanel_layout is not None:
-        try:
-            validate_multipanel_layout(fig)
-        except Exception as e:
-            print(f"[validate_multipanel_layout] non-fatal: {e}")
-    assert_text_within_canvas(fig)
-    out = HERE.parent / "figure_s_branch_shap_by_subclass"
-    fig.savefig(f"{out}.pdf", facecolor="white")
-    fig.savefig(f"{out}.png", dpi=300, facecolor="white")
-    print(f"Saved: {out}.pdf and .png")
+    # Facet headers extend past axis edges by design.
+    render_and_validate(fig, HERE.parent / "figure_s_branch_shap_by_subclass",
+                        native_width_in=NATIVE_W, strict_per_axis=False)
 
 
 if __name__ == "__main__":
