@@ -5,7 +5,7 @@ LAE, FB, MV) against distance from the comparator's stop codon to the last
 exon-junction complex. Loess overlay + 95% CI band. Vertical dashed line at
 50 nt marks the operational PTC threshold.
 
-Stop anchor: reference-AUG-traced (unbiased). The comparator's stop codon
+Stop anchor: reference AUG-traced (unbiased). The comparator's stop codon
 is defined as the first in-frame stop reached by projecting the reference
 gene's AUG onto the comparator, and the distance to the last EJC is
 computed from the comparator's exon structure. This avoids the TD2-CDS
@@ -157,7 +157,7 @@ def main():
             transform=ax.get_xaxis_transform(),
             ha="left", va="top", fontsize=BODY_FS - 1, color="#c0392b")
 
-    ax.set_xlabel("Distance from stop codon (reference-AUG-traced) to last EJC (nt)",
+    ax.set_xlabel("Distance from stop codon (reference AUG-traced) to last EJC (nt)",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylabel("Mean logFC (mashr posterior mean)",
                    fontsize=BODY_FS, color=TITLE_C)

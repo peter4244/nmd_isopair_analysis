@@ -5,7 +5,7 @@ averaged across AT2/LAE/FB/MV) as a function of the comparator's number of
 downstream EJCs. Restricted to comparators with at least one downstream
 EJC from SF30's population. EJC counts ≥ 7 collapsed into a "7+" bin.
 
-Downstream-EJC count is measured against the reference-AUG-traced stop
+Downstream-EJC count is measured against the reference AUG-traced stop
 codon (unbiased) — same anchor used by SF30. This avoids the TD2-CDS
 attenuation that would arise from anchoring on the TD2-called stop.
 
@@ -90,7 +90,7 @@ def main():
     ax.set_xticks(positions)
     ax.set_xticklabels([f"{b}\n(n = {n:,})" for b, n in zip(order, n_by_bin)],
                         fontsize=BODY_FS, color=TITLE_C)
-    ax.set_xlabel("Number of downstream EJCs (reference-AUG-traced stop)",
+    ax.set_xlabel("Number of downstream EJCs (reference AUG-traced stop)",
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylabel("Mean logFC (mashr posterior mean)",
                    fontsize=BODY_FS, color=TITLE_C)
