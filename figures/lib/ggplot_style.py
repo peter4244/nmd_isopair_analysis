@@ -99,7 +99,10 @@ def docx_effective_pt(native_pt, native_width_in):
 
 def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
                         run_data_free=True, run_tick_disjoint=True,
-                        strict_per_axis=True):
+                        strict_per_axis=True,
+                        run_legend_clear=True,
+                        legend_clearance_px=4,
+                        legend_overlap_tolerance_px=0):
     """Run the full seven-validator gate + save the figure in one call.
 
     This is the SSOT for the figure-shipping contract. Every figure's
@@ -132,6 +135,18 @@ def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
         Skip `assert_tick_labels_disjoint` if a figure has an
         acceptable within-axis tick overlap that has been reviewed
         (rare).
+    run_legend_clear : bool
+        Skip `assert_legend_clear` (the zero-tolerance legend-vs-data
+        clearance check). Only set False for figures where a
+        specific, reviewed legend overlap has been accepted.
+    legend_clearance_px : int
+        Keep-out zone around every data pixel for the legend check
+        (default 4 ≈ 1pt at DPI=300). Increase for stricter breathing
+        room, decrease if a tight-corner legend is acceptable.
+    legend_overlap_tolerance_px : int
+        Pixel count of intersection that still passes. Default 0 —
+        strict. Bump above 0 only after visual review of a specific
+        acceptable overlap, and leave a comment explaining why.
 
     Raises
     ------
@@ -145,6 +160,7 @@ def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
         assert_docx_readable,
         assert_data_free,
         assert_tick_labels_disjoint,
+        assert_legend_clear,
         validate_figure_layout,
         validate_multipanel_layout,
     )
@@ -176,6 +192,12 @@ def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
                 )
         if run_data_free:
             assert_data_free(fig, ax)
+        if run_legend_clear:
+            assert_legend_clear(
+                fig, ax,
+                clearance_px=legend_clearance_px,
+                overlap_tolerance_px=legend_overlap_tolerance_px,
+            )
 
     from pathlib import Path
     p = Path(out_path)

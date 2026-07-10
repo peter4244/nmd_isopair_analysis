@@ -1234,6 +1234,10 @@ def _compute_data_mask(fig, ax, *, occupied_threshold=25, dilate_px=1):
     hide(ax.xaxis.label)
     hide(ax.yaxis.label)
     hide(ax.title)
+    # Also hide the legend so it isn't counted as "data" during the
+    # rasterization — otherwise legend-vs-data clearance checks flag
+    # the legend as overlapping its own bounding box.
+    hide(ax.get_legend())
 
     try:
         fig.canvas.draw()
@@ -1545,3 +1549,129 @@ def assert_tick_labels_disjoint(fig, *, tol_px=1.0):
             "widen the axis, or thin the tick set.\n"
             + "\n".join(offenders)
         )
+
+
+def _dilate_mask(mask, n_iter):
+    """4-neighbor max-filter dilation, n_iter iterations. In-place safe.
+    Returns a new bool array of the same shape as `mask`."""
+    if n_iter <= 0 or mask.size == 0:
+        return mask.copy()
+    m = mask.copy()
+    for _ in range(n_iter):
+        shifted = np.zeros_like(m)
+        shifted[1:, :]  |= m[:-1, :]
+        shifted[:-1, :] |= m[1:, :]
+        shifted[:, 1:]  |= m[:, :-1]
+        shifted[:, :-1] |= m[:, 1:]
+        m = m | shifted
+    return m
+
+
+def assert_legend_clear(fig, ax, *, clearance_px=4,
+                        overlap_tolerance_px=0):
+    """Raise if the legend bbox on `ax` overlaps (or comes within
+    `clearance_px` of) any data-drawn pixel.
+
+    Zero-tolerance by default: a legend that even TOUCHES the boundary
+    of a data element (a curve, a KDE fill edge, a bar top) fails. The
+    clearance dilation grows the data mask by `clearance_px` pixels
+    around every data pixel — the legend must have that much breathing
+    room from any visual element, not just avoid pixel intersection.
+
+    Parameters
+    ----------
+    clearance_px : int
+        Pixels of keep-out zone around every data pixel. Default 4
+        (≈1 pt at DPI=300).
+    overlap_tolerance_px : int
+        Number of intersecting pixels that are still tolerated. Default
+        0 — any overlap fails. Callers who have reviewed a small overlap
+        and decided it's acceptable can raise this per-figure.
+
+    On failure, the error message reports:
+      - How many pixels of overlap were detected
+      - The axes-fraction bbox of the largest open region on this
+        axis (from `find_open_regions`) as a concrete alternative slot
+      - A concrete `bbox_to_anchor` suggestion derived from that slot
+    """
+    leg = ax.get_legend()
+    if leg is None or not leg.get_visible():
+        return
+
+    mask, (mx0, my0, mx1, my1) = _compute_data_mask(fig, ax)
+    if mask.size == 0:
+        return
+
+    dilated = _dilate_mask(mask, clearance_px)
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    try:
+        lb = leg.get_window_extent(renderer=renderer)
+    except Exception:
+        return
+    if lb.width <= 0 or lb.height <= 0:
+        return
+
+    fig_h = int(round(fig.bbox.height))
+    lx0 = max(0, int(math.floor(lb.x0 - mx0)))
+    lx1 = min(mask.shape[1], int(math.ceil(lb.x1 - mx0)))
+    ly1 = max(0, int(math.floor(fig_h - lb.y1 - my0)))
+    ly0 = min(mask.shape[0], int(math.ceil(fig_h - lb.y0 - my0)))
+    if lx1 <= lx0 or ly0 <= ly1:
+        # Legend is entirely outside the axes region — nothing on the
+        # axes data to conflict with.
+        return
+
+    sub = dilated[ly1:ly0, lx0:lx1]
+    n_overlap = int(sub.sum())
+    if n_overlap <= overlap_tolerance_px:
+        return
+
+    # Failure — build a helpful message with an alternative slot suggestion.
+    free = find_open_regions(fig, ax)
+    slot_priority = ["TR", "TL", "BR", "BL", "TC", "MR", "ML", "BC", "MC"]
+    best_slot = None
+    best_area = 0.0
+    for name in slot_priority:
+        rect = free.get(name)
+        if rect is None:
+            continue
+        area = (rect[2] - rect[0]) * (rect[3] - rect[1])
+        if area > best_area:
+            best_area = area
+            best_slot = (name, rect)
+
+    if best_slot is not None:
+        name, (fx0, fy0, fx1, fy1) = best_slot
+        anchor_map = {
+            "TR": ("upper right", fx1, fy1),
+            "TL": ("upper left",  fx0, fy1),
+            "BR": ("lower right", fx1, fy0),
+            "BL": ("lower left",  fx0, fy0),
+            "TC": ("upper center", (fx0 + fx1) / 2, fy1),
+            "MR": ("right",       fx1, (fy0 + fy1) / 2),
+            "ML": ("left",        fx0, (fy0 + fy1) / 2),
+            "BC": ("lower center", (fx0 + fx1) / 2, fy0),
+            "MC": ("center",      (fx0 + fx1) / 2, (fy0 + fy1) / 2),
+        }
+        loc, ax_x, ax_y = anchor_map[name]
+        alt = (f"  Largest open slot: {name} "
+               f"(axes-fraction bbox=({fx0:.2f}, {fy0:.2f}, {fx1:.2f}, {fy1:.2f})).\n"
+               f"  Try: ax.legend(..., loc={loc!r}, "
+               f"bbox_to_anchor=({ax_x:.2f}, {ax_y:.2f}), "
+               f"bbox_transform=ax.transAxes)")
+    else:
+        alt = ("  No open region found on this axis. Move the legend "
+               "OUTSIDE the axes (e.g., bbox_to_anchor=(1.02, 1.0), "
+               "loc='upper left') or expand the panel to make room.")
+
+    raise AssertionError(
+        f"Legend overlaps data (or comes within {clearance_px} px of it): "
+        f"{n_overlap} pixel(s) of clearance-zone intersection "
+        f"(tolerance {overlap_tolerance_px}).\n"
+        f"{alt}\n\n"
+        f"To accept this overlap intentionally, pass "
+        f"overlap_tolerance_px=<N> to assert_legend_clear "
+        f"(or the corresponding kwarg to render_and_validate)."
+    )

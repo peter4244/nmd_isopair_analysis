@@ -99,22 +99,16 @@ def main():
                 fontsize=BODY_FS, color=TITLE_C, fontweight="bold",
                 zorder=4)
 
-    # 50% reference line — the "no preference between GAIN and LOSS" line
-    ax.axhline(50, linestyle="--", linewidth=0.8, color="#c0392b", zorder=2)
-    ax.text(0.99, 0.94, "50% (no preference)",
-            transform=ax.transAxes,
-            ha="right", va="top", fontsize=BODY_FS - 2, color="#c0392b")
-
     ax.set_xticks(x)
     ax.set_xticklabels([DISPLAY_LABEL.get(e, e) for e in events],
                        fontsize=BODY_FS - 1, color=TITLE_C, rotation=0)
     ax.set_xlabel("")
-    ax.set_ylabel("Events with GAIN direction (%)", fontsize=BODY_FS, color=TITLE_C)
+    ax.set_ylabel("Events with Gain direction (%)", fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylim(0, 100)
     ax.set_yticks([0, 25, 50, 75, 100])
     ax.set_xlim(-0.7, len(events) - 0.3)
 
-    ax.legend(loc="upper right", frameon=True, facecolor="white",
+    ax.legend(loc="upper center", frameon=True, facecolor="white",
               edgecolor="none", fontsize=BODY_FS)
 
     # No overall figure title or subtitle — caption carries both roles (Yul-style).

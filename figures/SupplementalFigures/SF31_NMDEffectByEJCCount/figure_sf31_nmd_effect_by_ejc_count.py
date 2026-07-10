@@ -54,7 +54,7 @@ def main():
     df = df[df["ejc_bin"].isin(order)].copy()
 
     fig, ax = plt.subplots(figsize=(NATIVE_W, 5.0))
-    fig.subplots_adjust(left=0.09, right=0.97, top=0.86, bottom=0.14)
+    fig.subplots_adjust(left=0.09, right=0.82, top=0.86, bottom=0.14)
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
 
     data = [df.loc[df["ejc_bin"] == b, "mean_logFC"].to_numpy() for b in order]
@@ -81,7 +81,7 @@ def main():
     medians = [np.median(d) for d in data]
     ax.plot(positions, medians, color="#c0392b", linewidth=1.2,
             marker="o", markersize=4, zorder=6, label="Median trend")
-    ax.legend(loc="lower right", frameon=True, facecolor="white",
+    ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1.00), frameon=True, facecolor="white",
               edgecolor="none", fontsize=BODY_FS - 1)
 
     # Sample sizes folded into the x-tick labels (below the axis) — avoids
