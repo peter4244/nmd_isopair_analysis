@@ -89,7 +89,7 @@ def main():
     stop = load("stop")
 
     fig, axes = plt.subplots(1, 2, figsize=(NATIVE_W, 4.8), sharey=True)
-    fig.subplots_adjust(left=0.09, right=0.96, top=0.82, bottom=0.12, wspace=0.28)
+    fig.subplots_adjust(left=0.09, right=0.96, top=0.82, bottom=0.22, wspace=0.28)
 
     draw_panel(axes[0], atg,  codon_label="start codon")
     draw_panel(axes[1], stop, codon_label="stop codon")
@@ -101,8 +101,11 @@ def main():
     panel_letter(axes[0], "A", x=-0.07, y=1.14)
     panel_letter(axes[1], "B", x=-0.07, y=1.14)
 
-    axes[1].legend(loc="upper right", frameon=True, framealpha=0.9,
-                    edgecolor="none", facecolor="white", fontsize=BODY_FS)
+    # Shared legend in the bottom margin — the GC curves fill both panels,
+    # so an in-panel legend can't clear the data.
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=2, frameon=False,
+               fontsize=BODY_FS, bbox_to_anchor=(0.5, 0.01))
 
     # Facet headers extend past axis edges by design.
     render_and_validate(fig, HERE / "figure_sf41_gc_content_stop_window",
