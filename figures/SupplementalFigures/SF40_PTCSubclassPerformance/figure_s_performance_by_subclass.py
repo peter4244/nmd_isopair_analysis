@@ -12,7 +12,7 @@ Two panels at the held-out chr-1/3/5/7 paralog-free test split:
   (A) ROC curves for two contrasts:
         — NMD+/PTC+ retained  vs  Control
         — NMD+/PTC- retained  vs  Control
-      AUC and AUPRC annotated.
+      AUC annotated.
 
   (B) Per-isoform predicted NMD probability stratified by subclass
       (strip + boxplot overlay), with the 0.5 decision threshold marked.
@@ -102,12 +102,12 @@ def build_figure():
 
     # ── Panel A — ROC curves
     style_axes_ggplot(axA)
-    fpr1, tpr1, auc1, aupr1 = contrast_metrics(ptcp, ctrl)
-    fpr2, tpr2, auc2, aupr2 = contrast_metrics(ptcn, ctrl)
+    fpr1, tpr1, auc1, _ = contrast_metrics(ptcp, ctrl)
+    fpr2, tpr2, auc2, _ = contrast_metrics(ptcn, ctrl)
     axA.plot(fpr1, tpr1, color=GROUP_COLOR["NMD+/PTC+"], lw=2.0, zorder=4,
-             label=f"NMD+/PTC+ vs Ctrl\nAUC = {auc1:.2f}, AUPRC = {aupr1:.2f}\n(n = {len(ptcp)} vs {len(ctrl)})")
+             label=f"NMD+/PTC+ vs Control\nAUC = {auc1:.2f}")
     axA.plot(fpr2, tpr2, color=GROUP_COLOR["NMD+/PTC- retained"], lw=2.0, zorder=4,
-             label=f"NMD+/PTC− vs Ctrl\nAUC = {auc2:.2f}, AUPRC = {aupr2:.2f}\n(n = {len(ptcn)} vs {len(ctrl)})")
+             label=f"NMD+/PTC− vs Control\nAUC = {auc2:.2f}")
     axA.plot([0, 1], [0, 1], "--", color="#666666", lw=0.8, zorder=3)
     axA.set_xlim(-0.02, 1.02)
     axA.set_ylim(-0.02, 1.02)
@@ -118,8 +118,8 @@ def build_figure():
     # No subpanel title — caption identifies Panel A (Yul-style).
     axA.tick_params(axis="both", labelsize=BODY_FS - 2)
     axA.legend(loc="lower right", fontsize=BODY_FS - 3, frameon=True, framealpha=0.9,
-               facecolor="white", edgecolor="none", handlelength=2.0,
-               handletextpad=0.5, borderaxespad=0.4, labelspacing=0.9)
+               facecolor="white", edgecolor="none", handlelength=1.6,
+               handletextpad=0.5, borderaxespad=0.4, labelspacing=0.25)
     axA.set_aspect("equal")
 
     # ── Panel B — predicted probability per subgroup
