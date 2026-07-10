@@ -54,7 +54,7 @@ def main():
     df = df[df["ejc_bin"].isin(order)].copy()
 
     fig, ax = plt.subplots(figsize=(NATIVE_W, 5.0))
-    fig.subplots_adjust(left=0.09, right=0.82, top=0.86, bottom=0.14)
+    fig.subplots_adjust(left=0.09, right=0.78, top=0.86, bottom=0.14)
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
 
     data = [df.loc[df["ejc_bin"] == b, "mean_logFC"].to_numpy() for b in order]

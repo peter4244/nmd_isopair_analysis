@@ -155,7 +155,10 @@ def render_position_hist(ax, tsv_name):
 
     ymax = counts.max() * 1.42
     ax.set_xlim(x_min, x_max); ax.set_ylim(0, ymax)
-    ax.set_xticks([-500, 0, 1000, 2000])
+    # Drop the -500 clip-floor tick: it crowds the origin against the 0 tick
+    # (500 nt apart vs 1000 nt for the rest). The red dashed line marks 0, so
+    # even [0, 1000, 2000] spacing reads cleaner without losing the anchor.
+    ax.set_xticks([0, 1000, 2000])
     # Explicit yticks — auto-ticks otherwise include values above ymax
     # (e.g. "1000" when ymax=820), whose label bbox overlaps the panel
     # letter placed above the axis.

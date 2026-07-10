@@ -1,1 +1,1 @@
-**SF28 | Isopair analysis flowchart.** Data flow for the isoform pairs analyses. Every filter step shows the number of pairs kept and dropped, and a one-line description of why each dropout happened.
+**SF28 | Isopair Analysis Flowchart.** Data flow for the isoform pairs analyses. Every filter step shows the number of pairs kept and dropped, and a one-line description of why each dropout happened.

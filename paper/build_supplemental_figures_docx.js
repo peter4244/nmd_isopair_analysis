@@ -81,7 +81,12 @@ function markdownRuns(text) {
   const out = [];
   let i = 0;
   while (i < text.length) {
-    if (text.startsWith('**', i)) {
+    if (text[i] === '\\' && i + 1 < text.length) {
+      // Backslash escape: emit the next character literally (e.g. \* -> *),
+      // so significance markers like *p / **p / ***p render as plain asterisks.
+      out.push(new TextRun(text[i + 1]));
+      i += 2;
+    } else if (text.startsWith('**', i)) {
       const end = text.indexOf('**', i + 2);
       if (end === -1) { out.push(new TextRun(text.slice(i))); break; }
       out.push(new TextRun({ text: text.slice(i + 2, end), bold: true }));
@@ -97,10 +102,11 @@ function markdownRuns(text) {
       out.push(new TextRun({ text: text.slice(i + 1, end), font: 'Courier New' }));
       i = end + 1;
     } else {
+      const nextEsc    = text.indexOf('\\', i);
       const nextBold   = text.indexOf('**', i);
       const nextItalic = text.indexOf('*',  i);
       const nextCode   = text.indexOf('`',  i);
-      const candidates = [nextBold, nextItalic, nextCode].filter(x => x !== -1);
+      const candidates = [nextEsc, nextBold, nextItalic, nextCode].filter(x => x !== -1);
       const next = candidates.length ? Math.min(...candidates) : text.length;
       out.push(new TextRun(text.slice(i, next)));
       i = next;

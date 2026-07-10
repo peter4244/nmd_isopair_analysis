@@ -145,7 +145,10 @@ def render_position_hist(ax, tsv_name):
 
     ymax = counts.max() * 1.42
     ax.set_xlim(x_min, x_max); ax.set_ylim(0, ymax)
-    ax.set_xticks([-500, 0, 1000, 2000])
+    # Drop the -500 clip-floor tick: it crowds the origin against the 0 tick
+    # (500 nt apart vs 1000 nt for the rest). The red dashed line marks 0, so
+    # even [0, 1000, 2000] spacing reads cleaner without losing the anchor.
+    ax.set_xticks([0, 1000, 2000])
     _ymax_int = int(ymax)
     _step = 200 if _ymax_int > 300 else 20
     ax.set_yticks([y for y in range(0, _ymax_int + 1, _step) if y < ymax])
