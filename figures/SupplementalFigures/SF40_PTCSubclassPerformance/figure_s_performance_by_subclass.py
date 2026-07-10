@@ -46,20 +46,18 @@ HERE = Path(__file__).resolve()
 LIB = HERE.parents[2] / "lib"
 sys.path.insert(0, str(LIB))
 
-try:
-    from validate_figure_layout import validate_multipanel_layout
-except Exception:
-    validate_multipanel_layout = None
-
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
     panel_letter,
-    assert_text_within_canvas,
+    docx_body_fs,
+    render_and_validate,
     TITLE_C,
-    BODY_FS as GG_BODY_FS,
 )
 apply_ggplot_rcparams()
+
+NATIVE_W = 8.2
+BODY_FS  = docx_body_fs(NATIVE_W)
 
 DATA = HERE.parent / "data" / "predprob_by_subclass_n1166.tsv"
 
@@ -115,11 +113,11 @@ def build_figure():
     axA.set_ylim(-0.02, 1.02)
     axA.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
     axA.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
-    axA.set_xlabel("False positive rate", fontsize=9)
-    axA.set_ylabel("True positive rate", fontsize=9)
+    axA.set_xlabel("False positive rate", fontsize=BODY_FS)
+    axA.set_ylabel("True positive rate", fontsize=BODY_FS)
     # No subpanel title — caption identifies Panel A (Yul-style).
-    axA.tick_params(axis="both", labelsize=8)
-    axA.legend(loc="lower right", fontsize=7.5, frameon=True, framealpha=0.9,
+    axA.tick_params(axis="both", labelsize=BODY_FS - 2)
+    axA.legend(loc="lower right", fontsize=BODY_FS - 3, frameon=True, framealpha=0.9,
                facecolor="white", edgecolor="none", handlelength=2.0,
                handletextpad=0.5, borderaxespad=0.4, labelspacing=0.9)
     axA.set_aspect("equal")
@@ -154,18 +152,18 @@ def build_figure():
 
     axB.axhline(0.5, color="#aa6600", lw=0.9, ls="--", zorder=1)
     axB.text(2.45, 0.51, "decision\nthreshold (0.5)", color="#aa6600",
-             fontsize=7, ha="right", va="bottom", style="italic")
+             fontsize=BODY_FS - 3, ha="right", va="bottom", style="italic")
     axB.set_xticks(positions)
     axB.set_xticklabels([
         f"{GROUP_LABEL[g]}\n(n = {int((df['group'] == g).sum()):,})"
         for g in GROUP_ORDER
-    ], fontsize=8)
+    ], fontsize=BODY_FS - 2)
     axB.set_xlim(-0.6, len(GROUP_ORDER) - 0.4)
     axB.set_ylim(-0.03, 1.03)
     axB.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
-    axB.set_ylabel("Model NMD probability  P(NMD | x)", fontsize=9)
+    axB.set_ylabel("Model NMD probability  P(NMD | x)", fontsize=BODY_FS)
     # No subpanel title — caption identifies Panel B (Yul-style).
-    axB.tick_params(axis="y", labelsize=8)
+    axB.tick_params(axis="y", labelsize=BODY_FS - 2)
 
     # Panel labels
     panel_letter(axA, "A", x=-0.13, y=1.02)
@@ -177,16 +175,8 @@ def build_figure():
 
 def main():
     fig, axes = build_figure()
-    if validate_multipanel_layout is not None:
-        try:
-            validate_multipanel_layout(fig)
-        except Exception as e:
-            print(f"[validate_multipanel_layout] non-fatal: {e}")
-    assert_text_within_canvas(fig)
-    out = HERE.parent / "figure_s_performance_by_subclass"
-    fig.savefig(f"{out}.pdf", facecolor="white")
-    fig.savefig(f"{out}.png", dpi=300, facecolor="white")
-    print(f"Saved: {out}.pdf and .png")
+    render_and_validate(fig, HERE.parent / "figure_s_performance_by_subclass",
+                        native_width_in=NATIVE_W)
 
 
 if __name__ == "__main__":

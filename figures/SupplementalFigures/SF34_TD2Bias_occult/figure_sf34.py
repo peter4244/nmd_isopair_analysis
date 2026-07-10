@@ -21,15 +21,10 @@ LIB = HERE.parents[2] / "lib"
 sys.path.insert(0, str(LIB))
 
 from ggplot_style import (
-    apply_ggplot_rcparams, style_axes_ggplot, assert_text_within_canvas,
-    panel_letter, docx_body_fs, TITLE_C, AXIS_C,
+    apply_ggplot_rcparams, style_axes_ggplot, panel_letter, docx_body_fs,
+    render_and_validate, TITLE_C, AXIS_C,
 )
 apply_ggplot_rcparams()
-from validate_figure_layout import (
-    validate_figure_layout,
-    validate_multipanel_layout, assert_style_symmetric, assert_docx_readable,
-    assert_data_free,
-)
 NATIVE_W = 11.0
 BODY_FS  = docx_body_fs(NATIVE_W)
 DATA = HERE.parents[1] / "SF33_TD2Bias_broad" / "data"
@@ -190,27 +185,8 @@ def build_figure():
 
 def main():
     fig = build_figure()
-    assert_text_within_canvas(fig)
-    assert_style_symmetric(fig)
-    assert_docx_readable(fig, native_width_in=NATIVE_W)
-    _mp = validate_multipanel_layout(fig)
-    if _mp["summary"]["n_errors"] > 0:
-        msgs = "\n".join(f"  [{e.check}] {e.message}" for e in _mp["errors"])
-        raise AssertionError(f"validate_multipanel_layout: "
-                             f"{_mp['summary']['n_errors']} errors:\n{msgs}")
-    for ax in fig.axes:
-        r = validate_figure_layout(fig, ax, verbose=False)
-        n_err = r["summary"]["n_errors"]
-        if n_err > 0:
-            msgs = "\n".join(f"  [{e.check}] {e.message}" for e in r["errors"])
-            raise AssertionError(
-                f"validate_figure_layout: {n_err} errors on axis:\n{msgs}"
-            )
-        assert_data_free(fig, ax)
-    out = HERE.parent
-    fig.savefig(out / "figure_sf34.pdf", facecolor="white")
-    fig.savefig(out / "figure_sf34.png", dpi=300, facecolor="white")
-    print("Saved: figure_sf34.{pdf,png}")
+    render_and_validate(fig, HERE.parent / "figure_sf34",
+                        native_width_in=NATIVE_W)
 
 
 if __name__ == "__main__":

@@ -20,15 +20,10 @@ LIB = HERE.parents[2] / "lib"
 sys.path.insert(0, str(LIB))
 
 from ggplot_style import (
-    apply_ggplot_rcparams, style_axes_ggplot, assert_text_within_canvas,
-    panel_letter, docx_body_fs, TITLE_C, AXIS_C,
+    apply_ggplot_rcparams, style_axes_ggplot, panel_letter, docx_body_fs,
+    render_and_validate, TITLE_C, AXIS_C,
 )
 apply_ggplot_rcparams()
-from validate_figure_layout import (
-    validate_figure_layout,
-    validate_multipanel_layout, assert_style_symmetric, assert_docx_readable,
-    assert_data_free,
-)
 # Native figure width — passed through to docx_body_fs so BODY_FS lands at
 # the 10 pt docx-scale target regardless of native render size, and to
 # assert_docx_readable so the 9 pt floor is enforced against the right scale.
@@ -210,33 +205,8 @@ def build_figure():
 
 def main():
     fig = build_figure()
-    assert_text_within_canvas(fig)
-    assert_style_symmetric(fig)
-    assert_docx_readable(fig, native_width_in=NATIVE_W)
-    _mp = validate_multipanel_layout(fig)
-    if _mp["summary"]["n_errors"] > 0:
-        msgs = "\n".join(f"  [{e.check}] {e.message}" for e in _mp["errors"])
-        raise AssertionError(f"validate_multipanel_layout: "
-                             f"{_mp['summary']['n_errors']} errors:\n{msgs}")
-    # Per-axis check catches WITHIN-panel text-vs-data overlaps (annotation
-    # sitting on top of a KDE curve, histogram bar, or violin) that the
-    # multipanel validator can't see.
-    for ax in fig.axes:
-        r = validate_figure_layout(fig, ax, verbose=False)
-        # Enforce — the per-axis validator returns a dict rather than
-        # raising, so a caller that ignores the return silently ships
-        # broken layouts (text-text overlaps caught here don't surface
-        # anywhere else).
-        n_err = r["summary"]["n_errors"]
-        if n_err > 0:
-            msgs = "\n".join(f"  [{e.check}] {e.message}" for e in r["errors"])
-            raise AssertionError(
-                f"validate_figure_layout: {n_err} errors on axis:\n{msgs}"
-            )
-        assert_data_free(fig, ax)
-    out = HERE.parent
-    fig.savefig(out / "figure_sf33.pdf", facecolor="white")
-    fig.savefig(out / "figure_sf33.png", dpi=300, facecolor="white")
+    render_and_validate(fig, HERE.parent / "figure_sf33",
+                        native_width_in=NATIVE_W)
     print("Saved: figure_sf33.{pdf,png}")
 
 

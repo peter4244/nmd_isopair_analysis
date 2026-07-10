@@ -97,6 +97,89 @@ def docx_effective_pt(native_pt, native_width_in):
     return native_pt * PAPER_CONTENT_W_IN / native_width_in
 
 
+def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
+                        run_data_free=True, run_tick_disjoint=True):
+    """Run the full seven-validator gate + save the figure in one call.
+
+    This is the SSOT for the figure-shipping contract. Every figure's
+    main() should reduce to::
+
+        fig = build_figure()
+        render_and_validate(fig, HERE.parent / "figure_xx",
+                            native_width_in=NATIVE_W)
+
+    instead of copy-pasting 30 lines of individual validator calls.
+    Adding a new check in the future is a one-line edit here — every
+    figure that uses this helper picks it up automatically.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+    out_path : str | Path
+        Base path WITHOUT extension. Two files are written:
+        ``{out_path}.pdf`` and ``{out_path}.png``.
+    native_width_in : float
+        Passed to `assert_docx_readable` so the docx-scale floor is
+        checked against the correct render width.
+    dpi : int
+        PNG DPI. PDF is always vector.
+    run_data_free : bool
+        Skip `assert_data_free` if the figure's non-data content is
+        intentionally on top of data (rare — only opt out with a
+        comment explaining why).
+    run_tick_disjoint : bool
+        Skip `assert_tick_labels_disjoint` if a figure has an
+        acceptable within-axis tick overlap that has been reviewed
+        (rare).
+
+    Raises
+    ------
+    AssertionError
+        If any validator fails. Message names the failing check and
+        the offending element.
+    """
+    # Local imports to avoid a top-level ggplot_style ↔ validate cycle.
+    from validate_figure_layout import (
+        assert_style_symmetric,
+        assert_docx_readable,
+        assert_data_free,
+        assert_tick_labels_disjoint,
+        validate_figure_layout,
+        validate_multipanel_layout,
+    )
+
+    assert_text_within_canvas(fig)
+    assert_style_symmetric(fig)
+    assert_docx_readable(fig, native_width_in=native_width_in)
+    if run_tick_disjoint:
+        assert_tick_labels_disjoint(fig)
+
+    _mp = validate_multipanel_layout(fig)
+    if _mp["summary"]["n_errors"] > 0:
+        msgs = "\n".join(f"  [{e.check}] {e.message}" for e in _mp["errors"])
+        raise AssertionError(
+            f"validate_multipanel_layout: "
+            f"{_mp['summary']['n_errors']} errors:\n{msgs}"
+        )
+
+    for ax in fig.axes:
+        r = validate_figure_layout(fig, ax, verbose=False)
+        if r["summary"]["n_errors"] > 0:
+            msgs = "\n".join(f"  [{e.check}] {e.message}" for e in r["errors"])
+            raise AssertionError(
+                f"validate_figure_layout: "
+                f"{r['summary']['n_errors']} errors on {ax}:\n{msgs}"
+            )
+        if run_data_free:
+            assert_data_free(fig, ax)
+
+    from pathlib import Path
+    p = Path(out_path)
+    fig.savefig(f"{p}.pdf", facecolor="white")
+    fig.savefig(f"{p}.png", dpi=dpi, facecolor="white")
+    return str(p)
+
+
 def place_violin_median_label(ax, i, v_log, m_raw, m_log, body_fs, native_w,
                               *, min_effective_pt=PAPER_FLOOR_PT,
                               peak_width=0.8, width_margin=0.85):

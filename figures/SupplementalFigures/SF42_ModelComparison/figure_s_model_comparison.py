@@ -33,19 +33,13 @@ HERE = Path(__file__).resolve()
 LIB = HERE.parents[2] / "lib"
 sys.path.insert(0, str(LIB))
 
-try:
-    from validate_figure_layout import validate_multipanel_layout
-except Exception:
-    validate_multipanel_layout = None
-
 from ggplot_style import (
     apply_ggplot_rcparams,
     style_axes_ggplot,
     panel_letter,
-    assert_text_within_canvas,
     docx_body_fs,
+    render_and_validate,
 )
-from validate_figure_layout import assert_docx_readable
 apply_ggplot_rcparams()
 
 NATIVE_W = 12.0
@@ -268,17 +262,8 @@ def build_figure():
 
 def main():
     fig, axes = build_figure()
-    if validate_multipanel_layout is not None:
-        try:
-            validate_multipanel_layout(fig)
-        except Exception as e:
-            print(f"[validate_multipanel_layout] non-fatal: {e}")
-    assert_text_within_canvas(fig)
-    assert_docx_readable(fig, native_width_in=NATIVE_W)
-    out = HERE.parent / "figure_s_model_comparison"
-    fig.savefig(f"{out}.pdf", facecolor="white")
-    fig.savefig(f"{out}.png", dpi=300, facecolor="white")
-    print(f"Saved: {out}.pdf and .png")
+    render_and_validate(fig, HERE.parent / "figure_s_model_comparison",
+                        native_width_in=NATIVE_W)
 
 
 if __name__ == "__main__":
