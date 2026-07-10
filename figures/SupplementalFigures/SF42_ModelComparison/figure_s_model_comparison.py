@@ -43,8 +43,13 @@ from ggplot_style import (
     style_axes_ggplot,
     panel_letter,
     assert_text_within_canvas,
+    docx_body_fs,
 )
+from validate_figure_layout import assert_docx_readable
 apply_ggplot_rcparams()
+
+NATIVE_W = 12.0
+BODY_FS = docx_body_fs(NATIVE_W)
 
 ANALYSIS = HERE.parents[3] / "code" / "nmd_predictor_comparison"
 SCORES = ANALYSIS / "per_isoform_scores_2026.6.20.tsv"
@@ -123,7 +128,7 @@ def panel_a_scatter(ax, df, model_key):
     sp = df[[col, "mashr_posterior_mean_logfc"]].corr(method="spearman").iloc[0, 1]
     ax.text(
         0.04, 0.95, f"Spearman = {sp:.2f}",
-        transform=ax.transAxes, fontsize=10, color="#222222",
+        transform=ax.transAxes, fontsize=BODY_FS, color="#222222",
         va="top", ha="left",
         bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#999", lw=0.5),
     )
@@ -131,13 +136,13 @@ def panel_a_scatter(ax, df, model_key):
     # reader can still tell the three sub-panels apart (Yul-style).
     ax.set_xlabel(
         f"Predicted NMD score\n{MODEL_LABEL[model_key]}",
-        fontsize=10, color="#222222",
+        fontsize=BODY_FS, color="#222222",
     )
     if model_key == "our_model":
         ax.set_xticks([0.0, 0.25, 0.5, 0.75, 1.0])
     else:
         ax.set_xticks([0.0, 0.2, 0.4, 0.6])
-    ax.tick_params(axis="both", labelsize=9, colors="#222222")
+    ax.tick_params(axis="both", labelsize=BODY_FS - 2, colors="#222222")
 
 
 def panel_b_bars(ax, metrics, head_to_head_n):
@@ -180,7 +185,7 @@ def panel_b_bars(ax, metrics, head_to_head_n):
                 v + (0.03 if v >= 0 else -0.06),
                 f"{v:.2f}",
                 ha="center", va="bottom" if v >= 0 else "top",
-                fontsize=8, color="#222222",
+                fontsize=BODY_FS - 3, color="#222222",
             )
 
     ax.axhline(0, color="#555555", linewidth=0.6)
@@ -189,18 +194,18 @@ def panel_b_bars(ax, metrics, head_to_head_n):
         ["NMDetective-B\n(Lindeboom 2019)",
          "NMDEP rule baseline\n(Saadat 2025)",
          "Our model\n(this work)"],
-        fontsize=9, color="#222222",
+        fontsize=BODY_FS - 2, color="#222222",
     )
     ax.set_ylabel("Spearman correlation with\nmashr log fold-change (SMG1i)",
-                  fontsize=10, color="#222222")
+                  fontsize=BODY_FS, color="#222222")
     ax.set_ylim(-0.35, 0.75)
     ax.set_yticks([-0.2, 0.0, 0.2, 0.4, 0.6])
-    ax.tick_params(axis="y", labelsize=9, colors="#222222")
+    ax.tick_params(axis="y", labelsize=BODY_FS - 2, colors="#222222")
     ax.legend(
-        loc="upper left", fontsize=9, frameon=False,
+        loc="upper left", fontsize=BODY_FS - 2, frameon=False,
         handlelength=1.5, handletextpad=0.5, borderaxespad=0.4,
         title=f"Within-subclass (n = {head_to_head_n} total)",
-        title_fontsize=9,
+        title_fontsize=BODY_FS - 2,
     )
 
 
@@ -216,7 +221,7 @@ def build_figure():
     gs_outer = fig.add_gridspec(
         nrows=2, ncols=1,
         height_ratios=[1.0, 1.0],
-        hspace=0.35, left=0.09, right=0.96, bottom=0.06, top=0.94,
+        hspace=0.35, left=0.12, right=0.96, bottom=0.06, top=0.94,
     )
     gs_a = gs_outer[0, 0].subgridspec(nrows=1, ncols=3, wspace=0.45)
 
@@ -228,7 +233,7 @@ def build_figure():
         panel_a_scatter(ax, df, m)
     axes_a[0].set_ylabel(
         "Gold standard: mashr posterior mean\nlog fold-change under SMG1i",
-        fontsize=10, color="#222222",
+        fontsize=BODY_FS, color="#222222",
     )
     # Shared horizontal legend ABOVE Panel A (between the panel label
     # row and the subplot title row). Keeps the legend out of the
@@ -243,7 +248,7 @@ def build_figure():
     fig.legend(
         handles=handles, loc="upper center",
         bbox_to_anchor=(0.5, 0.98),
-        ncol=3, fontsize=9, frameon=False,
+        ncol=3, fontsize=BODY_FS - 2, frameon=False,
         handlelength=1.2, handletextpad=0.4, columnspacing=1.6,
         title=None,
     )
@@ -269,6 +274,7 @@ def main():
         except Exception as e:
             print(f"[validate_multipanel_layout] non-fatal: {e}")
     assert_text_within_canvas(fig)
+    assert_docx_readable(fig, native_width_in=NATIVE_W)
     out = HERE.parent / "figure_s_model_comparison"
     fig.savefig(f"{out}.pdf", facecolor="white")
     fig.savefig(f"{out}.png", dpi=300, facecolor="white")
