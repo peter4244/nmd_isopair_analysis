@@ -34,7 +34,18 @@ entirely.** Three columns: pre-floor (original 6-CT), 6-CT-floor (2026-07-10, no
 **SF42 legend n (frozen prose to update):** old 561/255/30/276 → **new test-split 415 = 195/16/204**
 (verify exact scope against `figure_s_model_comparison.py` at R3).
 
+## Figure 3 (headline PTC enrichment) — 4-CT
+| Quantity | pre-floor | 6-CT floor (void) | **4-CT** |
+|---|---|---|---|
+| gencode_all3 NMD PTC+ / PTC- / Control | 72/118/190 | 54/82/136 | **48 / 82 / 130** |
+| NMD PTC rate | 37.9% | 39.7% (54/136) | **36.9% (48/130)** |
+| Control PTC rate | 2.1% (4/190) | 0.7% (1/136) | **1.5% (2/130)** |
+| PTC fold-enrichment | 18× | 54× | **24.0×** |
+| Fisher OR | 28.2 | 88.1 | **37.06** (95% CI 9.3–323) |
+| Fisher p | 1.88e-20 | 5.15e-18 | **1.58e-14** |
+| Panel E: PTC-attributed events (NMD) / Control baseline | — | — | **48 / 292** |
+
 ## TBD — fill in during R3 as each figure/Rmd regenerates
-PTC rates (NMD vs Control), Fisher OR/p (n=130 arm), n=1,166 PTC rate (of 819), Kozak paired-Wilcoxon
-p (broad + occult of 348), SF39 branch-SHAP subclass n, transcript-length medians (SF27), reference-share
-median, %ENST reference / %novel NMD, SE prevalence, PTC-cause mech split, A5SS attribution, TD2==ref-AUG %.
+n=1,166 PTC rate (of 819), Kozak paired-Wilcoxon p (broad + occult of 348), SF39 branch-SHAP subclass n,
+transcript-length medians (SF27), reference-share median, %ENST reference / %novel NMD, SE prevalence,
+PTC-cause mech split, A5SS attribution, TD2==ref-AUG %.
