@@ -1,8 +1,8 @@
 """
 Figure 4 Panel A — 5'UTR length, all-3-ENST + coding-CDS scope.
 
-3-group boxplot (log y): NMD+/PTC+ (n=72) vs NMD+/PTC- (n=118; ORF match +
-ORF diff merged) vs Control (n=190). PTC determination from each comparator's
+3-group boxplot (log y): NMD+/PTC+ (n=48) vs NMD+/PTC- (n=82; ORF match +
+ORF diff merged) vs Control (n=130). PTC determination from each comparator's
 OWN GENCODE-annotated stop (no ref-AUG projection; no TD2 dependency).
 
 Section A of Figure 4 — the cleanest small-n GENCODE-only evidence of the

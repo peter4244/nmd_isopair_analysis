@@ -1,8 +1,8 @@
 """
 Figure 4 Panel D — Longest 5'UTR ORF, ENST-reference + ref-AUG-traceable scope.
 
-3-group boxplot (log1p y): NMD+/PTC+ (n=1,489) vs NMD+/PTC- (n=163; ORF match
-+ ORF diff merged) vs Control (n=1,286). 5'UTR boundary anchored on the
+3-group boxplot (log1p y): NMD+/PTC+ (n=756) vs NMD+/PTC- (n=63; ORF match
++ ORF diff merged) vs Control (n=819). 5'UTR boundary anchored on the
 ref-AUG-projected start codon (utr5_features_refaug.rds).
 
 Section C of Figure 4. Pre-registered in ./RATIONALE.md.
