@@ -1,4 +1,4 @@
-"""SF25 — Isoform count per gene in the Isopair pair-set cohort (n = 3,009).
+"""SF25 — Isoform count per gene in the Isopair pair-set cohort (n = 1,585).
 
 Standalone rebuild of the isoform-count panel that was previously bundled
 as Panel A of PairSetDescriptives. Split per Yul-era paper numbering so

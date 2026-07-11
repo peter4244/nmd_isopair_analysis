@@ -29,7 +29,8 @@ pre → post per this table. "TBD" = to be read from the rendered Rmd / remainin
 | **§5 ATG-branch ratio PTC−:PTC+** ("roughly 3×") | 2.21× | **1.98×** (~2×) → soften prose to "~twice" | SF39 |
 | **§4 NMD-effect peak vs downstream-EJC count** ("peaked at 4-5") | 4–5 EJCs | **flat/noisy; nominal peak at 6** (bin5 dips to 2.03) → reconsider "peaked at 4-5" wording | SF31 |
 | Reference-share median | 31% | **TBD (≥25% by construction; expect ~50%+)** | Rmd §1 render |
-| Transcript-length medians (ref/NMD/ctrl) | 2893/3049/2762 | TBD | Rmd render |
+| Transcript-length medians (ref/NMD/ctrl) | 2893/3049/2762 | **2958/2991/2808** (SF27); NMD-vs-ref now n.s. (p=0.058) but still "similar"; Control still shorter p<10⁻⁵ | SF27 |
+| Median isoforms per pop_BC gene | 7 | **7** (unchanged) | SF25 |
 | %ENST reference / %novel NMD | 69.7 / 76.6 | TBD | Rmd render |
 | SE prevalence NMD vs Ctrl | 44.2 vs 21.2% | TBD | figure3 Panel C |
 | PTC-cause mech split (fs/ifs/3′utr) | 55/33/12% | TBD | figure3 Panel F |
