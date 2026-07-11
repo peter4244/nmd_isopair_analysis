@@ -28,18 +28,18 @@ This is the most reliable basis for §4 mechanism inference. Sensitivity analyse
 
 ## 2. Universe (matches Fig 3 starting universe)
 
-- **pop_BC** (Stage-2 gene-matched coding-coding pairs, built by `02_build_profiles_mashr.R`) = 3,009 NMD c2 / 3,009 Control c4. Established and verified in Fig 3.
+- **pop_BC** (Stage-2 gene-matched coding-coding pairs, built by `02_build_profiles_mashr.R`) = 1,548 NMD c2 / 1,548 Control c4. Established and verified in Fig 3.
 - **pop_traceable** (ref-AUG-traceable subset; categories ∈ {effectively_ptc, no_downstream_ejc, truncated_no_ejc}) = 2,289 NMD c2 / 1,763 Control c4.
 - **§4 primary scope** = pop_traceable ∩ pairs where `reference_isoform_id` is ENST-prefixed (GENCODE-annotated):
-  - **NMD c2 (ENST-reference pop_traceable)**: 1,659 pairs (a few additional rows where `mechanism_class` routes NA-`orf_diff` cases to "Ref AUG absent" reduce the operational mechanism-classified subset to 1,652).
-  - **Control c4 (ENST-reference pop_traceable)**: 1,286 pairs.
-- **Pop_BC at ENST-reference scope** (for Panel D classification overview, before pop_traceable restriction): **2,098 NMD c2 / 2,098 Control c4** — 1:1 Stage-2 gene-matching fully preserved (both sides share the same 2,098 gene/reference keys).
+  - **NMD c2 (ENST-reference pop_traceable)**: 1,171 pairs (a few additional rows where `mechanism_class` routes NA-`orf_diff` cases to "Ref AUG absent" reduce the operational mechanism-classified subset to 1,164).
+  - **Control c4 (ENST-reference pop_traceable)**: 885 pairs.
+- **Pop_BC at ENST-reference scope** (for Panel D classification overview, before pop_traceable restriction): **1,385 NMD c2 / 1,385 Control c4** — 1:1 Stage-2 gene-matching fully preserved (both sides share the same 1,385 gene/reference keys).
 
-**Methodological note — this is a filter on the existing pop_BC, NOT a re-anchoring of the pair structure.** We do not re-build pairs or re-select reference isoforms from a new criterion. The Isopair pair-building convention (`02_build_profiles_mashr.R`: "top non-NMD isoform per gene in pooled DMSO" → pair with top NMD comparator) is unchanged. We simply drop the 911 pop_BC pairs (3,009 → 2,098) where Isopair selected a novel (non-ENST) reference. This is the conservative move: maximal continuity with Fig 3's verified pair structure and minimum methodological surface area to defend in the manuscript.
+**Methodological note — this is a filter on the existing pop_BC, NOT a re-anchoring of the pair structure.** We do not re-build pairs or re-select reference isoforms from a new criterion. The Isopair pair-building convention (`02_build_profiles_mashr.R`: "top non-NMD isoform per gene in pooled DMSO" → pair with top NMD comparator) is unchanged. We simply drop the 163 pop_BC pairs (1,548 → 1,385) where Isopair selected a novel (non-ENST) reference. This is the conservative move: maximal continuity with Fig 3's verified pair structure and minimum methodological surface area to defend in the manuscript.
 
 A potential future expansion — a comprehensive reference-set re-anchoring scheme (top-expressed-ENST-per-gene anchored on a re-built pair set) — was scoped during the §4 design discussion but deferred. If we revisit it, see Task #50.
 
-Panel D (classification overview bar chart) reports at pop_BC scope (3,009 each) with `ref_source` and `mechanism_class` annotations, so a reader can see the full landscape and the ENST-only subset that drives §4 analytic claims.
+Panel D (classification overview bar chart) reports at pop_BC scope (1,548 each) with `ref_source` and `mechanism_class` annotations, so a reader can see the full landscape and the ENST-only subset that drives §4 analytic claims.
 
 ---
 
@@ -49,13 +49,13 @@ Panel D (classification overview bar chart) reports at pop_BC scope (3,009 each)
 
 | Group | Definition | n (ENST-only pop_BC) |
 |---|---|---:|
-| **NMD+/PTC+** | `category == "effectively_ptc"` (ref-AUG-traced ORF has downstream EJC > 50 nt past stop) | 1,489 |
-| **NMD+/PTC− ORF match** | `category == "no_downstream_ejc"` AND `comp_orf_len == ref_orf_len` (comparator encodes the reference protein) | 96 |
-| **NMD+/PTC− ORF diff** | (`category == "no_downstream_ejc"` AND `comp_orf_len > ref_orf_len`) — "extended" subgroup, n=13 — OR (`category == "truncated_no_ejc"` AND `comp_orf_len < ref_orf_len`) — "truncated" subgroup, n=54. Combined n = 67. | 67 |
-| **Ref AUG absent** | `category ∈ {ref_atg_lost, no_ref_cds, mapping_failed}` plus ndj/trc rows with NA `orf_diff` (unable to compute the protein-length comparison) | 213 |
-| **Control** (`c4` comparators at the same ENST-pop_traceable scope) | matched non-NMD comparators | 1,286 |
+| **NMD+/PTC+** | `category == "effectively_ptc"` (ref-AUG-traced ORF has downstream EJC > 50 nt past stop) | 1,080 |
+| **NMD+/PTC− ORF match** | `category == "no_downstream_ejc"` AND `comp_orf_len == ref_orf_len` (comparator encodes the reference protein) | 52 |
+| **NMD+/PTC− ORF diff** | (`category == "no_downstream_ejc"` AND `comp_orf_len > ref_orf_len`) — "extended" subgroup, n=4 — OR (`category == "truncated_no_ejc"` AND `comp_orf_len < ref_orf_len`) — "truncated" subgroup, n=34. Combined n = 38. | 38 |
+| **Ref AUG absent** | `category ∈ {ref_atg_lost, no_ref_cds, mapping_failed}` plus ndj/trc rows with NA `orf_diff` (unable to compute the protein-length comparison) | 214 |
+| **Control** (`c4` comparators at the same ENST-pop_traceable scope) | matched non-NMD comparators | 885 |
 
-Total ENST-only NMD c2 (pop_BC) = 1,489 + 96 + 67 + 213 = **1,865 pairs**. Of these, 1,652 are mechanism-classified (PTC+, ORF match, ORF diff); 213 fall to "Ref AUG absent" and are excluded from mechanism inference.
+Total ENST-only NMD c2 (pop_BC) = 1,080 + 57 + 34 + 214 = **1,385 pairs**. Of these, 1,171 are mechanism-classified (PTC+, ORF match, ORF diff); 214 fall to "Ref AUG absent" and are excluded from mechanism inference.
 
 Classification is **100% ref-AUG-derived** and does NOT use Isopair's `original_ptc` field. This is a deliberate design choice: `original_ptc` is computed from each comparator's TD2-called CDS via the 50-nt rule, and TD2 has the documented PTC-avoidance bias (Figure 3 finding). Using `original_ptc` as a classifier would re-introduce TD2 bias into our PTC+ definition even at ENST-only scope, because the bias enters on the *comparator* side.
 
@@ -65,11 +65,11 @@ Classification is **100% ref-AUG-derived** and does NOT use Isopair's `original_
 
 | 5-group | 4-group manuscript mapping | n (ENST-only pop_BC) |
 |---|---|---:|
-| NMD+/PTC+ | NMD+/PTC+ | 1,489 |
-| NMD+/PTC− ORF same | NMD+/PTC− ORF match | 96 |
+| NMD+/PTC+ | NMD+/PTC+ | 1,080 |
+| NMD+/PTC− ORF same | NMD+/PTC− ORF match | 52 |
 | NMD+/PTC− ORF extended | NMD+/PTC− ORF diff (subgroup) | 13 |
 | NMD+/PTC− ORF truncated | NMD+/PTC− ORF diff (subgroup) | 54 |
-| Ref AUG absent | Ref AUG absent | 213 |
+| Ref AUG absent | Ref AUG absent | 214 |
 
 The 5-group representation is the canonical internal classification; the 4-group manuscript scheme is `mechanism_class_4()` applied at use-site.
 
@@ -86,7 +86,7 @@ The 5-group representation is the canonical internal classification; the 4-group
 ### Mechanistic content of each group
 
 - **PTC+** — canonical NMD substrate (downstream EJC > 50 nt downstream of stop). The mechanism IS the PTC; the long stop-to-3′-end region is the substrate.
-- **PTC− ORF match** — comparator encodes the reference protein, ref-AUG-traced ORF terminates normally with no PTC. Mechanism by elimination — not PTC, not 3′UTR length (we show); remaining candidate is 5′UTR features (uORF burden). **The cleanest mechanism claim in §4 rests on this group (n=96 at ENST-only).**
+- **PTC− ORF match** — comparator encodes the reference protein, ref-AUG-traced ORF terminates normally with no PTC. Mechanism by elimination — not PTC, not 3′UTR length (we show); remaining candidate is 5′UTR features (uORF burden). **The cleanest mechanism claim in §4 rests on this group (n=52 at ENST-only).**
 - **PTC− ORF diff** — comparator encodes a *different* protein (truncated or extended C-terminus) without a PTC. Mechanistically heterogeneous (truncated-protein quality control, alternative C-terminal isoforms, exonic SNV/indels, annotation artifacts). Characterized descriptively; not used for confident mechanism inference. The truncated subgroup (n=54) drives most of this group's mass.
 - **Ref AUG absent** — included in Panel D for landscape transparency; excluded from mechanism analyses.
 - **Control** — gene-matched non-NMD baseline.
@@ -150,7 +150,7 @@ The non-PTC-stop measure is the **bias-free 3'UTR measure**. The translation-bas
 
 A reviewer may ask why we don't compute a "reference-stop-projected 3′UTR" to unbias the biased groups. That additional measure is deferred — adding it would require another ref_atg field plus the additional ref-stop-projection mapping step, and the §4 mechanism story is unaffected because it does not rest on PTC+ or ORF diff in this panel.
 
-**TES variation** is part of normal biology (alternative polyadenylation) and is not a confound to control for in the ORF match vs Control comparison: both sides measure the comparator's *actual* 3′UTR length, which is what NMD machinery acts on. We do not restrict to TES-concordant pairs; the pre-registered TES-concordant primary scheme considered earlier turned out to drop the ORF match n from 96 → 6 and was abandoned. TES variation across groups can be reported descriptively from the `tx_len_delta_nt` field if a reviewer asks.
+**TES variation** is part of normal biology (alternative polyadenylation) and is not a confound to control for in the ORF match vs Control comparison: both sides measure the comparator's *actual* 3′UTR length, which is what NMD machinery acts on. We do not restrict to TES-concordant pairs; the pre-registered TES-concordant primary scheme considered earlier turned out to drop the ORF match n from 52 to a handful and was abandoned. TES variation across groups can be reported descriptively from the `tx_len_delta_nt` field if a reviewer asks.
 
 **Methods text to commit:**
 > "3′UTR length was computed as `tx_length(comparator) − comparator_stop_tx_pos`, where `comparator_stop_tx_pos` is the ref-AUG-projected stop in the comparator's transcript coordinates. Cross-group statistical comparison was restricted to NMD+/PTC− ORF match vs Control because for other groups the measure includes coding sequence relative to the reference (PTC+: from PTC to natural stop; ORF diff: from the alternative stop to the reference stop) and is not interpretable as a 3′UTR length. The bias direction is upward for PTC+ and the ORF-truncated subgroup of ORF diff."
@@ -222,7 +222,7 @@ The uORF burden claim itself is a **candidate** mechanism, not a confirmed one. 
 ## 10. Audit trail
 
 - 2026-06-14 — pre-registration written prior to executing upstream R script updates, after Plan-agent adversarial review of §4 design. Key methodological reframing this session: ENST-only restriction (vs full pop_traceable), 5-group classification with ORF same/extended/truncated split, ref-AUG-projected 5′UTR boundary as primary (vs TD2 boundary), TES-concordant 3′UTR primary, elimination-among-Isopair-measurable-mechanisms framing.
-- 2026-06-15 — §4 narrative restructured into three sections (A/B/C). Section A adds the all-3-ENST + coding-CDS scope (n=72/118/190) with own-GENCODE-stop PTC determination (no ref-AUG projection — every comparator is GENCODE-curated). Section B promotes the TD2-bias evidence to manuscript panels (TD2-vs-ref-AUG ORF length + Kozak PWM). Section C preserves the larger ref-AUG-traced scope (n=1,050/113/1,166 at the 1:1 gene-matched re-intersected scope) from the original pre-registration. For Section A, ORF match + ORF diff are merged into a single NMD+/PTC− group: at all-3-ENST + coding scope the comparator's CDS is GENCODE-annotated (not TD2-called), so the truncated/extended subgroups carry the same confidence as ORF match. The 4-group scheme is retained for Section C (where the comparator is ref-AUG-projected, not GENCODE-curated, and the ORF-diff heterogeneity warrants separation).
+- 2026-06-15 — §4 narrative restructured into three sections (A/B/C). Section A adds the all-3-ENST + coding-CDS scope (n=48/82/130) with own-GENCODE-stop PTC determination (no ref-AUG projection — every comparator is GENCODE-curated). Section B promotes the TD2-bias evidence to manuscript panels (TD2-vs-ref-AUG ORF length + Kozak PWM). Section C preserves the larger ref-AUG-traced scope (n=756/63/819 at the 1:1 gene-matched re-intersected scope) from the original pre-registration. For Section A, ORF match + ORF diff are merged into a single NMD+/PTC− group: at all-3-ENST + coding scope the comparator's CDS is GENCODE-annotated (not TD2-called), so the truncated/extended subgroups carry the same confidence as ORF match. The 4-group scheme is retained for Section C (where the comparator is ref-AUG-projected, not GENCODE-curated, and the ORF-diff heterogeneity warrants separation).
 
 ---
 
@@ -230,7 +230,7 @@ The uORF burden claim itself is a **candidate** mechanism, not a confirmed one. 
 
 The composite is rendered by `figure4_composite.py` with a uniform `GridSpec(2, 2)` and 1.5:1 panel cells (6.0"×4.0" each). Two sections (A, C), each occupying one row.
 
-**Restructure note (2026-06-15):** the prior 3×2 layout included a row of TD2-bias justification panels (TD2-vs-ref-AUG ORF length + paired Kozak PWM). These have been moved to a consolidated supplemental figure (`figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/`) which presents three orthogonal observations of TD2's PTC-avoidance bias on the same isoform universe as Figure 4 Panels C/D (n = 1,166 broad + n = 492 occult-PTC subset, both at the 1:1 gene-matched re-intersected scope). The restructure eliminates the multi-denominator confusion that the original 3×2 layout introduced — the main figure now uses two denominators (190 + 1,166) for two sections, and the supplement uses the same Section C denominator (1,166) plus its occult-PTC subset (492).
+**Restructure note (2026-06-15):** the prior 3×2 layout included a row of TD2-bias justification panels (TD2-vs-ref-AUG ORF length + paired Kozak PWM). These have been moved to a consolidated supplemental figure (`figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/`) which presents three orthogonal observations of TD2's PTC-avoidance bias on the same isoform universe as Figure 4 Panels C/D (n = 819 broad + n = 348 occult-PTC subset, both at the 1:1 gene-matched re-intersected scope). The restructure eliminates the multi-denominator confusion that the original 3×2 layout introduced — the main figure now uses two denominators (130 + 819) for two sections, and the supplement uses the same Section C denominator (819) plus its occult-PTC subset (348).
 
 ### Section A — all-3-ENST + coding-CDS scope (own-GENCODE-stop PTC determination)
 
@@ -255,13 +255,13 @@ Replicates the Section A finding at the larger ENST-reference scope using ref-AU
 
 | Group | n | Definition |
 |---|---:|---|
-| **NMD+/PTC+** | 1,050 | effectively_ptc category (ref-AUG-traced ORF has downstream EJC > 50 nt past stop) |
-| **NMD+/PTC−** | 113 | no_downstream_ejc + truncated_no_ejc merged into a single PTC− group for plotting symmetry with Section A |
-| **Control** | 1,166 | gene-matched non-NMD c4 comparators at the SAME 1:1 gene-matched scope |
+| **NMD+/PTC+** | 756 | effectively_ptc category (ref-AUG-traced ORF has downstream EJC > 50 nt past stop) |
+| **NMD+/PTC−** | 63 | no_downstream_ejc + truncated_no_ejc merged into a single PTC− group for plotting symmetry with Section A |
+| **Control** | 819 | gene-matched non-NMD c4 comparators at the SAME 1:1 gene-matched scope |
 
-The Section C scope is built by applying the ref-AUG-traceable category filter (effectively_ptc / no_downstream_ejc / truncated_no_ejc) INDEPENDENTLY to the NMD c2 and Control c4 sides at the ENST-reference scope, then **re-intersecting on `(gene_id, reference_isoform_id)` AFTER the category filter** so that both panels share the same 1:1 gene-matched universe of 1,166 NMD and 1,166 Control comparator pairs. The re-intersection step is necessary because the category filter is asymmetric — `ref_atg_lost` is ~2.7× more common in Control comparators (488/2,098 = 23%) than in NMD comparators (185/2,098 = 9%), reflecting that non-NMD productive Controls more often use alternative TSS or skip alternative N-terminal exons. Without the re-intersection, NMD c2 = 1,659 and Control c4 = 1,286 are not strictly gene-matched.
+The Section C scope is built by applying the ref-AUG-traceable category filter (effectively_ptc / no_downstream_ejc / truncated_no_ejc) INDEPENDENTLY to the NMD c2 and Control c4 sides at the ENST-reference scope, then **re-intersecting on `(gene_id, reference_isoform_id)` AFTER the category filter** so that both panels share the same 1:1 gene-matched universe of 819 NMD and 819 Control comparator pairs. The re-intersection step is necessary because the category filter is asymmetric — `ref_atg_lost` is ~3.7× more common in Control comparators (320/1,385 = 23%) than in NMD comparators (86/1,385 = 6%), reflecting that non-NMD productive Controls more often use alternative TSS or skip alternative N-terminal exons. Without the re-intersection, NMD c2 = 1,171 and Control c4 = 885 are not strictly gene-matched.
 
-The full Panel C/D NMD universe is n = 1,166 (1,050 PTC+ + ~82 no_downstream_ejc + ~34 truncated_no_ejc); 3 pairs of the no_downstream_ejc + truncated_no_ejc subgroup are routed to "Ref AUG absent" by the `mechanism_class_4` NA-edge-case convention, leaving 113 NMD+/PTC− displayed.
+The full Panel C/D NMD universe is n = 819 (756 PTC+ + no_downstream_ejc + truncated_no_ejc); under the 4-CT scope every NMD c2 pair resolves to one of the two groups, leaving 63 NMD+/PTC− displayed.
 
 | Panel | Script | Measure | Key finding |
 |---|---|---|---|
@@ -272,7 +272,7 @@ The full Panel C/D NMD universe is n = 1,166 (1,050 PTC+ + ~82 no_downstream_ejc
 
 The TD2-bias justification panels (which previously occupied Section B of the main figure) now live in `figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/` and present three orthogonal observations at two complementary scopes (2×3 layout):
 
-- **Row 1 (Panels A–C; n = 1,166)** — broad scope, same 1:1 gene-matched universe as Figure 4 Panels C/D. TD2 chose the same ATG as the reference AUG in 50% of pairs (578/1,166).
+- **Row 1 (Panels A–C; n = 819)** — broad scope, same 1:1 gene-matched universe as Figure 4 Panels C/D. TD2 chose the same ATG as the reference AUG in 52% of pairs (429/819).
 - **Row 2 (Panels D–F; n = 492)** — occult-PTC subset (`effectively_ptc ∩ original_ptc == FALSE` within the re-intersected universe).
 
 Headline numbers on the occult-PTC subset where the bias is most extreme:
@@ -299,12 +299,12 @@ data/
 ### Why two scopes side-by-side (A vs C and B vs D)
 
 - **Section A (n=190)** is the strongest *purity* argument: every isoform is GENCODE-curated, so the mechanism call doesn't depend on any computational ORF prediction — only on the GENCODE annotation and on splice-junction geometry. This is the panel that survives any TD2-bias critique most cleanly.
-- **Section C (n=1,050/113/1,166)** is the strongest *generality* argument: the same dichotomy persists at ~6× larger sample using ref-AUG projection on the comparator within a 1:1 gene-matched universe. Co-occurrence of the same effect at both scopes is the multi-evidence argument the §4 mechanism claim rests on.
+- **Section C (n=756/63/819)** is the strongest *generality* argument: the same dichotomy persists at ~6× larger sample using ref-AUG projection on the comparator within a 1:1 gene-matched universe. Co-occurrence of the same effect at both scopes is the multi-evidence argument the §4 mechanism claim rests on.
 - Both rows share the same axis design, group order, and color palette so a reader can directly compare A↔C and B↔D.
 
 ### Why the Section A PTC+ rate (38%) is much lower than Section C's PTC+ rate (90%) — and why this is NOT a bug
 
-The Section A NMD+ pairs split 72 PTC+ / 118 PTC− (38% / 62%) under the own-GENCODE-stop classifier, whereas Section C's NMD+ pairs split 1,050 PTC+ / 113 PTC− (90% / 10%) under the ref-AUG-traced classifier on the 1:1 gene-matched universe. The gap is the combined effect of two distinct shifts, neither of which is a counting error:
+The Section A NMD+ pairs split 48 PTC+ / 82 PTC− (37% / 63%) under the own-GENCODE-stop classifier, whereas Section C's NMD+ pairs split 756 PTC+ / 63 PTC− (92% / 8%) under the ref-AUG-traced classifier on the 1:1 gene-matched universe. The gap is the combined effect of two distinct shifts, neither of which is a counting error:
 
 **1. Classifier shift (largest component).** Of the 190 Section A pairs, the ref-AUG classifier (the same classifier used in Section C) calls **134 of them PTC+ (70%)**. The own-GENCODE-stop classifier reclassifies **68 of those 134 ref-AUG-PTC+ pairs as PTC−**. The mechanism: the comparator's own GENCODE-annotated CDS uses a different (downstream) start codon, so its own annotated stop is in the last exon — failing the 50-nt rule — even though projecting the *reference's* AUG through the same comparator hits a premature stop. **75% (51 of 68) of these reclassified pairs are biotyped `nonsense_mediated_decay` in GENCODE.** Curators recognize them as NMD substrates biologically, but the own-stop+last-EJC geometry is not the canonical PTC pattern. The own-GENCODE-stop classifier is therefore strictly more conservative than the ref-AUG classifier — it accepts only the subset of NMD substrates whose own annotated CDS *also* satisfies the 50-nt geometry.
 

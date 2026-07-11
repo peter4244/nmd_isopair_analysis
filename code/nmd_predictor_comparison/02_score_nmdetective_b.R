@@ -35,7 +35,7 @@ HERE <- (function() {
 })()
 setwd(HERE)
 
-DATESTAMP <- "2026.6.20"
+DATESTAMP <- "2026.7.11"
 IN_FILE   <- file.path(HERE, sprintf("isoforms_%s.tsv",     DATESTAMP))
 OUT_FILE  <- file.path(HERE, sprintf("nmdetective_b_scores_%s.tsv", DATESTAMP))
 

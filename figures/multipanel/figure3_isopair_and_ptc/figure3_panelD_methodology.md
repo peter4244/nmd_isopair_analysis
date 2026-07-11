@@ -8,7 +8,7 @@
 
 ## Headline claim
 
-Distance from each comparator isoform's stop codon to its last exon-exon junction. **Positive = upstream of last EJC = PTC direction; negative = stop in or after last exon.** NMD comparators have a long right-tail extending past the 50-nt PTC threshold (37.9% PTC+, median −66 nt); Control comparators concentrate near the last-exon stop position (median −143 nt, 2.1% PTC+) — an 18-fold enrichment of PTCs in NMD substrates.
+Distance from each comparator isoform's stop codon to its last exon-exon junction. **Positive = upstream of last EJC = PTC direction; negative = stop in or after last exon.** NMD comparators have a long right-tail extending past the 50-nt PTC threshold (36.9% PTC+, median −66 nt); Control comparators concentrate near the last-exon stop position (median −143 nt, 1.5% PTC+) — an 24-fold enrichment of PTCs in NMD substrates.
 
 ## Source data
 
@@ -20,16 +20,16 @@ Distance from each comparator isoform's stop codon to its last exon-exon junctio
 
 ## Population
 
-**Denominator: 190 NMD + 190 Control** = pop_BC ∩ all-3-ENST ∩ all-3-coding-CDS in `data_export.R`. Gene-matched pairs where **all three isoforms** (reference, NMD comparator, Control comparator) are GENCODE-annotated (ENST-prefixed) AND have CDS annotation (`coding_status == "coding"` in `cds.rds`).
+**Denominator: 130 NMD + 130 Control** = pop_BC ∩ all-3-ENST ∩ all-3-coding-CDS in `data_export.R`. Gene-matched pairs where **all three isoforms** (reference, NMD comparator, Control comparator) are GENCODE-annotated (ENST-prefixed) AND have CDS annotation (`coding_status == "coding"` in `cds.rds`).
 
 **Stop position used:** each comparator's OWN GENCODE-annotated stop codon (computed from `cds.rds` `cds_start` / `cds_stop` mapped to transcript coordinates via `Isopair::genomicToTranscript`). No ref-AUG projection; no TD2; no `Isopair::traceReferenceAtg` — every isoform's PTC status is determined from its own curated annotation.
 
 **Why this scope:** Pete's clarified policy 2026-06-15 — when all three isoforms in a pair are GENCODE-annotated and have CDS, the cleanest analysis uses each isoform's own GENCODE-annotated CDS directly. No projection of the reference's start codon onto the comparator is needed (or appropriate). This produces a fully TD2-free, GENCODE-anchored analysis.
 
-**Filter cascade** (relative to pop_BC at 3,009 each):
+**Filter cascade** (relative to pop_BC at 1,548 each):
 - Both isoforms ENST per side: NMD 525 / Control 993 (single-side)
 - All 3 ENST gene-matched: 301 NMD / 301 Control / 301 unique gene-reference combos
-- All 3 ENST + coding-CDS, re-intersected: **190 NMD / 190 Control**
+- All 3 ENST + coding-CDS, re-intersected: **130 NMD / 130 Control**
 
 ## Computation
 
@@ -62,22 +62,22 @@ KDE density plot via `scipy.stats.gaussian_kde` with Scott's bandwidth. 50-nt PT
 
 ## Headline numbers under this scope
 
-- NMD PTC rate (fraction with distance > 50 nt under own GENCODE stop): **37.9%** (= 72 of 190)
-- Control PTC rate: **2.1%** (= 4 of 190)
-- Fold enrichment: **18×** (37.9 / 2.1)
-- Numerically distinct from the ref-AUG-projected PTC rate at the ENST-reference scope (89.8% / 16.1%, 5.6×) because (a) the all-3-ENST scope is more restrictive (1,659 → 190 NMD pairs) and (b) the GENCODE-stop measure doesn't try to project the reference's ATG into the comparator; each isoform's own annotated stop drives the PTC determination.
+- NMD PTC rate (fraction with distance > 50 nt under own GENCODE stop): **36.9%** (= 72 of 190)
+- Control PTC rate: **1.5%** (= 4 of 190)
+- Fold enrichment: **24×** (36.9 / 1.5)
+- Numerically distinct from the ref-AUG-projected PTC rate at the ENST-reference scope (89.8% / 16.1%, 5.6×) because (a) the all-3-ENST scope is more restrictive (1,171 → 130 NMD pairs) and (b) the GENCODE-stop measure doesn't try to project the reference's ATG into the comparator; each isoform's own annotated stop drives the PTC determination.
 
 ## Caveats / limitations
 
-1. **Axis clipping**: X-axis is `[-1000, 1500]` nt for legibility. Clipped at this render: **NMD = 4 (2.1%), Control = 4 (2.1%)**. Clipped tail values are at very long distances where density is near zero.
+1. **Axis clipping**: X-axis is `[-1000, 1500]` nt for legibility. Clipped at this render: **NMD = 4 (1.5%), Control = 4 (1.5%)**. Clipped tail values are at very long distances where density is near zero.
 2. **KDE smoothing**: `scipy.stats.gaussian_kde` with Scott's bandwidth. Some smoothing across the 50-nt threshold is unavoidable.
-3. **Scope construction**: the all-3-ENST + coding-CDS filter cascade reduces 3,009 pop_BC pairs to 190 per side. Pairs where the reference, NMD comparator, or Control comparator is novel (non-ENST) or non-coding are excluded — they are characterized at the broader ref-AUG-traceable scope in Figure 4 Section C.
+3. **Scope construction**: the all-3-ENST + coding-CDS filter cascade reduces 1,548 pop_BC pairs to 130 per side. Pairs where the reference, NMD comparator, or Control comparator is novel (non-ENST) or non-coding are excluded — they are characterized at the broader ref-AUG-traceable scope in Figure 4 Section C.
 4. **Test-only sensitivity check** not generated; primary analysis uses all data per project policy.
 
 ## Cross-references
 
 - `figures/lib/principles.md` — figure-making principles
-- `feedback_figure_sample_size_consistency` — denominator differs from B/C (3,009) and from E/F (72 PTC+ NMD, 4 PTC+ Control), but each deviation is justified by the analytical need (Panel D needs stop positions; Panel E/F further restrict to PTC+)
+- `feedback_figure_sample_size_consistency` — denominator differs from B/C (1,548) and from E/F (48 PTC+ NMD, 2 PTC+ Control), but each deviation is justified by the analytical need (Panel D needs stop positions; Panel E/F further restrict to PTC+)
 - `feedback_sqanti_cds_ptc_bias` project memory — TD2's anti-PTC bias (novel isoforms) motivates ref-AUG tracing as the canonical CDS analysis
 - `feedback_default_match_original_figure` — Panel D's distance-density concept matches the original Rmd's `goal1-fig1-stop-dist` plot at line 1717
 - Rmd source: `05_final_report_mashr.Rmd` chunks `goal1-fig1-stop-dist` (line ~1717), `sec2c-ref-atg-load` (line 3268); driver `05r_ref_atg_analysis.R`

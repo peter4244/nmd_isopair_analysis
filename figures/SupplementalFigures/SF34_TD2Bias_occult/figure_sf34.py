@@ -1,6 +1,6 @@
 """
 SF34 — TransDecoder2 vs reference AUG-traced open reading frames on the
-occult-PTC subset (n = 492): pairs in which projecting the reference AUG
+occult-PTC subset (n = 348): pairs in which projecting the reference AUG
 revealed a premature termination codon that the TransDecoder2 CDS call did
 not. 1×3: length KDE / Kozak violin / position histogram.
 
@@ -27,7 +27,7 @@ from ggplot_style import (
 apply_ggplot_rcparams()
 NATIVE_W = 11.0
 BODY_FS  = docx_body_fs(NATIVE_W)
-DATA = HERE.parents[1] / "SF33_TD2Bias_broad" / "data"
+DATA = HERE.parents[1] / "TD2BiasEvidence" / "data"
 
 C_REF_FILL  = "#ef8a62"; C_REF_LINE  = "#d6604d"
 C_TD2_FILL  = "#67a9cf"; C_TD2_LINE  = "#2b8cbe"
@@ -74,7 +74,7 @@ def render_kozak_violin(ax, tsv_name, pvalue_text):
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
     df = pd.read_csv(DATA / tsv_name, sep="\t")
     sources = ["Reference ATG", "TD2-predicted ATG"]
-    display = {"Reference ATG": "Reference AUG", "TD2-predicted ATG": "TD2-predicted ATG"}
+    display = {"Reference ATG": "Reference AUG", "TD2-predicted ATG": "TD2-predicted AUG"}
     palette = {"Reference ATG": C_REF_ATG, "TD2-predicted ATG": C_TD2_ATG}
     n_per = {s: int((df["ATG_source"] == s).sum()) for s in sources}
 
@@ -178,7 +178,7 @@ def build_figure():
     ]
 
     render_length_kde(axes[0], "panelD_td2_vs_refaug_length_occult.tsv")
-    render_kozak_violin(axes[1], "panelE_kozak_occult.tsv", "p = 2.6×10$^{-38}$")
+    render_kozak_violin(axes[1], "panelE_kozak_occult.tsv", "p = 9.3×10$^{-36}$")
     render_position_hist(axes[2], "panelF_td2_position_occult.tsv")
 
     for ax, letter in zip(axes, ["A", "B", "C"]):

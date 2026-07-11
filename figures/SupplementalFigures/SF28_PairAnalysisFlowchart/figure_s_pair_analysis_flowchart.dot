@@ -8,16 +8,16 @@ digraph cohort_flow {
          fontsize=18, fontcolor="#444"]
 
   // ─── Starting cohort + upstream classification + pair construction
-  U1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Starting cohort</B></TD></TR><TR><TD ALIGN="LEFT">AT (n = 6) · DD (n = 8) · FB (n = 6) · MV (n = 6) · 26 samples<BR/>123,790 non-fusion isoforms (≥5% of gene CPM in ≥1 DMSO or SMG1i sample)</TD></TR></TABLE>>, fillcolor="#e8eef4", color="#2f4858"]
-  U2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Identify NMD susceptible isoforms</B></TD></TR><TR><TD ALIGN="LEFT">10,864 NMD susceptible · 40,283 non-NMD</TD></TR></TABLE>>, fillcolor="#fff7bc", color="#d95f0e"]
-  U3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Construct paired comparisons</B></TD></TR><TR><TD ALIGN="LEFT">per gene: dominant NMD-susceptible vs reference · two dominant non-NMD (Control + reference)<BR/>→ 3,009 NMD-susceptible pairs · 8,323 Control pairs (before matching)</TD></TR></TABLE>>, fillcolor="#fff7bc", color="#d95f0e"]
+  U1 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Starting cohort</B></TD></TR><TR><TD ALIGN="LEFT">AT (n = 6) · DD (n = 8) · FB (n = 6) · MV (n = 6) · 26 samples<BR/>95,623 non-fusion isoforms (≥5% of gene CPM in ≥1 DMSO or SMG1i sample)</TD></TR></TABLE>>, fillcolor="#e8eef4", color="#2f4858"]
+  U2 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Identify NMD susceptible isoforms</B></TD></TR><TR><TD ALIGN="LEFT">10,455 NMD susceptible · 38,404 non-NMD</TD></TR></TABLE>>, fillcolor="#fff7bc", color="#d95f0e"]
+  U3 [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4"><TR><TD ALIGN="LEFT"><B>Construct paired comparisons</B></TD></TR><TR><TD ALIGN="LEFT">per gene: dominant NMD-susceptible vs reference · two dominant non-NMD (Control + reference)<BR/>→ 1,548 NMD-susceptible pairs · 5,001 non-NMD Control candidate pairs, gene-matched (reference-share ≥25%) to the hub below</TD></TR></TABLE>>, fillcolor="#fff7bc", color="#d95f0e"]
 
   U1 -> U2 -> U3
 
   // ─── Hub: matched isoform pairs ──────────────────────────────────
   HUB [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                 <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="22"><B>Matched isoform pairs</B></FONT></TD></TR>
-                <TR><TD ALIGN="CENTER"><FONT COLOR="white"><B>3,009 NMD susceptible  ·  3,009 Control</B></FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="white"><B>1,548 NMD susceptible  ·  1,548 Control</B></FONT></TD></TR>
                 <TR><TD ALIGN="CENTER"><FONT COLOR="#cfd8e2" POINT-SIZE="18">one triplet per gene</FONT></TD></TR>
               </TABLE>>,
        fillcolor="#1f3a5f", color="#0a1a30", penwidth=2.0]
@@ -26,7 +26,7 @@ digraph cohort_flow {
 
   // ─── Subset 1 cluster (left) ─────────────────────────────────────
   subgraph cluster_S1 {
-    label = <<FONT POINT-SIZE="22"><B>GENCODE-restricted subset (n = 190)</B></FONT><BR/><BR/>all three transcripts in the triplet are annotated coding transcripts>
+    label = <<FONT POINT-SIZE="22"><B>GENCODE-restricted subset (n = 130)</B></FONT><BR/><BR/>all three transcripts in the triplet are annotated coding transcripts>
     labelloc = "t"
     style = "rounded,filled"
     fillcolor = "#fef0e6"
@@ -38,11 +38,11 @@ digraph cohort_flow {
        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;all three transcripts are annotated (in GENCODE)</TD></TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>301 / 301</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>195 / 195</B></FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#b22222">2,708 / 2,708</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">1,353 / 1,353</FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="18" COLOR="#444">Why: most NMD-susceptible transcripts are novel</FONT></TD>
@@ -52,11 +52,11 @@ digraph cohort_flow {
        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;all three transcripts have a curated coding sequence</TD></TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>190 / 190</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>130 / 130</B></FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#b22222">111 / 111</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">65 / 65</FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="18" COLOR="#444">Why: annotated non-coding transcripts (lncRNA, etc.)</FONT></TD>
@@ -65,9 +65,9 @@ digraph cohort_flow {
 
     S1_GROUPS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Classification:</B>&nbsp;premature stop in the NMD-susceptible transcript?</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>72</B></TD><TD ALIGN="LEFT">PTC+ (38%)</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>118</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>190</B></TD><TD ALIGN="LEFT">Control</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>48</B></TD><TD ALIGN="LEFT">PTC+ (37%)</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>82</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>130</B></TD><TD ALIGN="LEFT">Control</TD></TR>
                      </TABLE>>,
                fillcolor="#fff7bc", color="#d95f0e"]
 
@@ -84,7 +84,7 @@ digraph cohort_flow {
 
   // ─── Subset 2 cluster (right) ────────────────────────────────────
   subgraph cluster_S2 {
-    label = <<FONT POINT-SIZE="22"><B>Reference AUG-traceable subset (n = 1,166)</B></FONT><BR/><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
+    label = <<FONT POINT-SIZE="22"><B>Reference AUG-traceable subset (n = 819)</B></FONT><BR/><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
     labelloc = "t"
     style = "rounded,filled"
     fillcolor = "#e6f1f8"
@@ -96,11 +96,11 @@ digraph cohort_flow {
        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;reference is annotated (NMD and Control can be novel)</TD></TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>2,098 / 2,098</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>1,385 / 1,385</B></FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#b22222">911 / 911</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">163 / 163</FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="18" COLOR="#444">Why: reference itself is a novel isoform</FONT></TD>
@@ -110,11 +110,11 @@ digraph cohort_flow {
        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;the reference start codon maps onto the comparator transcript</TD></TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>1,659 NMD  ·  1,286 Control</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>1,171 NMD  ·  885 Control</B></FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#b22222">439 NMD  ·  812 Control</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">214 NMD  ·  500 Control</FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="18" COLOR="#444">Why: reference exon missing from comparator</FONT></TD>
@@ -124,11 +124,11 @@ digraph cohort_flow {
        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Filter:</B>&nbsp;keep only genes where both NMD and Control side passed</TD></TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>kept:</B></FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>1,166 / 1,166</B></FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#1a5a2a"><B>819 / 819</B></FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT"><FONT COLOR="#b22222">dropped:</FONT></TD>
-         <TD ALIGN="LEFT"><FONT COLOR="#b22222">493 NMD  ·  120 Control</FONT></TD>
+         <TD ALIGN="LEFT"><FONT COLOR="#b22222">352 NMD  ·  66 Control</FONT></TD>
        </TR>
        <TR>
          <TD ALIGN="LEFT" COLSPAN="2"><FONT POINT-SIZE="18" COLOR="#444">Why: reference passed on one arm but not the other</FONT></TD>
@@ -137,9 +137,9 @@ digraph cohort_flow {
 
     S2_GROUPS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Classification:</B>&nbsp;reference start codon projected to a premature stop?</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>1,050</B></TD><TD ALIGN="LEFT">PTC+ (90%)</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>116</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>1,166</B></TD><TD ALIGN="LEFT">Control</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>756</B></TD><TD ALIGN="LEFT">PTC+ (92%)</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>63</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>819</B></TD><TD ALIGN="LEFT">Control</TD></TR>
                      </TABLE>>,
                fillcolor="#fff7bc", color="#d95f0e"]
 
@@ -156,10 +156,10 @@ digraph cohort_flow {
 
   // ─── Hidden-PTC sub-cascade ─────────────────────────────────────
   HPTC [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
-                <TR><TD ALIGN="LEFT"><B>Occult-PTC subset (n = 492)</B></TD></TR>
+                <TR><TD ALIGN="LEFT"><B>Occult-PTC subset (n = 348)</B></TD></TR>
                 <TR><TD ALIGN="LEFT">reference-anchored analysis flags a premature stop,</TD></TR>
                 <TR><TD ALIGN="LEFT">but the TransDecoder2 CDS caller does not</TD></TR>
-                <TR><TD ALIGN="LEFT"><FONT COLOR="#b22222">674 / 1,166 dropped</FONT> — no disagreement</TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#b22222">471 / 819 dropped</FONT> — no disagreement</TD></TR>
               </TABLE>>,
         fillcolor="#a48bbf", color="#4a3556", fontcolor="#1a0a25"]
 

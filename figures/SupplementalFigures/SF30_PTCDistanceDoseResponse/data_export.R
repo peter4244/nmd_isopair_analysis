@@ -45,17 +45,17 @@ SF30_DIR <- file.path("~/claude_projects/nmd/figures/SupplementalFigures",
 SF31_DIR <- file.path("~/claude_projects/nmd/figures/SupplementalFigures",
                        "SF31_NMDEffectByEJCCount", "data")
 
-# ── Subset 2 NMD arm (n = 1,166) — the canonical population ────────────
+# ── Subset 2 NMD arm (n = 819 4-CT re-scope; was 1,166) — the canonical population ──
 message("[data_export] reading Subset 2 export ...")
 subset2 <- fread(SUBSET2_TSV)
 subset2_nmd_ids <- subset2[arm == "NMD", comparator_isoform_id]
-stopifnot(length(subset2_nmd_ids) == 1166L)
+stopifnot(length(subset2_nmd_ids) == 819L)
 
 # ── Load source objects ────────────────────────────────────────────────
 message("[data_export] reading ref_atg_analysis.rds ...")
 ref_atg    <- readRDS(REF_ATG_RDS)
 ref_atg_c2 <- as.data.table(ref_atg$c2)[comparator_isoform_id %in% subset2_nmd_ids]
-stopifnot(nrow(ref_atg_c2) == 1166L)
+stopifnot(nrow(ref_atg_c2) == 819L)
 
 message("[data_export] reading structures.rds ...")
 structures <- as.data.table(readRDS(STRUCTURES_RDS))

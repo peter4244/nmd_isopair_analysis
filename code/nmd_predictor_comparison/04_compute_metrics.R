@@ -8,8 +8,8 @@
 # stratified by subclass.
 #
 # Outputs:
-#   per_isoform_scores_2026.6.20.tsv  — combined per-isoform score table
-#   metrics_summary_2026.6.20.tsv     — pooled and stratified metrics
+#   per_isoform_scores_2026.7.11.tsv  — combined per-isoform score table
+#   metrics_summary_2026.7.11.tsv     — pooled and stratified metrics
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -24,7 +24,7 @@ HERE <- (function() {
 })()
 setwd(HERE)
 
-DATESTAMP <- "2026.6.20"
+DATESTAMP <- "2026.7.11"
 IN_FILE     <- file.path(HERE, sprintf("isoforms_%s.tsv",                  DATESTAMP))
 NMD_B_FILE  <- file.path(HERE, sprintf("nmdetective_b_scores_%s.tsv",      DATESTAMP))
 NMDEP_FILE  <- file.path(HERE, sprintf("nmdep_rule_baseline_scores_%s.tsv",DATESTAMP))

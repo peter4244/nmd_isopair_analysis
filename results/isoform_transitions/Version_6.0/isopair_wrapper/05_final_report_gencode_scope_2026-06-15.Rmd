@@ -1,6 +1,6 @@
 ---
-title: "NMD analysis: current GENCODE-only scopes (2026-06-15)"
-subtitle: "Canonical scopes for Figure 3 (D/E/F) + Figure 4 (A/B at all-3-ENST + coding-CDS n=190; C/D at ref-AUG-traceable re-intersected n=1,166/1,166). Branched from 05_final_report_mashr.Rmd; that report is now legacy."
+title: "[LEGACY 2026-06-15 — pre-reference-share-floor] NMD analysis: GENCODE-only scopes"
+subtitle: "SUPERSEDED by 05_final_report_gencode_scope_2026-07-10.Rmd as of 2026-07-10, which applies the 25% all-isoform reference-share floor (Family A): pop_BC 3,009→1,585, n=190→136, n=1,166→888. This report uses the pre-floor scopes and is retained for reproducibility of the prior state only. DO NOT cite its numbers as canonical."
 date: "`r Sys.Date()`"
 output:
   html_document:

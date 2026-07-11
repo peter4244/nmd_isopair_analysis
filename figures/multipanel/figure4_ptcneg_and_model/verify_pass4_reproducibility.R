@@ -3,7 +3,7 @@
 # Trace each panel: script → data TSV → data_export.R chunk → upstream RDS.
 # Confirm data_export.R Section C performs the re-intersection on
 # (gene_id, reference_isoform_id) AFTER the TR category filter, and that the
-# re-execution produces n = 1050/113/1166.
+# re-execution produces n = 756/63/819.
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -115,9 +115,9 @@ n_ptc_neg <- nrow(c2_re[group3 == "NMD+/PTC-"])
 n_ctrl    <- nrow(c4_re)
 cat(sprintf("Recomputed Section C: NMD+/PTC+=%d  NMD+/PTC-=%d  Control=%d\n",
             n_ptc_pos, n_ptc_neg, n_ctrl))
-if (n_ptc_pos == 1050L) pass("Section C re-intersection: NMD+/PTC+ = 1050") else fail(sprintf("Section C NMD+/PTC+ = %d (expected 1050)", n_ptc_pos))
-if (n_ptc_neg == 113L)  pass("Section C re-intersection: NMD+/PTC- = 113")  else fail(sprintf("Section C NMD+/PTC- = %d (expected 113)", n_ptc_neg))
-if (n_ctrl    == 1166L) pass("Section C re-intersection: Control = 1166")  else fail(sprintf("Section C Control = %d (expected 1166)", n_ctrl))
+if (n_ptc_pos == 756L) pass("Section C re-intersection: NMD+/PTC+ = 756") else fail(sprintf("Section C NMD+/PTC+ = %d (expected 756)", n_ptc_pos))
+if (n_ptc_neg == 63L)  pass("Section C re-intersection: NMD+/PTC- = 63")  else fail(sprintf("Section C NMD+/PTC- = %d (expected 63)", n_ptc_neg))
+if (n_ctrl    == 819L) pass("Section C re-intersection: Control = 819")  else fail(sprintf("Section C Control = %d (expected 819)", n_ctrl))
 
 # Also verify NMD and Control share the exact same (gene_id, reference_isoform_id) universe
 nmd_keys <- unique(c2_re[, .(gene_id, reference_isoform_id)])

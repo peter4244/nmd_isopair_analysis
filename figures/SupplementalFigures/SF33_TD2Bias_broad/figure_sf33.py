@@ -1,6 +1,6 @@
 """
 SF33 — TransDecoder2 vs reference AUG-traced open reading frames on the broad
-reference AUG-traceable cohort (n = 1,166 gene-matched NMD comparator pairs).
+reference AUG-traceable cohort (n = 819 gene-matched NMD comparator pairs).
 1×3: length KDE / Kozak violin / position histogram.
 
 Data reused from the combined SF33+SF34 export in the sibling dir; no new
@@ -29,7 +29,9 @@ apply_ggplot_rcparams()
 # assert_docx_readable so the 9 pt floor is enforced against the right scale.
 NATIVE_W = 11.0
 BODY_FS  = docx_body_fs(NATIVE_W)
-DATA = HERE.parents[0] / "data"
+# Read from the shared TD2BiasEvidence/data dir that data_export.R writes to
+# (the local ./data was a pre-reorg leftover; see REFERENCE_FLOOR_PLAN.md).
+DATA = HERE.parents[1] / "TD2BiasEvidence" / "data"
 
 C_REF_FILL  = "#ef8a62"; C_REF_LINE  = "#d6604d"
 C_TD2_FILL  = "#67a9cf"; C_TD2_LINE  = "#2b8cbe"
@@ -82,7 +84,7 @@ def render_kozak_violin(ax, tsv_name, pvalue_text):
     df = pd.read_csv(DATA / tsv_name, sep="\t")
     # Data-side column uses "ATG" wording; display uses "AUG" for the reference.
     sources = ["Reference ATG", "TD2-predicted ATG"]
-    display = {"Reference ATG": "Reference AUG", "TD2-predicted ATG": "TD2-predicted ATG"}
+    display = {"Reference ATG": "Reference AUG", "TD2-predicted ATG": "TD2-predicted AUG"}
     palette = {"Reference ATG": C_REF_ATG, "TD2-predicted ATG": C_TD2_ATG}
     n_per = {s: int((df["ATG_source"] == s).sum()) for s in sources}
 
@@ -198,7 +200,7 @@ def build_figure():
     ]
 
     render_length_kde(axes[0], "panelA_td2_vs_refaug_length.tsv")
-    render_kozak_violin(axes[1], "panelB_kozak.tsv", "p = 1.2×10$^{-38}$")
+    render_kozak_violin(axes[1], "panelB_kozak.tsv", "p = 1.5×10$^{-36}$")
     render_position_hist(axes[2], "panelC_td2_position.tsv")
 
     for ax, letter in zip(axes, ["A", "B", "C"]):

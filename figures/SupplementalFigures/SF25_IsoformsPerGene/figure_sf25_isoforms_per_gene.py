@@ -1,4 +1,4 @@
-"""SF25 — Isoform count per gene in the Isopair pair-set cohort (n = 3,009).
+"""SF25 — Isoform count per gene in the Isopair pair-set cohort (n = 1,585).
 
 Standalone rebuild of the isoform-count panel that was previously bundled
 as Panel A of PairSetDescriptives. Split per Yul-era paper numbering so
@@ -55,6 +55,14 @@ def main():
     max_bin = min(int(counts.quantile(0.995)) + 1, 30)
     bins = np.arange(1, max_bin + 2) - 0.5
     ax.hist(counts, bins=bins, color=BAR_COLOR, edgecolor="white", linewidth=0.6, zorder=3)
+
+    # Explicit y-headroom + capped ticks so the top y-tick label never clips the
+    # figure top edge (4-CT re-scope: median dropped to 6, tallest bin grew and
+    # the auto-limit placed a 250 tick that clipped).
+    bin_heights, _ = np.histogram(counts, bins=bins)
+    top_h = int(bin_heights.max())
+    ax.set_ylim(0, top_h * 1.12)
+    ax.set_yticks(np.arange(0, top_h, 50))
 
     # Median reference line
     ax.axvline(med, linestyle="--", color="#c0392b", linewidth=1.5, zorder=4)

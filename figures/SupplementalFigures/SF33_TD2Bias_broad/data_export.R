@@ -200,7 +200,7 @@ cat(sprintf("  TD2 == ref AUG (distance 0):   %d (%.1f%%)\n",
             n_eq, 100 * n_eq / nrow(panelC)))
 cat(sprintf("  TD2 downstream of ref AUG:     %d (%.1f%%)  median offset = +%d nt\n",
             n_down, 100 * n_down / nrow(panelC),
-            if (n_down > 0) median(panelC$distance_nt[panelC$distance_nt > 0]) else 0L))
+            if (n_down > 0) as.integer(round(median(panelC$distance_nt[panelC$distance_nt > 0]))) else 0L))
 cat(sprintf("  TD2 upstream of ref AUG:       %d (%.1f%%)\n",
             n_up, 100 * n_up / nrow(panelC)))
 
@@ -284,7 +284,7 @@ summary_dt <- data.table(
                sprintf("%d/%d (%.1f%%) TD2 downstream; %d/%d (%.1f%%) TD2 == ref AUG; median downstream offset +%d nt",
                        n_down, nrow(panelC), 100 * n_down / nrow(panelC),
                        n_eq, nrow(panelC), 100 * n_eq / nrow(panelC),
-                       if (n_down > 0) median(panelC$distance_nt[panelC$distance_nt > 0]) else 0L),
+                       if (n_down > 0) as.integer(round(median(panelC$distance_nt[panelC$distance_nt > 0]))) else 0L),
                sprintf("TD2 median %.0f nt vs ref-AUG median %.0f nt (%.1fx)",
                        median(occ_clean$td2_orf_nt),
                        median(occ_clean$ref_atg_orf_nt),
@@ -294,6 +294,6 @@ summary_dt <- data.table(
                        median(td2_pwm_occ[koz_valid_occ]), wt_occ$p.value),
                sprintf("%d/%d (%.1f%%) TD2 downstream of ref AUG; median downstream offset +%d nt",
                        n_down_o, nrow(panelF), 100 * n_down_o / nrow(panelF),
-                       if (n_down_o > 0) median(panelF$distance_nt[panelF$distance_nt > 0]) else 0L)))
+                       if (n_down_o > 0) as.integer(round(median(panelF$distance_nt[panelF$distance_nt > 0]))) else 0L)))
 fwrite(summary_dt, file.path(SUPP_DIR, "data", "summary.tsv"), sep = "\t")
 cat(sprintf("\nSaved supplement TSVs under %s/data/\n", SUPP_DIR))

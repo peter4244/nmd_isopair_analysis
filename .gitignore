@@ -85,3 +85,6 @@ nmd_orf_model_v5_4ct/
 **/.verify_pass*_backup/
 *.pre_enst_update
 *.pre_rewrite
+
+# node deps for the SF docx builder (kept local, not tracked)
+paper/node_modules/

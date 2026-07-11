@@ -102,6 +102,24 @@ cat(sprintf("  Excluded %d samples (DO 029T PCA outlier): %s\n",
             length(exclude_samples), paste(exclude_samples, collapse = ", ")))
 cat(sprintf("  Remaining: %d samples\n", ncol(count_mat)))
 
+# --- Restrict to manuscript cell types (4-CT re-scope, 2026-07-11) ---
+# DD_ALI and DO are out of manuscript scope. Drop them at the SOURCE so the
+# entire all_samples analysis -- isoform universe, TMM normalization, the 5% +
+# filterByExpr filters, reference selection, 25% floor, and C2 NMD partner --
+# is AT/DD/FB/MV by construction (zero 6-CT trace). Placed strictly AFTER the
+# exclude block (L94-103) so the L96-98 guard is not tripped by the already-
+# removed DO-029T (that exclusion becomes redundant but harmless). Columns are
+# indexed by sample_id, so count_mat/sample_metadata stay aligned regardless of
+# order. See REFERENCE_FLOOR_PLAN.md AMENDMENT 2026-07-11 (decision b), R1/M-1.
+manuscript_cts <- c("AT", "DD", "FB", "MV")
+keep_ct <- sample_metadata$ct %in% manuscript_cts
+count_mat       <- count_mat[, sample_metadata$sample_id[keep_ct], drop = FALSE]
+sample_metadata <- sample_metadata[keep_ct, ]
+stopifnot(setequal(unique(sample_metadata$ct), manuscript_cts),
+          identical(colnames(count_mat), sample_metadata$sample_id))
+cat(sprintf("  Restricted to manuscript cell types (%s): %d samples\n",
+            paste(manuscript_cts, collapse = ", "), ncol(count_mat)))
+
 # Build gene map from GTF
 cat("Parsing gene map from GTF...\n")
 gtf_gr <- rtracklayer::import(gtf_file)

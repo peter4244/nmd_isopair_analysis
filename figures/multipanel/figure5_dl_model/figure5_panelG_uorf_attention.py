@@ -1,5 +1,7 @@
 """
-Figure 5 Panel G — uORF attention proportion at the n=1,166 Subset 2 scope.
+Figure 5 Panel G — uORF attention proportion at the Subset 2 scope
+(4-CT re-scope 2026-07-11: n=819 per arm; "n1166" filenames are the stable
+subset-2 identifier).
 
 The attention metric is computed under the **Path B-strict** rule
 (TD2-bias-independent, structural-only identification of candidate uORFs):
@@ -16,10 +18,10 @@ per-isoform uORF attention = sum(attention[is_candidate_uorf])
 Subgroup structure at this scope (Subset 2 / mechanism_class_4 from Figure 4
 Section C; ref-AUG-traceable, gene-matched 1:1):
 
-    NMD+/PTC+          = category == "effectively_ptc"   (n=1,016 with model)
+    NMD+/PTC+          = category == "effectively_ptc"   (n=735 with model)
     NMD+/PTC- retained = category ∈ {no_downstream_ejc,
-                                     truncated_no_ejc}    (n=95 with model)
-    Control             = all 1,166 c4 comparators        (n=1,107 with model)
+                                     truncated_no_ejc}    (n=54 with model)
+    Control             = all 819 c4 comparators          (n=781 with model)
 
 NMD+/PTC- *lost* (category ∈ ref_atg_lost / no_ref_isoform etc.) is
 EXCLUDED from this scope by construction — those isoforms don't have a

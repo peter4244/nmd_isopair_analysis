@@ -1,12 +1,15 @@
-"""SF26 — Reference-isoform share of gene expression across pop_BC (n = 3,009 genes).
+"""SF26 — Reference-isoform share of gene expression across the floored pop_BC
+(n = 1,548 genes; retained after the 25% reference-share floor, 4-CT re-scope 2026-07-11).
 
 Standalone rebuild of the reference-share panel that was previously bundled
 as Panel B of PairSetDescriptives. Split per Yul-era paper numbering so
 the paper's SF26 reference resolves to one figure.
 
-Value plotted per gene: reference-isoform DMSO 4-CT mean expression divided
-by the parent gene's total non-NMD expression (both from the Isopair
-pipeline; see Methods, pop_BC / Reference isoform).
+Value plotted per gene: reference-isoform DMSO mean expression (all_samples
+basis) divided by the parent gene's total expression across all isoforms
+(both from the Isopair pipeline; see Methods, pop_BC / Reference isoform).
+By construction every retained gene has share >= 25%; the distribution starts
+at the floor and is centered near the true dominant share (median ~64%).
 
 Style: matplotlib rendered with ggplot-mimic theme (grey panel + white
 gridlines) so the panel visually matches SF1-SF23. See
@@ -38,7 +41,10 @@ from ggplot_style import (
 apply_ggplot_rcparams()
 
 NATIVE_W = 6.5
-BODY_FS = docx_body_fs(NATIVE_W)
+# Single wide panel with ample whitespace — target 13 pt (below the ~14 pt
+# ceiling) so axis titles read well; the default 10 pt floor looked
+# undersized against the rcParams-default tick labels (Pete 2026-07-10).
+BODY_FS = docx_body_fs(NATIVE_W, target_pt=13)
 
 DATA = HERE / "data"
 
@@ -60,28 +66,34 @@ def main():
     bins = np.arange(0, 105, 5)
     ax.hist(vals, bins=bins, color=BAR_COLOR, edgecolor="white", linewidth=0.6, zorder=3)
 
+    floor_pct = float(summary.loc["floor_pct"])
     ax.axvline(med, linestyle="--", color="#c0392b", linewidth=1.5, zorder=4)
-    ax.axvline(50, linestyle=":",  color="#aa6600", linewidth=1.0, zorder=4)
+    ax.axvline(floor_pct, linestyle="-", color="#2c3e50", linewidth=1.2, zorder=4)
     ymax = ax.get_ylim()[1]
+    # Median label to the LEFT of its line — the tall bars sit to the right
+    # (70-95% share), so a left-side label clears the histogram.
     ax.text(
-        med + 1.5, ymax * 0.94,
+        med - 1.5, ymax * 0.85,
         f"median = {med:.1f}%",
-        ha="left", va="top",
+        ha="right", va="top",
         fontsize=BODY_FS,
         color="#c0392b",
     )
     ax.text(
-        50 - 1.5, ymax * 0.82,
-        "50% threshold",
-        ha="right", va="top",
+        floor_pct + 1.5, ymax * 0.94,
+        f"{floor_pct:.0f}% floor",
+        ha="left", va="top",
         fontsize=BODY_FS,
-        color="#aa6600",
+        color="#2c3e50",
     )
 
     ax.set_xlabel("Reference share of gene expression (%)", fontsize=BODY_FS)
     ax.set_ylabel("Number of genes", fontsize=BODY_FS)
     ax.set_xlim(0, 100)
     ax.set_xticks([0, 25, 50, 75, 100])
+    # Match tick-label size to the local BODY_FS (else ticks fall back to the
+    # module rcParams default, dwarfing the axis titles).
+    ax.tick_params(axis="both", labelsize=BODY_FS)
 
     # No overall figure title — caption carries the title role (Yul-style).
     render_and_validate(fig, HERE / "figure_sf26_reference_share",

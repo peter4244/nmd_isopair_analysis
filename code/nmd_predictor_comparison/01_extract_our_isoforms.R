@@ -39,7 +39,7 @@ MASHR <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/mashr_isofor
 # (scoring train + val + test + test_paralog isoforms in the model's H5).
 # Columns: isoform_id, chr, h5_split, label, logit, prob.
 PREDS <- file.path(HERE, "predictions_all_atg500_stop500.tsv")
-DATESTAMP <- "2026.6.20"
+DATESTAMP <- "2026.7.11"
 
 # ── Load ──
 profiles_c2 <- as.data.table(readRDS(file.path(DM, "profiles_c2_allsamples.rds")))
@@ -75,24 +75,24 @@ shared_keys <- merge(
   unique(c4_tr[, .(gene_id, reference_isoform_id)]),
   by = c("gene_id", "reference_isoform_id")
 )
-c2_n1166 <- merge(c2_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
-c4_n1166 <- merge(c4_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
+c2_cohort <- merge(c2_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
+c4_cohort <- merge(c4_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
 
 cat(sprintf("Cohort: NMD comparators = %d, Control comparators = %d\n",
-            nrow(c2_n1166), nrow(c4_n1166)))
+            nrow(c2_cohort), nrow(c4_cohort)))
 
 # ── Subclass assignment ──
-c2_n1166[, subclass := fcase(
+c2_cohort[, subclass := fcase(
   category == "effectively_ptc",                            "NMD+/PTC+",
   category %in% c("no_downstream_ejc", "truncated_no_ejc"), "NMD+/PTC-",
   default = NA_character_
 )]
-c4_n1166[, subclass := "Control"]
+c4_cohort[, subclass := "Control"]
 
 # Print subclass counts
 cat("\nSubclass counts:\n")
-print(c2_n1166[, .N, by = subclass])
-print(c4_n1166[, .N, by = subclass])
+print(c2_cohort[, .N, by = subclass])
+print(c4_cohort[, .N, by = subclass])
 
 # ── Per-isoform feature computation: the four NMDetective-B rules ──
 # Stop-codon transcript position chosen per subclass:
@@ -215,20 +215,20 @@ make_feature_table <- function(d, stop_col) {
 }
 
 cat("\nComputing features for NMD comparators ...\n")
-nmd_feats <- make_feature_table(c2_n1166, "comp_stop_tx_pos")
+nmd_feats <- make_feature_table(c2_cohort, "comp_stop_tx_pos")
 
 # Controls: their "stop_tx_pos" is the natural-stop tx position
-c4_n1166[, comp_natural_stop_tx := own_stop_tx_lookup[comparator_isoform_id]]
+c4_cohort[, comp_natural_stop_tx := own_stop_tx_lookup[comparator_isoform_id]]
 cat(sprintf("Controls with natural-stop tx position: %d of %d\n",
-            sum(!is.na(c4_n1166$comp_natural_stop_tx)), nrow(c4_n1166)))
+            sum(!is.na(c4_cohort$comp_natural_stop_tx)), nrow(c4_cohort)))
 cat("Computing features for Controls ...\n")
-ctrl_feats <- make_feature_table(c4_n1166, "comp_natural_stop_tx")
+ctrl_feats <- make_feature_table(c4_cohort, "comp_natural_stop_tx")
 
 # ── Stitch the cohort + subclass + features together ──
-nmd_rows <- merge(c2_n1166[, .(gene_id, reference_isoform_id,
+nmd_rows <- merge(c2_cohort[, .(gene_id, reference_isoform_id,
                                 comparator_isoform_id, subclass)],
                    nmd_feats, by = "comparator_isoform_id")
-ctrl_rows <- merge(c4_n1166[, .(gene_id, reference_isoform_id,
+ctrl_rows <- merge(c4_cohort[, .(gene_id, reference_isoform_id,
                                  comparator_isoform_id, subclass)],
                     ctrl_feats, by = "comparator_isoform_id")
 cohort <- rbind(nmd_rows, ctrl_rows)

@@ -1,6 +1,6 @@
 """
 SF35 — CDS length and two 3'UTR-length measures in the reference AUG-traceable
-cohort (n = 1,050 / 116 / 1,166). Reference-AUG-projected stop anchor.
+cohort (n = 756 / 63 / 819). Reference-AUG-projected stop anchor.
 1×3 panels A/B/C.
 
 Data reused from the combined SF32+SF35 export in the sibling dir; no new
@@ -37,7 +37,8 @@ apply_ggplot_rcparams()
 NATIVE_W = 12.0
 BODY_FS  = docx_body_fs(NATIVE_W)
 
-DATA = HERE.parents[1] / "SF32_CdsAnd3UTR_GENCODE" / "data"
+# Shared export dir data_export.R writes to (was SF32's local ./data, now stale).
+DATA = HERE.parents[1] / "CDSand3UTR_GENCODEonly" / "data"
 
 # Canonical SUBGROUP_PAL uses Unicode minus (U+2212) in the "NMD+/PTC−"
 # key. Data files store the ASCII hyphen form; we remap to the Unicode

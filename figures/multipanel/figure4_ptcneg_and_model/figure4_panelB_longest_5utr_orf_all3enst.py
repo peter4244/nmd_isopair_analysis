@@ -1,7 +1,7 @@
 """
 Figure 4 Panel B — Longest 5'UTR ORF, all-3-ENST + coding-CDS scope.
 
-3-group boxplot (log1p y): NMD+/PTC+ (n=72) vs NMD+/PTC- (n=118) vs Control (n=190).
+3-group boxplot (log1p y): NMD+/PTC+ (n=48) vs NMD+/PTC- (n=82) vs Control (n=130).
 PTC determination from each comparator's OWN GENCODE-annotated stop.
 
 Section A of Figure 4. Pre-registered in ./RATIONALE.md.

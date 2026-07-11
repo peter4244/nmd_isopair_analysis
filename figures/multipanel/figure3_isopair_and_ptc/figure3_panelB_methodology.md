@@ -20,7 +20,7 @@ NMD susceptible comparator isoforms share more exonic sequence with the referenc
 
 ## Population
 
-**Denominator: 3,009 pairs per side** (Stage 2 gene-matched, `pop_BC` in `data_export.R`).
+**Denominator: 1,548 pairs per side** (Stage 2 gene-matched, `pop_BC` in `data_export.R`).
 
 Sequence-similarity analysis does not require CDS information — `pct_shared` is computed at the exonic level. So this panel uses the broadest meaningful population (Stage 2 gene-matched), not the ref-AUG-traceable subset that Panels D/E/F use.
 
@@ -37,7 +37,7 @@ Per-pair `pct_shared` already computed by Isopair's `quantifyPairDivergence()`. 
 
 ## Caveats / limitations
 
-1. **Different denominator from D/E/F.** Panel B uses 3,009 (Stage 2 gene-matched); Panels D/E/F use the ref-AUG-traceable subset (2,289 NMD / 1,763 Control or smaller). This deviation is justified — sequence similarity is computed at the exonic level and does not depend on CDS identification, so restricting to ref-AUG-traceable pairs would arbitrarily exclude pairs that have meaningful sequence-similarity data.
+1. **Different denominator from D/E/F.** Panel B uses 1,548 (Stage 2 gene-matched); Panels D/E/F use the ref-AUG-traceable subset (1,171 NMD / 885 Control or smaller). This deviation is justified — sequence similarity is computed at the exonic level and does not depend on CDS identification, so restricting to ref-AUG-traceable pairs would arbitrarily exclude pairs that have meaningful sequence-similarity data.
 2. `gaussian_kde` smooths the empirical distribution. Sharp boundaries (0% and 100%) appear as upturns near the edges; this is a KDE artifact, not biology.
 3. Both populations show some right-mode density near 100%, representing pairs that differ from the reference by only TSS / TES choice (no exonic sequence change).
 4. Test-only sensitivity check not generated; primary analysis uses all data per project policy.

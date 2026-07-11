@@ -15,7 +15,7 @@ For each splice event Isopair attributes as the cause of a PTC in an NMD compara
 - **In-frame stop** (blue) — splicing keeps the original frame but introduces a premature stop within an event
 - **3'UTR splice** (teal) — comparator and reference share the same stop, but 3'UTR splicing positions a new exon-exon junction >50 nt downstream of the stop
 
-Skipped exon (SE) dominates with 30 attributed pairs; A5SS (9) and A3SS (8) follow. Total = **69 attributed PTC+ pairs**. The mechanism breakdown across all events is **38 Frameshift / 23 In-frame stop / 8 3'UTR splice = 55.1% / 33.3% / 11.6%** — frameshift is the leading mechanism but in-frame stop events contribute a substantial minority.
+Skipped exon (SE) dominates with 23 attributed pairs; A5SS (6) and A3SS (5) follow. Total = **48 attributed PTC+ pairs**. The mechanism breakdown across all events is **25 Frameshift / 18 In-frame stop / 5 3'UTR splice = 52.1% / 37.5% / 10.4%** — frameshift is the leading mechanism but in-frame stop events contribute a substantial minority.
 
 ## Source data
 
@@ -28,7 +28,7 @@ Skipped exon (SE) dominates with 30 attributed pairs; A5SS (9) and A3SS (8) foll
 
 **Denominator: 69 attributed PTC+ pairs** in NMD, derived from the all-3-ENST + coding-CDS scope:
 
-1. Stage 2 gene-matched NMD (3,009)
+1. Stage 2 gene-matched NMD (1,548)
 2. All 3 isoforms ENST gene-matched (301 NMD / 301 Control)
 3. All 3 isoforms ENST + coding-CDS, re-intersected (**190 NMD / 190 Control**)
 4. PTC+ subset (own GENCODE stop > 50 nt past last EJC): **72 NMD / 4 Control**
@@ -58,15 +58,15 @@ Rendered as a horizontal stacked bar in matplotlib with `barh()` stacked by mech
 
 ## Caveats / limitations
 
-1. **Denominator under all-3-ENST + coding-CDS scope (2026-06-15):** the original Rmd `fig_sankey_ptcpos` had 1,074 attributed pairs (Stage 2 coding-coding, TD2-PTC+ only). Iterations went through 1,812 (mixed source) and 1,434 (§4 ENST-reference + ref-AUG). The current Panel F at the all-3-ENST + coding-CDS scope yields **69 attributed pairs** — fully GENCODE-anchored, no TD2 anywhere, no ref-AUG projection.
-2. **Mechanism balance at this scope:** **38 Frameshift / 23 In-frame stop / 8 3'UTR splice** (= 55.1% / 33.3% / 11.6%). Frameshift is the most common but the breakdown is less extreme than at broader scopes (where Frameshift dominated 76%).
+1. **Denominator under all-3-ENST + coding-CDS scope (2026-06-15):** the original Rmd `fig_sankey_ptcpos` had 1,074 attributed pairs (Stage 2 coding-coding, TD2-PTC+ only). Iterations went through 1,812 (mixed source) and 1,434 (§4 ENST-reference + ref-AUG). The current Panel F at the all-3-ENST + coding-CDS scope yields **48 attributed pairs** — fully GENCODE-anchored, no TD2 anywhere, no ref-AUG projection.
+2. **Mechanism balance at this scope:** **25 Frameshift / 18 In-frame stop / 5 3'UTR splice** (= 52.1% / 37.5% / 10.4%). Frameshift is the most common but the breakdown is less extreme than at broader scopes (where Frameshift dominated 76%).
 3. **The 3 unresolved PTC+ pairs** (72 − 69) are PTC+ by GENCODE-stop classification but no specific splice event could be attributed. They are NOT counted in Panel F's bars but DO contribute to Panel D's distance density.
 4. **Test-only sensitivity check** not generated; primary analysis uses all data per project policy.
 
 ## Cross-references
 
 - `figures/lib/principles.md` — figure-making principles
-- `feedback_figure_sample_size_consistency` — denominator matches Panel E (69 attributed events at all-3-ENST + coding-CDS scope) with the larger Panel D population (190 NMD / 190 Control) well-documented
+- `feedback_figure_sample_size_consistency` — denominator matches Panel E (48 attributed events at all-3-ENST + coding-CDS scope) with the larger Panel D population (190 NMD / 190 Control) well-documented
 - `feedback_default_match_original_figure` — Panel F's horizontal stacked bar structure matches the original `fig_sankey_ptcpos` from the Rmd
 - Rmd source: `05_final_report_mashr.Rmd` chunks `goal2-ptc-mechanisms` (line ~1923), `goal2-fig5-sankey` (line ~2002)
 - `analysis_functions.R`: `attribute_ptc_events()`, `attribute_3utr_splice()`, `shorten_event_labels()`

@@ -51,6 +51,12 @@ cell_types <- c("all_samples", "AT", "DD", "FB", "MV")
 # Min pairs threshold
 MIN_PAIRS <- 50
 
+# Reference-share floor (Family A, 2026-07-10): retain only genes whose selected
+# reference isoform accounts for >= this fraction of TOTAL gene DMSO expression.
+# Reference *selection* is unchanged (still rank-1 of the strict non-NMD pool);
+# this is a post-selection retention filter. See REFERENCE_FLOOR_RATIONALE.md.
+REF_SHARE_FLOOR <- 0.25
+
 cat("=== NMD Profile Building — mashr Classification ===\n\n")
 
 # ==============================================================================
@@ -66,6 +72,18 @@ smg1i_samp <- readRDS(file.path(data_dir, "smg1i_samples.rds"))
 
 cat(sprintf("  Expression: %d isoforms x %d samples\n",
             nrow(expr_mat), ncol(expr_mat)))
+
+# 4-CT re-scope guard (2026-07-11, decision b — REFERENCE_FLOOR_PLAN.md R2):
+# the all_samples sample basis must be the 4 manuscript cell types only
+# (13 DMSO + 13 Smg1i = 26; no DD_ALI/DO), so reference selection, the 25%
+# floor denominator, and the C2 NMD partner are all 4-CT by construction.
+stopifnot(
+  ncol(expr_mat) == 26,
+  length(dmso_samp[["all_samples"]])  == 13,
+  length(smg1i_samp[["all_samples"]]) == 13,
+  !any(grepl("DD_ALI|DO_ALI|_DO_",
+             c(dmso_samp[["all_samples"]], smg1i_samp[["all_samples"]])))
+)
 
 # Load isoform-intrinsic infrastructure (DE-method-independent)
 cat("Loading isoform infrastructure...\n")
@@ -157,6 +175,26 @@ for (ct in cell_types) {
       NULL
     }
   )
+
+  # --- Reference-share floor (Family A): drop genes whose selected reference
+  #     is < REF_SHARE_FLOOR of the gene's total DMSO expression across ALL
+  #     isoforms (gene_map_tbl = 5%-condition-filtered set), same DMSO basis as
+  #     selection. Applied BEFORE the MIN_PAIRS gate so the gate sees the
+  #     floored count. C2 inherits the surviving references via its gene_id join.
+  if (!is.null(pairs_c4) && nrow(pairs_c4) > 0) {
+    dmso_mean_all <- rowMeans(expr_mat[, dmso_samp[[ct]], drop = FALSE])
+    gm_all <- gene_map_tbl[gene_map_tbl$isoform_id %in% names(dmso_mean_all), ]
+    gm_all$mean_dmso <- dmso_mean_all[gm_all$isoform_id]
+    gene_total_dmso <- tapply(gm_all$mean_dmso, gm_all$gene_id, sum)
+    ref_dmso  <- dmso_mean_all[pairs_c4$reference_isoform_id]
+    gene_tot  <- gene_total_dmso[pairs_c4$gene_id]
+    ref_share <- ifelse(!is.na(gene_tot) & gene_tot > 0, ref_dmso / gene_tot, NA_real_)
+    keep <- !is.na(ref_share) & ref_share >= REF_SHARE_FLOOR
+    n_before <- nrow(pairs_c4)
+    pairs_c4 <- pairs_c4[keep, , drop = FALSE]
+    cat(sprintf("  Reference-share floor (>=%.0f%% of gene DMSO): %d -> %d C4 pairs (dropped %d)\n",
+                100 * REF_SHARE_FLOOR, n_before, nrow(pairs_c4), n_before - nrow(pairs_c4)))
+  }
 
   if (is.null(pairs_c4) || nrow(pairs_c4) < MIN_PAIRS) {
     cat(sprintf("  Skipping C4: %d pairs (< %d minimum)\n",

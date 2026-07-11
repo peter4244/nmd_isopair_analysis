@@ -74,9 +74,10 @@ shared_keys <- merge(
 c2_n1166 <- merge(c2_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
 c4_n1166 <- merge(c4_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
 
-cat(sprintf("[Subset 2] NMD c2 = %d, Control c4 = %d (expect 1166/1166)\n",
+# 4-CT re-scope + 25% ref-share floor (2026-07-11): n=1,166 -> n=819
+cat(sprintf("[Subset 2] NMD c2 = %d, Control c4 = %d (expect 819/819 4-CT)\n",
             nrow(c2_n1166), nrow(c4_n1166)))
-stopifnot(nrow(c2_n1166) == 1166L, nrow(c4_n1166) == 1166L)
+stopifnot(nrow(c2_n1166) == 819L, nrow(c4_n1166) == 819L)
 
 # ── Assign group labels ──
 c2_n1166[, group := fifelse(category == "effectively_ptc",

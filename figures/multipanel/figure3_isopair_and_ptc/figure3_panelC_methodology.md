@@ -18,20 +18,20 @@ Across 10 splice-event categories detected by Isopair, **skipped exon (SE)** is 
 
 ## Population
 
-**Denominator: 3,009 pairs per side** (Stage 2 gene-matched, `pop_BC` in `data_export.R`).
+**Denominator: 1,548 pairs per side** (Stage 2 gene-matched, `pop_BC` in `data_export.R`).
 
 Splice-event analysis does not require CDS information — events apply to all pairs regardless of coding status. So this panel uses the broadest meaningful population.
 
 ## Computation
 
-Re-implementation of the Rmd's `compute_event_freq()` function on `pop_BC` (3,009 each), plus Fisher's exact tests per event type with 2×2 contingency:
+Re-implementation of the Rmd's `compute_event_freq()` function on `pop_BC` (1,548 each), plus Fisher's exact tests per event type with 2×2 contingency:
 
 ```text
 For each event type e:
   a = NMD pairs with event e
-  b = 3,009 - a
+  b = 1,548 - a
   c = Control pairs with event e
-  d = 3,009 - c
+  d = 1,548 - c
   Fisher's exact on matrix(c(a,b,c,d), nrow=2) → OR, p-value
 ```
 
@@ -43,7 +43,7 @@ Event types (10): `Alt_TSS`, `Alt_TES`, `A5SS`, `A3SS`, `SE`, `Missing_Internal`
 |---|---|---|
 | `event_type` | string | Isopair canonical event-type label |
 | `n_pairs_with_event_NMD` | int | NMD pairs with ≥1 event of this type |
-| `pct_of_pairs_NMD` | float | `n / 3009 * 100`, 1 decimal |
+| `pct_of_pairs_NMD` | float | `n / 1548 * 100`, 1 decimal |
 | `n_pairs_with_event_Ctrl` | int | Same for Control |
 | `pct_of_pairs_Ctrl` | float | Same |
 | `fisher_OR` | float | Odds ratio, 2 decimals |

@@ -1,6 +1,6 @@
 #!/usr/bin/env Rscript
 # Compute CDS length, 5'UTR length, 3'UTR length for NMD+/PTC+, NMD+/PTC-,
-# and Control isoforms at the all-3-ENST + coding-CDS scope (190/190).
+# and Control isoforms at the all-3-ENST + coding-CDS scope (130/130, 4-CT re-scope).
 #
 # Reproduces the filter cascade in
 # /Users/petecastaldi/claude_projects/nmd/figures/multipanel/figure4_ptcneg_and_model/data_export.R
@@ -62,7 +62,7 @@ key_keep <- merge(
 final_c2 <- merge(keep_c2, key_keep, by = c("gene_id", "reference_isoform_id"))
 final_c4 <- merge(keep_c4, key_keep, by = c("gene_id", "reference_isoform_id"))
 
-cat(sprintf("After coding + re-intersect: c2=%d, c4=%d (expect 190 each)\n",
+cat(sprintf("After coding + re-intersect: c2=%d, c4=%d (expect 130 each)\n",
             nrow(final_c2), nrow(final_c4)))
 
 # Compute own-GENCODE-stop PTC classification on the COMPARATOR

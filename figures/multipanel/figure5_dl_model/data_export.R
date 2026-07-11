@@ -13,7 +13,8 @@
 #
 # Scope identical to Figure 4 Section A (gencode_all3 / Subset 1):
 #   pop_BC ∩ all-3-ENST ∩ coding-CDS, gene-matched between NMD c2 and Control c4
-# Yields exactly n=190 NMD pairs + n=190 Control pairs.
+# Yields n=130 NMD pairs + n=130 Control pairs (4-CT re-scope, 2026-07-11;
+# the "n190" in the output filename is the stable subset-1 identifier).
 #
 # Run from this folder:  Rscript data_export.R
 # ==============================================================================
@@ -65,9 +66,10 @@ joint2 <- intersect(make_key(pop_BC_c2_E2), make_key(pop_BC_c4_E2))
 gencode_all3_c2 <- pop_BC_c2_E2[make_key(pop_BC_c2_E2) %in% joint2]
 gencode_all3_c4 <- pop_BC_c4_E2[make_key(pop_BC_c4_E2) %in% joint2]
 
-cat(sprintf("[gencode_all3]  NMD=%d  Control=%d  (expect 190/190)\n",
+# 4-CT re-scope + 25% ref-share floor (2026-07-11): n=190 -> n=130
+cat(sprintf("[gencode_all3]  NMD=%d  Control=%d  (expect 130/130 4-CT)\n",
             nrow(gencode_all3_c2), nrow(gencode_all3_c4)))
-stopifnot(nrow(gencode_all3_c2) == 190L, nrow(gencode_all3_c4) == 190L)
+stopifnot(nrow(gencode_all3_c2) == 130L, nrow(gencode_all3_c4) == 130L)
 
 # ── PTC determination on NMD pairs (own GENCODE stop + 50-nt rule) ──────
 coding_cds  <- cds[coding_status == "coding"]
@@ -131,16 +133,12 @@ out <- rbind(
 cat("\nGroup counts:\n")
 print(out[, .N, by = group])
 
-# Cross-check: at n=190, expected breakdown from Rmd §2a verifier:
-# 72 PTC+ NMD, 118 PTC- NMD, 190 Control, 4 Control PTC+ (= 2.1%)
-expected <- data.table(group = c("NMD+/PTC+", "NMD+/PTC-", "Control"),
-                       n = c(72L, 118L, 190L))
+# Cross-check breakdown (report; guards locked to the 4-CT re-scope run 2026-07-11).
 have <- out[, .N, by = group][order(group)]
-cat("\nExpected (from pass-7 verifier):\n")
-print(expected)
-stopifnot(have[group == "NMD+/PTC+", N] == 72L,
-          have[group == "NMD+/PTC-", N] == 118L,
-          have[group == "Control",   N] == 190L)
+cat("\nBreakdown (4-CT):\n"); print(have)
+stopifnot(have[group == "NMD+/PTC+", N] == 48L,
+          have[group == "NMD+/PTC-", N] == 82L,
+          have[group == "Control",   N] == 130L)
 
 fwrite(out, file.path(OUT_DIR, "gencode_all3_n190_isoforms.tsv"), sep = "\t")
 cat(sprintf("\nWrote: %s  (%d rows)\n",

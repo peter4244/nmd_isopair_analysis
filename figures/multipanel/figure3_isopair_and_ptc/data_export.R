@@ -10,7 +10,7 @@
 #
 # Three populations used in this figure:
 #
-#   pop_BC (n=3,009 NMD / 3,009 Control):
+#   pop_BC (n=1,548 NMD / 1,548 Control):
 #       Stage 2 gene-matched pairs. No CDS dependency. Used by Panels B
 #       (sequence similarity) and C (splice event prevalence).
 #
@@ -84,7 +84,7 @@ cat(sprintf("[pop_BC] Stage 2 gene-matched: NMD=%d, Control=%d\n",
 # determined per comparator from its own annotated stop's distance to the
 # last exon-exon junction (50-nt rule).
 #
-# Panels B/C remain at pop_BC scope (3,009 each); they don't depend on CDS so
+# Panels B/C remain at pop_BC scope (1,548 each); they don't depend on CDS so
 # the all-3-ENST restriction is unnecessary for them.
 # ============================================================================
 is_enst <- function(x) grepl("^ENST", x)
@@ -213,9 +213,9 @@ cat(sprintf("  NMD: %d  Control: %d\n", nrow(pop_ptc_c2), nrow(pop_ptc_c4)))
 
 # ============================================================================
 # Panel B — sequence similarity NMD vs Control
-# Population: pop_BC (3,009 each)
+# Population: pop_BC (1,548 each)
 # ============================================================================
-cat("\n[Panel B] Sequence similarity (pop_BC = 3,009 each)\n")
+cat("\n[Panel B] Sequence similarity (pop_BC = 1,548 each)\n")
 div_c2 <- readRDS(file.path(CACHE_DIR, "div_c2_allsamples.rds"))
 div_c4 <- readRDS(file.path(CACHE_DIR, "div_c4_allsamples.rds"))
 # div is row-aligned to pop_BC (Stage 2 gene-matched)
@@ -234,9 +234,9 @@ cat(sprintf("  -> NMD=%d, Control=%d non-NA pct_shared\n",
 
 # ============================================================================
 # Panel C — splice event prevalence NMD vs Control
-# Population: pop_BC (3,009 each)
+# Population: pop_BC (1,548 each)
 # ============================================================================
-cat("[Panel C] Event prevalence (pop_BC = 3,009 each)\n")
+cat("[Panel C] Event prevalence (pop_BC = 1,548 each)\n")
 evt_types <- c("Alt_TSS", "Alt_TES", "A5SS", "A3SS", "SE",
                "Missing_Internal", "IR", "IR_diff",
                "Partial_IR_5", "Partial_IR_3")

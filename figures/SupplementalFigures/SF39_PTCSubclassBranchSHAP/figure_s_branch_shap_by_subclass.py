@@ -1,6 +1,7 @@
 """
 Supplemental Figure — Branch-level KernelSHAP stratified by PTC subclass
-across the FULL n = 1,166 ref-AUG-traceable subset (not test-set-restricted).
+across the FULL n = 888 ref-AUG-traceable subset (not test-set-restricted;
+post 25% reference-share floor 2026-07-10).
 
 Style: matches Figure 5 Panel C exactly — branch order Structural / Stop /
 ATG, same colour palette, percent label above each bar, mean |SHAP|
@@ -14,22 +15,23 @@ Companion to the §5 manuscript sentence:
      window information is roughly three times more important in the
      NMD+/PTC- than in the NMD+/PTC+ isoforms (SFx)."
 
-KEY NUMBER (full cohort, no test-set restriction):
+KEY NUMBER (full cohort, no test-set restriction; post-floor):
   Mean within-isoform ATG-branch share:
-    NMD+/PTC+         (n=1,016) →  9.2%
-    NMD+/PTC- retained (n=  95) → 20.4%
-    Control           (n=1,107) → 11.3%
-  Ratio NMD+/PTC- vs NMD+/PTC+ ≈ 2.21×.
+    NMD+/PTC+          (n=735) →  9.1%
+    NMD+/PTC- retained (n= 54) → 17.0%
+    Control            (n=781) → 10.3%
+  Ratio NMD+/PTC- vs NMD+/PTC+ ≈ 1.99×.
 
 The Panel-C-style bar labels show share-of-subgroup-total (sum of
 subgroup mean |SHAP|), giving:
-    NMD+/PTC+   Structural 61.9% / Stop 29.1% / ATG  9.0%
-    NMD+/PTC-   Structural 52.6% / Stop 29.2% / ATG 18.1%
-    Control     Structural 62.3% / Stop 27.1% / ATG 10.6%
+    NMD+/PTC+   Structural 61.6% / Stop 29.4% / ATG  9.1%
+    NMD+/PTC-   Structural 49.6% / Stop 33.5% / ATG 17.0%
+    Control     Structural 63.0% / Stop 26.7% / ATG 10.3%
 
 Manuscript text reads "roughly three times more important" — the actual
-share-of-total ratio is 2.21× (full cohort) or 2.20× (test-set only).
-Find/replace pair to revise the manuscript prose is in README.md.
+post-floor ratio is ~2× (share-of-total 1.87×; was
+2.21× pre-floor). The §5 prose overstates it; flag for the manuscript
+find/replace pass (see REFERENCE_FLOOR_NUMBERS_DELTA.md).
 
 Data: data/branch_shap_by_subclass_n1166.tsv (built by data_export.R).
 """

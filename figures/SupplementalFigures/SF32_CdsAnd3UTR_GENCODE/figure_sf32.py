@@ -1,6 +1,6 @@
 """
 SF32 — CDS length and two 3'UTR-length measures in the GENCODE-restricted cohort
-(n = 72 / 118 / 190). Own-annotated-CDS stop anchor. 1×3 panels A/B/C.
+(n = 54 / 82 / 136). Own-annotated-CDS stop anchor. 1×3 panels A/B/C.
 
 Data reused from the combined SF32+SF35 export in the sibling dir; no new
 data_export needed.
@@ -36,7 +36,8 @@ apply_ggplot_rcparams()
 NATIVE_W = 12.0
 BODY_FS  = docx_body_fs(NATIVE_W)
 
-DATA = HERE.parents[0] / "data"
+# Shared export dir data_export.R writes to (local ./data was a pre-reorg leftover).
+DATA = HERE.parents[1] / "CDSand3UTR_GENCODEonly" / "data"
 
 # Canonical SUBGROUP_PAL uses Unicode minus (U+2212) in the "NMD+/PTC−"
 # key. Data files store the ASCII hyphen form; we remap to the Unicode
@@ -122,7 +123,7 @@ def render_panel(ax, long, desc, stats, value_col, ylabel):
 
     ax.set_xticks(range(len(GROUP_ORDER)))
     # Tilted 2-row labels at BODY_FS-4 (effective ~7.6pt in docx) so
-    # the "NMD+/PTC−\nn=118" label fits within per-tick spacing on the
+    # the "NMD+/PTC−\nn=82" label fits within per-tick spacing on the
     # 2×2 layout. Matches the docx-approved Yul style for SF35.
     ax.set_xticklabels(
         [f"{g}\nn = {n_per[g]:,}" for g in GROUP_ORDER],
