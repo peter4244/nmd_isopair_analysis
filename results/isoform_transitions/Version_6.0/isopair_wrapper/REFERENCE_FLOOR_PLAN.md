@@ -47,12 +47,7 @@
 - [ ] **Phase 3** — Rmd date-bump + render; figures one-at-a-time
       - [x] data layer: all `data_export.R` regenerated (guards 190→136, 1166→888, occult 492→380); see `REFERENCE_FLOOR_NUMBERS_DELTA.md`
       - [x] **Main figures 3, 4, 5** — rendered + visually inspected + CORRECT (data-driven; n's updated; model panels unchanged). Python = `/opt/homebrew/bin/python3` (system python3 lacks pandas).
-      - [ ] **Supplements — need per-figure work (NOT batch):**
-            - PATH SPLIT: `figure_sfNN.py` reads `SFNN_*/data/` (stale, 06-15) but `data_export.R` writes to shared dir (e.g. `TD2BiasEvidence/data/`, `CDSand3UTR_GENCODEonly/data/`, fresh 07-10). Confirmed SF33; check SF32/34/35/39. → fix figure DATA path (or export target) per figure, then re-render.
-            - HARDCODED stat annotations: e.g. SF33 `figure_sf33.py:201` p-value `"1.2×10^-38"` → `2.9×10^-39`. Grep each SF for hardcoded n/p/median.
-            - LAYOUT-CLIP errors (validator caught, new data ranges): SF30, SF31, SF40 — adjust top margin / ylim.
-            - SF26: `data_export` deleted with PairSetDescriptives — recover via `git show f6d96bc^:…`, rebuild on all-iso basis.
-            - ⚠ SF33/34/35/39 PNGs currently rendered from STALE data — do NOT use until path fixed + re-rendered + re-inspected.
+      - [x] **Supplements — ALL 13 floor-affected DONE** (SF25–35, 39, 40). Full audit in `REFERENCE_FLOOR_SF_INVENTORY.md`: SF24/36/37/38/41 N/A (model-global/static), SF42 left as-is (frozen June comparison). Fixes covered: path-splits (SF32/33/34/35), hardcoded stats (SF33/34), layout-clips (SF30/31/40), rebuilt producers (SF25/26/27/28/29).
       - [ ] date-bump Rmd → 2026-07-10, update hardcoded prose/DOT/captions, render
 - [ ] **Phase 4** — update + independently re-derive all verifier expecteds; PASS; full 5-step
 - [ ] **Phase 5** — deprecate 2026-06-15 Rmd (banner); SF26 supersession
