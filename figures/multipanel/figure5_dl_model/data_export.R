@@ -65,9 +65,10 @@ joint2 <- intersect(make_key(pop_BC_c2_E2), make_key(pop_BC_c4_E2))
 gencode_all3_c2 <- pop_BC_c2_E2[make_key(pop_BC_c2_E2) %in% joint2]
 gencode_all3_c4 <- pop_BC_c4_E2[make_key(pop_BC_c4_E2) %in% joint2]
 
-cat(sprintf("[gencode_all3]  NMD=%d  Control=%d  (expect 190/190)\n",
+# Post reference-share floor (25% all-iso, 2026-07-10): n=190 -> n=136
+cat(sprintf("[gencode_all3]  NMD=%d  Control=%d  (expect 136/136 post-floor)\n",
             nrow(gencode_all3_c2), nrow(gencode_all3_c4)))
-stopifnot(nrow(gencode_all3_c2) == 190L, nrow(gencode_all3_c4) == 190L)
+stopifnot(nrow(gencode_all3_c2) == 136L, nrow(gencode_all3_c4) == 136L)
 
 # ── PTC determination on NMD pairs (own GENCODE stop + 50-nt rule) ──────
 coding_cds  <- cds[coding_status == "coding"]
@@ -131,16 +132,12 @@ out <- rbind(
 cat("\nGroup counts:\n")
 print(out[, .N, by = group])
 
-# Cross-check: at n=190, expected breakdown from Rmd §2a verifier:
-# 72 PTC+ NMD, 118 PTC- NMD, 190 Control, 4 Control PTC+ (= 2.1%)
-expected <- data.table(group = c("NMD+/PTC+", "NMD+/PTC-", "Control"),
-                       n = c(72L, 118L, 190L))
+# Cross-check breakdown (report; guards locked after first floored run 2026-07-10).
 have <- out[, .N, by = group][order(group)]
-cat("\nExpected (from pass-7 verifier):\n")
-print(expected)
-stopifnot(have[group == "NMD+/PTC+", N] == 72L,
-          have[group == "NMD+/PTC-", N] == 118L,
-          have[group == "Control",   N] == 190L)
+cat("\nBreakdown (post-floor):\n"); print(have)
+stopifnot(have[group == "NMD+/PTC+", N] == 54L,
+          have[group == "NMD+/PTC-", N] == 82L,
+          have[group == "Control",   N] == 136L)
 
 fwrite(out, file.path(OUT_DIR, "gencode_all3_n190_isoforms.tsv"), sep = "\t")
 cat(sprintf("\nWrote: %s  (%d rows)\n",

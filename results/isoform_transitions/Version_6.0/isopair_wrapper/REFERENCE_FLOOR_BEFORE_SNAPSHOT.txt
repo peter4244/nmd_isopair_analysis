@@ -1,0 +1,41 @@
+# Before-state manifest snapshot (pre-floor canonical numbers) — captured 2026-07-10
+# Source: reproducibility/verify_pass7_new_rmd.R @ 6ea9971
+# Format: name | expected | label
+
+pop_BC_c2_count	| 3009	| §1 pop_BC shared pairs
+pop_BC_c2_n	| 3009	| §1 pop_BC NMD pairs
+pop_BC_c4_n	| 3009	| §1 pop_BC Control pairs
+tx_len_ref	| 2893	| §1 transcript-length median Reference
+tx_len_nmd	| 3049	| §1 transcript-length median NMD comp
+tx_len_ctrl	| 2762	| §1 transcript-length median Control comp
+ref_pct_enst	| 69.7	| §1 Reference %ENST
+nmd_pct_novel	| 76.6	| §1 NMD comp %Novel
+gencode_all3_c2	| 190	| §2 scope gencode_all3_c2
+gencode_all3_c4	| 190	| §2 scope gencode_all3_c4
+secA_ptc_nmd_n	| 72	| §2a NMD PTC+ count
+secA_ptc_ctrl_n	| 4	| §2a Control PTC+ count
+secA_ptc_nmd_pct	| 37.9	| §2a NMD PTC+ rate
+secA_ptc_ctrl_pct	| 2.1	| §2a Control PTC+ rate
+secA_fold	| 18.0	| §2a fold enrichment
+secA_or	| 28.2	| §2a Fisher OR
+secA_fisher_p	| 1.88e-20	| §2a Fisher p-value
+secA_attr_direct	| 66	| §2b direct attributions
+secA_attr_ss	| 8	| §2b same-stop attributions
+secA_attr_unique	| 69	| §2b unique direct attributions
+secA_attr_unres	| 3	| §2b finally unresolved
+secA_attr_cov	| 95.8	| §2b attribution coverage
+refaug_c2	| 1166	| §3 scope refaug_matched_c2
+refaug_c4	| 1166	| §3 scope refaug_matched_c4
+secC_pct_ptc	| 90.1	| §3b PTC+ rate at Section C
+broad_n	| 1166	| §4 broad scope n
+td2_broad_kozak_n	| 446	| §4b broad ref>TD2 Kozak count
+td2_broad_kozak_pct	| 38.3	| §4b broad ref>TD2 Kozak % (of all)
+td2_broad_kozak_p	| 1.21e-38	| §4b broad Kozak p-value
+td2_broad_pct_down	| 42.5	| §4c broad % TD2 downstream
+occ_n	| 492	| §4 occult-PTC scope n
+td2_occ_kozak_n	| 384	| §4b occult-PTC ref>TD2 Kozak count
+td2_occ_kozak_pct	| 78.0	| §4b occult-PTC ref>TD2 Kozak % (of all)
+td2_occ_kozak_p	| 2.60e-38	| §4b occult-PTC Kozak p-value
+td2_occ_pct_down	| 99.0	| §4c occult-PTC % TD2 downstream
+td2_broad_ratio	| 4.69	| §4a broad TD2/ref ORF ratio
+td2_occ_ratio	| 7.73	| §4a occult-PTC TD2/ref ORF ratio
