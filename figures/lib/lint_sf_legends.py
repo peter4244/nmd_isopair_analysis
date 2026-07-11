@@ -41,6 +41,20 @@ def check(path: Path):
     if uses_stars and not has_key:
         errs.append("significance stars / n.s. referenced but no threshold key "
                     "(add e.g. *p<0.05, **p<10⁻³, ***p<10⁻⁴; n.s. otherwise)")
+    # B: star-key thresholds present but the multi-asterisks are UNESCAPED -> the
+    #    SF-docx markdown build (build_supplemental_figures_docx.js) eats them as
+    #    bold/italic markers (SF29 recurred 2026-07-11: '****p<10⁻¹⁰, ***p<10⁻⁴'
+    #    rendered '**p<10⁻⁴**' bold with leading stars dropped). A properly escaped
+    #    key ('\*\*\*\*p') has a backslash between every asterisk, so no run of >=2
+    #    bare consecutive '*' survives -- flag any such run before 'p<'/'p='.
+    #    Scope: SF legends only -- they compile into the markdown SF-docx. The
+    #    multipanel Fig3/4/5 composite legends feed the manuscript Google Doc as
+    #    plain text, where literal '*' is correct, so they are exempt.
+    if has_key and "SupplementalFigures" in str(path) \
+            and re.search(r"\*{2,}\s*p\s*[<=]", text):
+        errs.append("star-key thresholds use UNESCAPED multi-asterisks "
+                    "(e.g. '****p < 10⁻¹⁰') -- the SF-docx markdown build renders "
+                    "them bold; escape as '\\*\\*\\*\\*p' like SF32/SF35.")
 
     # D: 6-CT basis leaks (post-2026-07 everything is 4-CT).
     # Cell-type CODES are uppercase → case-SENSITIVE (else \bDO\b matches the verb "do").
