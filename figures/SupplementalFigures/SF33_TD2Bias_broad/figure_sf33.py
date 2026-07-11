@@ -1,6 +1,6 @@
 """
 SF33 — TransDecoder2 vs reference AUG-traced open reading frames on the broad
-reference AUG-traceable cohort (n = 888 gene-matched NMD comparator pairs).
+reference AUG-traceable cohort (n = 819 gene-matched NMD comparator pairs).
 1×3: length KDE / Kozak violin / position histogram.
 
 Data reused from the combined SF33+SF34 export in the sibling dir; no new
@@ -200,7 +200,7 @@ def build_figure():
     ]
 
     render_length_kde(axes[0], "panelA_td2_vs_refaug_length.tsv")
-    render_kozak_violin(axes[1], "panelB_kozak.tsv", "p = 2.9×10$^{-39}$")
+    render_kozak_violin(axes[1], "panelB_kozak.tsv", "p = 1.5×10$^{-36}$")
     render_position_hist(axes[2], "panelC_td2_position.tsv")
 
     for ax, letter in zip(axes, ["A", "B", "C"]):
