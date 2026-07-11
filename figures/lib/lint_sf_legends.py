@@ -42,12 +42,18 @@ def check(path: Path):
         errs.append("significance stars / n.s. referenced but no threshold key "
                     "(add e.g. *p<0.05, **p<10⁻³, ***p<10⁻⁴; n.s. otherwise)")
 
-    # D: 6-CT basis leaks (post-2026-07 everything is 4-CT)
+    # D: 6-CT basis leaks (post-2026-07 everything is 4-CT).
+    # Cell-type CODES are uppercase → case-SENSITIVE (else \bDO\b matches the verb "do").
     for pat, msg in [
-        (r"all sequenced libraries", '"all sequenced libraries" basis wording (say "the four cell types")'),
         (r"\bDD_ALI\b", "DD_ALI reference (out-of-scope cell type; no 6-CT trace)"),
         (r"\bDO_ALI\b", "DO_ALI reference (out-of-scope cell type)"),
-        (r"\bDO\b(?!I|_)", "bare 'DO' reference (out-of-scope cell type?) — verify"),
+        (r"\bDO\b(?![I_])", "'DO' cell-type code (out-of-scope) — verify not a stray match"),
+    ]:
+        for m in re.finditer(pat, text):  # no re.I
+            errs.append(f'{msg} @ …{text[max(0,m.start()-20):m.start()+15]}…')
+    # Basis WORDING is case-insensitive.
+    for pat, msg in [
+        (r"all sequenced libraries", '"all sequenced libraries" basis wording (say "the four cell types")'),
         (r"\b(six|6)[ -]cell", "six-cell-type basis wording (analysis is 4-CT)"),
     ]:
         for m in re.finditer(pat, text, re.I):
