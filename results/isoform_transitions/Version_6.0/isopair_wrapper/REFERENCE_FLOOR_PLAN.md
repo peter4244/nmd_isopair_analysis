@@ -31,13 +31,18 @@
 
 ### New acceptance gates (4-CT; exact numbers from the data-layer run)
 `expr_mat` **will change** (fewer samples → different normalization + filter → different isoform set), so ALL isopair numbers move — more than the earlier L204-only "~1,519" guess, which is now **void** (it ignored reference-reselection, C2-partner churn, AND the universe change). Pre-commit *direction + band*, not a point:
-| Set | pre-floor (6-CT) | **4-CT floor (target)** |
-|---|---|---|
-| pop_BC (all_samples C2) | 3,009 | **modest decrease from 1,585; expect ~1,400–1,550 — TBD, churn both ways is EXPECTED not a bug** |
-| n=190 GENCODE-restricted | 190 | **TBD (< 136)** |
-| n=1,166 ref-AUG | 1,166 | **TBD (< 888)** |
-| occult-PTC | 492 | **TBD (< 380)** |
-| per-CT C2 (AT/DD/FB/MV) | 2,583–2,907 | all ≫ MIN_PAIRS=50 (**halt if any < 50**) |
+| Set | pre-floor (6-CT) | **4-CT floor (target)** | **4-CT MEASURED (2026-07-11)** |
+|---|---|---|---|
+| pop_BC (all_samples C2) | 3,009 | **~1,400–1,550** | **1,548** ✓ (top of band; 6-CT floor was 1,585) |
+| n=190 GENCODE-restricted | 190 | **TBD (< 136)** | **130** ✓ |
+| n=1,166 ref-AUG | 1,166 | **TBD (< 888)** | **819** ✓ |
+| occult-PTC | 492 | **TBD (< 380)** | **348** ✓ |
+| per-CT C2 (AT/DD/FB/MV) | 2,583–2,907 | all ≫ MIN_PAIRS=50 | **AT 1,432 · DD 1,476 · FB 1,340 · MV 1,466** — all ≫ 50 ✓ |
+
+**Isoform universe (M-2 decomposition):** 6-CT filtered 123,790 → 4-CT filtered 95,623 (net −28,167).
+Removed 28,278 = (a) 1,790 DD_ALI/DO-exclusive (0 counts in all 26 4-CT samples) + (b) 26,488
+re-normalization/threshold churn (5% max-prop + `filterByExpr` flips from dropping 10 libs); added 111
+(flipped in). Recomputed filter reproduces 95,623 exactly → decomposition faithful. Gate: **PASS** (no per-CT < 50; pop_BC in band). AWAITS Pete's confirmation before propagating to figures/report.
 **Hard-halt** only if any per-CT C2 < MIN_PAIRS=50. **Advisory** (investigate, don't auto-halt): pop_BC expected ~1,400–1,550; flag if outside ~1,300–1,585. **Do NOT gate on "isoform drop explained by DD_ALI/DO-only" (M-2)** — dropping 8–10 libs also shifts TMM norm factors + `filterByExpr` + the 5% max-prop, flipping borderline 4-CT isoforms pass↔fail, so the retained-set delta is genuine filter/normalization churn, not decomposable as DD_ALI/DO-only. At R2 instead **decompose** the isoform-set delta into (a) DD_ALI/DO-exclusive isoforms removed, (b) borderline 4-CT isoforms flipped on the 5%/`filterByExpr` thresholds by re-normalization, (c) net pop_BC delta — and sanity-check each is plausible.
 
 ### Safeguard — 6-CT dependency scan (run at EVERY stage before trusting output)
@@ -130,7 +135,7 @@ Round 2 verified (b) is mechanically sound (`dge`/`cpm_mat` build after the excl
 ## Phase check-off — 4-CT RE-SCOPE (2026-07-11); supersedes the 6-CT pass above
 The phases above completed under the 6-CT `all_samples` basis and are now **superseded** (never shipped). Each phase re-opens against the 4-CT basis. **Run the 6-CT dependency scan (Amendment) at every phase.**
 
-- [ ] **R1 — Source edit** — `01`: restrict `sample_metadata`/`count_mat` to `ct %in% c("AT","DD","FB","MV")` **strictly AFTER L103** (M-1: NOT in/before the L94 exclude block — the L96–98 guard aborts). Confirm `dge`(L119)/`cpm_mat`(L123) build after → `dmso_cols`/`smg1i_cols`=13, `all_samples` 4-CT by construction (no L204/L205 edit). Scan `01`/`02` + `code/nmd_predictor_comparison/` for residual 6-CT deps (+ pre-floor literals). (05t/05v dropped — dead/legacy.)
+- [x] **R1 — Source edit** — `01`: restrict `sample_metadata`/`count_mat` to `ct %in% c("AT","DD","FB","MV")` **strictly AFTER L103** (M-1: NOT in/before the L94 exclude block — the L96–98 guard aborts). Confirm `dge`(L119)/`cpm_mat`(L123) build after → `dmso_cols`/`smg1i_cols`=13, `all_samples` 4-CT by construction (no L204/L205 edit). Scan `01`/`02` + `code/nmd_predictor_comparison/` for residual 6-CT deps (+ pre-floor literals). (05t/05v dropped — dead/legacy.)
 - [ ] **R2 — Data layer + gate** — backup `data_mashr`; re-run `01`. **Gate (b):** assert `sample_metadata`/`expr_mat` have only 4 CTs (26 cols, no DD_ALI/DO). **Decompose the isoform-set delta (M-2)** into (a) DD_ALI/DO-exclusive isoforms removed, (b) borderline 4-CT isoforms flipped by re-normalization on the 5%/`filterByExpr` thresholds, (c) net — sanity-check each; do NOT gate on "(a) explains all." Re-run `02` (+ `stopifnot(length==13,…)` floor-block guard) → `03b --force` → `05r`/`05k`/`05k_b` (**05t/05v DROPPED — dead/legacy**). Then re-run **`code/nmd_predictor_comparison/` 01→04** on the refreshed profiles (bump `DATESTAMP` `2026.6.20`→run date; **assert post-merge `our_model_prob` coverage** — joins are `all.x=TRUE`, so new-cohort isoforms absent from the frozen v5_4ct H5 silently drop; don't trust the old 95%/114-dropped) → new 4-CT TSVs for SF42. Record pop_BC, n=190→?, n=1166→?, occult→?, per-CT. **Hard-halt** only if any per-CT C2 < 50; pop_BC ~1,400–1,550 expected, investigate if outside ~1,300–1,585 (advisory).
 - [ ] **R3 — Report + figures** — `git mv` Rmd → `..._2026-07-11.Rmd`; re-render; strip ALL 6-CT basis wording → "four cell types". Regenerate figures ONE AT A TIME (Figs 3/4/5, SF25–35, SF39, SF40, **SF42 — UN-FROZEN (round-4 review: data path is genuinely 4-CT, gaps are DOC-ONLY). After re-running the pipeline: (i) bump `DATESTAMP` in `01-04` + sync the 4 hardcoded paths (`figure_s_model_comparison.py:49-50`, `nmd_predictor_comparison.Rmd:23-24`); (ii) re-derive SF42 **legend** counts (n=561/255/30/276) from the fresh `metrics_summary` `head-to-head:test:*` rows — CRITICAL, legend prose is frozen while the PNG auto-derives n; (iii) re-derive cohort literals in `METHODS.md`/`README.md`/`.Rmd`; (iv) rename `c2_n1166`/`c4_n1166` (`01:78-79`) + drop count literals from comments**) + 6-CT scan (pre+post-floor literals in docstrings/cat-strings/README) each `data_export.R`/`.py` + basis assertion. **SF28 = full manual DOT rebuild (M-4):** ~20 hand-typed floor literals in `build_flowchart.R` (L135/144/157-159/176/190-192/209/212 + filter counts) re-derived by hand; fix the `N_C2` node mislabeled "before matching" (it reads the *floored* profiles_c2); delete dead `N_AFTER_OUT`/`N_FILTER_SMP`/`N_DROPPED_SMP` (36/10) vars — render already shows 26 samples / no 36→26 node. Fix SF26 legend "all sequenced libraries" → "four cell types".
 - [ ] **R4 — Verifiers** — expecteds INDEPENDENTLY re-derived (not pasted from render); resolve m2 (`verify_pass1_factual.R:83` stray 1166); update SF42 predictor-comparison expecteds/cohort (un-frozen); date-bump `2026-07-10` → 07-11 across ALL refs (m3 surface, not just .html); all pass.

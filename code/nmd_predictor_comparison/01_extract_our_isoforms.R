@@ -39,7 +39,7 @@ MASHR <- "/Users/petecastaldi/claude_projects/nmd/isocall_dge/mashr/mashr_isofor
 # (scoring train + val + test + test_paralog isoforms in the model's H5).
 # Columns: isoform_id, chr, h5_split, label, logit, prob.
 PREDS <- file.path(HERE, "predictions_all_atg500_stop500.tsv")
-DATESTAMP <- "2026.6.20"
+DATESTAMP <- "2026.7.11"
 
 # ── Load ──
 profiles_c2 <- as.data.table(readRDS(file.path(DM, "profiles_c2_allsamples.rds")))

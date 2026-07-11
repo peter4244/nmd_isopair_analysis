@@ -73,6 +73,18 @@ smg1i_samp <- readRDS(file.path(data_dir, "smg1i_samples.rds"))
 cat(sprintf("  Expression: %d isoforms x %d samples\n",
             nrow(expr_mat), ncol(expr_mat)))
 
+# 4-CT re-scope guard (2026-07-11, decision b — REFERENCE_FLOOR_PLAN.md R2):
+# the all_samples sample basis must be the 4 manuscript cell types only
+# (13 DMSO + 13 Smg1i = 26; no DD_ALI/DO), so reference selection, the 25%
+# floor denominator, and the C2 NMD partner are all 4-CT by construction.
+stopifnot(
+  ncol(expr_mat) == 26,
+  length(dmso_samp[["all_samples"]])  == 13,
+  length(smg1i_samp[["all_samples"]]) == 13,
+  !any(grepl("DD_ALI|DO_ALI|_DO_",
+             c(dmso_samp[["all_samples"]], smg1i_samp[["all_samples"]])))
+)
+
 # Load isoform-intrinsic infrastructure (DE-method-independent)
 cat("Loading isoform infrastructure...\n")
 structures   <- readRDS(file.path(infra_dir, "structures.rds"))
