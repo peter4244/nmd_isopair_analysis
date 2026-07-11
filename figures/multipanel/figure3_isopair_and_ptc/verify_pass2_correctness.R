@@ -43,8 +43,8 @@ final_keys <- intersect(unique(make_key(all3_coding_c2)),
 pop_DEF_c2 <- all3_coding_c2[make_key(all3_coding_c2) %in% final_keys]
 pop_DEF_c4 <- all3_coding_c4[make_key(all3_coding_c4) %in% final_keys]
 
-N_BC <- 3009         # Panels B, C scope
-N_DEF <- 190         # Panels D scope (each side)
+N_BC <- 1585         # Panels B, C scope (post 25% floor)
+N_DEF <- 136         # Panels D scope (each side; post-floor)
 
 # ---- Tracking ----
 results <- list()
@@ -116,7 +116,7 @@ ctrl_total_tsv <- sum(panelE$n_ctrl_events) # 330
 # the 9 event types that overlap with PTC-causing events. From the locked
 # values in figure3_panelE_methodology.md and the composite legend:
 # ctrl_total = 447 (n_ctrl_events 330 covers the 9 emitted types).
-CTRL_TOTAL_FULL <- 447L
+CTRL_TOTAL_FULL <- 297L
 cat(sprintf("    n_ptc_attr=%d, ctrl_total(full)=%d, TSV n_ctrl_events sum=%d\n",
             n_ptc_attr, CTRL_TOTAL_FULL, ctrl_total_tsv))
 
@@ -140,9 +140,9 @@ for (i in seq_len(nrow(panelE))) {
 }
 
 # Verify pct_ctrl in TSV is computed on the full ctrl_total (447), not 330
-# Spot check: SE pct_ctrl = 63/447 = 14.094..%, rounds to 14.1
-expected_se_pct <- round(100 * 63 / 447, 1)
-note(sprintf("Panel E SE pct_ctrl matches 63/447 (%.1f%%)", expected_se_pct),
+# Spot check: SE pct_ctrl = 44/297 = 14.81%, rounds to 14.8 (post-floor)
+expected_se_pct <- round(100 * 44 / 297, 1)
+note(sprintf("Panel E SE pct_ctrl matches 44/297 (%.1f%%)", expected_se_pct),
      if (abs(panelE$pct_ctrl[panelE$event_type == "SE"] - expected_se_pct) < 0.1)
        "PASS" else "FAIL",
      sprintf("TSV=%.1f, recomputed=%.1f", panelE$pct_ctrl[panelE$event_type == "SE"],
@@ -170,18 +170,18 @@ cat("\n[4] Panel D — distance sign and direction\n")
 panelD <- fread("data/panelD_stop_codon_distance.tsv")
 med_nmd <- median(panelD[comparison == "NMD"]$distance)
 med_ctrl <- median(panelD[comparison == "Control"]$distance)
-cat(sprintf("    NMD median distance: %.0f nt (expect %.0f)\n", med_nmd, -66))
-cat(sprintf("    Control median distance: %.0f nt (expect %.0f)\n", med_ctrl, -143))
+cat(sprintf("    NMD median distance: %.0f nt (expect %.0f)\n", med_nmd, -47))
+cat(sprintf("    Control median distance: %.0f nt (expect %.0f)\n", med_ctrl, -148.5))
 # Under the all-3-ENST scope, both populations skew negative (most stops sit
 # in the last exon under GENCODE annotation), but the NMD distribution has a
 # long right tail past the 50-nt threshold.
 note("NMD median > Control median (NMD distribution shifted right)",
      if (med_nmd > med_ctrl) "PASS" else "FAIL")
-note("NMD median exactly -66 (locked value)",
-     if (med_nmd == -66) "PASS" else "FAIL",
+note("NMD median exactly -47 (locked value; post-floor)",
+     if (med_nmd == -47) "PASS" else "FAIL",
      sprintf("actual=%.0f", med_nmd))
-note("Control median exactly -143 (locked value)",
-     if (med_ctrl == -143) "PASS" else "FAIL",
+note("Control median exactly -148.5 (locked value; post-floor)",
+     if (med_ctrl == -148.5) "PASS" else "FAIL",
      sprintf("actual=%.0f", med_ctrl))
 note("NMD/Control medians separated by >50 nt",
      if ((med_nmd - med_ctrl) > 50) "PASS" else "FAIL",
@@ -214,8 +214,8 @@ note("In-frame stop is a substantial minority (>=25%)",
 note("3'UTR splice is a smaller minority (<20%)",
      if (utr_total / total < 0.20) "PASS" else "FAIL",
      sprintf("3'UTR splice=%.1f%%", 100*utr_total/total))
-note("Mechanism counts sum to 69 (attributed PTC+ pairs)",
-     if (total == 69) "PASS" else "FAIL",
+note("Mechanism counts sum to 53 (attributed PTC+ pairs)",
+     if (total == 53) "PASS" else "FAIL",
      sprintf("total=%d", total))
 
 # Adversarial: SE row should be dominated by Frameshift + In-frame, NOT 3'UTR splice
@@ -250,8 +250,8 @@ note("Fisher p < 1e-15 (overwhelming)",
 rate_nmd <- 100 * n_ptc_nmd / N_DEF
 rate_ctrl <- 100 * n_ptc_ctrl / N_DEF
 fold <- rate_nmd / rate_ctrl
-note(sprintf("18-fold rate ratio (37.9 / 2.1 = %.1f)", fold),
-     if (abs(fold - 18) < 0.5) "PASS" else "FAIL",
+note(sprintf("54-fold rate ratio (39.7 / 0.7 = %.1f)", fold),
+     if (abs(fold - 54) < 1.0) "PASS" else "FAIL",
      sprintf("fold=%.1f", fold))
 
 # ============================================================================
@@ -262,8 +262,8 @@ se_row <- panelC[event_type == "SE"]
 cat(sprintf("    SE NMD: %.1f%% (= %d/%d), SE Control: %.1f%% (= %d/%d)\n",
             se_row$pct_of_pairs_NMD, se_row$n_pairs_with_event_NMD, N_BC,
             se_row$pct_of_pairs_Ctrl, se_row$n_pairs_with_event_Ctrl, N_BC))
-note("SE NMD percent ~44%", if (abs(se_row$pct_of_pairs_NMD - 44.2) < 0.5) "PASS" else "FAIL")
-note("SE Control percent ~21%", if (abs(se_row$pct_of_pairs_Ctrl - 21.2) < 0.5) "PASS" else "FAIL")
+note("SE NMD percent ~52%", if (abs(se_row$pct_of_pairs_NMD - 51.8) < 0.5) "PASS" else "FAIL")
+note("SE Control percent ~23%", if (abs(se_row$pct_of_pairs_Ctrl - 22.7) < 0.5) "PASS" else "FAIL")
 
 # ============================================================================
 # Summary

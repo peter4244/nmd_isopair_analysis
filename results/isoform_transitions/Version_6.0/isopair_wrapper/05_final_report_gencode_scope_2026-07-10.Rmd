@@ -317,7 +317,7 @@ digraph cohort_cascade {
            fillcolor="#fee08b", color="#a07a30"]
   SA_CTL  [label=<<b>Control</b><br/>n = 136>,
            fillcolor="#92c5de", color="#406080"]
-  SA_STAT [label=<Fisher OR = 88.1  ·  p = 2.58e−18  ·  54× enrichment>,
+  SA_STAT [label=<Fisher OR = 88.1  ·  p = 5.15e−18  ·  54× enrichment>,
            shape=plaintext, fillcolor="white"]
   SA_F3 [label=<<b>Figure 3</b><br/>Panels D / E / F<br/>mechanism 38 / 23 / 8>,
          fillcolor="#dddddd", color="#666"]

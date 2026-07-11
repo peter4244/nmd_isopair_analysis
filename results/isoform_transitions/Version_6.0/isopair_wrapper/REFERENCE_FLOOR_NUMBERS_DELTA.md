@@ -16,7 +16,7 @@ pre → post per this table. "TBD" = to be read from the rendered Rmd / remainin
 | Control PTC rate | 2.1% (4/190) | **0.7%** (1/136) | figure3 export |
 | PTC fold-enrichment | 18× | **54×** | figure3 export |
 | Fisher OR | 28.2 | **88.1** | computed |
-| Fisher p | 1.88e-20 | **2.58e-18** | computed |
+| Fisher p | 1.88e-20 | **5.15e-18** | computed |
 | n=1,166 refaug (each arm) | 1,166 | **888** | figure5 n1166 export |
 | — NMD+/PTC+ | 1,050 | **818** | figure4 export |
 | — NMD+/PTC− | 116 | **70** | figure4 export |
