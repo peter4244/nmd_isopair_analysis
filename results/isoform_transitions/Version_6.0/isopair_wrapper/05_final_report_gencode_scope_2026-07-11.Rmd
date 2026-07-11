@@ -375,7 +375,7 @@ digraph cohort_cascade {
                   broad ∩ effectively_ptc ∩ original_ptc = FALSE<br/>
                   <b>n = 348</b><br/>
                   <font point-size="11">TD2/ref ORF 7.67×  ·  ref &gt; TD2 Kozak 286 / 348 (82%%)<br/>
-                  paired p = 2.6e−38  ·  TD2 downstream of ref AUG 99.0%%</font>>,
+                  paired p = 9.3e−36  ·  TD2 downstream of ref AUG 99.1%%</font>>,
           fillcolor="#7a3f8f", color="#3a1e44", fontcolor="white"]
 
   SC3 -> TD2_BR [label="  + TD2 CDS available  ", color="#4a3556"]

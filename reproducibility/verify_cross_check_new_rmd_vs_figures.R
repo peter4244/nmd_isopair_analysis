@@ -174,18 +174,18 @@ for (m in c("Frameshift", "In-frame stop", "3'UTR splice")) {
 # 9. TD2BiasEvidence supplement headlines
 cat("\n--- TD2BiasEvidence supplement summary ---\n")
 td2_checks <- list(
-  list(label="broad n",            regex="broad = ([0-9,]+) pairs",                                                        exp=888, type="count"),
-  list(label="broad TD2/ref ratio", regex="Broad 888 [0-9,.]+ [0-9,.]+ ([0-9.]+)×",                                       exp=4.53,  type="median", tol=0.05),
-  list(label="broad Kozak n",      regex="Broad [0-9,]+ ([0-9,]+) [0-9,]+ [0-9.]+%",                                      exp=343,  type="count"),
+  list(label="broad n",            regex="broad = ([0-9,]+) pairs",                                                        exp=819, type="count"),
+  list(label="broad TD2/ref ratio", regex="Broad 819 [0-9,.]+ [0-9,.]+ ([0-9.]+)×",                                       exp=4.52,  type="median", tol=0.05),
+  list(label="broad Kozak n",      regex="Broad [0-9,]+ ([0-9,]+) [0-9,]+ [0-9.]+%",                                      exp=316,  type="count"),
   list(label="broad Kozak %",      regex="Broad [0-9,]+ [0-9,]+ [0-9,]+ ([0-9.]+)% [0-9.]+% [0-9.eE+-]+ Occult",          exp=38.6, type="pct"),
-  list(label="broad Kozak p",      regex="Broad [0-9,]+ [0-9,]+ [0-9,]+ [0-9.]+% [0-9.]+% ([0-9.eE+-]+) Occult",          exp=2.92e-39, type="p"),
-  list(label="broad % downstream", regex="Broad 888 [0-9,]+ [0-9,]+ [0-9,]+ ([0-9.]+)%",                                 exp=42.9, type="pct"),
-  list(label="occult n",           regex="Occult-PTC ([0-9,]+) [0-9,.]+ [0-9.]+ [0-9.]+×",                                 exp=380,  type="count"),
+  list(label="broad Kozak p",      regex="Broad [0-9,]+ [0-9,]+ [0-9,]+ [0-9.]+% [0-9.]+% ([0-9.eE+-]+) Occult",          exp=1.47e-36, type="p"),
+  list(label="broad % downstream", regex="Broad 819 [0-9,]+ [0-9,]+ [0-9,]+ ([0-9.]+)%",                                 exp=42.7, type="pct"),
+  list(label="occult n",           regex="Occult-PTC ([0-9,]+) [0-9,.]+ [0-9.]+ [0-9.]+×",                                 exp=348,  type="count"),
   list(label="occult TD2/ref ratio", regex="Occult-PTC [0-9,]+ [0-9,.]+ [0-9.]+ ([0-9.]+)×",                               exp=7.67,  type="median", tol=0.05),
-  list(label="occult Kozak n",     regex="Occult-PTC 380 ([0-9,]+) [0-9,]+ [0-9.]+%",                                     exp=310,  type="count"),
-  list(label="occult Kozak %",     regex="Occult-PTC 380 310 [0-9]+ ([0-9.]+)%",                                          exp=81.6, type="pct"),
-  list(label="occult Kozak p",     regex="Occult-PTC 380 310 [0-9]+ [0-9.]+% [0-9.]+% ([0-9.eE+-]+)",                     exp=5.17e-38, type="p"),
-  list(label="occult % downstream", regex="Occult-PTC 380 0 375 5 ([0-9.]+)%",                                             exp=98.7, type="pct")
+  list(label="occult Kozak n",     regex="Occult-PTC 348 ([0-9,]+) [0-9,]+ [0-9.]+%",                                     exp=286,  type="count"),
+  list(label="occult Kozak %",     regex="Occult-PTC 348 286 [0-9]+ ([0-9.]+)%",                                          exp=82.2, type="pct"),
+  list(label="occult Kozak p",     regex="Occult-PTC 348 286 [0-9]+ [0-9.]+% [0-9.]+% ([0-9.eE+-]+)",                     exp=9.34e-36, type="p"),
+  list(label="occult % downstream", regex="Occult-PTC 348 0 345 3 ([0-9.]+)%",                                             exp=99.1, type="pct")
 )
 for (row in td2_checks) {
   obs <- extract_one(row$regex)
