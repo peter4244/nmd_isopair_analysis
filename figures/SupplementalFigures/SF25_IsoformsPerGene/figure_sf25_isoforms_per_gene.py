@@ -56,6 +56,14 @@ def main():
     bins = np.arange(1, max_bin + 2) - 0.5
     ax.hist(counts, bins=bins, color=BAR_COLOR, edgecolor="white", linewidth=0.6, zorder=3)
 
+    # Explicit y-headroom + capped ticks so the top y-tick label never clips the
+    # figure top edge (4-CT re-scope: median dropped to 6, tallest bin grew and
+    # the auto-limit placed a 250 tick that clipped).
+    bin_heights, _ = np.histogram(counts, bins=bins)
+    top_h = int(bin_heights.max())
+    ax.set_ylim(0, top_h * 1.12)
+    ax.set_yticks(np.arange(0, top_h, 50))
+
     # Median reference line
     ax.axvline(med, linestyle="--", color="#c0392b", linewidth=1.5, zorder=4)
     ymax = ax.get_ylim()[1]

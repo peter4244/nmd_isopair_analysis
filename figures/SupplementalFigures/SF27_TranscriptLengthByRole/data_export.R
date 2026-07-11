@@ -52,4 +52,5 @@ summ <- data.table(
              signif(pw(trip$ctrl_len, trip$ref_len), 3)))
 fwrite(summ, file.path(OUT, "descriptives_summary.tsv"), sep = "\t")
 cat(sprintf("SF27: %d triplets  medians ref/nmd/ctrl = %d/%d/%d nt\n",
-            nrow(trip), median(trip$ref_len), median(trip$nmd_len), median(trip$ctrl_len)))
+            nrow(trip), as.integer(round(median(trip$ref_len))),
+            as.integer(round(median(trip$nmd_len))), as.integer(round(median(trip$ctrl_len)))))
