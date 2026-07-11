@@ -46,20 +46,20 @@ if (grepl("re-intersect|gene-matched re-intersection|1:1 gene-matched", fig4_blo
 }
 
 cat("\n=== Section C numbers ===\n")
-if (grepl("1,050|1050", fig4_block)) {
-  pass("METHODS Fig 4 mentions 1,050 (new Section C PTC+)")
+if (grepl("756", fig4_block)) {
+  pass("METHODS Fig 4 mentions 756 (new Section C PTC+)")
 } else {
-  fail("METHODS Fig 4 does NOT mention 1,050 (new Section C PTC+ n)")
+  fail("METHODS Fig 4 does NOT mention 756 (new Section C PTC+ n)")
 }
-if (grepl("[^,0-9]113[^,0-9]", fig4_block)) {
-  pass("METHODS Fig 4 mentions 113 (new Section C PTC- n)")
+if (grepl("[^,0-9]63[^,0-9]", fig4_block)) {
+  pass("METHODS Fig 4 mentions 63 (new Section C PTC- n)")
 } else {
-  fail("METHODS Fig 4 does NOT mention 113 (new Section C PTC- n)")
+  fail("METHODS Fig 4 does NOT mention 63 (new Section C PTC- n)")
 }
-if (grepl("1,166|1166", fig4_block)) {
-  pass("METHODS Fig 4 mentions 1,166 (new Section C Control n)")
+if (grepl("819", fig4_block)) {
+  pass("METHODS Fig 4 mentions 819 (new Section C Control n)")
 } else {
-  fail("METHODS Fig 4 does NOT mention 1,166 (new Section C Control n)")
+  fail("METHODS Fig 4 does NOT mention 819 (new Section C Control n)")
 }
 
 if (grepl("1,489|1489", fig4_block)) {
