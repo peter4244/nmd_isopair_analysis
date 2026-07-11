@@ -23,7 +23,10 @@ pre → post per this table. "TBD" = to be read from the rendered Rmd / remainin
 | n=1,166 PTC rate | 90.1% (1050/1166) | **92.1%** (818/888) | figure4 export |
 | occult-PTC scope | 492 | **380** | SF33 export |
 | Kozak broad paired-Wilcoxon p | 1.21e-38 | **2.92e-39** | SF33 export |
-| Kozak occult paired-Wilcoxon p | 2.6e-38 | **5.17e-38** | SF33 export |
+| Kozak occult paired-Wilcoxon p | 2.6e-38 | **5.17e-38** | SF34 export |
+| SF39 branch-SHAP subclass n (PTC+/PTC−/Ctrl) | 1,016/95/1,107 | **794/60/851** | SF39 |
+| SF39 ATG-branch share PTC+ / PTC− | 9.0% / 18.1% | **9.0% / 17.7%** | SF39 |
+| **§5 ATG-branch ratio PTC−:PTC+** ("roughly 3×") | 2.21× | **1.98×** (~2×) → soften prose to "~twice" | SF39 |
 | Reference-share median | 31% | **TBD (≥25% by construction; expect ~50%+)** | Rmd §1 render |
 | Transcript-length medians (ref/NMD/ctrl) | 2893/3049/2762 | TBD | Rmd render |
 | %ENST reference / %novel NMD | 69.7 / 76.6 | TBD | Rmd render |
