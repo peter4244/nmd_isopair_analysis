@@ -9,7 +9,8 @@ Sorted by NMD-side %GAIN, descending.
 Significance stars: Fisher's exact test on the 2×2 (GAIN/LOSS × NMD/Control)
 count table for each event type.
 
-Data source: Isopair pipeline canonical `table1c_gain_loss_events.csv`
+Data source: `table1c_gain_loss_events.csv` (rebuilt by this dir's data_export.R
+on floored pop_BC-matched profiles; the legacy-Rmd producer is deprecated)
 (from `05_final_report_mashr.Rmd` § "Gain/Loss Direction by Event Type").
 """
 
