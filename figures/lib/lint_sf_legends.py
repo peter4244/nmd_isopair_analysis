@@ -84,8 +84,9 @@ def check(path: Path):
 
 
 def main():
+    base = Path(__file__).resolve().parents[1]
     roots = [Path(p) for p in sys.argv[1:]] or \
-            [Path(__file__).resolve().parents[1] / "SupplementalFigures"]
+            [base / "SupplementalFigures", base / "multipanel"]
     files = sorted({f for r in roots for f in
                     ([r] if r.is_file() else r.rglob("*legend*.md"))})
     if not files:

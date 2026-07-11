@@ -23,9 +23,9 @@ Numbered per collection order. **Status codes:** ✅ done, 🔄 in progress, ⏸
 7. **⏳ SF34 Panel C** — same overlap. Same fix (companion figure — always sync).
 8. **⏳ SF37 legend** — "Abbreviations" on separate line. Fix: put inline like other SFs.
 9. **⏳ Repo-wide** — `N %` (space between number and %) → `N%`. Grep `figures/SupplementalFigures/**/*_legend.md`.
-10. **⏸ SF38 legend prose** — Pete flagged something specific was wrong; needs his clarification.
+10. **⏳ SF38 legend prose** — too long AND contains interpretive commentary. Violates the `feedback_nmd_sf_legend_style.md` rule (legends must not interpret biology/mechanism, just describe what's shown). Effectively subsumed by #12 — extracting the brief docx version replaces it with the non-interpretive short form. Do #12 first; if any interpretive prose survives after extraction, strip it manually.
 11. **⏸ SF38 in-plot legend overlaps content** — same class as #2a (validator gap). Handled by B3 validator (assert_legend_clear) but SF38 still fails with ~5000 px overlap; part of the 4 residual B3 failures.
-12. **⏸ SF38-SF42 legends: verbose style** — Pete wants me to extract legends from docx and replace on-disk `_legend.md` files. Question pending: base `.docx` or `_PJCcopy.docx` as source?
+12. **⏳ SF38-SF42 legends: verbose style** — extract legends from **base `nmd_supplemental_figures_sf24_sf42.docx`** (Pete confirmed 2026-07-10) and replace the on-disk `_legend.md` files for SF38, SF39, SF40, SF41, SF42.
 13. **⏳ SF29 xtick crowding** — "Missing Internal" (2-line) and "IR diff 3′" touch. Validator gap: `assert_tick_labels_disjoint` needs `min_gap_px=~8` parameter, not just no-overlap. Would also close #6/#7 gaps.
 
 ## Validator work still queued (from B roadmap)
