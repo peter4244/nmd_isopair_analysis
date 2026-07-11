@@ -20,8 +20,8 @@ library(knitr)
 library(DT)
 
 HERE     <- "."
-SCORES   <- file.path(HERE, "per_isoform_scores_2026.6.20.tsv")
-METRICS  <- file.path(HERE, "metrics_summary_2026.6.20.tsv")
+SCORES   <- file.path(HERE, "per_isoform_scores_2026.7.11.tsv")
+METRICS  <- file.path(HERE, "metrics_summary_2026.7.11.tsv")
 FIG_PNG  <- "../../figures/SupplementalFigures/SF42_ModelComparison/figure_s_model_comparison.png"
 
 scores  <- fread(SCORES)
@@ -184,7 +184,7 @@ out <- m[, .(Subclass, Model, n,
               `R²`     = formatC(r2,       digits = 2, format = "f"),
               MAE      = formatC(mae,      digits = 2, format = "f"),
               RMSE     = formatC(rmse,     digits = 2, format = "f"))]
-kable(out, caption = "Test-set metrics (n = 561 isoforms; chr1/3/5/7 held out).")
+kable(out, caption = "Test-set metrics (n = 415 isoforms; chr1/3/5/7 held out).")
 ```
 
 ### 5.1 Pooled
@@ -290,11 +290,11 @@ All files live under `code/nmd_predictor_comparison/`:
 | `METHODS.md`                               | manual (pre-registration)            |
 | `README.md`                                | manual                               |
 | `predictions_all_atg500_stop500.tsv`       | `explorer_run/run_infer_all.py` (cluster) |
-| `isoforms_2026.6.20.tsv`                   | `01_extract_our_isoforms.R`          |
-| `nmdetective_b_scores_2026.6.20.tsv`       | `02_score_nmdetective_b.R`           |
-| `nmdep_rule_baseline_scores_2026.6.20.tsv` | `03_score_nmdep_rule_baseline.R`     |
-| `per_isoform_scores_2026.6.20.tsv`         | `04_compute_metrics.R`               |
-| `metrics_summary_2026.6.20.tsv`            | `04_compute_metrics.R`               |
+| `isoforms_2026.7.11.tsv`                   | `01_extract_our_isoforms.R`          |
+| `nmdetective_b_scores_2026.7.11.tsv`       | `02_score_nmdetective_b.R`           |
+| `nmdep_rule_baseline_scores_2026.7.11.tsv` | `03_score_nmdep_rule_baseline.R`     |
+| `per_isoform_scores_2026.7.11.tsv`         | `04_compute_metrics.R`               |
+| `metrics_summary_2026.7.11.tsv`            | `04_compute_metrics.R`               |
 | this report (`.Rmd` and rendered `.html`)  | `Rscript -e 'rmarkdown::render(...)'` |
 
 Figure + legend:

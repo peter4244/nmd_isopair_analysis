@@ -8,7 +8,7 @@
 code/nmd_predictor_comparison/                       ← analysis pipeline (this folder)
 ├── METHODS.md                                       ← pre-registration + decision log; canonical
 ├── README.md                                        ← how to reproduce + dependencies
-├── 01_extract_our_isoforms.R                        ← gather n=1,166 scope + features + gold standard
+├── 01_extract_our_isoforms.R                        ← gather n=819 scope + features + gold standard
 ├── 02_score_nmdetective_b.R                         ← apply published 4-rule decision tree (50/150/407)
 ├── 03_score_nmdep_rule_baseline.R                   ← apply NMDEP-re-thresholded rules (49/120/355)
 ├── 04_compute_metrics.R                             ← Spearman / Pearson / R² / MAE / RMSE
@@ -17,13 +17,13 @@ code/nmd_predictor_comparison/                       ← analysis pipeline (this
 │   ├── run_infer_all.py                             ← (also pushed to NMD_orf_model_v5_4ct repo)
 │   └── slurm_infer_all.sh
 ├── predictions_all_atg500_stop500.tsv               ← committed: model scores on the model's full H5
-├── isoforms_2026.6.20.tsv                           ← committed: per-isoform input table
-├── nmdetective_b_scores_2026.6.20.tsv               ← committed: NMDetective-B leaf assignments
-├── nmdep_rule_baseline_scores_2026.6.20.tsv         ← committed: NMDEP rule leaf assignments
-├── per_isoform_scores_2026.6.20.tsv                 ← committed: joined per-isoform model scores
-├── metrics_summary_2026.6.20.tsv                    ← committed: pooled, stratified, test-only slices
+├── isoforms_2026.7.11.tsv                           ← committed: per-isoform input table
+├── nmdetective_b_scores_2026.7.11.tsv               ← committed: NMDetective-B leaf assignments
+├── nmdep_rule_baseline_scores_2026.7.11.tsv         ← committed: NMDEP rule leaf assignments
+├── per_isoform_scores_2026.7.11.tsv                 ← committed: joined per-isoform model scores
+├── metrics_summary_2026.7.11.tsv                    ← committed: pooled, stratified, test-only slices
 ├── nmd_predictor_comparison.Rmd                     ← reproducible report (test-only primary frame)
-├── nmd_predictor_comparison_2026.6.20.html          ← rendered HTML report
+├── nmd_predictor_comparison_2026.7.11.html          ← rendered HTML report
 └── external/                                        ← gitignored; only if NMDetective-A is run
 
 figures/SupplementalFigures/SF42_ModelComparison/         ← rendered SF (built after the pipeline runs)
@@ -48,12 +48,12 @@ The following were agreed in conversation on 2026-06-20.
 
 ### 2.1 Cohort
 
-Use the full **n = 1,166 ref-AUG-traceable cohort** (the same one supporting Figure 4 Panels C/D and Figure 5 Panel G):
-- 1,050 NMD+/PTC+ comparator isoforms
-- 116 NMD+/PTC− comparator isoforms
-- 1,166 matched non-NMD Control comparator isoforms
+Use the full **n = 819 ref-AUG-traceable cohort** (the same one supporting Figure 4 Panels C/D and Figure 5 Panel G):
+- 756 NMD+/PTC+ comparator isoforms
+- 63 NMD+/PTC− comparator isoforms
+- 819 matched non-NMD Control comparator isoforms
 
-Total: **2,332 isoforms.** No train/test split filtering; the comparison is "given these isoforms, what do the various models predict."
+Total: **1,638 isoforms.** No train/test split filtering; the comparison is "given these isoforms, what do the various models predict."
 
 ### 2.2 Gold standard
 
@@ -65,7 +65,7 @@ Higher mashr log-FC = stronger NMD substrate. Controls cluster near zero; PTC+ N
 
 **Apply each model's published feature definitions to features computed from OUR isoform structures**, not to canonical Ensembl/UCSC transcripts at lookup positions. This eliminates the "canonical-transcript-only" limitation of variant-level models and makes the comparison apples-to-apples at the isoform level.
 
-For each of the 2,332 isoforms we compute four NMDetective-B features from its long-read-observed transcript structure:
+For each of the 1,638 isoforms we compute four NMDetective-B features from its long-read-observed transcript structure:
 - `InLastExon` — is the comparator stop codon in the last exon?
 - `DistanceToStart` — nt from the comparator's start codon to its stop codon
 - `ExonLength` — length of the exon containing the comparator stop codon
@@ -109,23 +109,23 @@ Stratified by isoform subclass (PTC+, PTC−, Control) and pooled across all thr
 
 | Source | What | Where |
 |---|---|---|
-| `ref_atg_analysis.rds` | Per-isoform `category`, `comp_stop_genomic`, `n_downstream_ejc` for the 1,166 scope | `results/.../data_mashr/analysis_cache/` |
+| `ref_atg_analysis.rds` | Per-isoform `category`, `comp_stop_genomic`, `n_downstream_ejc` for the 819 scope | `results/.../data_mashr/analysis_cache/` |
 | `structures.rds` | Per-isoform exon coordinates, junction positions | `results/.../data_mashr/` |
 | `cds.rds` | Per-isoform start codon position | `results/.../data_mashr/` |
 | Mashr per-cell-type DIE | Per-isoform mashr posterior mean + lfsr | `isocall_dge/mashr/nmd_mashr_die_*_2026.3.10.csv` |
-| Our model predictions | Per-isoform predicted NMD probability across the model's full H5 universe (~40k isoforms; train + val + test + test_paralog) | `predictions_all_atg500_stop500.tsv` (this folder); produced cluster-side by `explorer_run/run_infer_all.py` running `NMDDataset(split="all")` against `~/cc/nmd_orf_model_v5_4ct/results_4ct/nmd_orf_data.h5` and the trained checkpoint `best_model_atg500_stop500.pt`. Replaces the earlier test-only `predictions_atg500_stop500.tsv` (561 cohort intersection → 2,218). |
+| Our model predictions | Per-isoform predicted NMD probability across the model's full H5 universe (~40k isoforms; train + val + test + test_paralog) | `predictions_all_atg500_stop500.tsv` (this folder); produced cluster-side by `explorer_run/run_infer_all.py` running `NMDDataset(split="all")` against `~/cc/nmd_orf_model_v5_4ct/results_4ct/nmd_orf_data.h5` and the trained checkpoint `best_model_atg500_stop500.pt`. Replaces the earlier test-only `predictions_atg500_stop500.tsv` (the earlier file covered only the held-out test split; the full-cohort file scores train + val + test + test_paralog, giving 1,570 of 1,638 cohort isoforms a prediction). |
 
 ### 3.2 Steps
 
-1. **Cohort + gold-standard table** (`01_extract_our_isoforms.R`). For each of the 2,332 isoforms: gather `gene_id`, `comparator_isoform_id`, `subclass` (PTC+ / PTC− / Control), `mashr_posterior_mean_logfc` (the gold standard), and the four feature columns needed for NMDetective-B (`in_last_exon`, `distance_to_start_nt`, `exon_length_at_stop_nt`, `within_50nt_of_last_ej`). Write `isoforms_2026.6.20.tsv`.
+1. **Cohort + gold-standard table** (`01_extract_our_isoforms.R`). For each of the 1,638 isoforms: gather `gene_id`, `comparator_isoform_id`, `subclass` (PTC+ / PTC− / Control), `mashr_posterior_mean_logfc` (the gold standard), and the four feature columns needed for NMDetective-B (`in_last_exon`, `distance_to_start_nt`, `exon_length_at_stop_nt`, `within_50nt_of_last_ej`). Write `isoforms_2026.7.11.tsv`.
 
 2. **NMDetective-B scoring** (`02_score_nmdetective_b.R`). Apply the published 4-rule decision tree with thresholds 50 / 150 / 407 nt to each isoform. Output binary trigger/escape call AND a continuous NMD-efficacy estimate via the leaf-level NMD score from their Figure 1c (last-exon: 0.00; long-exon: 0.41; start-proximal: 0.12; 50nt-rule: 0.20; trigger: 0.65). Higher = stronger NMD trigger.
 
 3. **NMDEP rule-baseline scoring** (`03_score_nmdep_rule_baseline.R`). Same 4-rule structure, re-thresholded to 49 / 120 / 355 nt (Table 3 of Saadat 2025). Same leaf-level NMD-efficacy assignment as NMDetective-B unless their paper specifies different leaf scores (re-check; if not, use the same leaf values).
 
-4. **Our model scores**. Pull `prob` from `predictions_all_atg500_stop500.tsv` (full-cohort: train + val + test + test_paralog) into `01`'s output. Coverage: 2,218 of the 2,332 cohort isoforms have a model prediction (95%); the remaining 114 were dropped during the model's `data_prep` pipeline (sequence/ORF/paralog filters).
+4. **Our model scores**. Pull `prob` from `predictions_all_atg500_stop500.tsv` (full-cohort: train + val + test + test_paralog) into `01`'s output. Coverage: 1,570 of the 1,638 cohort isoforms have a model prediction (95.85%); the remaining 68 were dropped during the model's `data_prep` pipeline (sequence/ORF/paralog filters).
 
-5. **Metrics** (`04_compute_metrics.R`). For each model × stratum (PTC+ / PTC− / Control / pooled): Spearman, Pearson, R², MAE, RMSE against `mashr_posterior_mean_logfc`. The script writes pooled metrics on the full cohort, the head-to-head intersection on which all three models score the same isoform, and — the primary analytical frame for the figure and report — the **test-only head-to-head** restricted to H5 split == "test" (chr1/3/5/7 holdout the deep-learning model never saw at training time; n = 561 isoforms from 293 genes). Test-only is the right frame for a fair performance comparison: the rule-based models also see these isoforms for the first time. Write `metrics_summary_2026.6.20.tsv`.
+5. **Metrics** (`04_compute_metrics.R`). For each model × stratum (PTC+ / PTC− / Control / pooled): Spearman, Pearson, R², MAE, RMSE against `mashr_posterior_mean_logfc`. The script writes pooled metrics on the full cohort, the head-to-head intersection on which all three models score the same isoform, and — the primary analytical frame for the figure and report — the **test-only head-to-head** restricted to H5 split == "test" (chr1/3/5/7 holdout the deep-learning model never saw at training time; n = 415 isoforms from 216 genes). Test-only is the right frame for a fair performance comparison: the rule-based models also see these isoforms for the first time. Write `metrics_summary_2026.7.11.tsv`.
 
 6. **Reproducible report** (`nmd_predictor_comparison.Rmd`). Knit to a self-contained HTML with inline R values, the cohort + features description, the metrics table, the embedded figure, and the deferred-models discussion. The report is the primary deliverable for collaborators wanting a single-page summary.
 
@@ -133,11 +133,11 @@ Stratified by isoform subclass (PTC+, PTC−, Control) and pooled across all thr
 
 Committed (datestamped per CLAUDE.md `yyyy.m.d` convention):
 - `predictions_all_atg500_stop500.tsv` — per-isoform deep-learning model score on the model's full H5 (~40k rows; produced cluster-side via `explorer_run/run_infer_all.py`)
-- `isoforms_2026.6.20.tsv` — per-isoform feature table + gold-standard + `h5_split` + `our_model_prob`
-- `nmdetective_b_scores_2026.6.20.tsv` — per-isoform NMDetective-B leaf assignment
-- `nmdep_rule_baseline_scores_2026.6.20.tsv` — per-isoform NMDEP-rule leaf assignment
-- `per_isoform_scores_2026.6.20.tsv` — joined per-isoform model scores + gold standard
-- `metrics_summary_2026.6.20.tsv` — pooled, per-subclass, head-to-head, and test-only-sensitivity Spearman / Pearson / R² / MAE / RMSE
+- `isoforms_2026.7.11.tsv` — per-isoform feature table + gold-standard + `h5_split` + `our_model_prob`
+- `nmdetective_b_scores_2026.7.11.tsv` — per-isoform NMDetective-B leaf assignment
+- `nmdep_rule_baseline_scores_2026.7.11.tsv` — per-isoform NMDEP-rule leaf assignment
+- `per_isoform_scores_2026.7.11.tsv` — joined per-isoform model scores + gold standard
+- `metrics_summary_2026.7.11.tsv` — pooled, per-subclass, head-to-head, and test-only-sensitivity Spearman / Pearson / R² / MAE / RMSE
 
 Not committed:
 - `external/` — only if NMDetective-A or full NMDEP are run
@@ -161,7 +161,7 @@ Not committed:
 ## 5. Sign-off
 
 All decisions locked in 2026-06-20:
-- §2.1 Cohort: all 2,332 isoforms in the n = 1,166 ref-AUG-traceable scope ✓
+- §2.1 Cohort: all 1,638 isoforms in the n = 819 ref-AUG-traceable scope ✓
 - §2.2 Gold standard: per-isoform mashr posterior mean log-FC under SMG1i (4-CT) ✓
 - §2.3 Scoring: features from our isoforms, NOT canonical-transcript lookup ✓
 - §2.4 Models: NMDetective-B and NMDEP rule baseline in v1; defer full models unless easy ✓

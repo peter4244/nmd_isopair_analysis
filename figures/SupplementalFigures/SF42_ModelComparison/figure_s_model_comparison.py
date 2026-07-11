@@ -15,8 +15,8 @@ Two panels:
       bars = subclass × model). Shows where each model's predictions hold
       up vs break down.
 
-Data: code/nmd_predictor_comparison/per_isoform_scores_2026.6.20.tsv
-      code/nmd_predictor_comparison/metrics_summary_2026.6.20.tsv
+Data: code/nmd_predictor_comparison/per_isoform_scores_2026.7.11.tsv
+      code/nmd_predictor_comparison/metrics_summary_2026.7.11.tsv
 
 Style: canonical NMD palette (peach/yellow/blue for PTC+/PTC−/Control);
        Arial; validator-clean.
@@ -46,8 +46,8 @@ NATIVE_W = 12.0
 BODY_FS = docx_body_fs(NATIVE_W)
 
 ANALYSIS = HERE.parents[3] / "code" / "nmd_predictor_comparison"
-SCORES = ANALYSIS / "per_isoform_scores_2026.6.20.tsv"
-METRICS = ANALYSIS / "metrics_summary_2026.6.20.tsv"
+SCORES = ANALYSIS / "per_isoform_scores_2026.7.11.tsv"
+METRICS = ANALYSIS / "metrics_summary_2026.7.11.tsv"
 
 # Canonical palette (project_nmd_figure_palette)
 GROUP_LABEL = {

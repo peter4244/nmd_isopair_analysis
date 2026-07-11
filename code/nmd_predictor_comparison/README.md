@@ -49,7 +49,7 @@ Rscript 04_compute_metrics.R
 # 5. Knit the reproducible report (HTML, self-contained, figure embedded)
 RSTUDIO_PANDOC=/Applications/RStudio.app/Contents/Resources/app/quarto/bin/tools/aarch64 \
   Rscript -e "rmarkdown::render('nmd_predictor_comparison.Rmd', \
-                                 output_file='nmd_predictor_comparison_2026.6.20.html')"
+                                 output_file='nmd_predictor_comparison_2026.7.11.html')"
 ```
 
 Each step writes one datestamped TSV that the next step reads. The four R scripts together run in under a minute on a laptop. Heavy compute (model inference) is the prerequisite step on Explorer.
@@ -61,11 +61,11 @@ Committed (datestamped per CLAUDE.md `yyyy.m.d` convention):
 | File | Produced by | Contents |
 |---|---|---|
 | `predictions_all_atg500_stop500.tsv` | `explorer_run/run_infer_all.py` (on Explorer) | Per-isoform deep-learning model score across the full H5 universe (~40k isoforms; `isoform_id`, `chr`, `h5_split`, `label`, `logit`, `prob`) |
-| `isoforms_2026.6.20.tsv` | 01 | Per-isoform input row: `gene_id`, `comparator_isoform_id`, `subclass` (PTC+ / PTC− / Control), `stop_tx_pos_used`, the four NMDetective rule features, `mashr_posterior_mean_logfc`, `chr`, `h5_split`, `our_model_prob` |
-| `nmdetective_b_scores_2026.6.20.tsv` | 02 | Per-isoform NMDetective-B leaf assignment (`nmdetective_b_score`, `_leaf`, `_call`) |
-| `nmdep_rule_baseline_scores_2026.6.20.tsv` | 03 | Per-isoform NMDEP rule baseline leaf assignment (same columns, NMDEP thresholds) |
-| `per_isoform_scores_2026.6.20.tsv` | 04 | Joined per-isoform scores across all three models + gold standard (one row per cohort isoform) |
-| `metrics_summary_2026.6.20.tsv` | 04 | Per-model × per-stratum Spearman / Pearson / R² / MAE / RMSE — pooled, by-subclass, head-to-head intersection, and test-only sensitivity slice (`head-to-head:test:*`) |
+| `isoforms_2026.7.11.tsv` | 01 | Per-isoform input row: `gene_id`, `comparator_isoform_id`, `subclass` (PTC+ / PTC− / Control), `stop_tx_pos_used`, the four NMDetective rule features, `mashr_posterior_mean_logfc`, `chr`, `h5_split`, `our_model_prob` |
+| `nmdetective_b_scores_2026.7.11.tsv` | 02 | Per-isoform NMDetective-B leaf assignment (`nmdetective_b_score`, `_leaf`, `_call`) |
+| `nmdep_rule_baseline_scores_2026.7.11.tsv` | 03 | Per-isoform NMDEP rule baseline leaf assignment (same columns, NMDEP thresholds) |
+| `per_isoform_scores_2026.7.11.tsv` | 04 | Joined per-isoform scores across all three models + gold standard (one row per cohort isoform) |
+| `metrics_summary_2026.7.11.tsv` | 04 | Per-model × per-stratum Spearman / Pearson / R² / MAE / RMSE — pooled, by-subclass, head-to-head intersection, and test-only sensitivity slice (`head-to-head:test:*`) |
 | `nmd_predictor_comparison.Rmd` + `nmd_predictor_comparison_YYYY.M.D.html` | 5 (manual knit) | Reproducible HTML report with inline R values, methods, metrics table, and embedded figure. Primary analytical frame is test-only (chr1/3/5/7 held-out split) for fair comparison against the rule-based models which never saw any of our data. |
 
 ## What "gold standard" means here

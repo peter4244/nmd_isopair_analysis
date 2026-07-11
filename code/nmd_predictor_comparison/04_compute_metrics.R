@@ -8,8 +8,8 @@
 # stratified by subclass.
 #
 # Outputs:
-#   per_isoform_scores_2026.6.20.tsv  — combined per-isoform score table
-#   metrics_summary_2026.6.20.tsv     — pooled and stratified metrics
+#   per_isoform_scores_2026.7.11.tsv  — combined per-isoform score table
+#   metrics_summary_2026.7.11.tsv     — pooled and stratified metrics
 # =============================================================================
 
 suppressPackageStartupMessages({
