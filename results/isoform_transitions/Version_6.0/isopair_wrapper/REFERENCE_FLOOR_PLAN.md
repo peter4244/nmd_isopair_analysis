@@ -52,5 +52,6 @@
 - [x] **Phase 4** — all 6 verifiers PASS (252 checks); expecteds independently re-derived; caught+fixed Fisher one-sided/two-sided + pass2 N_BC scope. 5-step: steps 1-4 covered by suite+independent derivations; step 5 (document floor in METHODS) rolls into Phase 6/7
 - [~] **Phase 5** — 2026-06-15 Rmd bannered LEGACY/superseded (done); SF26 supersession handled in rebuild
 - [x] **Phase 6** — results_to_code_map.md: §4 claims 4.1-4.46 + scope table + verifiable-summary all floored; M11 documents the floor; 4.5 drift RESOLVED (70/75 was dominant-share mislabel -> 67/71); all 2026-06-15->2026-07-10 filename bumps
-- [ ] **Phase 7** — manuscript find/replace (grep Abstract + legends + supplement, not only §4); Methods (Isopair vignette + manuscript); docx rebuild
+- [x] **Phase 7** — manuscript find/replace pairs drafted (paper/section4_findreplace_2026-07-10_referencefloor.md: 26 §4/legend + 5 Methods incl. floor documentation); SF legends updated; docx rebuilt. AWAITS Pete applying pairs to the Google Doc + verifying vs live Doc.
+- [ ] **Phase 8** — one coherent commit; dual-push
 - [ ] **Phase 8** — one coherent commit; dual-push
