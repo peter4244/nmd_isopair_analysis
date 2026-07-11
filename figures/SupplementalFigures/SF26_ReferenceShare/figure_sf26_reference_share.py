@@ -41,7 +41,10 @@ from ggplot_style import (
 apply_ggplot_rcparams()
 
 NATIVE_W = 6.5
-BODY_FS = docx_body_fs(NATIVE_W)
+# Single wide panel with ample whitespace — target 13 pt (below the ~14 pt
+# ceiling) so axis titles read well; the default 10 pt floor looked
+# undersized against the rcParams-default tick labels (Pete 2026-07-10).
+BODY_FS = docx_body_fs(NATIVE_W, target_pt=13)
 
 DATA = HERE / "data"
 
@@ -94,6 +97,9 @@ def main():
     ax.set_ylabel("Number of genes", fontsize=BODY_FS)
     ax.set_xlim(0, 100)
     ax.set_xticks([0, 25, 50, 75, 100])
+    # Match tick-label size to the local BODY_FS (else ticks fall back to the
+    # module rcParams default, dwarfing the axis titles).
+    ax.tick_params(axis="both", labelsize=BODY_FS)
 
     # No overall figure title — caption carries the title role (Yul-style).
     render_and_validate(fig, HERE / "figure_sf26_reference_share",
