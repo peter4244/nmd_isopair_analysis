@@ -51,8 +51,8 @@ flag("Rationale §11 mentions 2x2 composite",         grepl("2.2 composite|2.2 l
 flag("Rationale §11 mentions 12.x8. landscape",      grepl("12.x8.|12.+x.+8|12.*8.*landscape", rat_txt), TRUE)
 flag("Rationale §11 mentions consolidated supplement", grepl("TD2BiasEvidence|consolidated", rat_txt), TRUE)
 # CRITICAL: Section C numbers should be the new 1050/113/1166, not 1489/163/1286.
-flag("Rationale §11 mentions 1,050 (new Section C PTC+ n)", grepl("1,050|1050", rat_txt), TRUE)
-flag("Rationale §11 mentions 1,166 (new Section C Control n)", grepl("1,166|1166", rat_txt), TRUE)
+flag("Rationale §11 mentions 756 (Section C PTC+ n)", grepl("756", rat_txt), TRUE)
+flag("Rationale §11 mentions 819 (Section C Control n)", grepl("819", rat_txt), TRUE)
 # Detect stale numbers
 flag("Rationale does NOT use 1,489 for Section C PTC+ tables (line 256-258)",
      grepl("\\| \\*\\*NMD\\+/PTC\\+\\*\\* \\| 1,489", rat_txt), FALSE)
@@ -69,20 +69,20 @@ flag("data_export.R header comment says new 1050/113/1166 (not 1489/163/1286)",
 
 cat("\n=== section4_findreplace_2026-07-11_4ct.md ===\n")
 # Pair 1 (the actual replacement prose at lines ~76-80) must have the new numbers.
-flag("FindReplace Pair 1 mentions n=1,050 NMD+/PTC+",     grepl("1,050 NMD\\+/PTC\\+|n=1,050", fr_txt), TRUE)
-flag("FindReplace Pair 1 mentions n=113 NMD+/PTC-",       grepl("113 NMD\\+/PTC-|n=113", fr_txt), TRUE)
-flag("FindReplace Pair 1 mentions n=1,166 Control",       grepl("1,166 Control|n=1,166", fr_txt), TRUE)
+flag("FindReplace has 4-CT Section C PTC+ n=756", grepl("756", fr_txt), TRUE)
+flag("FindReplace has 4-CT Section C PTC- n=63", grepl("[^0-9]63 NMD|63 had no", fr_txt), TRUE)
+flag("FindReplace has 4-CT Section C Control n=819", grepl("819", fr_txt), TRUE)
 # Pair 1 should also include the new Section A numbers
-flag("FindReplace Pair 1 mentions n=72 NMD+/PTC+",        grepl("72 NMD\\+/PTC\\+", fr_txt), TRUE)
-flag("FindReplace Pair 1 mentions n=118 NMD+/PTC-",       grepl("118 NMD\\+/PTC-", fr_txt), TRUE)
+flag("FindReplace has 4-CT Section A PTC+ n=48", grepl("48 NMD./PTC.", fr_txt), TRUE)
+flag("FindReplace has 4-CT Section A PTC- n=82", grepl("82 NMD./PTC.", fr_txt), TRUE)
 # Pair 2 must describe what's now in the supplement (no longer a 2-panel main fig section)
-flag("FindReplace acknowledges TD2 evidence in supplement", grepl("supplement|Fig SX|SX", fr_txt), TRUE)
+flag("FindReplace acknowledges TD2 evidence", grepl("TD2|SF34|SF33", fr_txt), TRUE)
 # Stale summary text
 flag("FindReplace does NOT call Figure 4 a '6-panel'",  grepl("6-panel|six-panel|six panel", fr_txt), FALSE)
 flag("FindReplace does NOT reference 3x2 / 12.x12. portrait",
      grepl("3.2 layout|12.+x.+12.+portrait|3.2.*portrait", fr_txt), FALSE)
 flag("FindReplace summary table uses NEW Section C numbers (1,050/113/1,166)",
-     grepl("1,050|1,166", fr_txt), TRUE)
+     grepl("756|819", fr_txt), TRUE)
 # The summary "What §4 is now saying" block (line 17) says 1,489/163/1,286 — flag
 flag("FindReplace summary does NOT still claim Section C n=1,489/163/1,286",
      grepl("1,489/163/1,286|n=1,489", fr_txt), FALSE)

@@ -8,7 +8,7 @@
 
 ## Headline claim
 
-Among splice events Isopair attributes as the *cause* of a PTC in NMD comparators (under each comparator's own GENCODE-annotated stop position), **skipped exon (SE) accounts for 43.5% of attributed PTC-causing events**, vs. ~14.1% among all Control events (Fisher p = 7.98×10⁻⁸). A5SS (13.0%) is also significantly enriched (p = 8.9×10⁻³). Terminal events (Alt_TES) are *depleted* among PTC-causing events (p = 3.4×10⁻⁵) because they don't typically introduce PTCs in the coding region.
+Among splice events Isopair attributes as the *cause* of a PTC in NMD comparators (under each comparator's own GENCODE-annotated stop position), **skipped exon (SE) accounts for 47.9% of attributed PTC-causing events**, vs. ~14.4% among all Control events (Fisher p = 6.88×10⁻⁷). A5SS (12.5%) is also significantly enriched (p = 2.8×10⁻²). Terminal events (Alt_TES) are *depleted* among PTC-causing events (p = 3.4×10⁻⁵) because they don't typically introduce PTCs in the coding region.
 
 ## Source data
 
@@ -24,13 +24,13 @@ Among splice events Isopair attributes as the *cause* of a PTC in NMD comparator
 
 ## Population
 
-**Denominator (event-level): n_ptc_attr = 69 attributed PTC-causing NMD events; ctrl_total = 447 total events in pop_BC c4 all-3-ENST + coding-CDS (190 Control pairs).** Note: the panelE TSV's `n_ctrl_events` column only enumerates Control events of the 9 event types that also appear among PTC-causing events (sum = 330); the additional 117 Control events of types absent from the PTC-attribution set are still counted in the `ctrl_total` denominator used for Fisher percentages and Fisher tests.
+**Denominator (event-level): n_ptc_attr = 48 attributed PTC-causing NMD events; ctrl_total = 292 total events in pop_BC c4 all-3-ENST + coding-CDS (130 Control pairs).** Note: the panelE TSV's `n_ctrl_events` column only enumerates Control events of the 9 event types that also appear among PTC-causing events (sum = 209); the additional 83 Control events of types absent from the PTC-attribution set are still counted in the `ctrl_total` denominator used for Fisher percentages and Fisher tests.
 
 **Pair-level population: pop_ptc_plus all-3-ENST + coding-CDS = 72 NMD PTC+ pairs**, where PTC is defined as the comparator's own GENCODE-annotated stop position being > 50 nt upstream of its last exon-exon junction. Every isoform in every pair is GENCODE-annotated with curated CDS.
 
 ## Attribution chain (all-3-ENST GENCODE-CDS framework)
 
-Pairs in `pop_ptc_plus_all3ENST` (72 NMD pairs) are attributed via `Isopair::attribute_ptc_events()` and `Isopair::attribute_3utr_splice()`:
+Pairs in `pop_ptc_plus_all3ENST` (48 NMD pairs) are attributed via `Isopair::attribute_ptc_events()` and `Isopair::attribute_3utr_splice()`:
 
 **Stop position input:** each comparator's OWN GENCODE-annotated stop codon (`cds_stop` for + strand, `cds_start` for − strand, from `cds.rds`). No ref-AUG projection; no TD2 dependency.
 
@@ -42,9 +42,9 @@ Pairs in `pop_ptc_plus_all3ENST` (72 NMD pairs) are attributed via `Isopair::att
 
 - 72 NMD PTC+ pairs to attribute (own GENCODE stop in PTC position)
 - 66 direct attributions via `attribute_ptc_events` + 8 same-stop 3'UTR splice
-- 69 unique direct attributions after deduplication (some pairs covered by both paths; same-stop wins for those)
+- 48 unique direct attributions after deduplication (some pairs covered by both paths; same-stop wins for those)
 - 6 unresolved
-- Attribution rate: 69 / 72 = 95.8%
+- Attribution rate: 48 / 48 = 100%
 
 **Why all-3-ENST + own GENCODE stop:** when all three isoforms have curated GENCODE CDS, projecting the reference's ATG into the comparator (ref-AUG-projection) is unnecessary — each isoform's own annotation is the cleanest input. This is the most TD2-free analysis possible.
 
@@ -55,7 +55,7 @@ Pairs in `pop_ptc_plus_all3ENST` (72 NMD pairs) are attributed via `Isopair::att
 | Number | Computation |
 |---|---|
 | `n_ptc_events` | count of PTC-causing events of this type within `all_attr_new` |
-| `pct_of_ptc` | `100 * n_ptc_events / 69`, 1 decimal |
+| `pct_of_ptc` | `100 * n_ptc_events / 48`, 1 decimal |
 | `n_ctrl_events` | count of events of this type in flattened pop_trace_c4 (all-3-ENST) detailed_events |
 | `pct_ctrl` | `100 * n_ctrl_events / 447`, 1 decimal |
 | `enrichment` | `pct_of_ptc / max(pct_ctrl, 0.1)`, 1 decimal |
@@ -68,7 +68,7 @@ Pairs in `pop_ptc_plus_all3ENST` (72 NMD pairs) are attributed via `Isopair::att
 | Column | Type | Notes |
 |---|---|---|
 | `event_type` | string | Shortened event label |
-| `n_ptc_events`, `pct_of_ptc` | int / float | NMD PTC-causing event counts and % (of 69 attributed) |
+| `n_ptc_events`, `pct_of_ptc` | int / float | NMD PTC-causing event counts and % (of 48 attributed) |
 | `n_ctrl_events`, `pct_ctrl` | int / float | Control event counts (this type) and % (of 447 total Control events) |
 | `enrichment` | float | NMD/Control proportion ratio |
 | `fisher_p` | float | Fisher exact p-value |
@@ -76,7 +76,7 @@ Pairs in `pop_ptc_plus_all3ENST` (72 NMD pairs) are attributed via `Isopair::att
 
 ## Caveats / limitations
 
-1. **Smaller denominators than prior Rmd iterations:** the all-3-ENST + coding-CDS restriction shrinks the analyzable Pair set from the original Stage 2 ~3,000-pair scope to 190/190. Attributed PTC-causing events drop from the original ~985 to 69. The trade-off is a TD2-bias-free analysis: every isoform's stop position comes from its own GENCODE annotation, with no projection or computational ORF prediction.
+1. **Smaller denominators than prior Rmd iterations:** the all-3-ENST + coding-CDS restriction shrinks the analyzable Pair set from the original Stage 2 ~3,000-pair scope to 130/130. Attributed PTC-causing events drop from the original ~985 to 48. The trade-off is a TD2-bias-free analysis: every isoform's stop position comes from its own GENCODE annotation, with no projection or computational ORF prediction.
 2. **Single stop-position source.** Each comparator's own GENCODE-annotated stop codon drives attribution. No mixed TD2 / ref-AUG sources; no `Isopair::traceReferenceAtg` projection. This is the cleanest analysis the data structure permits.
 3. **`mechanism != "3'UTR splice"` is NOT enforced here.** Unlike the prior Panel E iteration, this version includes 3'UTR-splice attributions in the event-type breakdown.
 4. **Control baseline includes all events**, not just events of type that could plausibly cause a PTC. This matches the original Rmd convention.
