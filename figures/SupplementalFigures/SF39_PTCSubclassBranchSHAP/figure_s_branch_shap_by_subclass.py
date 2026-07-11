@@ -17,19 +17,19 @@ Companion to the §5 manuscript sentence:
 
 KEY NUMBER (full cohort, no test-set restriction; post-floor):
   Mean within-isoform ATG-branch share:
-    NMD+/PTC+          (n=794) →  9.1%
-    NMD+/PTC- retained (n= 60) → 18.0%
-    Control            (n=851) → 10.8%
+    NMD+/PTC+          (n=735) →  9.1%
+    NMD+/PTC- retained (n= 54) → 17.0%
+    Control            (n=781) → 10.3%
   Ratio NMD+/PTC- vs NMD+/PTC+ ≈ 1.99×.
 
 The Panel-C-style bar labels show share-of-subgroup-total (sum of
 subgroup mean |SHAP|), giving:
-    NMD+/PTC+   Structural 61.9% / Stop 29.2% / ATG  9.0%
-    NMD+/PTC-   Structural 48.5% / Stop 33.8% / ATG 17.7%
+    NMD+/PTC+   Structural 61.6% / Stop 29.4% / ATG  9.1%
+    NMD+/PTC-   Structural 49.6% / Stop 33.5% / ATG 17.0%
     Control     Structural 63.0% / Stop 26.7% / ATG 10.3%
 
 Manuscript text reads "roughly three times more important" — the actual
-post-floor ratio is ~2× (share-of-total 1.98×, within-isoform 1.99×; was
+post-floor ratio is ~2× (share-of-total 1.87×; was
 2.21× pre-floor). The §5 prose overstates it; flag for the manuscript
 find/replace pass (see REFERENCE_FLOOR_NUMBERS_DELTA.md).
 
