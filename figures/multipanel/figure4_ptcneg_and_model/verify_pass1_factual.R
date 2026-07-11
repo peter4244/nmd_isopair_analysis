@@ -1,9 +1,9 @@
 #!/usr/bin/env Rscript
-# Pass 1: Factual accuracy verification for Figure 4 (NEW 2x2 layout, 2026-06-15)
+# Pass 1: Factual accuracy verification for Figure 4 (4-CT re-scope, 2026-07-11)
 # Recomputes n, median, IQR per group from long-format TSVs and compares
 # against values asserted in the descriptives TSVs.
-# Panels A/B: Section A (all-3-ENST + coding) n=72/118/190
-# Panels C/D: Section C (ENST-ref + ref-AUG-traceable, re-intersected) n=1050/113/1166
+# Panels A/B: Section A (all-3-ENST + coding) n=48/82/130
+# Panels C/D: Section C (ENST-ref + ref-AUG-traceable, re-intersected) n=756/63/819
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -65,27 +65,27 @@ panel_check <- function(panel_letter, slug, expected) {
   }
 }
 
-# Section A panels (n=72/118/190)
+# Section A panels (4-CT: n=48/82/130) — independently re-derived from long TSVs
 panel_check("A", "5utr_length", list(
-  `NMD+/PTC+` = list(n = 72,  median = 84.5,  q25 = 36.5,   q75 = 167.75),
-  `NMD+/PTC-` = list(n = 118, median = 426.5, q25 = 264.25, q75 = 730.5),
-  `Control`   = list(n = 190, median = 138,   q25 = 60,     q75 = 266)
+  `NMD+/PTC+` = list(n = 48,  median = 98,    q25 = 39,     q75 = 177.25),
+  `NMD+/PTC-` = list(n = 82,  median = 421.5, q25 = 315.75, q75 = 684.25),
+  `Control`   = list(n = 130, median = 152.5, q25 = 67,     q75 = 319.50)
 ))
 panel_check("B", "longest_5utr_orf", list(
-  `NMD+/PTC+` = list(n = 72,  median = 0,     q25 = 0,      q75 = 33.75),
-  `NMD+/PTC-` = list(n = 118, median = 223.5, q25 = 150.75, q75 = 367.5),
-  `Control`   = list(n = 190, median = 15,    q25 = 0,      q75 = 101.25)
+  `NMD+/PTC+` = list(n = 48,  median = 0,     q25 = 0,      q75 = 36.75),
+  `NMD+/PTC-` = list(n = 82,  median = 223.5, q25 = 153.75, q75 = 356.25),
+  `Control`   = list(n = 130, median = 28.5,  q25 = 0,      q75 = 128.25)
 ))
-# Section C panels (n=1050/113/1166 after 1:1 gene-matched re-intersection)
+# Section C panels (4-CT: n=756/63/819 after 1:1 gene-matched re-intersection)
 panel_check("C", "5utr_length", list(
-  `NMD+/PTC+` = list(n = 1050, median = 242,   q25 = 134,   q75 = 421.75),
-  `NMD+/PTC-` = list(n = 113,  median = 488,   q25 = 245,   q75 = 945),
-  `Control`   = list(n = 1166, median = 200.5, q25 = 99,    q75 = 380.5)
+  `NMD+/PTC+` = list(n = 756, median = 237, q25 = 134,   q75 = 410.25),
+  `NMD+/PTC-` = list(n = 63,  median = 397, q25 = 237.5, q75 = 694.50),
+  `Control`   = list(n = 819, median = 187, q25 = 92,    q75 = 341)
 ))
 panel_check("D", "longest_5utr_orf", list(
-  `NMD+/PTC+` = list(n = 1050, median = 36,  q25 = 0,    q75 = 174),
-  `NMD+/PTC-` = list(n = 113,  median = 198, q25 = 75,   q75 = 489),
-  `Control`   = list(n = 1166, median = 24,  q25 = 0,    q75 = 141)
+  `NMD+/PTC+` = list(n = 756, median = 30,  q25 = 0,  q75 = 153.75),
+  `NMD+/PTC-` = list(n = 63,  median = 168, q25 = 57, q75 = 291),
+  `Control`   = list(n = 819, median = 0,   q25 = 0,  q75 = 117)
 ))
 
 cat("\n=================================================\n")

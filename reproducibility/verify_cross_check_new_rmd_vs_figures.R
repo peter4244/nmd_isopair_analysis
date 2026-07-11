@@ -19,7 +19,7 @@ suppressPackageStartupMessages({ library(data.table) })
 NMD_ROOT <- "/Users/petecastaldi/claude_projects/nmd"
 RMD_HTML <- file.path(NMD_ROOT,
   "results/isoform_transitions/Version_6.0/isopair_wrapper",
-  "05_final_report_gencode_scope_2026-07-10.html")
+  "05_final_report_gencode_scope_2026-07-11.html")
 
 FIG3 <- file.path(NMD_ROOT, "figures/multipanel/figure3_isopair_and_ptc/data")
 FIG4 <- file.path(NMD_ROOT, "figures/multipanel/figure4_ptcneg_and_model/data")

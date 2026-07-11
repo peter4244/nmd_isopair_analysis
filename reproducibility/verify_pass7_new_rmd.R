@@ -3,7 +3,7 @@
 #
 # Validates that
 #   results/isoform_transitions/Version_6.0/isopair_wrapper/
-#     05_final_report_gencode_scope_2026-07-10.html
+#     05_final_report_gencode_scope_2026-07-11.html
 # renders the canonical numbers established during Phase 3 of the v4 plan
 # (paper/rmd_update_plan_v4_2026-06-15.md).
 #
@@ -28,7 +28,7 @@ suppressPackageStartupMessages({ library(data.table) })
 NMD_ROOT <- "/Users/petecastaldi/claude_projects/nmd"
 RMD_HTML <- file.path(NMD_ROOT,
   "results/isoform_transitions/Version_6.0/isopair_wrapper",
-  "05_final_report_gencode_scope_2026-07-10.html")
+  "05_final_report_gencode_scope_2026-07-11.html")
 
 if (!file.exists(RMD_HTML)) {
   stop(sprintf("Rmd HTML not found at %s\nRun rmarkdown::render() first.", RMD_HTML))
