@@ -1,6 +1,6 @@
 """
 SF35 — CDS length and two 3'UTR-length measures in the reference AUG-traceable
-cohort (n = 818 / 70 / 888). Reference-AUG-projected stop anchor.
+cohort (n = 756 / 63 / 819). Reference-AUG-projected stop anchor.
 1×3 panels A/B/C.
 
 Data reused from the combined SF32+SF35 export in the sibling dir; no new

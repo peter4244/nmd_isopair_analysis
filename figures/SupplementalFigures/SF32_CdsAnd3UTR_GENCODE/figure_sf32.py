@@ -123,7 +123,7 @@ def render_panel(ax, long, desc, stats, value_col, ylabel):
 
     ax.set_xticks(range(len(GROUP_ORDER)))
     # Tilted 2-row labels at BODY_FS-4 (effective ~7.6pt in docx) so
-    # the "NMD+/PTC−\nn=118" label fits within per-tick spacing on the
+    # the "NMD+/PTC−\nn=82" label fits within per-tick spacing on the
     # 2×2 layout. Matches the docx-approved Yul style for SF35.
     ax.set_xticklabels(
         [f"{g}\nn = {n_per[g]:,}" for g in GROUP_ORDER],
