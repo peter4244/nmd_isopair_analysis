@@ -14,4 +14,4 @@
 
 Stars: ****p < 10⁻¹⁰, ***p < 10⁻⁴, **p < 10⁻³, *p < 0.05, n.s. otherwise (Fisher's exact).
 
-**Abbreviations.** NMD, nonsense-mediated decay; PTC, premature termination codon; EJC, exon–exon junction complex; SMG1, suppressor with morphogenetic effect on genitalia 1 (NMD-essential kinase); SE, skipped exon; A5SS, alternative 5′ splice site; A3SS, alternative 3′ splice site; IR, intron retention; TSS, transcription start site; TES, transcription end site.
+**Abbreviations.** NMD, nonsense-mediated decay; PTC, premature termination codon; EJC, exon junction complex; SMG1, suppressor with morphogenetic effect on genitalia 1 (NMD-essential kinase); SE, skipped exon; A5SS, alternative 5′ splice site; A3SS, alternative 3′ splice site; IR, intron retention; TSS, transcription start site; TES, transcription end site.
