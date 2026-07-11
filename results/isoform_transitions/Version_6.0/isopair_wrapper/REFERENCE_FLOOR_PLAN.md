@@ -51,6 +51,6 @@
       - [x] Rmd 2026-07-10 rendered clean; ref-share now 67% (matches SF26 66.7%); repointed 2 removed composites to split SFs
 - [x] **Phase 4** — all 6 verifiers PASS (252 checks); expecteds independently re-derived; caught+fixed Fisher one-sided/two-sided + pass2 N_BC scope. 5-step: steps 1-4 covered by suite+independent derivations; step 5 (document floor in METHODS) rolls into Phase 6/7
 - [~] **Phase 5** — 2026-06-15 Rmd bannered LEGACY/superseded (done); SF26 supersession handled in rebuild
-- [ ] **Phase 6** — results_to_code_map.md 4.1–4.46 + M11 + filename/verifier-path bumps
+- [x] **Phase 6** — results_to_code_map.md: §4 claims 4.1-4.46 + scope table + verifiable-summary all floored; M11 documents the floor; 4.5 drift RESOLVED (70/75 was dominant-share mislabel -> 67/71); all 2026-06-15->2026-07-10 filename bumps
 - [ ] **Phase 7** — manuscript find/replace (grep Abstract + legends + supplement, not only §4); Methods (Isopair vignette + manuscript); docx rebuild
 - [ ] **Phase 8** — one coherent commit; dual-push
