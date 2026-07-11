@@ -44,13 +44,13 @@
 - [x] **Phase 0** — branch, tracking docs, inventory, before-state snapshot
 - [x] **Phase 1** — floor in `02_build_profiles_mashr.R` (`REF_SHARE_FLOOR<-0.25`, all-iso denom)
 - [x] **Phase 2** — caches rebuilt (02 → 03b --force → 05r → 05k_b; 05k/05t floor-independent, left stale); pop_BC=1,585 confirmed, no CT < MIN_PAIRS
-- [ ] **Phase 3** — Rmd date-bump + render; figures one-at-a-time
+- [x] **Phase 3** — Rmd date-bumped to 2026-07-10 + rendered (all floored numbers verified); figures done
       - [x] data layer: all `data_export.R` regenerated (guards 190→136, 1166→888, occult 492→380); see `REFERENCE_FLOOR_NUMBERS_DELTA.md`
       - [x] **Main figures 3, 4, 5** — rendered + visually inspected + CORRECT (data-driven; n's updated; model panels unchanged). Python = `/opt/homebrew/bin/python3` (system python3 lacks pandas).
       - [x] **Supplements — ALL 13 floor-affected DONE** (SF25–35, 39, 40). Full audit in `REFERENCE_FLOOR_SF_INVENTORY.md`: SF24/36/37/38/41 N/A (model-global/static), SF42 left as-is (frozen June comparison). Fixes covered: path-splits (SF32/33/34/35), hardcoded stats (SF33/34), layout-clips (SF30/31/40), rebuilt producers (SF25/26/27/28/29).
-      - [ ] date-bump Rmd → 2026-07-10, update hardcoded prose/DOT/captions, render
+      - [x] Rmd 2026-07-10 rendered clean; ref-share now 67% (matches SF26 66.7%); repointed 2 removed composites to split SFs
 - [ ] **Phase 4** — update + independently re-derive all verifier expecteds; PASS; full 5-step
-- [ ] **Phase 5** — deprecate 2026-06-15 Rmd (banner); SF26 supersession
+- [~] **Phase 5** — 2026-06-15 Rmd bannered LEGACY/superseded (done); SF26 supersession handled in rebuild
 - [ ] **Phase 6** — results_to_code_map.md 4.1–4.46 + M11 + filename/verifier-path bumps
 - [ ] **Phase 7** — manuscript find/replace (grep Abstract + legends + supplement, not only §4); Methods (Isopair vignette + manuscript); docx rebuild
 - [ ] **Phase 8** — one coherent commit; dual-push
