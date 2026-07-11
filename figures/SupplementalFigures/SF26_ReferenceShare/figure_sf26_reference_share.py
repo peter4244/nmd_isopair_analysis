@@ -69,20 +69,26 @@ def main():
     floor_pct = float(summary.loc["floor_pct"])
     ax.axvline(med, linestyle="--", color="#c0392b", linewidth=1.5, zorder=4)
     ax.axvline(floor_pct, linestyle="-", color="#2c3e50", linewidth=1.2, zorder=4)
-    ymax = ax.get_ylim()[1]
-    # Median label to the LEFT of its line — the tall bars sit to the right
-    # (70-95% share), so a left-side label clears the histogram.
+    # The bars are ~uniform in height across the whole range, so there is no
+    # clear space inside the axes for the line labels. Add headroom above the
+    # bars and place both labels in it (preserving the original y-ticks so the
+    # headroom doesn't introduce a stray empty tick).
+    yticks = [t for t in ax.get_yticks() if 0 <= t <= ax.get_ylim()[1]]
+    data_ymax = ax.get_ylim()[1]
+    ax.set_ylim(0, data_ymax * 1.20)
+    ax.set_yticks(yticks)
+    ytext = data_ymax * 1.10
     ax.text(
-        med - 1.5, ymax * 0.85,
+        med + 1.5, ytext,
         f"median = {med:.1f}%",
-        ha="right", va="top",
+        ha="left", va="center",
         fontsize=BODY_FS,
         color="#c0392b",
     )
     ax.text(
-        floor_pct + 1.5, ymax * 0.94,
+        floor_pct + 1.5, ytext,
         f"{floor_pct:.0f}% floor",
-        ha="left", va="top",
+        ha="left", va="center",
         fontsize=BODY_FS,
         color="#2c3e50",
     )
