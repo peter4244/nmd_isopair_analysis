@@ -132,7 +132,7 @@ digraph cohort_flow {
   // ─── Hub: matched isoform pairs ──────────────────────────────────
   HUB [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                 <TR><TD ALIGN="CENTER"><FONT COLOR="white" POINT-SIZE="22"><B>Matched isoform pairs</B></FONT></TD></TR>
-                <TR><TD ALIGN="CENTER"><FONT COLOR="white"><B>3,009 NMD susceptible  ·  3,009 Control</B></FONT></TD></TR>
+                <TR><TD ALIGN="CENTER"><FONT COLOR="white"><B>1,585 NMD susceptible  ·  1,585 Control</B></FONT></TD></TR>
                 <TR><TD ALIGN="CENTER"><FONT COLOR="#cfd8e2" POINT-SIZE="18">one triplet per gene</FONT></TD></TR>
               </TABLE>>,
        fillcolor="#1f3a5f", color="#0a1a30", penwidth=2.0]
@@ -141,7 +141,7 @@ digraph cohort_flow {
 
   // ─── Subset 1 cluster (left) ─────────────────────────────────────
   subgraph cluster_S1 {
-    label = <<FONT POINT-SIZE="22"><B>GENCODE-restricted subset (n = 190)</B></FONT><BR/><BR/>all three transcripts in the triplet are annotated coding transcripts>
+    label = <<FONT POINT-SIZE="22"><B>GENCODE-restricted subset (n = 136)</B></FONT><BR/><BR/>all three transcripts in the triplet are annotated coding transcripts>
     labelloc = "t"
     style = "rounded,filled"
     fillcolor = "#fef0e6"
@@ -154,9 +154,9 @@ digraph cohort_flow {
 
     S1_GROUPS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Classification:</B>&nbsp;premature stop in the NMD-susceptible transcript?</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>72</B></TD><TD ALIGN="LEFT">PTC+ (38%%)</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>118</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>190</B></TD><TD ALIGN="LEFT">Control</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>54</B></TD><TD ALIGN="LEFT">PTC+ (40%%)</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>82</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>136</B></TD><TD ALIGN="LEFT">Control</TD></TR>
                      </TABLE>>,
                fillcolor="#fff7bc", color="#d95f0e"]
 
@@ -173,7 +173,7 @@ digraph cohort_flow {
 
   // ─── Subset 2 cluster (right) ────────────────────────────────────
   subgraph cluster_S2 {
-    label = <<FONT POINT-SIZE="22"><B>Reference AUG-traceable subset (n = 1,166)</B></FONT><BR/><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
+    label = <<FONT POINT-SIZE="22"><B>Reference AUG-traceable subset (n = 888)</B></FONT><BR/><BR/>reference is annotated; NMD / Control can be novel if the reference start codon maps to the comparator>
     labelloc = "t"
     style = "rounded,filled"
     fillcolor = "#e6f1f8"
@@ -187,9 +187,9 @@ digraph cohort_flow {
 
     S2_GROUPS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                        <TR><TD ALIGN="LEFT" COLSPAN="2"><B>Classification:</B>&nbsp;reference start codon projected to a premature stop?</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>1,050</B></TD><TD ALIGN="LEFT">PTC+ (90%%)</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>116</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
-                       <TR><TD ALIGN="RIGHT"><B>1,166</B></TD><TD ALIGN="LEFT">Control</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>818</B></TD><TD ALIGN="LEFT">PTC+ (92%%)</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>70</B></TD><TD ALIGN="LEFT">PTC−</TD></TR>
+                       <TR><TD ALIGN="RIGHT"><B>888</B></TD><TD ALIGN="LEFT">Control</TD></TR>
                      </TABLE>>,
                fillcolor="#fff7bc", color="#d95f0e"]
 
@@ -206,10 +206,10 @@ digraph cohort_flow {
 
   // ─── Hidden-PTC sub-cascade ─────────────────────────────────────
   HPTC [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
-                <TR><TD ALIGN="LEFT"><B>Occult-PTC subset (n = 492)</B></TD></TR>
+                <TR><TD ALIGN="LEFT"><B>Occult-PTC subset (n = 380)</B></TD></TR>
                 <TR><TD ALIGN="LEFT">reference-anchored analysis flags a premature stop,</TD></TR>
                 <TR><TD ALIGN="LEFT">but the TransDecoder2 CDS caller does not</TD></TR>
-                <TR><TD ALIGN="LEFT"><FONT COLOR="#b22222">674 / 1,166 dropped</FONT> — no disagreement</TD></TR>
+                <TR><TD ALIGN="LEFT"><FONT COLOR="#b22222">508 / 888 dropped</FONT> — no disagreement</TD></TR>
               </TABLE>>,
         fillcolor="#a48bbf", color="#4a3556", fontcolor="#1a0a25"]
 
@@ -267,21 +267,21 @@ digraph cohort_flow {
 
   # Subset 1 filter nodes — Why = single clause, no in-cell line wrapping
   filter_node("all three transcripts are annotated (in GENCODE)",
-              "301 / 301", "2,708 / 2,708",
+              "196 / 196", "1,389 / 1,389",
               "most NMD-susceptible transcripts are novel"),
   filter_node("all three transcripts have a curated coding sequence",
-              "190 / 190", "111 / 111",
+              "136 / 136", "60 / 60",
               "annotated non-coding transcripts (lncRNA, etc.)"),
 
   # Subset 2 filter nodes
   filter_node("reference is annotated (NMD and Control can be novel)",
-              "2,098 / 2,098", "911 / 911",
+              "1,449 / 1,449", "136 / 136",
               "reference itself is a novel isoform"),
   filter_node("the reference start codon maps onto the comparator transcript",
-              "1,659 NMD  ·  1,286 Control", "439 NMD  ·  812 Control",
+              "1,233 NMD  ·  958 Control", "216 NMD  ·  491 Control",
               "reference exon missing from comparator"),
   filter_node("keep only genes where both NMD and Control side passed",
-              "1,166 / 1,166", "493 NMD  ·  120 Control",
+              "888 / 888", "345 NMD  ·  70 Control",
               "reference passed on one arm but not the other")
 )
 
@@ -309,5 +309,13 @@ htmlwidgets::saveWidget(widget, html_path,
                          title = "Pair-analysis cohort flowchart")
 cat(sprintf("[html] → %s\n", html_path))
 
-cat("\nView: open figure_s_pair_analysis_flowchart.html in a browser.\n",
-    "For PDF: Chrome → File → Print → Save as PDF.\n", sep = "")
+# Reproducible PNG render via graphviz (same engine DiagrammeR uses via viz.js).
+# Falls back to the browser workflow below if `dot` is not on PATH.
+png_path <- file.path(HERE, "figure_s_pair_analysis_flowchart.png")
+if (nzchar(Sys.which("dot"))) {
+  status <- system2("dot", c("-Tpng", "-Gdpi=150", shQuote(dot_path),
+                             "-o", shQuote(png_path)))
+  if (status == 0) cat(sprintf("[png]  → %s\n", png_path))
+} else {
+  cat("\n'dot' not found — for PNG/PDF open the HTML in a browser and print.\n")
+}
