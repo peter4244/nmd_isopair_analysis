@@ -1,5 +1,5 @@
 """SF26 — Reference-isoform share of gene expression across the floored pop_BC
-(n = 1,585 genes; retained after the 25% reference-share floor, 2026-07-10).
+(n = 1,548 genes; retained after the 25% reference-share floor, 4-CT re-scope 2026-07-11).
 
 Standalone rebuild of the reference-share panel that was previously bundled
 as Panel B of PairSetDescriptives. Split per Yul-era paper numbering so
@@ -9,7 +9,7 @@ Value plotted per gene: reference-isoform DMSO mean expression (all_samples
 basis) divided by the parent gene's total expression across all isoforms
 (both from the Isopair pipeline; see Methods, pop_BC / Reference isoform).
 By construction every retained gene has share >= 25%; the distribution starts
-at the floor and is centered near the true dominant share (median ~67%).
+at the floor and is centered near the true dominant share (median ~64%).
 
 Style: matplotlib rendered with ggplot-mimic theme (grey panel + white
 gridlines) so the panel visually matches SF1-SF23. See
