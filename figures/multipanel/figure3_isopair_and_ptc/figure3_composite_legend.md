@@ -2,7 +2,7 @@
 
 **(A)** Isoform-pair construction. For each of 1,548 genes, an NMD pair contrasts the highest-expressed non-NMD reference isoform with an SMG1-inhibitor-responsive comparator; a Control pair contrasts the same reference with the next-highest-expressed non-NMD comparator. The figure schematic illustrates the resulting two pairs per gene, yielding 1,548 NMD pairs and 1,548 Control pairs in total.
 
-**(B)** Density of exonic sequence shared between comparator and reference for the two arms. NMD-susceptible comparators share more sequence with the reference than Control comparators do, consistent with NMD arising from targeted splicing differences.
+**(B)** Density of exonic sequence shared between comparator and reference for the two arms. NMD susceptible comparators share more sequence with the reference than Control comparators do, consistent with NMD arising from targeted splicing differences.
 
 **(C)** Prevalence of each splicing event type across the two arms. Skipped exons are more than twice as prevalent in NMD pairs as in Control pairs (51.0% vs 21.6%, Fisher's exact p ≈ 10⁻⁶⁵).
 

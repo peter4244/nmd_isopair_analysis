@@ -17,7 +17,7 @@
 #
 # Numbers match the inline §1 chunk of
 #   results/isoform_transitions/Version_6.0/isopair_wrapper/
-#     05_final_report_gencode_scope_2026-06-15.Rmd
+#     05_final_report_gencode_scope_2026-07-11.Rmd
 # and the figure-side TSVs; cross-pipeline drift is guarded by the verifiers
 # at reproducibility/verify_pass7_new_rmd.R and
 # verify_cross_check_new_rmd_vs_figures.R.
@@ -68,7 +68,7 @@ fmt <- function(x) format(x, big.mark = ",")
 # ─────────────────────────────────────────────────────────────────────
 # DOT spec — three logical zones:
 #   1. Upstream pipeline (single column, top)
-#   2. Matched-pair hub (3,009 / 3,009)
+#   2. Matched-pair hub (1,548 / 1,548)
 #   3. Two subset clusters (left = strict / right = broader), each with
 #      cluster-level header as its title and filter nodes inside
 #   + Hidden-PTC sub-cascade off Subset 2
@@ -97,14 +97,15 @@ filter_node <- function(what, kept, dropped, why) {
      </TABLE>>', what, kept, dropped, why)
 }
 
-upstream_node <- function(stage, detail, what_dropped = NULL) {
+upstream_node <- function(stage, detail, what_dropped = NULL, center = FALSE) {
+  al <- if (center) "CENTER" else "LEFT"
   rows <- sprintf(
-    '<TR><TD ALIGN="LEFT"><B>%s</B></TD></TR><TR><TD ALIGN="LEFT">%s</TD></TR>',
-    stage, detail)
+    '<TR><TD ALIGN="%s"><B>%s</B></TD></TR><TR><TD ALIGN="%s">%s</TD></TR>',
+    al, stage, al, detail)
   if (!is.null(what_dropped)) {
     rows <- paste0(rows, sprintf(
-      '<TR><TD ALIGN="LEFT"><FONT POINT-SIZE="18" COLOR="#444">%s</FONT></TD></TR>',
-      what_dropped))
+      '<TR><TD ALIGN="%s"><FONT POINT-SIZE="18" COLOR="#b22222">%s</FONT></TD></TR>',
+      al, what_dropped))
   }
   sprintf('<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">%s</TABLE>>', rows)
 }
@@ -258,8 +259,10 @@ digraph cohort_flow {
                 sprintf("%s NMD susceptible · %s non-NMD",
                         fmt(N_NMD_AS), fmt(N_NONNMD_AS))),
   upstream_node("Construct paired comparisons",
-                sprintf("per gene: dominant NMD-susceptible vs reference · two dominant non-NMD (Control + reference)<BR/>→ %s NMD-susceptible pairs · %s non-NMD Control candidate pairs, gene-matched (reference-share ≥25%%) to the hub below",
-                        fmt(N_C2), fmt(N_C4))),
+                sprintf("per gene: dominant NMD-susceptible vs reference · two dominant non-NMD (Control + reference)<BR/>→ %s NMD-susceptible pairs · %s non-NMD Control candidate pairs, gene-matched to the hub below",
+                        fmt(N_C2), fmt(N_C4)),
+                what_dropped = "reference-share floor: dropped 3,133 genes (8,134 → 5,001) whose selected reference was &lt; 25% of total gene expression",
+                center = TRUE),
 
   # Subset 1 filter nodes — Why = single clause, no in-cell line wrapping
   filter_node("all three transcripts are annotated (in GENCODE)",

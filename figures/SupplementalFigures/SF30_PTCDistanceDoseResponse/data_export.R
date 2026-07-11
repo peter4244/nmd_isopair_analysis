@@ -51,6 +51,17 @@ subset2 <- fread(SUBSET2_TSV)
 subset2_nmd_ids <- subset2[arm == "NMD", comparator_isoform_id]
 stopifnot(length(subset2_nmd_ids) == 819L)
 
+# NMD-susceptible-in->=1-CT verification: every SF30 population comparator must be
+# classified NMD-susceptible in at least one of the four manuscript cell types
+# (the all_samples NMD set is the union over AT/DD/FB/MV) -- confirms no comparator
+# is carried on a non-manuscript cell type.
+.nmd_class <- readRDS(file.path(ISOPAIR_ROOT, "data_mashr", "nmd_classification.rds"))
+.nmd_union_4ct <- unique(unlist(lapply(c("AT", "DD", "FB", "MV"),
+                                       function(ct) .nmd_class[[ct]]$nmd)))
+stopifnot(all(subset2_nmd_ids %in% .nmd_union_4ct))
+message(sprintf("[data_export] NMD-susceptible-in->=1-CT: %d/%d comparators confirmed",
+                sum(subset2_nmd_ids %in% .nmd_union_4ct), length(subset2_nmd_ids)))
+
 # ── Load source objects ────────────────────────────────────────────────
 message("[data_export] reading ref_atg_analysis.rds ...")
 ref_atg    <- readRDS(REF_ATG_RDS)
@@ -64,6 +75,11 @@ message("[data_export] reading mashr_isoform_model_2026.3.10.rds ...")
 mashr_model <- readRDS(MASHR_RDS)
 pm <- as.data.frame(mashr_model$result$PosteriorMean)
 smg1i_cols <- grep("^Smg1i_in_", colnames(pm), value = TRUE)
+# 4-CT guard (m1): the cross-cell-type mashr posterior-mean averaging must be
+# over exactly the four manuscript cell types (Smg1i_in_{AT,DD,FB,MV}); assert no
+# DD_ALI/DO columns leak into the average.
+stopifnot(length(smg1i_cols) == 4,
+          !any(grepl("DD_ALI|DO_ALI|_DO_|_DO$", smg1i_cols)))
 meta_logfc <- data.table(
   txid       = rownames(pm),
   mean_logFC = rowMeans(pm[, smg1i_cols, drop = FALSE], na.rm = TRUE)
