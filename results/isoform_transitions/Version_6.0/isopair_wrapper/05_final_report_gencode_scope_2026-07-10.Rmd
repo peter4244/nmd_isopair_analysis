@@ -1,6 +1,6 @@
 ---
-title: "[LEGACY 2026-06-15 — pre-reference-share-floor] NMD analysis: GENCODE-only scopes"
-subtitle: "SUPERSEDED by 05_final_report_gencode_scope_2026-07-10.Rmd as of 2026-07-10, which applies the 25% all-isoform reference-share floor (Family A): pop_BC 3,009→1,585, n=190→136, n=1,166→888. This report uses the pre-floor scopes and is retained for reproducibility of the prior state only. DO NOT cite its numbers as canonical."
+title: "NMD analysis: current GENCODE-only scopes (2026-07-10)"
+subtitle: "Canonical scopes for Figure 3 (D/E/F) + Figure 4 (A/B at all-3-ENST + coding-CDS n=136; C/D at ref-AUG-traceable re-intersected n=888/888). Branched from 05_final_report_mashr.Rmd; that report is now legacy."
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -181,12 +181,12 @@ tes_concordant <- function(comp_tx_len, ref_tx_len,
 This report supersedes `05_final_report_mashr.Rmd` (now legacy-bannered) for the
 two canonical scopes used in the manuscript's Figure 3 and Figure 4:
 
-1. **all-3-ENST + coding-CDS (n=190)** — both NMD+ and Control comparators
+1. **all-3-ENST + coding-CDS (n=136)** — both NMD+ and Control comparators
    have ENST reference isoforms with a complete coding CDS. Drives Figure 3
    D/E/F and Figure 4 Panels A/B + the `CDSand3UTR_GENCODEonly` supplement.
 2. **ref-AUG-traceable, re-intersected on `(gene_id, reference_isoform_id)`
-   after category filter (n=1,166/1,166)** — drives Figure 4 Panels C/D and
-   the `TD2BiasEvidence` supplement (`n=1,166` broad, `n=492` occult-PTC).
+   after category filter (n=888/888)** — drives Figure 4 Panels C/D and
+   the `TD2BiasEvidence` supplement (`n=888` broad, `n=380` occult-PTC).
 
 Analyses kept in the legacy Rmd (per v4 plan): per-cell-type reclassification,
 two-pass TD2→ref-AUG handoff, the "85% combined" framework, the n=1,904/22,335
@@ -290,7 +290,7 @@ digraph cohort_cascade {
 
   HUB [label=<<b><font point-size="15">pop_BC</font></b><br/>
               Stage-2 gene-matched on (gene, reference)<br/>
-              <font point-size="14"><b>3,009 NMD pairs    /    3,009 Control pairs</b></font>>,
+              <font point-size="14"><b>1,585 NMD pairs    /    1,585 Control pairs</b></font>>,
        fillcolor="#1f3a5f", fontcolor="white", color="#0a1a30", penwidth=2.0]
 
   A -> B [label=" per-CT mashr + 4-CT union "]
@@ -311,19 +311,19 @@ digraph cohort_cascade {
   SA_CL [label=<<b>own-GENCODE-stop classifier</b><br/>
                 50-nt last-EJC rule>,
          fillcolor="#fff7bc", color="#d95f0e"]
-  SA_PTC  [label=<<b>NMD+/PTC+</b><br/>n = 72  (37.9%%)>,
+  SA_PTC  [label=<<b>NMD+/PTC+</b><br/>n = 54  (39.7%%)>,
            fillcolor="#ef8a62", color="#7d4030"]
   SA_NPTC [label=<<b>NMD+/PTC−</b><br/>n = 118>,
            fillcolor="#fee08b", color="#a07a30"]
-  SA_CTL  [label=<<b>Control</b><br/>n = 190>,
+  SA_CTL  [label=<<b>Control</b><br/>n = 136>,
            fillcolor="#92c5de", color="#406080"]
-  SA_STAT [label=<Fisher OR = 28.2  ·  p = 1.88e−20  ·  18× enrichment>,
+  SA_STAT [label=<Fisher OR = 88.1  ·  p = 2.58e−18  ·  54× enrichment>,
            shape=plaintext, fillcolor="white"]
   SA_F3 [label=<<b>Figure 3</b><br/>Panels D / E / F<br/>mechanism 38 / 23 / 8>,
          fillcolor="#dddddd", color="#666"]
   SA_F4 [label=<<b>Figure 4</b><br/>Panels A / B<br/>5\\\'UTR length + ORF>,
          fillcolor="#dddddd", color="#666"]
-  SA_SUP [label=<<b>CDS / 3\\\'UTR supplement</b><br/>Row 1 (A / B / C)<br/>n = 190>,
+  SA_SUP [label=<<b>CDS / 3\\\'UTR supplement</b><br/>Row 1 (A / B / C)<br/>n = 136>,
           fillcolor="#dddddd", color="#666"]
 
   HUB -> SA_H [label="  ENST + coding-CDS  ", color="#7d4030"]
@@ -345,20 +345,20 @@ digraph cohort_cascade {
               (effectively_ptc / no_downstream_ejc / truncated_no_ejc)<br/>
               pre re-intersect: <b>1,659 NMD  /  1,286 Control</b>>,
        fillcolor="#a6cee3", color="#406080"]
-  SC3 [label=<re-intersect on (gene, ref) → <b>1,166 / 1,166</b>>,
+  SC3 [label=<re-intersect on (gene, ref) → <b>888 / 888</b>>,
        fillcolor="#a6cee3", color="#406080"]
   SC_CL [label=<<b>mechanism_class_4 classifier</b><br/>
                 (figures/lib/mechanism_class.R)>,
          fillcolor="#fff7bc", color="#d95f0e"]
-  SC_PTC  [label=<<b>NMD+/PTC+</b><br/>n = 1,050  (90.1%%)>,
+  SC_PTC  [label=<<b>NMD+/PTC+</b><br/>n = 818  (92.1%%)>,
            fillcolor="#ef8a62", color="#7d4030"]
   SC_NPTC [label=<<b>NMD+/PTC−</b><br/>n = 116>,
            fillcolor="#fee08b", color="#a07a30"]
-  SC_CTL  [label=<<b>Control</b><br/>n = 1,166>,
+  SC_CTL  [label=<<b>Control</b><br/>n = 888>,
            fillcolor="#92c5de", color="#406080"]
   SC_F4 [label=<<b>Figure 4</b><br/>Panels C / D<br/>ref-AUG 5\\\'UTR + ORF>,
          fillcolor="#dddddd", color="#666"]
-  SC_SUP [label=<<b>CDS / 3\\\'UTR supplement</b><br/>Row 2 (D / E / F)<br/>n = 1,166>,
+  SC_SUP [label=<<b>CDS / 3\\\'UTR supplement</b><br/>Row 2 (D / E / F)<br/>n = 888>,
           fillcolor="#dddddd", color="#666"]
 
   HUB -> SC_H [label="  ENST-reference  ", color="#1f5570"]
@@ -369,12 +369,12 @@ digraph cohort_cascade {
   // ─── TD2 cascade (branches off Section C scope) ────────────────────
   TD2_BR [label=<<b>TD2BiasEvidence — broad</b><br/>
                   Section C ∩ TD2 CDS ∩ ref-AUG ORF ∩ ref AUG exonic<br/>
-                  <b>n = 1,166</b>>,
+                  <b>n = 888</b>>,
           fillcolor="#a48bbf", color="#4a3556"]
   TD2_OC [label=<<b>TD2BiasEvidence — occult-PTC</b><br/>
                   broad ∩ effectively_ptc ∩ original_ptc = FALSE<br/>
-                  <b>n = 492</b><br/>
-                  <font point-size="11">TD2/ref ORF 7.73×  ·  ref &gt; TD2 Kozak 384 / 492 (78%%)<br/>
+                  <b>n = 380</b><br/>
+                  <font point-size="11">TD2/ref ORF 7.67×  ·  ref &gt; TD2 Kozak 310 / 380 (82%%)<br/>
                   paired p = 2.6e−38  ·  TD2 downstream of ref AUG 99.0%%</font>>,
           fillcolor="#7a3f8f", color="#3a1e44", fontcolor="white"]
 
@@ -403,7 +403,7 @@ The figure-consumer endpoints (gray boxes) tie each cohort to the figures and
 supplements that consume it: Figure 3 D/E/F and Figure 4 A/B + the
 CDS/3'UTR supplement Row 1 from Section A; Figure 4 C/D + the
 CDS/3'UTR supplement Row 2 from Section C; and the TD2BiasEvidence
-supplement from the n=1,166 → n=492 occult-PTC chain.
+supplement from the n=888 → n=380 occult-PTC chain.
 
 ## §1a — Transcript-length comparison
 
@@ -508,7 +508,7 @@ knitr::kable(ann_table, caption = "Annotation status by role (pop_BC scope)")
 ```
 
 The Reference %ENST and the NMD-comparator %Novel define the scope reduction
-that motivates §2 (the GENCODE-only n=190 scope: where ALL three isoforms are
+that motivates §2 (the GENCODE-only n=136 scope: where ALL three isoforms are
 ENST-annotated, which constrains the cohort sharply).
 
 ## §1c — Per-gene isoform diversity and reference-isoform dominance
@@ -590,7 +590,7 @@ knitr::include_graphics(c(
 ))
 ```
 
-# §2 — PTC analysis at the GENCODE-only scope (n=190)
+# §2 — PTC analysis at the GENCODE-only scope (n=136)
 
 The Section A scope is the most stringent "complete GENCODE-only" subset:
 every isoform in the pair (Reference, NMD comparator, Control comparator) is
@@ -656,7 +656,7 @@ sec2_cascade <- data.frame(
 )
 ```
 
-Filter cascade from pop_BC down to the n=190 Section A scope:
+Filter cascade from pop_BC down to the n=136 Section A scope:
 
 ```{r sec2-scope-table, echo=FALSE}
 knitr::kable(sec2_cascade,
@@ -671,7 +671,7 @@ knitr::kable(sec2_cascade,
 `gencode_all3_c4` = `r nrow(gencode_all3_c4)` Control pairs. Both arms share
 the same `r length(joint2)` `(gene, reference)` pairs.
 
-**Why the cohort drops from 2,098/2,098 ENST-reference pairs to 190 coding-
+**Why the cohort drops from 1,449/1,449 ENST-reference pairs to 136 coding-
 everywhere pairs:** the ENST-on-comparator filter is the tightest constraint
 — most NMD comparators in `pop_BC` are novel isoforms
 (`r ann_table$pct_Novel[ann_table$Role == "NMD comparator"]`% per §1b), so
@@ -771,7 +771,7 @@ NMD pairs / `r nrow(gencode_all3_c4)` Control pairs):
 - Fold enrichment: **`r sprintf("%.1f×", fold_enrich)`**
 - Fisher: OR = `r sprintf("%.1f", ptc_fisher$estimate)`, p = `r format_p(ptc_fisher$p.value)`
 
-```{r sec2a-fig3-panelD, echo=FALSE, fig.cap="Figure 3 Panel D — Stop-to-last-EJC distance at the n=190 scope", out.width="80%"}
+```{r sec2a-fig3-panelD, echo=FALSE, fig.cap="Figure 3 Panel D — Stop-to-last-EJC distance at the n=136 scope", out.width="80%"}
 knitr::include_graphics(
   file.path(NMD_ROOT, "figures/multipanel/figure3_isopair_and_ptc/figure3_panelD_stop_codon_distance.png")
 )
@@ -889,7 +889,7 @@ of those, leaving `r n_ptc_nmd - n_unique_direct` finally unresolved.
 
 ```{r sec2b-mech-table, echo=FALSE}
 knitr::kable(mech_tab,
-             caption = sprintf("Mechanism breakdown for the %d attributed PTC events (3 of 72 PTC+ unresolved; Section A n=190 scope)", n_unique_direct),
+             caption = sprintf("Mechanism breakdown for the %d attributed PTC events (2 of 54 PTC+ unresolved; Section A n=136 scope)", n_unique_direct),
              col.names = c("Mechanism", "n"))
 ```
 
@@ -900,9 +900,9 @@ knitr::include_graphics(c(
 ))
 ```
 
-## §2c — 5'UTR length + longest 5'UTR ORF at the n=190 scope
+## §2c — 5'UTR length + longest 5'UTR ORF at the n=136 scope
 
-At the n=190 all-3-ENST scope, the 5'UTR is the comparator's annotated 5'UTR
+At the n=136 all-3-ENST scope, the 5'UTR is the comparator's annotated 5'UTR
 (every isoform is GENCODE-annotated so the TD2-anchored `utr5_features_all`
 cache value equals the GENCODE 5'UTR length at this scope; the Rmd reads it
 from cache rather than recomputing). Three groups (using §2a `has_ptc`):
@@ -915,7 +915,7 @@ The Control arm is a single group (not PTC-stratified) because PTC status is
 a property of the NMD-comparator. This matches the figure-side panel
 construction.
 
-Interpretive caution: at the n=190 scope, NMD+/PTC+ comparators have markedly
+Interpretive caution: at the n=136 scope, NMD+/PTC+ comparators have markedly
 short 5'UTRs (median 84.5 nt vs Control 138 nt) — this is most likely an
 alternative-TSS effect (PTC+ ENSTs at this scope tend to be 5'-truncated
 alternative transcripts) rather than 5'UTR cis-element divergence per se.
@@ -1015,14 +1015,14 @@ knitr::kable(secA_orf_pw[, c("group_x","group_y","n_x","n_y","median_x","median_
              col.names = c("X","Y","n_X","n_Y","Med X","Med Y","HL shift","HL 95% CI","Cliff's δ","Wilcoxon p"))
 ```
 
-```{r sec2c-fig4AB, echo=FALSE, fig.cap=c("Figure 4 Panel A — 5'UTR length at n=190 scope", "Figure 4 Panel B — Longest 5'UTR ORF at n=190 scope"), out.width="90%"}
+```{r sec2c-fig4AB, echo=FALSE, fig.cap=c("Figure 4 Panel A — 5'UTR length at n=136 scope", "Figure 4 Panel B — Longest 5'UTR ORF at n=136 scope"), out.width="90%"}
 knitr::include_graphics(c(
   file.path(NMD_ROOT, "figures/multipanel/figure4_ptcneg_and_model/figure4_panelA_5utr_length_all3enst.png"),
   file.path(NMD_ROOT, "figures/multipanel/figure4_ptcneg_and_model/figure4_panelB_longest_5utr_orf_all3enst.png")
 ))
 ```
 
-## §2d — 3'UTR / CDS sanity at n=190
+## §2d — 3'UTR / CDS sanity at n=136
 
 Three additional structural features for the same `sec_A_groups`: CDS length,
 translation-based 3'UTR (`tx_len − own_stop_tx_pos`), and bias-corrected
@@ -1077,7 +1077,7 @@ compute_secA_feat <- function(comp_ids, ra_lookup) {
 feat_ptc_pos <- compute_secA_feat(ptc_pos_ids, ra_c2_lookup)
 feat_ptc_neg <- compute_secA_feat(ptc_neg_ids, ra_c2_lookup)
 feat_ctrl    <- compute_secA_feat(gencode_all3_c4$comparator_isoform_id, ra_c4_lookup)
-# At the n=190 all-3-ENST + coding-CDS scope every comparator's own GENCODE
+# At the n=136 all-3-ENST + coding-CDS scope every comparator's own GENCODE
 # stop is non-PTC by classification (PTC+ pairs were segregated via §2a's
 # has_ptc flag), so for PTC- and Control the bias-corrected 3'UTR length IS
 # the translation-based measure. Overwrite unconditionally (matches the
@@ -1152,13 +1152,14 @@ knitr::kable(secA_utr3np_pw[, c("group_x","group_y","median_x","median_y","hl_sh
              col.names = c("X","Y","Med X","Med Y","HL shift","HL 95% CI","Cliff's δ","Wilcoxon p"))
 ```
 
-```{r sec2d-supp, echo=FALSE, fig.cap="CDSand3UTR_GENCODEonly supplement — 2×3 layout. Row 1 (Section A, n=190): A CDS length, B 3'UTR translation-based, C 3'UTR non-PTC-stop (bias-corrected). Row 2 (Section C, n=1,166, ref-AUG-projected): D CDS length, E 3'UTR translation-based, F 3'UTR non-PTC-stop. The bias-correction pattern (PTC+ inflation under translation-based collapses under non-PTC-stop measure) replicates across both scopes.", out.width="100%"}
+```{r sec2d-supp, echo=FALSE, fig.cap="CDSand3UTR_GENCODEonly supplement — 2×3 layout. Row 1 (Section A, n=136): A CDS length, B 3'UTR translation-based, C 3'UTR non-PTC-stop (bias-corrected). Row 2 (Section C, n=888, ref-AUG-projected): D CDS length, E 3'UTR translation-based, F 3'UTR non-PTC-stop. The bias-correction pattern (PTC+ inflation under translation-based collapses under non-PTC-stop measure) replicates across both scopes.", out.width="100%"}
 knitr::include_graphics(
-  file.path(NMD_ROOT, "figures/SupplementalFigures/CDSand3UTR_GENCODEonly/figure_s_cds_and_3utr.png")
+  c(file.path(NMD_ROOT, "figures/SupplementalFigures/SF32_CdsAnd3UTR_GENCODE/figure_sf32.png"),
+    file.path(NMD_ROOT, "figures/SupplementalFigures/SF35_CdsAnd3UTR_refAUG/figure_sf35.png"))
 )
 ```
 
-# §3 — Larger-scope replication at ref-AUG-traceable (n=1,166)
+# §3 — Larger-scope replication at ref-AUG-traceable (n=888)
 
 Section C extends Section A by relaxing the all-3-ENST + coding-CDS
 constraints and instead routing through the ref-AUG-projected ORF
@@ -1229,7 +1230,7 @@ sec3_class <- as.data.frame(table(refaug_matched_c2$group3,
 names(sec3_class) <- c("group", "n")
 ```
 
-Filter cascade from pop_BC down to the n=1,166 Section C scope:
+Filter cascade from pop_BC down to the n=888 Section C scope:
 
 ```{r sec3-scope-table, echo=FALSE}
 knitr::kable(sec3_cascade,
@@ -1263,7 +1264,7 @@ differ — see §5 for reconciliation.
 
 ## §3a — 5'UTR length + longest 5'UTR ORF at Section C
 
-At the n=1,166 scope, most NMD comparators are novel (TD2-anchored CDS not
+At the n=888 scope, most NMD comparators are novel (TD2-anchored CDS not
 reliable for 5'UTR measurement) — so we use `utr5_features_refaug`, which is
 the 5'UTR delimited by the ref-AUG-projected start. Three groups (from §3
 classification): NMD+/PTC+, NMD+/PTC− (ORF match + ORF diff merged), Control.
@@ -1309,7 +1310,7 @@ knitr::kable(secC_orf_pw[, c("group_x","group_y","n_x","n_y","median_x","median_
              col.names = c("X","Y","n_X","n_Y","Med X","Med Y","HL shift","HL 95% CI","Cliff's δ","Wilcoxon p"))
 ```
 
-```{r sec3a-fig4CD, echo=FALSE, fig.cap=c("Figure 4 Panel C — 5'UTR length at n=1,166 scope", "Figure 4 Panel D — Longest 5'UTR ORF at n=1,166 scope"), out.width="90%"}
+```{r sec3a-fig4CD, echo=FALSE, fig.cap=c("Figure 4 Panel C — 5'UTR length at n=888 scope", "Figure 4 Panel D — Longest 5'UTR ORF at n=888 scope"), out.width="90%"}
 knitr::include_graphics(c(
   file.path(NMD_ROOT, "figures/multipanel/figure4_ptcneg_and_model/figure4_panelC_5utr_length_refaug.png"),
   file.path(NMD_ROOT, "figures/multipanel/figure4_ptcneg_and_model/figure4_panelD_longest_5utr_orf_refaug.png")
@@ -1321,18 +1322,18 @@ knitr::include_graphics(c(
 Already computed inline in the §3 scope construction:
 `r format(sec3_class$n[sec3_class$group == "NMD+/PTC+"], big.mark=",")` PTC+ /
 `r format(nrow(refaug_matched_c2), big.mark=",")` =
-**`r round(100 * sec3_class$n[sec3_class$group == "NMD+/PTC+"] / nrow(refaug_matched_c2), 1)`%** at this scope (vs 37.9% at the n=190
+**`r round(100 * sec3_class$n[sec3_class$group == "NMD+/PTC+"] / nrow(refaug_matched_c2), 1)`%** at this scope (vs 37.9% at the n=136
 all-3-ENST scope). The classifier definitions differ —
 see §5 for reconciliation.
 
 # §4 — TD2 bias evidence (TD2BiasEvidence supplement)
 
 Scope (broad): `refaug_matched_c2 ∩ TD2 CDS available ∩ ref-AUG ORF computable
-∩ ref AUG exonic` → n=1,166 broad.
-Scope (occult-PTC): broad `∩ effectively_ptc ∩ original_ptc == FALSE` → n=492.
+∩ ref AUG exonic` → n=888 broad.
+Scope (occult-PTC): broad `∩ effectively_ptc ∩ original_ptc == FALSE` → n=380.
 
-**Scope construction.** Broad (n=1,166) = `refaug_matched_c2` ∩ TD2 CDS
-available ∩ ref-AUG ORF computable ∩ ref AUG exonic. Occult-PTC (n=492) =
+**Scope construction.** Broad (n=888) = `refaug_matched_c2` ∩ TD2 CDS
+available ∩ ref-AUG ORF computable ∩ ref AUG exonic. Occult-PTC (n=380) =
 broad ∩ `category == "effectively_ptc"` ∩ `original_ptc == FALSE` — pairs
 where ref-AUG tracing revealed a PTC that TD2 missed. This is the population
 in which TD2's PTC-avoidance bias is most pronounced.
@@ -1351,7 +1352,7 @@ broad <- c2_full_dt[!is.na(td2_orf_nt) & !is.na(ref_atg_orf_nt) &
 ```
 
 `broad` = `r format(nrow(broad), big.mark=",")` pairs (matches the
-n=1,166 TD2BiasEvidence supplement scope).
+n=888 TD2BiasEvidence supplement scope).
 
 ```{r sec4-compute, include=FALSE, cache=TRUE, cache.extra=tools::md5sum(FASTA_PATH)}
 genomic_to_tx <- function(gp, es, ee, s) {
@@ -1487,9 +1488,10 @@ stop that defines a PTC. Together these three signals describe TD2's
 PTC-avoidance bias: TD2 systematically routes around occult PTCs by picking a
 downstream ATG, even at the cost of a lower Kozak score.
 
-```{r sec4-supp, echo=FALSE, fig.cap="TD2BiasEvidence supplement — 2×3 layout: broad scope (row 1, n=1,166) + occult-PTC scope (row 2, n=492)", out.width="100%"}
+```{r sec4-supp, echo=FALSE, fig.cap="TD2BiasEvidence supplement — 2×3 layout: broad scope (row 1, n=888) + occult-PTC scope (row 2, n=380)", out.width="100%"}
 knitr::include_graphics(
-  file.path(NMD_ROOT, "figures/SupplementalFigures/TD2BiasEvidence/figure_s_td2_bias.png")
+  c(file.path(NMD_ROOT, "figures/SupplementalFigures/SF33_TD2Bias_broad/figure_sf33.png"),
+    file.path(NMD_ROOT, "figures/SupplementalFigures/SF34_TD2Bias_occult/figure_sf34.png"))
 )
 ```
 
@@ -1526,7 +1528,7 @@ stopifnot(
 )
 
 acct <- data.frame(
-  Scope = c("Section A (n=190)", "Section C (n=1,166)"),
+  Scope = c("Section A (n=136)", "Section C (n=888)"),
   PTC_pos = c(secA_ptc_pos, secC_ptc_pos),
   PTC_neg = c(secA_ptc_neg, secC_ptc_neg),
   Ref_AUG_absent = c(NA_integer_, secC_ref_abs),
