@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 # Pass 3: Documentation accuracy (NEW 2x2 layout, 2026-06-15).
 # Verify that RATIONALE.md §11, the composite legend, and
-# paper/section4_findreplace_2026-06-15.md describe Figure 4 at its CURRENT
+# paper/section4_findreplace_2026-07-11_4ct.md describe Figure 4 at its CURRENT
 # 2x2 / 1050-113-1166 state. Detect stale text from the prior 3x2 / 1489-163-1286
 # layout.
 
@@ -11,7 +11,7 @@ ROOT <- "/Users/petecastaldi/claude_projects/nmd/figures/multipanel/figure4_ptcn
 PAPER <- "/Users/petecastaldi/claude_projects/nmd/paper"
 LEGEND <- file.path(ROOT, "figure4_composite_legend.md")
 RATIONALE <- file.path(ROOT, "RATIONALE.md")
-FINDREPLACE <- file.path(PAPER, "section4_findreplace_2026-06-15.md")
+FINDREPLACE <- file.path(PAPER, "section4_findreplace_2026-07-11_4ct.md")
 
 read_doc <- function(p) paste(readLines(p, warn = FALSE), collapse = "\n")
 legend_txt <- read_doc(LEGEND)
@@ -32,19 +32,19 @@ flag <- function(label, found, expected_present) {
 }
 
 cat("=== LEGEND (figure4_composite_legend.md) ===\n")
-flag("Legend mentions n = 72 NMD+/PTC+",       grepl("72 NMD\\+/PTC\\+", legend_txt), TRUE)
-flag("Legend mentions n = 118 NMD+/PTC-",      grepl("118 NMD\\+/PTC-", legend_txt), TRUE)
-flag("Legend mentions n = 190 Control",        grepl("190 Control", legend_txt), TRUE)
-flag("Legend mentions n = 1,050 (or 1050)",    grepl("1,050|1050", legend_txt), TRUE)
-flag("Legend mentions n = 113",                grepl("[^0-9]113[^0-9]", legend_txt), TRUE)
-flag("Legend mentions n = 1,166 (or 1166)",    grepl("1,166|1166", legend_txt), TRUE)
+flag("Legend mentions n = 48 (Section A PTC+)",  grepl("[^0-9]48 NMD", legend_txt), TRUE)
+flag("Legend mentions n = 82 (Section A PTC-)",  grepl("[^0-9]82 NMD", legend_txt), TRUE)
+flag("Legend mentions n = 130 Control",        grepl("130 Control", legend_txt), TRUE)
+flag("Legend mentions n = 756 (Section C PTC+)", grepl("756", legend_txt), TRUE)
+flag("Legend mentions n = 63 (Section C PTC-)",  grepl("[^0-9]63 NMD", legend_txt), TRUE)
+flag("Legend mentions n = 819 (Section C Control)", grepl("819", legend_txt), TRUE)
 flag("Legend mentions 2x2 / 4-panel structure (A-D)",
      grepl("Panels A.D|four panel|2.2", legend_txt) | grepl("\\bA\\b.*\\bB\\b.*\\bC\\b.*\\bD\\b", legend_txt), TRUE)
 flag("Legend does NOT contain 1,489 (old Section C n)",  grepl("1,489|1489", legend_txt), FALSE)
 flag("Legend does NOT contain 163 (old PTC- n)",          grepl("[^0-9]163[^0-9]", legend_txt), FALSE)
 flag("Legend does NOT contain 1,286 (old Control n)",     grepl("1,286|1286", legend_txt), FALSE)
-flag("Legend mentions the consolidated TD2 supplement",   grepl("TD2BiasEvidence|consolidated.*supplemental|consolidated.*TD2", legend_txt), TRUE)
-flag("Legend describes 1:1 gene-matched re-intersection", grepl("gene-matched|re-intersect", legend_txt), TRUE)
+flag("Legend mentions the TD2 bias supplement",   grepl("TD2 ?Bias|systematic bias of the standard CDS", legend_txt), TRUE)
+flag("Legend describes gene+reference matching", grepl("gene.matched|re-intersect|matched on gene and reference", legend_txt), TRUE)
 
 cat("\n=== RATIONALE.md §11 ===\n")
 flag("Rationale §11 mentions 2x2 composite",         grepl("2.2 composite|2.2 layout|2.2.*layout", rat_txt), TRUE)
@@ -67,7 +67,7 @@ de_txt <- paste(readLines(file.path(ROOT, "data_export.R")), collapse = "\n")
 flag("data_export.R header comment says new 1050/113/1166 (not 1489/163/1286)",
      grepl("1,489/163/1,286|1489/163/1286", de_txt), FALSE)
 
-cat("\n=== section4_findreplace_2026-06-15.md ===\n")
+cat("\n=== section4_findreplace_2026-07-11_4ct.md ===\n")
 # Pair 1 (the actual replacement prose at lines ~76-80) must have the new numbers.
 flag("FindReplace Pair 1 mentions n=1,050 NMD+/PTC+",     grepl("1,050 NMD\\+/PTC\\+|n=1,050", fr_txt), TRUE)
 flag("FindReplace Pair 1 mentions n=113 NMD+/PTC-",       grepl("113 NMD\\+/PTC-|n=113", fr_txt), TRUE)
