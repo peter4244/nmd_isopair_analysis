@@ -61,6 +61,7 @@ PANELS = [
 
 def sig_marker(p):
     if pd.isna(p): return "n.s."
+    if p < 1e-10:  return "****"
     if p < 1e-4:   return "***"
     if p < 1e-3:   return "**"
     if p < 0.05:   return "*"
