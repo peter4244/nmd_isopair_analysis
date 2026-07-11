@@ -55,6 +55,15 @@ Overwrite the 6-CT artifacts in place; `git mv` `05_final_report_gencode_scope_2
 - **m2** — reconcile stray pre-floor `Control n=1166` at `figure4…/verify_pass1_factual.R:83` before R4.
 - **m3** — filename-bump surface widened (above).
 
+### ⚠ CORRECTION — ROUND 3 (2026-07-11): SF42 data source was MISIDENTIFIED
+The "un-freeze SF42 via `05t→05v→SF42`" wording (leak table #5, Implementation ¶, R2/R3/R4/R6) is **factually wrong** and must be re-targeted:
+- **SF42 reads `code/nmd_predictor_comparison/per_isoform_scores_2026.6.20.tsv` + `metrics_summary_2026.6.20.tsv`** (`SF42_ModelComparison/figure_s_model_comparison.py:49-50`), NOT `05v`'s `model_comparison.rds`. SF42 = NMDetective-B / NMDEP predictor comparison (`results_to_code_map.md:647`), NOT the 05v TD2/Ref/Combined comparison.
+- **05v feeds only `05_final_report_mashr.Rmd` (LEGACY/superseded)** → 05t/05v are **dead for the paper**; DROP them from the re-scope (note `model_comparison.rds` as a non-paper cache; round-2 M-3 "re-run 05t" is moot).
+- SF42's real upstream is `code/nmd_predictor_comparison/` (01→02→03→04), which reads `profiles_c2/c4_allsamples.rds` (`01_extract_our_isoforms.R:45-46`, floor+rescope-affected) + `ref_atg_analysis.rds` (05r) + a frozen model-global `predictions_all_atg500_stop500.tsv`. Its TSVs are dated `2026.6.20` — **pre-floor**, so SF42 is stale against BOTH the floor and the rescope.
+- **To genuinely 4-CT SF42:** move `code/nmd_predictor_comparison/` from "Separate deliverables / not regenerated here" (L99) INTO scope; re-run it after R2; re-render SF42; update its hardcoded cohort numbers (n=1,166/561/293, 255/30/276) in the SF42 legend, `code/nmd_predictor_comparison/METHODS.md` + `README.md` + sub-Rmd; add those files to the scan surface.
+- **PENDING Pete re-confirm** (scope grew: a sub-pipeline, not 3 scripts). Until confirmed, R2/R3/R4/R6 SF42/05v lines are SUPERSEDED by this block.
+- Also (m-4, round 3): sequence **R5 (map) before R6** so the fresh 4-CT find/replace is built against the updated map; R6 should reference predictor-comparison cohort/Spearman numbers, not "05v model-comparison."
+
 ### Review findings folded in — ROUND 2 (2026-07-11, re-review of decision b)
 Round 2 verified (b) is mechanically sound (`dge`/`cpm_mat` build after the exclude block; classification already 4-CT; model not retrained; 03b/05r/05k/05k_b inherit 4-CT free). Fixes folded in:
 - **C-1** — scan tokens now include **pre-floor** literals (3009/8323/190/1166/492/2583–2907), which also move under (b); scan prose/cat-strings/comments/README, not just asserts. (`figure3/data_export.R` already prints a stale `pop_BC = 3,009`.)
