@@ -163,6 +163,10 @@ def main():
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_xlim(x_lo, x_hi)
     ax.set_xticks([-500, 0, 500, 1000, 1500, 2000, 2500])
+    # Add top headroom so the top y-tick doesn't touch the canvas edge —
+    # post-floor the logFC range reaches ~6 and the auto '6' tick clipped.
+    _ymn, _ymx = ax.get_ylim()
+    ax.set_ylim(_ymn, _ymx + 0.10 * (_ymx - _ymn))
 
     # Threshold-honest summary: median logFC above vs at/below 50 nt + Wilcoxon p.
     if np.isnan(p_thr):

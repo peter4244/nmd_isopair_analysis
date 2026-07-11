@@ -43,8 +43,9 @@ HERE <- (function() {
 OUT_DIR <- file.path(HERE, "data")
 dir.create(OUT_DIR, showWarnings = FALSE, recursive = TRUE)
 
-# Shared output also written next to PTCSubclassPerformance/data
-PERF_OUT <- normalizePath(file.path(HERE, "..", "PTCSubclassPerformance", "data"))
+# Shared output also written next to SF40's figure (canonical dir has the
+# SF40_ prefix; the unprefixed PTCSubclassPerformance is a rename leftover).
+PERF_OUT <- normalizePath(file.path(HERE, "..", "SF40_PTCSubclassPerformance", "data"))
 dir.create(PERF_OUT, showWarnings = FALSE, recursive = TRUE)
 
 MODEL_RES  <- "/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/results_4ct"

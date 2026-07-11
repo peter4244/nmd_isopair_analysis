@@ -27,6 +27,7 @@ pre → post per this table. "TBD" = to be read from the rendered Rmd / remainin
 | SF39 branch-SHAP subclass n (PTC+/PTC−/Ctrl) | 1,016/95/1,107 | **794/60/851** | SF39 |
 | SF39 ATG-branch share PTC+ / PTC− | 9.0% / 18.1% | **9.0% / 17.7%** | SF39 |
 | **§5 ATG-branch ratio PTC−:PTC+** ("roughly 3×") | 2.21× | **1.98×** (~2×) → soften prose to "~twice" | SF39 |
+| **§4 NMD-effect peak vs downstream-EJC count** ("peaked at 4-5") | 4–5 EJCs | **flat/noisy; nominal peak at 6** (bin5 dips to 2.03) → reconsider "peaked at 4-5" wording | SF31 |
 | Reference-share median | 31% | **TBD (≥25% by construction; expect ~50%+)** | Rmd §1 render |
 | Transcript-length medians (ref/NMD/ctrl) | 2893/3049/2762 | TBD | Rmd render |
 | %ENST reference / %novel NMD | 69.7 / 76.6 | TBD | Rmd render |
