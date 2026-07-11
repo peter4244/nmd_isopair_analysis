@@ -30,7 +30,7 @@ import math
 
 # Unified pasteable legend string. Use this verbatim in every figure legend
 # / README / methods text that needs to disclose the asterisk thresholds.
-STARS_LEGEND = "Stars: ****p < 10⁻¹⁰, ***p < 10⁻⁴, **p < 10⁻³, *p < 0.05, n.s. otherwise."
+STARS_LEGEND = "Stars: *p < 0.05, **p < 10⁻³, ***p < 10⁻⁴, ****p < 10⁻¹⁰, n.s. otherwise."
 
 # Threshold ladder (descending p). Exposed for code paths that need to test
 # tier identity directly.

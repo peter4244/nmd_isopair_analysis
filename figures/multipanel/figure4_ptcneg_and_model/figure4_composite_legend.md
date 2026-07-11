@@ -8,7 +8,7 @@
 
 **(D)** Longest 5′UTR open reading frame in the broader cohort. NMD susceptible isoforms without a premature termination codon carry longer 5′UTR open reading frames than both other groups; the NMD-with-PTC vs Control contrast also reaches significance at this larger sample size.
 
-Stars: ****p < 10⁻¹⁰, ***p < 10⁻⁴, **p < 10⁻³, *p < 0.05, n.s. otherwise (Wilcoxon rank-sum with Hodges–Lehmann shift estimate).
+Stars: *p < 0.05, **p < 10⁻³, ***p < 10⁻⁴, ****p < 10⁻¹⁰, n.s. otherwise (Wilcoxon rank-sum with Hodges–Lehmann shift estimate).
 
 The supplementary figure on systematic bias of the standard CDS caller (TD2 Bias Evidence) presents the orthogonal evidence — open-reading-frame length, paired Kozak position-weight-matrix scores, and start-codon position — that motivates using the reference-start projection rather than the standard caller's call when classifying premature termination codons in the broader cohort.
 

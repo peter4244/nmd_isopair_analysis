@@ -12,6 +12,6 @@
 
 **(F)** Mechanistic classification of the 48 premature-termination-codon-attributed events into three mutually exclusive categories: frameshift (25 events, 52%), in-frame stop introduced into preserved reading frame (18, 38%), and 3′UTR-region splice repositioning the terminal exon junction relative to the unchanged stop codon (5, 10%).
 
-Stars: ****p < 10⁻¹⁰, ***p < 10⁻⁴, **p < 10⁻³, *p < 0.05, n.s. otherwise (Fisher's exact).
+Stars: *p < 0.05, **p < 10⁻³, ***p < 10⁻⁴, ****p < 10⁻¹⁰, n.s. otherwise (Fisher's exact).
 
 **Abbreviations.** NMD, nonsense-mediated decay; PTC, premature termination codon; EJC, exon junction complex; SMG1, suppressor with morphogenetic effect on genitalia 1 (NMD-essential kinase); SE, skipped exon; A5SS, alternative 5′ splice site; A3SS, alternative 3′ splice site; IR, intron retention; TSS, transcription start site; TES, transcription end site.
