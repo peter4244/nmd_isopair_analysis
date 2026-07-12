@@ -6,7 +6,9 @@ labels TGA/TAA/TAG and pre-bug-fix frequencies). Within-class frequency of the
 three canonical stop codons (UGA / UAA / UAG) at the main (rank-0) ORF of each
 transcript in the deep-learning model's held-out test set.
 
-Data: NMD_orf_model_v5_4ct/results_4ct/stop_codon_freq_by_class_sf38.tsv — the
+Data: NMD_orf_model_v5_4ct/results_4ct/stop_codon_freq_by_class_sf37.tsv — the
+(external model repo keeps its own old-numbering export tag `sf37`; this figure
+is manuscript SF38 after the +1 supplemental renumber — the tag is not the SF #)
 canonical per-class frequencies from the `fig4a-stop-codon-freq` chunk of
 orf_model_report_v5.Rmd (rank-0 ORF stop codon from selected_orfs.tsv joined to
 test-set predictions; post-2026-04-30 stop-codon column bug fix). n = 2,268 NMD
@@ -38,7 +40,7 @@ NATIVE_W = 6.5
 BODY_FS = docx_body_fs(NATIVE_W)
 
 DATA = Path("/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/"
-            "results_4ct/stop_codon_freq_by_class_sf38.tsv")
+            "results_4ct/stop_codon_freq_by_class_sf37.tsv")
 
 CODON_ORDER = ["UGA", "UAA", "UAG"]
 
