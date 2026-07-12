@@ -75,7 +75,7 @@ def render_kozak_violin(ax, tsv_name, pvalue_text):
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
     df = pd.read_csv(DATA / tsv_name, sep="\t")
     sources = ["Reference ATG", "TD2-predicted ATG"]
-    display = {"Reference ATG": "Reference AUG", "TD2-predicted ATG": "TD2-predicted CDS"}
+    display = {"Reference ATG": "Reference\nstart codon", "TD2-predicted ATG": "TD2-predicted\nstart codon"}
     palette = {"Reference ATG": C_REF_ATG, "TD2-predicted ATG": C_TD2_ATG}
     n_per = {s: int((df["ATG_source"] == s).sum()) for s in sources}
 

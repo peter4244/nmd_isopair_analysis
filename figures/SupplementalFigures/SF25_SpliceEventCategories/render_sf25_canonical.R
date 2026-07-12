@@ -135,12 +135,12 @@ p_mi <- glossary_plot(
 p_pir5 <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 400, 700), c(200, 620, 850),
-  "Partial_IR_5", "Partial intron retention\n(5' side) (Partial IR 5')")
+  "Partial_IR_5", "Partial intron retention,\n5' side (Partial IR 5')")
 
 p_pir3 <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 400, 640), c(200, 550, 850),
-  "Partial_IR_3", "Partial intron retention\n(3' side) (Partial IR 3')")
+  "Partial_IR_3", "Partial intron retention,\n3' side (Partial IR 3')")
 
 p_ir <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),

@@ -83,7 +83,7 @@ def main():
     draw_panel(axes[0], atg, codon_label="start codon")
     draw_panel(axes[1], stop, codon_label="stop codon")
 
-    facet_header(axes[0], "Start window", height=0.08)
+    facet_header(axes[0], "Start codon window", height=0.08)
     facet_header(axes[1], "Stop codon window",   height=0.08)
 
     panel_letter(axes[0], "A", x=-0.07, y=1.14)
