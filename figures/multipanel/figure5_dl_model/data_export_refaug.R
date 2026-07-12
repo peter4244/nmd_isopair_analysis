@@ -20,8 +20,8 @@
 # data (uorf_features_in_priority_slots.tsv) where available.
 #
 # Outputs:
-#   data/subset2_n1166_isoforms.tsv       (one row per comparator with group)
-#   data/panelG_uorf_attention_n1166.tsv  (per-isoform v1 + Path B-strict)
+#   data/subset2_refaug_isoforms.tsv       (one row per comparator with group)
+#   data/panelG_uorf_attention_refaug.tsv  (per-isoform v1 + Path B-strict)
 # ==============================================================================
 
 suppressPackageStartupMessages({
@@ -71,30 +71,30 @@ shared_keys <- merge(
   unique(c2_tr[, .(gene_id, reference_isoform_id)]),
   unique(c4_tr[, .(gene_id, reference_isoform_id)]),
   by = c("gene_id", "reference_isoform_id"))
-c2_n1166 <- merge(c2_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
-c4_n1166 <- merge(c4_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
+c2_refaug <- merge(c2_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
+c4_refaug <- merge(c4_tr, shared_keys, by = c("gene_id", "reference_isoform_id"))
 
 # 4-CT re-scope + 25% ref-share floor (2026-07-11): n=1,166 -> n=819
 cat(sprintf("[Subset 2] NMD c2 = %d, Control c4 = %d (expect 819/819 4-CT)\n",
-            nrow(c2_n1166), nrow(c4_n1166)))
-stopifnot(nrow(c2_n1166) == 819L, nrow(c4_n1166) == 819L)
+            nrow(c2_refaug), nrow(c4_refaug)))
+stopifnot(nrow(c2_refaug) == 819L, nrow(c4_refaug) == 819L)
 
 # ── Assign group labels ──
-c2_n1166[, group := fifelse(category == "effectively_ptc",
+c2_refaug[, group := fifelse(category == "effectively_ptc",
                              "NMD+/PTC+", "NMD+/PTC- retained")]
-c2_n1166[, arm := "NMD"]
-c4_n1166[, group := "Control"]
-c4_n1166[, arm := "Control"]
+c2_refaug[, arm := "NMD"]
+c4_refaug[, group := "Control"]
+c4_refaug[, arm := "Control"]
 
 out <- rbind(
-  c2_n1166[, .(arm, group, gene_id, reference_isoform_id, comparator_isoform_id, category)],
-  c4_n1166[, .(arm, group, gene_id, reference_isoform_id, comparator_isoform_id, category)]
+  c2_refaug[, .(arm, group, gene_id, reference_isoform_id, comparator_isoform_id, category)],
+  c4_refaug[, .(arm, group, gene_id, reference_isoform_id, comparator_isoform_id, category)]
 )
 
 cat("\nSubgroup counts:\n")
 print(out[, .N, by = group])
 
-fwrite(out, file.path(OUT_DIR, "subset2_n1166_isoforms.tsv"), sep = "\t")
+fwrite(out, file.path(OUT_DIR, "subset2_refaug_isoforms.tsv"), sep = "\t")
 
 # ── Join with model uORF metrics + priority-slot file ──
 mtx <- fread(file.path(MODEL_RES, "uorf_attention_metrics.tsv"),
@@ -118,20 +118,20 @@ slot[, is_strict := orf_length < 200 &
 pb <- slot[, .(strict_attn = sum(attention[is_strict])), by = isoform_id]
 
 # Join: n=1,166 list + v1 metrics + strict attention
-panG_n1166 <- merge(out, mtx, by.x = "comparator_isoform_id", by.y = "isoform_id",
+panG_refaug <- merge(out, mtx, by.x = "comparator_isoform_id", by.y = "isoform_id",
                     all.x = TRUE)
-panG_n1166 <- merge(panG_n1166, pb, by.x = "comparator_isoform_id", by.y = "isoform_id",
+panG_refaug <- merge(panG_refaug, pb, by.x = "comparator_isoform_id", by.y = "isoform_id",
                     all.x = TRUE)
-panG_n1166[is.na(strict_attn), strict_attn := 0]
+panG_refaug[is.na(strict_attn), strict_attn := 0]
 
 cat(sprintf("\nModel coverage: %d / %d (%.1f%%) have v1 metrics from model\n",
-            sum(!is.na(panG_n1166$uorf_attention_frac)),
-            nrow(panG_n1166),
-            100 * mean(!is.na(panG_n1166$uorf_attention_frac))))
+            sum(!is.na(panG_refaug$uorf_attention_frac)),
+            nrow(panG_refaug),
+            100 * mean(!is.na(panG_refaug$uorf_attention_frac))))
 
 # ── Subgroup table ──
 gord <- c("NMD+/PTC+", "NMD+/PTC- retained", "Control")
-have <- panG_n1166[!is.na(uorf_attention_frac)]
+have <- panG_refaug[!is.na(uorf_attention_frac)]
 
 cat("\n=== Path B-strict vs v1: uORF attention by subgroup at n=1,166 ===\n\n")
 tab <- have[, .(
@@ -170,12 +170,12 @@ desc <- have[, .(n = .N,
                  pct_gt20 = round(100 * mean(strict_attn > 0.20), 1)),
              by = group][order(factor(group, levels = gord))]
 
-fwrite(panG_n1166, file.path(OUT_DIR, "panelG_uorf_attention_n1166.tsv"), sep = "\t")
-fwrite(pw,         file.path(OUT_DIR, "panelG_uorf_attention_n1166_pairwise.tsv"), sep = "\t")
-fwrite(desc,       file.path(OUT_DIR, "panelG_uorf_attention_n1166_descriptives.tsv"), sep = "\t")
+fwrite(panG_refaug, file.path(OUT_DIR, "panelG_uorf_attention_refaug.tsv"), sep = "\t")
+fwrite(pw,         file.path(OUT_DIR, "panelG_uorf_attention_refaug_pairwise.tsv"), sep = "\t")
+fwrite(desc,       file.path(OUT_DIR, "panelG_uorf_attention_refaug_descriptives.tsv"), sep = "\t")
 
-cat("\nWrote:\n  ", file.path(OUT_DIR, "subset2_n1166_isoforms.tsv"), "\n",
-    "  ", file.path(OUT_DIR, "panelG_uorf_attention_n1166.tsv"), "\n",
-    "  ", file.path(OUT_DIR, "panelG_uorf_attention_n1166_pairwise.tsv"), "\n",
-    "  ", file.path(OUT_DIR, "panelG_uorf_attention_n1166_descriptives.tsv"), "\n",
+cat("\nWrote:\n  ", file.path(OUT_DIR, "subset2_refaug_isoforms.tsv"), "\n",
+    "  ", file.path(OUT_DIR, "panelG_uorf_attention_refaug.tsv"), "\n",
+    "  ", file.path(OUT_DIR, "panelG_uorf_attention_refaug_pairwise.tsv"), "\n",
+    "  ", file.path(OUT_DIR, "panelG_uorf_attention_refaug_descriptives.tsv"), "\n",
     sep="")

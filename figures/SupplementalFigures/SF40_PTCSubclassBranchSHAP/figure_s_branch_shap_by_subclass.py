@@ -33,7 +33,7 @@ post-floor ratio is ~2× (share-of-total 1.87×; was
 2.21× pre-floor). The §5 prose overstates it; flag for the manuscript
 find/replace pass (see REFERENCE_FLOOR_NUMBERS_DELTA.md).
 
-Data: data/branch_shap_by_subclass_n1166.tsv (built by data_export.R).
+Data: data/branch_shap_by_subclass_refaug.tsv (built by data_export.R).
 """
 
 import sys
@@ -74,7 +74,7 @@ BRANCH_ORDER = ["Structural", "Stop", "ATG"]
 # shown as "AUG" (RNA, not DNA).
 BRANCH_DISPLAY = {"Structural": "Structural", "Stop": "Stop", "ATG": "Start"}
 
-DATA = HERE.parent / "data" / "branch_shap_by_subclass_n1166.tsv"
+DATA = HERE.parent / "data" / "branch_shap_by_subclass_refaug.tsv"
 
 GROUP_ORDER = ["NMD+/PTC+", "NMD+/PTC- retained", "Control"]
 GROUP_LABEL = {

@@ -6,19 +6,19 @@
 #
 # Outputs (shared with the sibling PTCSubclassPerformance/ supplement):
 #
-#   data/branch_shap_by_subclass_n1166.tsv
+#   data/branch_shap_by_subclass_refaug.tsv
 #       Long form, one row per (isoform, branch). Columns:
 #         arm, group, gene_id, reference_isoform_id, comparator_isoform_id,
 #         category, branch ∈ {ATG, Stop, Structural}, shap_signed, abs_shap,
 #         prediction, label, prob.
 #
-#   data/branch_shap_by_subclass_n1166_descriptives.tsv
+#   data/branch_shap_by_subclass_refaug_descriptives.tsv
 #       Per-group × per-branch mean |SHAP|, mean signed SHAP, n_isoforms.
 #
-#   data/branch_shap_by_subclass_n1166_pairwise.tsv
+#   data/branch_shap_by_subclass_refaug_pairwise.tsv
 #       Wilcoxon per-branch contrast (PTC+ vs PTC−, PTC− vs Control, PTC+ vs Control).
 #
-#   data/predprob_by_subclass_n1166.tsv  (consumed by PTCSubclassPerformance/)
+#   data/predprob_by_subclass_refaug.tsv  (consumed by PTCSubclassPerformance/)
 #       One row per isoform: arm, group, comparator_isoform_id, label, prob.
 #
 # Sources:
@@ -27,7 +27,7 @@
 #       shap_structural, shap_sum, residual
 #   ~/claude_projects/NMD_orf_model_v5_4ct/results_4ct/predictions_atg500_stop500.tsv
 #       isoform_id, chr, label, logit, prob
-#   ~/claude_projects/nmd/figures/multipanel/figure5_dl_model/data/subset2_n1166_isoforms.tsv
+#   ~/claude_projects/nmd/figures/multipanel/figure5_dl_model/data/subset2_refaug_isoforms.tsv
 #       arm, group, gene_id, reference_isoform_id, comparator_isoform_id, category
 # ==============================================================================
 
@@ -49,32 +49,32 @@ PERF_OUT <- normalizePath(file.path(HERE, "..", "SF41_PTCSubclassPerformance", "
 dir.create(PERF_OUT, showWarnings = FALSE, recursive = TRUE)
 
 MODEL_RES  <- "/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/results_4ct"
-N1166_LIST <- "/Users/petecastaldi/claude_projects/nmd/figures/multipanel/figure5_dl_model/data/subset2_n1166_isoforms.tsv"
+N1166_LIST <- "/Users/petecastaldi/claude_projects/nmd/figures/multipanel/figure5_dl_model/data/subset2_refaug_isoforms.tsv"
 
 # ── Load ──
 # FULL-COHORT KernelSHAP (39,939 isoforms; matches Figure 5 Panel C scope).
 # Use `_all.tsv`, NOT the test-set-only `kernel_shap_branch_atg500_stop500.tsv`,
 # so the n=1,166 join is not test-set-restricted (which dropped PTC- to n=30).
-n1166  <- fread(N1166_LIST)
+refaug  <- fread(N1166_LIST)
 kshap  <- fread(file.path(MODEL_RES, "kernel_shap_branch_atg500_stop500_all.tsv"))
 # Test-set predictions only — used for the sibling PTCSubclassPerformance SF,
 # which is scoped test-only by the test-only-for-performance-metrics policy.
 preds  <- fread(file.path(MODEL_RES, "predictions_atg500_stop500.tsv"),
                 select = c("isoform_id", "prob"))
 
-cat(sprintf("n1166: %d rows\nkshap (full cohort): %d rows\npreds (test set): %d rows\n",
-            nrow(n1166), nrow(kshap), nrow(preds)))
+cat(sprintf("refaug: %d rows\nkshap (full cohort): %d rows\npreds (test set): %d rows\n",
+            nrow(refaug), nrow(kshap), nrow(preds)))
 
 # ── Branch SHAP join — full cohort scope ──
 # Inner-join n=1,166 list with the full-cohort branch SHAP. Do NOT join with
 # preds here (preds is test-set only — joining would silently restrict the
 # SHAP-side scope to the test split, which is what happened in the first
 # build of this SF).
-have <- merge(n1166, kshap,
+have <- merge(refaug, kshap,
               by.x = "comparator_isoform_id", by.y = "isoform_id",
               all.x = FALSE)
 cat(sprintf("\nBranch-SHAP join: %d / %d (%.1f%% coverage; full cohort)\n",
-            nrow(have), nrow(n1166), 100 * nrow(have) / nrow(n1166)))
+            nrow(have), nrow(refaug), 100 * nrow(have) / nrow(refaug)))
 
 cat("\nBranch-SHAP subgroup counts:\n")
 print(have[, .N, by = group])
@@ -82,17 +82,17 @@ print(have[, .N, by = group])
 # ── Per-isoform predicted-prob table — test-set only ──
 # Separate inner-join branch — used by the sibling PTCSubclassPerformance/
 # supplement (test-set scope per the test-only-for-performance-metrics policy).
-have_preds <- merge(n1166, preds,
+have_preds <- merge(refaug, preds,
                     by.x = "comparator_isoform_id", by.y = "isoform_id",
                     all.x = FALSE)
 cat(sprintf("\nPredprob join (test set): %d / %d (%.1f%% coverage)\n",
-            nrow(have_preds), nrow(n1166),
-            100 * nrow(have_preds) / nrow(n1166)))
+            nrow(have_preds), nrow(refaug),
+            100 * nrow(have_preds) / nrow(refaug)))
 
 predprob <- have_preds[, .(arm, group, gene_id, reference_isoform_id,
                             comparator_isoform_id, category, prob)]
-fwrite(predprob, file.path(OUT_DIR,  "predprob_by_subclass_n1166.tsv"), sep = "\t")
-fwrite(predprob, file.path(PERF_OUT, "predprob_by_subclass_n1166.tsv"), sep = "\t")
+fwrite(predprob, file.path(OUT_DIR,  "predprob_by_subclass_refaug.tsv"), sep = "\t")
+fwrite(predprob, file.path(PERF_OUT, "predprob_by_subclass_refaug.tsv"), sep = "\t")
 
 # ── Long-form branch SHAP for SF1 (full cohort) ──
 long <- melt(
@@ -111,7 +111,7 @@ long[, branch := fcase(
 long[, abs_shap := abs(shap_signed)]
 long[, branch_raw := NULL]
 
-fwrite(long, file.path(OUT_DIR, "branch_shap_by_subclass_n1166.tsv"), sep = "\t")
+fwrite(long, file.path(OUT_DIR, "branch_shap_by_subclass_refaug.tsv"), sep = "\t")
 
 # ── Per-group × per-branch descriptives ──
 gord <- c("NMD+/PTC+", "NMD+/PTC- retained", "Control")
@@ -122,7 +122,7 @@ desc <- long[, .(
   median_abs      = round(median(abs_shap), 4)
 ), by = .(group, branch)]
 desc <- desc[order(factor(group, levels = gord), branch)]
-fwrite(desc, file.path(OUT_DIR, "branch_shap_by_subclass_n1166_descriptives.tsv"), sep = "\t")
+fwrite(desc, file.path(OUT_DIR, "branch_shap_by_subclass_refaug_descriptives.tsv"), sep = "\t")
 
 cat("\n=== Per-group × per-branch mean |SHAP| ===\n")
 print(dcast(desc, group ~ branch, value.var = "mean_abs_shap")[
@@ -155,13 +155,13 @@ pw <- rbindlist(lapply(branches, function(b) {
                wilcox_p = signif(wt$p.value, 3))
   }))
 }))
-fwrite(pw, file.path(OUT_DIR, "branch_shap_by_subclass_n1166_pairwise.tsv"), sep = "\t")
+fwrite(pw, file.path(OUT_DIR, "branch_shap_by_subclass_refaug_pairwise.tsv"), sep = "\t")
 
 cat("\n=== Pairwise Wilcoxon (|SHAP|) per branch × contrast ===\n")
 print(pw)
 
 cat(sprintf("\nWrote:\n  %s\n  %s\n  %s\n  %s (shared with PTCSubclassPerformance/)\n",
-            file.path(OUT_DIR, "branch_shap_by_subclass_n1166.tsv"),
-            file.path(OUT_DIR, "branch_shap_by_subclass_n1166_descriptives.tsv"),
-            file.path(OUT_DIR, "branch_shap_by_subclass_n1166_pairwise.tsv"),
-            file.path(OUT_DIR, "predprob_by_subclass_n1166.tsv")))
+            file.path(OUT_DIR, "branch_shap_by_subclass_refaug.tsv"),
+            file.path(OUT_DIR, "branch_shap_by_subclass_refaug_descriptives.tsv"),
+            file.path(OUT_DIR, "branch_shap_by_subclass_refaug_pairwise.tsv"),
+            file.path(OUT_DIR, "predprob_by_subclass_refaug.tsv")))

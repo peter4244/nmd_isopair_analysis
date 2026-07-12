@@ -1,6 +1,6 @@
 """
 Figure 5 Panel G — uORF attention proportion at the Subset 2 scope
-(4-CT re-scope 2026-07-11: n=819 per arm; "n1166" filenames are the stable
+(4-CT re-scope 2026-07-11: n=819 per arm; "refaug" filenames are the stable
 subset-2 identifier).
 
 The attention metric is computed under the **Path B-strict** rule
@@ -33,7 +33,7 @@ need uORFs to explain NMD trajectory). We render a violin overlaid with
 strip plot so the zero mass is honest.
 
 Data:
-  ./data/panelG_uorf_attention_n1166.tsv  (per-isoform: group, v1, strict_attn)
+  ./data/panelG_uorf_attention_refaug.tsv  (per-isoform: group, v1, strict_attn)
 """
 
 import sys
@@ -84,9 +84,9 @@ def lookup_p(stats, ga, gb):
 
 
 def build_figure():
-    df = pd.read_csv(HERE.parent / "data" / "panelG_uorf_attention_n1166.tsv",
+    df = pd.read_csv(HERE.parent / "data" / "panelG_uorf_attention_refaug.tsv",
                      sep="\t")
-    stats = pd.read_csv(HERE.parent / "data" / "panelG_uorf_attention_n1166_pairwise.tsv",
+    stats = pd.read_csv(HERE.parent / "data" / "panelG_uorf_attention_refaug_pairwise.tsv",
                         sep="\t")
     # Keep only isoforms with model coverage
     df = df[df["uorf_attention_frac"].notna()].copy()

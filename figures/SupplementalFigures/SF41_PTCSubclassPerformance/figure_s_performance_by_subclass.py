@@ -17,7 +17,7 @@ Two panels at the held-out chr-1/3/5/7 paralog-free test split:
   (B) Per-isoform predicted NMD probability stratified by subclass
       (strip + boxplot overlay), with the 0.5 decision threshold marked.
 
-KEY NUMBERS (from data/predprob_by_subclass_n1166.tsv):
+KEY NUMBERS (from data/predprob_by_subclass_refaug.tsv):
   NMD+/PTC+ vs Control:  AUC = 0.951, AUPRC = 0.935   (n=195 vs n=204)
   NMD+/PTC- vs Control:  AUC = 0.687, AUPRC = 0.130   (n=16  vs n=204)
   Mean predicted prob:   Control 0.19, NMD+/PTC+ 0.85, NMD+/PTC- 0.39.
@@ -25,7 +25,7 @@ KEY NUMBERS (from data/predprob_by_subclass_n1166.tsv):
 Scope note: test-set predictions only (chr-1/3/5/7, paralog-free). NMD+/
 PTC- has n = 16 at the test split.
 
-Data: data/predprob_by_subclass_n1166.tsv (built by sibling
+Data: data/predprob_by_subclass_refaug.tsv (built by sibling
 PTCSubclassBranchSHAP/data_export.R).
 """
 
@@ -59,7 +59,7 @@ apply_ggplot_rcparams()
 NATIVE_W = 8.2
 BODY_FS  = docx_body_fs(NATIVE_W)
 
-DATA = HERE.parent / "data" / "predprob_by_subclass_n1166.tsv"
+DATA = HERE.parent / "data" / "predprob_by_subclass_refaug.tsv"
 
 GROUP_ORDER = ["NMD+/PTC+", "NMD+/PTC- retained", "Control"]
 GROUP_LABEL = {

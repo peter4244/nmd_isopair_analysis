@@ -45,7 +45,7 @@ split. This is per the test-set-only policy for performance metrics
 |---|---|
 | `figure_s_performance_by_subclass.py` | Two-panel matplotlib figure (validator-clean) |
 | `figure_s_performance_by_subclass_legend.md` | Manuscript-style legend |
-| `data/predprob_by_subclass_n1166.tsv` | Per-isoform predicted probability + group (shared with `PTCSubclassBranchSHAP/`; built by `PTCSubclassBranchSHAP/data_export.R`) |
+| `data/predprob_by_subclass_refaug.tsv` | Per-isoform predicted probability + group (shared with `PTCSubclassBranchSHAP/`; built by `PTCSubclassBranchSHAP/data_export.R`) |
 
 ## Regenerating
 

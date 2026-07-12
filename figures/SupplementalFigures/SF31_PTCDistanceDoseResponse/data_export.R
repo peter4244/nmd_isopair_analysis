@@ -7,7 +7,7 @@
 # Population = Subset 2 (n = 1,166) NMD arm — the ref-AUG-traceable,
 # ENST-reference, gene-matched pairwise scope defined by SF29. Consumed
 # directly from the canonical Subset 2 export
-# (`multipanel/figure5_dl_model/data/subset2_n1166_isoforms.tsv`) so both
+# (`multipanel/figure5_dl_model/data/subset2_refaug_isoforms.tsv`) so both
 # SFs hang off Subset 2 in the SF29 flowchart. Single source of truth.
 #
 # TD2 bias fix (2026-07-09):
@@ -38,7 +38,7 @@ REF_ATG_RDS    <- file.path(ISOPAIR_ROOT, "data_mashr", "analysis_cache", "ref_a
 STRUCTURES_RDS <- file.path(ISOPAIR_ROOT, "data_mashr", "structures.rds")
 MASHR_RDS      <- file.path(NMD_ROOT, "isocall_dge/mashr", "mashr_isoform_model_2026.3.10.rds")
 SUBSET2_TSV    <- file.path(NMD_ROOT, "figures/multipanel/figure5_dl_model/data",
-                             "subset2_n1166_isoforms.tsv")
+                             "subset2_refaug_isoforms.tsv")
 
 SF31_DIR <- file.path("~/claude_projects/nmd/figures/SupplementalFigures",
                        "SF31_PTCDistanceDoseResponse", "data")

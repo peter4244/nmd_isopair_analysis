@@ -89,11 +89,11 @@ targeting):
 | `data_export.R` | Joins n=1,166 list with **full-cohort** branch SHAP and (separately) test-set predictions; emits four TSVs in `data/`. The predictions TSV is also dropped into `../PTCSubclassPerformance/data/` for SF2 reuse |
 | `figure_s_branch_shap_by_subclass.py` | Three Panel-C-style mini-panels (validator-clean) |
 | `figure_s_branch_shap_by_subclass_legend.md` | Manuscript-style legend |
-| `rmd_patch_section_8_5_n1166_subclass.Rmd` | Draft new §8.5 to splice into `NMD_orf_model_v5_4ct/orf_model_report_v5.Rmd` when cluster is back |
-| `data/branch_shap_by_subclass_n1166.tsv` | Long-form per-isoform × branch (full cohort) |
-| `data/branch_shap_by_subclass_n1166_descriptives.tsv` | Per-group × per-branch means |
-| `data/branch_shap_by_subclass_n1166_pairwise.tsv` | Wilcoxon contrasts |
-| `data/predprob_by_subclass_n1166.tsv` | Per-isoform predicted prob (test set only; shared with PTCSubclassPerformance) |
+| `rmd_patch_section_8_5_refaug_subclass.Rmd` | Draft new §8.5 to splice into `NMD_orf_model_v5_4ct/orf_model_report_v5.Rmd` when cluster is back |
+| `data/branch_shap_by_subclass_refaug.tsv` | Long-form per-isoform × branch (full cohort) |
+| `data/branch_shap_by_subclass_refaug_descriptives.tsv` | Per-group × per-branch means |
+| `data/branch_shap_by_subclass_refaug_pairwise.tsv` | Wilcoxon contrasts |
+| `data/predprob_by_subclass_refaug.tsv` | Per-isoform predicted prob (test set only; shared with PTCSubclassPerformance) |
 
 ## Regenerating
 

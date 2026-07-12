@@ -15,7 +15,7 @@ exports into Figure 5.
 | **D** | Mean \|SHAP\| per structural feature | `figure5_panelD_structural_features.py` |
 | **E** | Per-nucleotide signed SHAP × input around AUG, NMD class | `figure5_panelE_atg_logo.py` (reads `data/motif_logo_atg_joint_atg500_stop500.tsv`) |
 | **F** | Same for stop codon | `figure5_panelF_stop_logo.py` (reads `data/motif_logo_stop_joint_atg500_stop500.tsv`) |
-| **G** | Path B-strict uORF attention at n=1,166 Subset 2 | `figure5_panelG_uorf_attention.py` + `data_export_n1166.R` |
+| **G** | Path B-strict uORF attention at n=1,166 Subset 2 | `figure5_panelG_uorf_attention.py` + `data_export_refaug.R` |
 
 ## Composite
 
@@ -45,7 +45,7 @@ Style: all matplotlib panels use the shared ggplot-mimic shim
 
 ```bash
 # from this directory
-Rscript data_export_n1166.R                       # G inputs
+Rscript data_export_refaug.R                       # G inputs
 Rscript figure5_panelA_architecture.R             # A
 python3 figure5_panelB_performance.py             # B
 python3 figure5_panelC_branch_importance.py       # C

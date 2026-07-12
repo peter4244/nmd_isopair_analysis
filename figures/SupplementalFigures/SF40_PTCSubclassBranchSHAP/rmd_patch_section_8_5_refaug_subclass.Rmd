@@ -20,14 +20,14 @@ Why a separate section instead of editing §7/§8:
 
 Pre-req:  The n=1,166 isoform list lives in the `nmd` repo at
               ~/claude_projects/nmd/figures/multipanel/figure5_dl_model/data/
-                subset2_n1166_isoforms.tsv
-          The chunk below reads it from `external/subset2_n1166_isoforms.tsv` by
+                subset2_refaug_isoforms.tsv
+          The chunk below reads it from `external/subset2_refaug_isoforms.tsv` by
           default; symlink it into the model repo with:
 
               mkdir -p external
               ln -sf ~/claude_projects/nmd/figures/multipanel/figure5_dl_model/\
-                       data/subset2_n1166_isoforms.tsv \
-                     external/subset2_n1166_isoforms.tsv
+                       data/subset2_refaug_isoforms.tsv \
+                     external/subset2_refaug_isoforms.tsv
 
           (or point N1166_PATH at the source location directly).
 
@@ -41,15 +41,15 @@ Inline R values produced (for find/replace into the manuscript Google Doc):
 
 Side-effects: writes two TSVs to results_dir for downstream re-use, parallel
               to the figure-side TSVs in the nmd repo:
-                  subset2_n1166_branch_shap_descriptives.tsv
-                  subset2_n1166_predprob_by_subclass.tsv
+                  subset2_refaug_branch_shap_descriptives.tsv
+                  subset2_refaug_predprob_by_subclass.tsv
               These are not strictly required (the upstream R script in the
               nmd repo already produces equivalents) but having an in-Rmd copy
               keeps this report self-contained.
 ================================================================================
 -->
 
-## 8.5 Manuscript Subset 2 (n = 1,166) — Subgroup-Stratified Interpretability {#sec8-5-subset2-n1166}
+## 8.5 Manuscript Subset 2 (n = 1,166) — Subgroup-Stratified Interpretability {#sec8-5-subset2-refaug}
 
 The §5 deep-learning narrative makes two claims that are stratified by isoform PTC subclass *within* the manuscript's ref-AUG-traceable subset (Subset 2, n = 1,166; same scope as Figure 4 C/D and Figure 5 Panel G). This subsection reproduces those analyses inline so the inline R values backing them live in the report.
 
@@ -57,13 +57,13 @@ Subset 2 was constructed in the upstream Isopair pipeline to be TD2-bias-indepen
 
 ```{r sec8-5-load-subset2-list}
 # ── Data provenance ──
-# Source: subset2_n1166_isoforms.tsv (from ~/claude_projects/nmd, manuscript
+# Source: subset2_refaug_isoforms.tsv (from ~/claude_projects/nmd, manuscript
 #   Subset 2 ref-AUG-traceable gene-matched pairs)
 # Population: 2 × 1,166 = 2,332 isoform rows (1,166 NMD arm + 1,166 Control arm),
 #   stratified into NMD+/PTC+, NMD+/PTC- retained, Control via the `group` column.
 # Method: gene-matched 1:1 pair sampling; see paper/results_to_code_map.md §5.
 
-N1166_PATH <- "external/subset2_n1166_isoforms.tsv"
+N1166_PATH <- "external/subset2_refaug_isoforms.tsv"
 have_subset2 <- file.exists(N1166_PATH)
 if (have_subset2) {
   subset2 <- fread(N1166_PATH)
@@ -170,7 +170,7 @@ subset2_branch_desc <- subset2_branch_long %>%
   arrange(group)
 
 fwrite(subset2_branch_desc,
-       file.path(results_dir, "subset2_n1166_branch_shap_descriptives.tsv"),
+       file.path(results_dir, "subset2_refaug_branch_shap_descriptives.tsv"),
        sep = "\t")
 
 # Pull inline values
@@ -254,7 +254,7 @@ subset2_perf_desc <- subset2_perf %>%
 
 fwrite(subset2_perf %>%
          select(arm, group, comparator_isoform_id, prob),
-       file.path(results_dir, "subset2_n1166_predprob_by_subclass.tsv"),
+       file.path(results_dir, "subset2_refaug_predprob_by_subclass.tsv"),
        sep = "\t")
 ```
 
@@ -278,8 +278,8 @@ render_dt(subset2_perf_desc %>%
 The figure-side companion files (in the `nmd` repo) carry the same numbers as plotted SFs:
 
 - `figures/SupplementalFigures/PTCSubclassBranchSHAP/figure_s_branch_shap_by_subclass.{pdf,png}`
-  — Two-panel SF: (A) mean |SHAP| per branch; (B) mean within-isoform share. Built from `data/branch_shap_by_subclass_n1166.tsv` + `.._descriptives.tsv` + `.._pairwise.tsv`.
+  — Two-panel SF: (A) mean |SHAP| per branch; (B) mean within-isoform share. Built from `data/branch_shap_by_subclass_refaug.tsv` + `.._descriptives.tsv` + `.._pairwise.tsv`.
 - `figures/SupplementalFigures/PTCSubclassPerformance/figure_s_performance_by_subclass.{pdf,png}`
-  — Two-panel SF: (A) ROC curves; (B) predicted-prob per subgroup. Built from `data/predprob_by_subclass_n1166.tsv`.
+  — Two-panel SF: (A) ROC curves; (B) predicted-prob per subgroup. Built from `data/predprob_by_subclass_refaug.tsv`.
 
-These figure-side TSVs are produced by `figures/SupplementalFigures/PTCSubclassBranchSHAP/data_export.R` in the `nmd` repo; the two Rmd-side TSVs above (`subset2_n1166_branch_shap_descriptives.tsv`, `subset2_n1166_predprob_by_subclass.tsv`) are independent re-renders for self-containment of this report.
+These figure-side TSVs are produced by `figures/SupplementalFigures/PTCSubclassBranchSHAP/data_export.R` in the `nmd` repo; the two Rmd-side TSVs above (`subset2_refaug_branch_shap_descriptives.tsv`, `subset2_refaug_predprob_by_subclass.tsv`) are independent re-renders for self-containment of this report.
