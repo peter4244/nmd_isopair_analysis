@@ -279,7 +279,7 @@ The figure-side companion files (in the `nmd` repo) carry the same numbers as pl
 
 - `figures/SupplementalFigures/PTCSubclassBranchSHAP/figure_s_branch_shap_by_subclass.{pdf,png}`
   — Two-panel SF: (A) mean |SHAP| per branch; (B) mean within-isoform share. Built from `data/branch_shap_by_subclass_refaug.tsv` + `.._descriptives.tsv` + `.._pairwise.tsv`.
-- `figures/SupplementalFigures/PTCSubclassPerformance/figure_s_performance_by_subclass.{pdf,png}`
+- `figures/SupplementalFigures/SF41_PTCSubclassPerformance/figure_s_performance_by_subclass.{pdf,png}`
   — Two-panel SF: (A) ROC curves; (B) predicted-prob per subgroup. Built from `data/predprob_by_subclass_refaug.tsv`.
 
 These figure-side TSVs are produced by `figures/SupplementalFigures/PTCSubclassBranchSHAP/data_export.R` in the `nmd` repo; the two Rmd-side TSVs above (`subset2_refaug_branch_shap_descriptives.tsv`, `subset2_refaug_predprob_by_subclass.tsv`) are independent re-renders for self-containment of this report.
