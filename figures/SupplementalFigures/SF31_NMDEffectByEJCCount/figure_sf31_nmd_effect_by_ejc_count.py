@@ -94,9 +94,12 @@ def main():
                    fontsize=BODY_FS, color=TITLE_C)
     ax.set_ylabel("Mean logFC (mashr posterior mean)",
                    fontsize=BODY_FS, color=TITLE_C)
-    y_hi = df["mean_logFC"].quantile(0.995) + 0.2
-    y_lo = df["mean_logFC"].quantile(0.005) - 0.2
-    ax.set_ylim(y_lo, y_hi)
+    # Set the y-limits from the ACTUAL violin outline extents (the KDE, which
+    # extends past the data by the default `cut`), so no violin tail is clipped
+    # at the top/bottom of the axes -- the quantile-based limit used before sat
+    # below the tallest violin (bin 5) and cut it off.
+    vy = np.concatenate([b.get_paths()[0].vertices[:, 1] for b in parts["bodies"]])
+    ax.set_ylim(vy.min() - 0.1, vy.max() + 0.1)
     ax.set_xlim(-0.6, len(order) - 0.4)
 
     # No overall figure title — caption carries the title role (Yul-style).
