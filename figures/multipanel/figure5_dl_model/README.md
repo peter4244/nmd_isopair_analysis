@@ -61,5 +61,5 @@ python3 figure5_composite.py                      # composite
 - Manuscript §5 (Google Doc): see `paper/results_to_code_map.md` §5 entry.
 - Model architecture, training, METHODS: `NMD_orf_model_v5_4ct/METHODS.md`.
 - TD2 bias context for Panel G's strict-uORF rule:
-  `figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/README.md`,
+  `figures/SupplementalFigures/SF34-SF35_TD2BiasEvidence/README.md`,
   `TD2_BIAS_AUDIT.md` (repo root).

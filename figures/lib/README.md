@@ -10,7 +10,7 @@
 | `validate_figure_layout.py` | Six validators — `validate_figure_layout`, `validate_multipanel_layout`, `assert_style_symmetric`, `assert_docx_readable`, `assert_data_free`, plus `find_open_regions` for query-driven placement. |
 | `validate_figure_layout.R` | R port of `validate_figure_layout` for ggplot2 panels. |
 | `validate_composite_layout.R` | Patchwork composite validator. |
-| `validate_flowchart_dot.R` | Static DOT / Graphviz flowchart validator (SF28-class). |
+| `validate_flowchart_dot.R` | Static DOT / Graphviz flowchart validator (SF29-class). |
 | `figure_primitives.py` | Reusable primitives for grant-style diagrams (aim cards, arrows, section frames). |
 | `figure_geometry.py` | Named-coord constants + `geometry_summary` for structural symmetry. |
 | `mechanism_class.R` | PTC-mechanism classification helper for `nmd_responsive` isoforms. |
@@ -30,10 +30,10 @@
 
 Copy from one of these when starting a new figure:
 
-- **2×2 with centered bottom panel (matplotlib):** `../SupplementalFigures/SF33_TD2Bias_broad/figure_sf33.py`
-- **1×2 boxplot + KDE (matplotlib):** `../SupplementalFigures/SF38_AttentionDistribution/figure_s_attention_distribution.py`
-- **12-panel schematic composite (R/ggplot + patchwork):** `../SupplementalFigures/SF24_SpliceEventCategories/render_sf24_canonical.R`
-- **DOT / Graphviz flowchart (R):** `../SupplementalFigures/SF28_PairAnalysisFlowchart/build_flowchart.R`
+- **2×2 with centered bottom panel (matplotlib):** `../SupplementalFigures/SF34_TD2Bias_broad/figure_sf34.py`
+- **1×2 boxplot + KDE (matplotlib):** `../SupplementalFigures/SF39_AttentionDistribution/figure_s_attention_distribution.py`
+- **12-panel schematic composite (R/ggplot + patchwork):** `../SupplementalFigures/SF25_SpliceEventCategories/render_sf25_canonical.R`
+- **DOT / Graphviz flowchart (R):** `../SupplementalFigures/SF29_PairAnalysisFlowchart/build_flowchart.R`
 
 ## Project-specific overrides
 

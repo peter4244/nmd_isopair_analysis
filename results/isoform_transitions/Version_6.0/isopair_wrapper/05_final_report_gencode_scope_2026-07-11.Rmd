@@ -1154,8 +1154,8 @@ knitr::kable(secA_utr3np_pw[, c("group_x","group_y","median_x","median_y","hl_sh
 
 ```{r sec2d-supp, echo=FALSE, fig.cap="CDSand3UTR_GENCODEonly supplement — 2×3 layout. Row 1 (Section A, n=130): A CDS length, B 3'UTR translation-based, C 3'UTR non-PTC-stop (bias-corrected). Row 2 (Section C, n=819, ref-AUG-projected): D CDS length, E 3'UTR translation-based, F 3'UTR non-PTC-stop. The bias-correction pattern (PTC+ inflation under translation-based collapses under non-PTC-stop measure) replicates across both scopes.", out.width="100%"}
 knitr::include_graphics(
-  c(file.path(NMD_ROOT, "figures/SupplementalFigures/SF32_CdsAnd3UTR_GENCODE/figure_sf32.png"),
-    file.path(NMD_ROOT, "figures/SupplementalFigures/SF35_CdsAnd3UTR_refAUG/figure_sf35.png"))
+  c(file.path(NMD_ROOT, "figures/SupplementalFigures/SF33_CdsAnd3UTR_GENCODE/figure_sf33.png"),
+    file.path(NMD_ROOT, "figures/SupplementalFigures/SF36_CdsAnd3UTR_refAUG/figure_sf36.png"))
 )
 ```
 
@@ -1490,8 +1490,8 @@ downstream ATG, even at the cost of a lower Kozak score.
 
 ```{r sec4-supp, echo=FALSE, fig.cap="TD2BiasEvidence supplement — 2×3 layout: broad scope (row 1, n=819) + occult-PTC scope (row 2, n=348)", out.width="100%"}
 knitr::include_graphics(
-  c(file.path(NMD_ROOT, "figures/SupplementalFigures/SF33_TD2Bias_broad/figure_sf33.png"),
-    file.path(NMD_ROOT, "figures/SupplementalFigures/SF34_TD2Bias_occult/figure_sf34.png"))
+  c(file.path(NMD_ROOT, "figures/SupplementalFigures/SF34_TD2Bias_broad/figure_sf34.png"),
+    file.path(NMD_ROOT, "figures/SupplementalFigures/SF35_TD2Bias_occult/figure_sf35.png"))
 )
 ```
 

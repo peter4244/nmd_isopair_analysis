@@ -26,7 +26,7 @@ code/nmd_predictor_comparison/                       ← analysis pipeline (this
 ├── nmd_predictor_comparison_2026.7.11.html          ← rendered HTML report
 └── external/                                        ← gitignored; only if NMDetective-A is run
 
-figures/SupplementalFigures/SF42_ModelComparison/         ← rendered SF (built after the pipeline runs)
+figures/SupplementalFigures/SF43_ModelComparison/         ← rendered SF (built after the pipeline runs)
 ├── figure_s_model_comparison.py
 ├── figure_s_model_comparison.{pdf,png}
 └── figure_s_model_comparison_legend.md

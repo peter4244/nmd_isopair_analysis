@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Build a Word document containing SF24–SF42 for the NMD manuscript
+ * Build a Word document containing SF25–SF43 for the NMD manuscript
  * Supplemental Figures (§4 and §5). Format matches the existing Yul-authored
  * SF1–SF23 document (Supplemental Figures NMD.pdf):
  *
@@ -31,25 +31,25 @@ const OUTPUT = '/Users/petecastaldi/claude_projects/nmd/paper/nmd_supplemental_f
 
 // Manifest: manuscript order → dir + png filename + legend filename
 const SFS = [
-  ['SF24_SpliceEventCategories',        'figure_sf24_splice_event_categories.png',       'figure_sf24_splice_event_categories_legend.md'],
-  ['SF25_IsoformsPerGene',              'figure_sf25_isoforms_per_gene.png',             'figure_sf25_isoforms_per_gene_legend.md'],
-  ['SF26_ReferenceShare',               'figure_sf26_reference_share.png',               'figure_sf26_reference_share_legend.md'],
-  ['SF27_TranscriptLengthByRole',       'figure_sf27_transcript_length_by_role.png',     'figure_sf27_transcript_length_by_role_legend.md'],
-  ['SF28_PairAnalysisFlowchart',        'figure_s_pair_analysis_flowchart.png',          'figure_s_pair_analysis_flowchart_legend.md'],
-  ['SF29_GainDirectionByEvent',         'figure_sf29_gain_direction_by_event.png',       'figure_sf29_gain_direction_by_event_legend.md'],
-  ['SF30_PTCDistanceDoseResponse',      'figure_sf30_ptc_distance_dose_response.png',    'figure_sf30_ptc_distance_dose_response_legend.md'],
-  ['SF31_NMDEffectByEJCCount',          'figure_sf31_nmd_effect_by_ejc_count.png',       'figure_sf31_nmd_effect_by_ejc_count_legend.md'],
-  ['SF32_CdsAnd3UTR_GENCODE',           'figure_sf32.png',                               'figure_sf32_legend.md'],
-  ['SF33_TD2Bias_broad',                'figure_sf33.png',                               'figure_sf33_legend.md'],
-  ['SF34_TD2Bias_occult',               'figure_sf34.png',                               'figure_sf34_legend.md'],
-  ['SF35_CdsAnd3UTR_refAUG',            'figure_sf35.png',                               'figure_sf35_legend.md'],
-  ['SF36_ShapAcrossWindows',            'figure_sf36_shap_across_windows.png',           'figure_sf36_shap_across_windows_legend.md'],
-  ['SF37_StopCodonUsage',               'figure_s_stop_codon_usage.png',                 'figure_s_stop_codon_usage_legend.md'],
-  ['SF38_AttentionDistribution',        'figure_s_attention_distribution.png',           'figure_s_attention_distribution_legend.md'],
-  ['SF39_PTCSubclassBranchSHAP',        'figure_s_branch_shap_by_subclass.png',          'figure_s_branch_shap_by_subclass_legend.md'],
-  ['SF40_PTCSubclassPerformance',       'figure_s_performance_by_subclass.png',          'figure_s_performance_by_subclass_legend.md'],
-  ['SF41_GCcontentStopWindow',          'figure_sf41_gc_content_stop_window.png',        'figure_sf41_gc_content_stop_window_legend.md'],
-  ['SF42_ModelComparison',              'figure_s_model_comparison.png',                 'figure_s_model_comparison_legend.md'],
+  ['SF25_SpliceEventCategories',        'figure_sf25_splice_event_categories.png',       'figure_sf25_splice_event_categories_legend.md'],
+  ['SF26_IsoformsPerGene',              'figure_sf26_isoforms_per_gene.png',             'figure_sf26_isoforms_per_gene_legend.md'],
+  ['SF27_ReferenceShare',               'figure_sf27_reference_share.png',               'figure_sf27_reference_share_legend.md'],
+  ['SF28_TranscriptLengthByRole',       'figure_sf28_transcript_length_by_role.png',     'figure_sf28_transcript_length_by_role_legend.md'],
+  ['SF29_PairAnalysisFlowchart',        'figure_s_pair_analysis_flowchart.png',          'figure_s_pair_analysis_flowchart_legend.md'],
+  ['SF30_GainDirectionByEvent',         'figure_sf30_gain_direction_by_event.png',       'figure_sf30_gain_direction_by_event_legend.md'],
+  ['SF31_PTCDistanceDoseResponse',      'figure_sf31_ptc_distance_dose_response.png',    'figure_sf31_ptc_distance_dose_response_legend.md'],
+  ['SF32_NMDEffectByEJCCount',          'figure_sf32_nmd_effect_by_ejc_count.png',       'figure_sf32_nmd_effect_by_ejc_count_legend.md'],
+  ['SF33_CdsAnd3UTR_GENCODE',           'figure_sf33.png',                               'figure_sf33_legend.md'],
+  ['SF34_TD2Bias_broad',                'figure_sf34.png',                               'figure_sf34_legend.md'],
+  ['SF35_TD2Bias_occult',               'figure_sf35.png',                               'figure_sf35_legend.md'],
+  ['SF36_CdsAnd3UTR_refAUG',            'figure_sf36.png',                               'figure_sf36_legend.md'],
+  ['SF37_ShapAcrossWindows',            'figure_sf37_shap_across_windows.png',           'figure_sf37_shap_across_windows_legend.md'],
+  ['SF38_StopCodonUsage',               'figure_s_stop_codon_usage.png',                 'figure_s_stop_codon_usage_legend.md'],
+  ['SF39_AttentionDistribution',        'figure_s_attention_distribution.png',           'figure_s_attention_distribution_legend.md'],
+  ['SF40_PTCSubclassBranchSHAP',        'figure_s_branch_shap_by_subclass.png',          'figure_s_branch_shap_by_subclass_legend.md'],
+  ['SF41_PTCSubclassPerformance',       'figure_s_performance_by_subclass.png',          'figure_s_performance_by_subclass_legend.md'],
+  ['SF42_GCcontentStopWindow',          'figure_sf42_gc_content_stop_window.png',        'figure_sf42_gc_content_stop_window_legend.md'],
+  ['SF43_ModelComparison',              'figure_s_model_comparison.png',                 'figure_s_model_comparison_legend.md'],
 ];
 
 // ── page geometry ─────────────────────────────────────────────────────

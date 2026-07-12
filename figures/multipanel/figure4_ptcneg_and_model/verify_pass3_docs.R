@@ -76,7 +76,7 @@ flag("FindReplace has 4-CT Section C Control n=819", grepl("819", fr_txt), TRUE)
 flag("FindReplace has 4-CT Section A PTC+ n=48", grepl("48 NMD./PTC.", fr_txt), TRUE)
 flag("FindReplace has 4-CT Section A PTC- n=82", grepl("82 NMD./PTC.", fr_txt), TRUE)
 # Pair 2 must describe what's now in the supplement (no longer a 2-panel main fig section)
-flag("FindReplace acknowledges TD2 evidence", grepl("TD2|SF34|SF33", fr_txt), TRUE)
+flag("FindReplace acknowledges TD2 evidence", grepl("TD2|SF35|SF34", fr_txt), TRUE)
 # Stale summary text
 flag("FindReplace does NOT call Figure 4 a '6-panel'",  grepl("6-panel|six-panel|six panel", fr_txt), FALSE)
 flag("FindReplace does NOT reference 3x2 / 12.x12. portrait",

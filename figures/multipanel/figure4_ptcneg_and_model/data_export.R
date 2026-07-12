@@ -11,7 +11,7 @@
 #     D: Longest 5'UTR ORF, 3 groups (ref-AUG-anchored)
 #
 # TD2-bias justification (TD2-vs-ref-AUG ORF length, paired Kozak, TD2-ATG
-# position) is in the consolidated SupplementalFigures/SF33-SF34_TD2BiasEvidence/
+# position) is in the consolidated SupplementalFigures/SF34-SF35_TD2BiasEvidence/
 # supplement on the unified n=900 occult-PTC scope.
 #
 # All NMD+/PTC- groups are MERGED (ORF match + ORF diff) — single PTC-
@@ -250,7 +250,7 @@ export_sec_A("longest_5utr_orf_nt", u5_orf_all, "B_longest_5utr_orf")
 
 # ─────────────────────────────────────────────────────────────────────
 # TD2-bias evidence panels have been consolidated into the supplemental
-# figure at figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/ on the unified
+# figure at figures/SupplementalFigures/SF34-SF35_TD2BiasEvidence/ on the unified
 # n=900 occult-PTC scope. See that folder's data_export.R for the
 # TD2-vs-ref-AUG ORF length, paired Kozak PWM, and TD2-ATG-position exports.
 # ─────────────────────────────────────────────────────────────────────

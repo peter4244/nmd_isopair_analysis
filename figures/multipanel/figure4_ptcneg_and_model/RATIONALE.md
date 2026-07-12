@@ -230,7 +230,7 @@ The uORF burden claim itself is a **candidate** mechanism, not a confirmed one. 
 
 The composite is rendered by `figure4_composite.py` with a uniform `GridSpec(2, 2)` and 1.5:1 panel cells (6.0"×4.0" each). Two sections (A, C), each occupying one row.
 
-**Restructure note (2026-06-15):** the prior 3×2 layout included a row of TD2-bias justification panels (TD2-vs-ref-AUG ORF length + paired Kozak PWM). These have been moved to a consolidated supplemental figure (`figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/`) which presents three orthogonal observations of TD2's PTC-avoidance bias on the same isoform universe as Figure 4 Panels C/D (n = 819 broad + n = 348 occult-PTC subset, both at the 1:1 gene-matched re-intersected scope). The restructure eliminates the multi-denominator confusion that the original 3×2 layout introduced — the main figure now uses two denominators (130 + 819) for two sections, and the supplement uses the same Section C denominator (819) plus its occult-PTC subset (348).
+**Restructure note (2026-06-15):** the prior 3×2 layout included a row of TD2-bias justification panels (TD2-vs-ref-AUG ORF length + paired Kozak PWM). These have been moved to a consolidated supplemental figure (`figures/SupplementalFigures/SF34-SF35_TD2BiasEvidence/`) which presents three orthogonal observations of TD2's PTC-avoidance bias on the same isoform universe as Figure 4 Panels C/D (n = 819 broad + n = 348 occult-PTC subset, both at the 1:1 gene-matched re-intersected scope). The restructure eliminates the multi-denominator confusion that the original 3×2 layout introduced — the main figure now uses two denominators (130 + 819) for two sections, and the supplement uses the same Section C denominator (819) plus its occult-PTC subset (348).
 
 ### Section A — all-3-ENST + coding-CDS scope (own-GENCODE-stop PTC determination)
 
@@ -270,7 +270,7 @@ The full Panel C/D NMD universe is n = 819 (756 PTC+ + no_downstream_ejc + trunc
 
 ### TD2 ORF-call bias evidence — supplemental figure (TD2BiasEvidence)
 
-The TD2-bias justification panels (which previously occupied Section B of the main figure) now live in `figures/SupplementalFigures/SF33-SF34_TD2BiasEvidence/` and present three orthogonal observations at two complementary scopes (2×3 layout):
+The TD2-bias justification panels (which previously occupied Section B of the main figure) now live in `figures/SupplementalFigures/SF34-SF35_TD2BiasEvidence/` and present three orthogonal observations at two complementary scopes (2×3 layout):
 
 - **Row 1 (Panels A–C; n = 819)** — broad scope, same 1:1 gene-matched universe as Figure 4 Panels C/D. TD2 chose the same ATG as the reference AUG in 52% of pairs (429/819).
 - **Row 2 (Panels D–F; n = 492)** — occult-PTC subset (`effectively_ptc ∩ original_ptc == FALSE` within the re-intersected universe).
