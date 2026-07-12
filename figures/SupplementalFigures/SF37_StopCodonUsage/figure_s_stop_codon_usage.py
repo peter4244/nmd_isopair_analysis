@@ -71,7 +71,7 @@ def main():
     for bars, vals in [(b_nmd, nmd), (b_ctrl, ctrl)]:
         for rect, v in zip(bars, vals):
             ax.text(rect.get_x() + rect.get_width() / 2, v + 1.0, f"{v:.1f}%",
-                    ha="center", va="bottom", fontsize=BODY_FS - 2, color=TITLE_C)
+                    ha="center", va="bottom", fontsize=BODY_FS, color=TITLE_C)
 
     ax.set_xticks(x)
     ax.set_xticklabels(CODON_ORDER, fontsize=BODY_FS, color=TITLE_C)
