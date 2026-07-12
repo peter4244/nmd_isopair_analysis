@@ -105,62 +105,62 @@ glossary_plot <- function(ref_s, ref_e, comp_s, comp_e, title, subtitle) {
 p_alt_tss <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(250, 400, 700), c(350, 550, 850),
-  "Alt_TSS", "Alternative transcription\nstart site")
+  "Alt_TSS", "Alternative transcription\nstart site (Alt TSS)")
 
 p_alt_tes <- glossary_plot(
   c(100, 400, 700), c(200, 550, 900),
   c(100, 400, 700), c(200, 550, 800),
-  "Alt_TES", "Alternative transcription\nend site")
+  "Alt_TES", "Alternative transcription\nend site (Alt TES)")
 
 p_a5ss <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 400, 700), c(200, 600, 850),
-  "A5SS", "Alternative 5'\nsplice site")
+  "A5SS", "Alternative 5'\nsplice site (A5SS)")
 
 p_a3ss <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 350, 700), c(200, 550, 850),
-  "A3SS", "Alternative 3'\nsplice site")
+  "A3SS", "Alternative 3'\nsplice site (A3SS)")
 
 p_se <- glossary_plot(
   c(100, 400, 600, 800), c(200, 500, 700, 900),
   c(100, 400, 800),      c(200, 500, 900),
-  "SE", "Skipped\nexon")
+  "SE", "Skipped\nexon (SE)")
 
 p_mi <- glossary_plot(
   c(100, 350, 550, 750, 950), c(200, 450, 650, 850, 1050),
   c(100, 950),                c(200, 1050),
-  "Missing_Internal", "Missing internal\nexon(s)")
+  "Missing_Internal", "Missing internal\nexon(s) (Missing Internal)")
 
 p_pir5 <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 400, 700), c(200, 620, 850),
-  "Partial_IR_5", "Partial intron retention\n(5' side)")
+  "Partial_IR_5", "Partial intron retention\n(5' side) (Partial IR 5')")
 
 p_pir3 <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 400, 640), c(200, 550, 850),
-  "Partial_IR_3", "Partial intron retention\n(3' side)")
+  "Partial_IR_3", "Partial intron retention\n(3' side) (Partial IR 3')")
 
 p_ir <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 400),      c(200, 850),
-  "IR", "Full intron\nretention")
+  "IR", "Full intron\nretention (Full IR)")
 
 p_ir_d5 <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 430),      c(200, 850),
-  "IR_diff_5", "IR with 5' boundary\ndifference")
+  "IR_diff_5", "IR with 5' boundary\ndifference (IR diff 5')")
 
 p_ir_d3 <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 400),      c(200, 820),
-  "IR_diff_3", "IR with 3' boundary\ndifference")
+  "IR_diff_3", "IR with 3' boundary\ndifference (IR diff 3')")
 
 p_ir_d53 <- glossary_plot(
   c(100, 400, 700), c(200, 550, 850),
   c(100, 430),      c(200, 820),
-  "IR_diff_5_3", "IR with 5' and 3' boundary\ndifferences")
+  "IR_diff_5_3", "IR with 5' and 3' boundary\ndifferences (IR diff 5'+3')")
 
 # 3 rows × 4 cols composite via patchwork.
 composite <- (p_alt_tss | p_alt_tes | p_a5ss | p_a3ss) /

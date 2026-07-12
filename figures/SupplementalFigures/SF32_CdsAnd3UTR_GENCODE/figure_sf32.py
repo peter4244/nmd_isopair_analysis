@@ -51,7 +51,7 @@ PANELS = [
      "ylabel": "CDS length (nt, log10)"},
     {"letter": "B", "slug": "panelC_utr3_translation",
      "value_col": "utr3_to_tx_end_nt",
-     "ylabel": "3'UTR length, translation (nt, log10)"},
+     "ylabel": "3'UTR length from annotated stop (nt, log10)"},
     {"letter": "C", "slug": "panelD_utr3_non_ptc_stop",
      "value_col": "utr3_via_non_ptc_stop_nt",
      "ylabel": "3'UTR length, non-PTC stop (nt, log10)"},

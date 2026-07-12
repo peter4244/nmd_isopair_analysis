@@ -72,7 +72,7 @@ BRANCH_ORDER = ["Structural", "Stop", "ATG"]
 
 # Display labels: the start-codon branch is stored as "ATG" in the data but
 # shown as "AUG" (RNA, not DNA).
-BRANCH_DISPLAY = {"Structural": "Structural", "Stop": "Stop", "ATG": "AUG"}
+BRANCH_DISPLAY = {"Structural": "Structural", "Stop": "Stop", "ATG": "Start"}
 
 DATA = HERE.parent / "data" / "branch_shap_by_subclass_n1166.tsv"
 

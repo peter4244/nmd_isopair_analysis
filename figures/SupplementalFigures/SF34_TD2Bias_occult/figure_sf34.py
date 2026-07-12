@@ -29,8 +29,9 @@ NATIVE_W = 11.0
 BODY_FS  = docx_body_fs(NATIVE_W)
 DATA = HERE.parents[1] / "TD2BiasEvidence" / "data"
 
-C_REF_FILL  = "#ef8a62"; C_REF_LINE  = "#d6604d"
-C_TD2_FILL  = "#67a9cf"; C_TD2_LINE  = "#2b8cbe"
+# Panel A uses the Panel B colour regime: Reference = blue, TD2 = salmon.
+C_REF_FILL  = "#4393c3"; C_REF_LINE  = "#2b8cbe"
+C_TD2_FILL  = "#ef8a62"; C_TD2_LINE  = "#d6604d"
 C_REF_ATG = "#4393c3"; C_TD2_ATG = "#ef8a62"
 C_HIST_FILL = "#67a9cf"; C_HIST_LINE = "#2b8cbe"
 C_REF_VLINE = "#d6604d"
@@ -74,7 +75,7 @@ def render_kozak_violin(ax, tsv_name, pvalue_text):
     style_axes_ggplot(ax, xgrid=False, ygrid=True)
     df = pd.read_csv(DATA / tsv_name, sep="\t")
     sources = ["Reference ATG", "TD2-predicted ATG"]
-    display = {"Reference ATG": "Reference AUG", "TD2-predicted ATG": "TD2-predicted AUG"}
+    display = {"Reference ATG": "Reference AUG", "TD2-predicted ATG": "TD2-predicted CDS"}
     palette = {"Reference ATG": C_REF_ATG, "TD2-predicted ATG": C_TD2_ATG}
     n_per = {s: int((df["ATG_source"] == s).sum()) for s in sources}
 
@@ -153,8 +154,6 @@ def render_position_hist(ax, tsv_name):
     _step = 200 if _ymax_int > 300 else 20
     ax.set_yticks([y for y in range(0, _ymax_int + 1, _step) if y < ymax])
     ax.axvline(0, color=C_REF_VLINE, linewidth=1.4, linestyle="--", zorder=3)
-    if median_pos > 0:
-        ax.axvline(median_pos, color=TITLE_C, linewidth=1.0, linestyle=":")
 
     # Category counts + clipped-outlier note moved to legend (see SF33).
 

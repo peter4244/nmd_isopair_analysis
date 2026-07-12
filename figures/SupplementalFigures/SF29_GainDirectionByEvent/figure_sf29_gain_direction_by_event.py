@@ -73,6 +73,10 @@ DISPLAY_LABEL = {
 
 def main():
     df = pd.read_csv(DATA / "table1c_gain_loss_events.csv")
+    # Drop event types with no events in one arm (uninformative empty bar-pair;
+    # e.g. IR diff 5'+3' has zero Control events).
+    df = df[(df["n_NMD_GAIN"] + df["n_NMD_LOSS"] > 0) &
+            (df["n_Control_GAIN"] + df["n_Control_LOSS"] > 0)].copy()
     df = df.sort_values("pct_NMD_GAIN", ascending=False).reset_index(drop=True)
 
     events = df["event_type"].tolist()
@@ -112,7 +116,7 @@ def main():
     ax.set_yticks([0, 25, 50, 75, 100])
     ax.set_xlim(-0.7, len(events) - 0.3)
 
-    ax.legend(loc="upper center", frameon=True, facecolor="white",
+    ax.legend(loc="upper right", frameon=True, facecolor="white",
               edgecolor="none", fontsize=BODY_FS)
 
     # No overall figure title or subtitle — caption carries both roles (Yul-style).
