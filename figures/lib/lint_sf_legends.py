@@ -88,6 +88,11 @@ def check(path: Path):
                          r"normalise|normalised|characterise|characterised|behaviour|"
                          r"labelling|modelling)\b", text, re.I):
         errs.append(f'British spelling "{m.group(0)}" (use US spelling)')
+    # B: "receiver operating characteristic" carries NO hyphens (Pete 2026-07-11)
+    for m in re.finditer(r"receiver.operating.characteristic", text, re.I):
+        if "-" in m.group(0):
+            errs.append('"receiver operating characteristic" must have NO hyphens '
+                        f'(found "{m.group(0)}")')
 
     # C: SF title sentence-case heuristic (WARN)
     tm = re.search(r"\*\*\s*(SF\d+[^|]*)\|\s*([^*]+?)\.?\*\*", text)
