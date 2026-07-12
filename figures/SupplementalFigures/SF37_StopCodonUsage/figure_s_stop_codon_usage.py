@@ -81,7 +81,7 @@ def main():
     ax.set_ylabel("Within-class frequency (%)", fontsize=BODY_FS, color=TITLE_C)
     ax.tick_params(axis="y", labelsize=BODY_FS, colors=TITLE_C)
     ax.legend(loc="upper right", frameon=True, facecolor="white",
-              edgecolor="none", fontsize=BODY_FS - 2)
+              edgecolor="none", fontsize=BODY_FS)
 
     render_and_validate(fig, HERE.parent / "figure_s_stop_codon_usage",
                         native_width_in=NATIVE_W)
