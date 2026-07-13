@@ -237,8 +237,12 @@ cat(sprintf("  -> NMD=%d, Control=%d non-NA pct_shared\n",
 # Population: pop_BC (1,548 each)
 # ============================================================================
 cat("[Panel C] Event prevalence (pop_BC = 1,548 each)\n")
+# IR and IR_diff are merged into a single "IR" (intron retention) category:
+# per Isopair (cooccurrence.R) they are the same biological mechanism (has_ir =
+# n_ir + n_ir_diff). Merge is a per-pair OR, not a bar-sum, so the pair count
+# de-duplicates pairs carrying both an IR and an IR_diff event.
 evt_types <- c("Alt_TSS", "Alt_TES", "A5SS", "A3SS", "SE",
-               "Missing_Internal", "IR", "IR_diff",
+               "Missing_Internal", "IR",
                "Partial_IR_5", "Partial_IR_3")
 
 compute_event_freq <- function(profiles) {
@@ -250,7 +254,7 @@ compute_event_freq <- function(profiles) {
     sum(profiles$tss_changed), sum(profiles$tes_changed),
     sum(profiles$n_a5ss > 0), sum(profiles$n_a3ss > 0),
     sum(profiles$n_se > 0), sum(profiles$n_missing_internal > 0),
-    sum(profiles$n_ir > 0), sum(profiles$n_ir_diff > 0),
+    sum((profiles$n_ir + profiles$n_ir_diff) > 0),
     n_pir5, n_pir3
   )
   data.frame(event_type = evt_types, n_with_event = counts,

@@ -59,9 +59,6 @@ EVENT_LABELS = {
     "A3SS": "A3SS",
     "Partial_IR_5": "Partial IR 5′",
     "Partial_IR_3": "Partial IR 3′",
-    "IR_diff": "IR differs",
-    "IR_diff_5": "IR differs 5′",
-    "IR_diff_3": "IR differs 3′",
     "Missing_Internal": "Missing internal",
 }
 

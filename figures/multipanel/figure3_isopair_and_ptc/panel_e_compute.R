@@ -92,6 +92,11 @@ diffstop_b <- attr_b[attribution == "direct" &
                      !comparator_isoform_id %in% same_stop_ids]
 all_attr_new <- rbind(diffstop_b, ss_events_b, fill = TRUE)
 all_attr_new <- all_attr_new[attribution == "direct"]
+# Merge IR_diff* into IR: same biological mechanism as intron retention
+# (matches Panel C and Isopair's has_ir). Applied at the ptc_causing_event
+# source so both the Panel E proportion table and the Panel F event_short /
+# mechanism breakdown treat IR_diff as IR.
+all_attr_new[grepl("^IR_diff", ptc_causing_event), ptc_causing_event := "IR"]
 all_attr_new$event_short <- shorten_event_labels(all_attr_new$ptc_causing_event,
                                                   collapse_rare = 3)
 cat(sprintf("  [E/F-NMD] all_attr_new (combined direct): %d pairs\n",
@@ -110,6 +115,7 @@ ptc_evt_df <- data.table(event_type = names(ptc_evt_freq),
 # detailed_events.
 ctrl_pop <- pop_BC_c4_tri[comparator_isoform_id %in% pop_trace_c4$comparator_isoform_id]
 ctrl_all_events <- do.call(rbind, lapply(ctrl_pop$detailed_events, as.data.frame))
+ctrl_all_events$event_type[grepl("^IR_diff", ctrl_all_events$event_type)] <- "IR"
 ctrl_event_freq <- table(ctrl_all_events$event_type)
 ctrl_total <- sum(ctrl_event_freq)
 cat(sprintf("  [E] Control baseline events: %d (across %d pop_trace_c4 pairs)\n",
