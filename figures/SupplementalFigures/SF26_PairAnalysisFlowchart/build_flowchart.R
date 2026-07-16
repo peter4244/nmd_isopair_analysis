@@ -219,7 +219,7 @@ digraph cohort_flow {
   // ─── Direct-from-hub consumers (whole pair set, no further narrowing) ─
   HUB_CONS [label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">
                     <TR><TD ALIGN="LEFT"><B>Used by:</B></TD></TR>
-                    <TR><TD ALIGN="LEFT">SF26 / SF27 / SF28</TD></TR>
+                    <TR><TD ALIGN="LEFT">SF27 / SF28 / SF29</TD></TR>
                     <TR><TD ALIGN="LEFT">SF30</TD></TR>
                   </TABLE>>,
             fillcolor="#eeeeee", color="#666"]

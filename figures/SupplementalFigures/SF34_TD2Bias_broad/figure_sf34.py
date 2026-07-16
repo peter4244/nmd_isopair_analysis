@@ -104,7 +104,7 @@ def render_kozak_violin(ax, tsv_name, pvalue_text):
                    linewidth=0.9, ax=ax)
     for patch in ax.collections:
         patch.set_edgecolor(TITLE_C); patch.set_alpha(0.85); patch.set_zorder(3)
-    # Median tick + numeric label per violin (SF28 style, no IQR marks).
+    # Median tick + numeric label per violin (SF29 style, no IQR marks).
     for i, s in enumerate(sources):
         v = df.loc[df["ATG_source"] == s, "score"].to_numpy()
         if v.size == 0:

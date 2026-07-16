@@ -1,9 +1,9 @@
-"""SF27 — Reference-isoform share of gene expression across the floored pop_BC
+"""SF28 — Reference-isoform share of gene expression across the floored pop_BC
 (n = 1,548 genes; retained after the 25% reference-share floor, 4-CT re-scope 2026-07-11).
 
 Standalone rebuild of the reference-share panel that was previously bundled
 as Panel B of PairSetDescriptives. Split per Yul-era paper numbering so
-the paper's SF27 reference resolves to one figure.
+the paper's SF28 reference resolves to one figure.
 
 Value plotted per gene: reference-isoform DMSO mean expression (all_samples
 basis) divided by the parent gene's total expression across all isoforms
@@ -102,7 +102,7 @@ def main():
     ax.tick_params(axis="both", labelsize=BODY_FS)
 
     # No overall figure title — caption carries the title role (Yul-style).
-    render_and_validate(fig, HERE / "figure_sf27_reference_share",
+    render_and_validate(fig, HERE / "figure_sf28_reference_share",
                         native_width_in=NATIVE_W)
     print(f"  n_genes = {n_genes:,}  median = {med:.1f}%  ≥50% = {frac_ge_50:.1f}%")
 

@@ -32,10 +32,10 @@ const OUTPUT = '/Users/petecastaldi/claude_projects/nmd/paper/nmd_supplemental_f
 // Manifest: manuscript order → dir + png filename + legend filename
 const SFS = [
   ['SF25_SpliceEventCategories',        'figure_sf25_splice_event_categories.png',       'figure_sf25_splice_event_categories_legend.md'],
-  ['SF26_IsoformsPerGene',              'figure_sf26_isoforms_per_gene.png',             'figure_sf26_isoforms_per_gene_legend.md'],
-  ['SF27_ReferenceShare',               'figure_sf27_reference_share.png',               'figure_sf27_reference_share_legend.md'],
-  ['SF28_TranscriptLengthByRole',       'figure_sf28_transcript_length_by_role.png',     'figure_sf28_transcript_length_by_role_legend.md'],
-  ['SF29_PairAnalysisFlowchart',        'figure_s_pair_analysis_flowchart.png',          'figure_s_pair_analysis_flowchart_legend.md'],
+  ['SF26_PairAnalysisFlowchart',        'figure_s_pair_analysis_flowchart.png',          'figure_s_pair_analysis_flowchart_legend.md'],
+  ['SF27_IsoformsPerGene',              'figure_sf27_isoforms_per_gene.png',             'figure_sf27_isoforms_per_gene_legend.md'],
+  ['SF28_ReferenceShare',               'figure_sf28_reference_share.png',               'figure_sf28_reference_share_legend.md'],
+  ['SF29_TranscriptLengthByRole',       'figure_sf29_transcript_length_by_role.png',     'figure_sf29_transcript_length_by_role_legend.md'],
   ['SF30_GainDirectionByEvent',         'figure_sf30_gain_direction_by_event.png',       'figure_sf30_gain_direction_by_event_legend.md'],
   ['SF31_PTCDistanceDoseResponse',      'figure_sf31_ptc_distance_dose_response.png',    'figure_sf31_ptc_distance_dose_response_legend.md'],
   ['SF32_NMDEffectByEJCCount',          'figure_sf32_nmd_effect_by_ejc_count.png',       'figure_sf32_nmd_effect_by_ejc_count_legend.md'],

@@ -1,12 +1,12 @@
 #!/usr/bin/env Rscript
-# SF28 — transcript length by role in the pop_BC triplet (post 25% floor).
+# SF29 — transcript length by role in the pop_BC triplet (post 25% floor).
 #
 # Standalone export reproducing the canonical Rmd §1 `sec1-tx-length` definition:
 # transcript length = sum(exon lengths) per isoform; one gene-matched triplet
 # (Reference, NMD comparator, Control comparator) per pop_BC gene; paired
 # Wilcoxon across roles. Population = FLOORED pop_BC. See REFERENCE_FLOOR_SF_INVENTORY.md.
 #
-# Output (SF28_TranscriptLengthByRole/data/):
+# Output (SF29_TranscriptLengthByRole/data/):
 #   tx_length_by_role_long.tsv (role, length_nt), descriptives_summary.tsv (metric, value).
 
 suppressMessages(library(data.table))
@@ -51,6 +51,6 @@ summ <- data.table(
              signif(pw(trip$nmd_len, trip$ctrl_len), 3),
              signif(pw(trip$ctrl_len, trip$ref_len), 3)))
 fwrite(summ, file.path(OUT, "descriptives_summary.tsv"), sep = "\t")
-cat(sprintf("SF28: %d triplets  medians ref/nmd/ctrl = %d/%d/%d nt\n",
+cat(sprintf("SF29: %d triplets  medians ref/nmd/ctrl = %d/%d/%d nt\n",
             nrow(trip), as.integer(round(median(trip$ref_len))),
             as.integer(round(median(trip$nmd_len))), as.integer(round(median(trip$ctrl_len)))))

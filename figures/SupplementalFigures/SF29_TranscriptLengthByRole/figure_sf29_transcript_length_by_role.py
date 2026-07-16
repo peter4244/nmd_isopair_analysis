@@ -1,8 +1,8 @@
-"""SF28 — Transcript length distribution by role in the Isopair pair set.
+"""SF29 — Transcript length distribution by role in the Isopair pair set.
 
 Standalone rebuild of the transcript-length-by-role panel that was previously
 bundled as Panel C of PairSetDescriptives. Split per Yul-era paper numbering
-so the paper's SF28 reference resolves to one figure.
+so the paper's SF29 reference resolves to one figure.
 
 Three roles within each pair-set triplet:
   - NMD comparator: NMD-classed isoform
@@ -94,7 +94,7 @@ def main():
     ax.set_xlim(-0.6, len(ROLES) - 0.4)
 
     # No overall figure title — caption carries the title role (Yul-style).
-    render_and_validate(fig, HERE / "figure_sf28_transcript_length_by_role",
+    render_and_validate(fig, HERE / "figure_sf29_transcript_length_by_role",
                         native_width_in=NATIVE_W)
     for r in ROLES:
         med = int(np.median(txl.loc[txl["role"] == r, "length_nt"].values))

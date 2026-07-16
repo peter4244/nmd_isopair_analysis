@@ -5,10 +5,10 @@
 #   SF32 — NMD effect size by downstream EJC count
 #
 # Population = Subset 2 (n = 1,166) NMD arm — the ref-AUG-traceable,
-# ENST-reference, gene-matched pairwise scope defined by SF29. Consumed
+# ENST-reference, gene-matched pairwise scope defined by SF26. Consumed
 # directly from the canonical Subset 2 export
 # (`multipanel/figure5_dl_model/data/subset2_refaug_isoforms.tsv`) so both
-# SFs hang off Subset 2 in the SF29 flowchart. Single source of truth.
+# SFs hang off Subset 2 in the SF26 flowchart. Single source of truth.
 #
 # TD2 bias fix (2026-07-09):
 #   The prior version anchored on ptc.rds$ptc_distance (distance from the

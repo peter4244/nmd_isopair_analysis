@@ -1,8 +1,8 @@
-"""SF26 — Isoform count per gene in the Isopair pair-set cohort (n = 1,585).
+"""SF27 — Isoform count per gene in the Isopair pair-set cohort (n = 1,585).
 
 Standalone rebuild of the isoform-count panel that was previously bundled
 as Panel A of PairSetDescriptives. Split per Yul-era paper numbering so
-the paper's SF26 reference resolves to one figure.
+the paper's SF27 reference resolves to one figure.
 
 Style: matplotlib rendered with ggplot-mimic theme (grey panel + white
 gridlines) so the panel visually matches SF1-SF23. See
@@ -81,7 +81,7 @@ def main():
     ax.set_xticks([1, 5, 10, 15, 20, 25, 30])
 
     # No overall figure title — caption carries the title role (Yul-style).
-    render_and_validate(fig, HERE / "figure_sf26_isoforms_per_gene",
+    render_and_validate(fig, HERE / "figure_sf27_isoforms_per_gene",
                         native_width_in=NATIVE_W)
     print(f"  n_genes = {n_genes:,}  median = {med}  max bin shown = {max_bin}")
 

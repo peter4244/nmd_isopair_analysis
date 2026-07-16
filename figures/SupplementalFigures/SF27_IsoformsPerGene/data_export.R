@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# SF26 — expressed non-NMD isoform count per pop_BC gene (post 25% floor).
+# SF27 — expressed non-NMD isoform count per pop_BC gene (post 25% floor).
 #
 # Standalone export (no prior producer on disk). Reproduces the canonical Rmd
 # §1 `sec1-iso-per-gene` definition: for each pop_BC gene, count isoforms that
@@ -7,7 +7,7 @@
 # NMD-susceptible in the all_samples analysis. Population = the FLOORED pop_BC
 # (profiles already floored). See REFERENCE_FLOOR_SF_INVENTORY.md.
 #
-# Output (SF26_IsoformsPerGene/data/): isoforms_per_gene.tsv (gene_id, n_isoforms),
+# Output (SF27_IsoformsPerGene/data/): isoforms_per_gene.tsv (gene_id, n_isoforms),
 #   descriptives_summary.tsv (metric, value).
 
 suppressMessages(library(data.table))
@@ -40,5 +40,5 @@ summ <- data.table(
   metric = c("n_genes_in_pop_BC", "median_isoforms_per_gene", "iqr_isoforms_per_gene"),
   value  = c(nrow(ipg), as.integer(median(ipg$n_isoforms)), as.integer(IQR(ipg$n_isoforms))))
 fwrite(summ, file.path(OUT, "descriptives_summary.tsv"), sep = "\t")
-cat(sprintf("SF26: %d genes  median=%d isoforms/gene  IQR=%d\n",
+cat(sprintf("SF27: %d genes  median=%d isoforms/gene  IQR=%d\n",
             nrow(ipg), as.integer(median(ipg$n_isoforms)), as.integer(IQR(ipg$n_isoforms))))

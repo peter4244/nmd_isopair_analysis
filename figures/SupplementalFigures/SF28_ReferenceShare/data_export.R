@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# SF27 — Reference-isoform share of gene expression (post 25% reference-share floor).
+# SF28 — Reference-isoform share of gene expression (post 25% reference-share floor).
 #
 # Rebuild of the reference-share export (originally in the deleted
 # PairSetDescriptives/data_export.R; recover with
@@ -12,7 +12,7 @@
 # Population = the FLOORED pop_BC (profiles are already floored), so every gene
 # here has ref_fraction_of_gene >= 0.25 by construction (retained-only view).
 #
-# Output (SF27_ReferenceShare/data/):
+# Output (SF28_ReferenceShare/data/):
 #   ref_expression_fraction.tsv  (gene_id, reference_isoform_id, ref_fraction_of_gene)
 #   descriptives_summary.tsv     (metric, value)
 
@@ -60,5 +60,5 @@ summary_dt <- data.table(
   value  = c(nrow(fra), round(median(pct), 1), round(mean(pct >= 50) * 100, 1), 25))
 fwrite(summary_dt, file.path(OUT, "descriptives_summary.tsv"), sep = "\t")
 
-cat(sprintf("SF27: n=%d genes  median=%.1f%%  >=50%%: %.1f%%  (floor 25%%, all-iso, all_samples DMSO)\n",
+cat(sprintf("SF28: n=%d genes  median=%.1f%%  >=50%%: %.1f%%  (floor 25%%, all-iso, all_samples DMSO)\n",
             nrow(fra), median(pct), mean(pct >= 50) * 100))
