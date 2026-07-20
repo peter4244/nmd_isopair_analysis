@@ -68,26 +68,32 @@ mirror at `results/isoform_transitions/NMD_orf_model_v5/` that must not ship.
 
 ## Plan
 
-### Phase 0 — Unblock (PARTIALLY ANSWERED 2026-07-20)
+### Phase 0 — Unblock — ✅ FULLY RESOLVED 2026-07-20
 
-**Pete's answers (2026-07-20):**
-- **O-1 — ANSWERED: YES, Yul's GitHub is canonical.** The `/udd/reyle/.../code/final/`
-  blocker from v1/v2 is **DEAD**. Phases 3–5 are unblocked; R-F downgraded.
-- **O-2 — ANSWERED: it's a download**, not curated. But **Yul said she would commit it
-  — RE-CHECK the repo** (`git fetch yul`; look for
-  `encode_rbp_roster_vannostrand2020.csv`). Not present as of commit `1fb49d8`.
-- **O-3 — STILL OPEN, ask Yul.** Which script emitted the `2026.3.10` CSVs.
-- **O-4 — ANSWERED: FB was excluded deliberately** — it was an outlier in one of the
-  analyses. So `exclude_fb = TRUE` is intentional, not provisional. **Consequence
-  unchanged:** the manuscript still needs to say the 86.2%/13.5% split is AT2/LAE/MV
-  while the same section reports FB in the logFC medians. Documentation fix, not a
-  method fix. (§3 parked by Pete.)
-- **O-5 — STILL OPEN, ask Yul.** Producers for SF20–SF23.
-- **O-6 — STILL OPEN, ask Yul.** Are SF1–SF6 rendered in the Isopair repo.
+All six questions answered by Pete + Yul, each verified against `yul/main`
+(now at commit `78f1a8c`, 11 commits). **Phase 0 is closed; Phase 3 (import) unblocked.**
 
-**Remaining questions for Yul: O-3, O-5, O-6.**
+- **O-1 — Yul's GitHub IS canonical.** The `/udd/reyle/.../code/final/` blocker is DEAD.
+- **O-2 — download, and now COMMITTED.** Both rosters live in `yul:data/`:
+  `encode_rbp_roster_vannostrand2020.csv` (357 rows),
+  `gerstberger_2014_rbp_census.csv` (1,543 rows). Verified.
+- **O-3 — `NMD_shortread_dge_fullmodel_2026.5.5.Rmd` IS the script.** Yul confirmed the
+  later date is fine. Provenance-vintage worry (R-E) CLOSED. No duplicate to reconcile.
+- **O-4 — FB excluded DELIBERATELY** (outlier in one analysis). `exclude_fb = TRUE` is
+  intentional. Documentation fix only: manuscript must state the 86.2%/13.5% split is
+  AT2/LAE/MV while the same section reports FB in the logFC medians. (§3 parked.)
+- **O-5 — SF20–23 producers PUSHED.** `yul:Figures/render_output_lost_gene.R`,
+  `render_output_lost_per_isoform.R`, `render_output_lost_threshold.R`,
+  `render_sr_lr_correlation.R`. Verified. **R-F (largest completeness hole) CLOSED.**
+- **O-6 — SF1–6 now render IN YUL'S REPO, not Isopair-only.** 6 new `render_*.R`
+  (`render_isoform_length.R`, `render_pairwise_expression.R`, `render_sqanti_categories.R`,
+  `render_mashr_sharing.R`, `render_proportion_vs_expression.R`, `render_sr_lr_correlation.R`),
+  all wired into `make_supplemental_figures.Rmd`. **DECISION FLIP (good direction):
+  Isopair can now be CITED BY DOI, not vendored** — Q4 simplifies. Verified.
 
-Original list:
+**Yul's 2026-07-20 push also added TWO NEW WRINKLES (see W-1, W-2 below).**
+
+Original list (all now answered — kept for provenance):
 - **O-1** Is her GitHub now canonical, or does `/udd/reyle/.../code/final/` hold more?
   *(Phases 3–5 are unsafe if not canonical.)*
 - **O-2** Is `encode_rbp_roster_vannostrand2020.csv` curated or a straight download?
@@ -306,6 +312,27 @@ There is **no `renv.lock`, `requirements.txt`, conda env, `DESCRIPTION`, or capt
 - **8.4** Untrack the Excel lock file `PJC_Tables/~$NMD_Tables.xlsx`.
 
 ---
+
+## NEW WRINKLES from Yul's 2026-07-20 push (verified)
+
+- **W-1 — Git LFS.** `yul:.gitattributes` routes `tan_reanalysis/data/*.xlsx` through
+  Git LFS (`filter=lfs`). The four Tan tables are LFS objects (S2 alone = 16 MB). **LFS
+  objects do NOT travel through a plain `git init` snapshot** — a fresh init sees only
+  the 3-line pointer stubs unless LFS is installed and the objects re-pushed. Phase 7.1's
+  explicit-list transfer does not currently handle LFS.
+  → **Phase 7 action:** decide per file — either de-LFS (commit the real bytes, fine if
+  <100 MB/file; S2 at 16 MB is OK) or carry LFS config into the snapshot and re-upload
+  objects. Simplest: de-LFS, since these are external inputs we may not ship at all (W-2).
+- **W-2 — Tan tables are now redistributed.** Yul committed the four Tan et al. (2025)
+  `Supplementary_Table_*.xlsx` into her repo — but her own earlier README said they are
+  *"not redistributed here — the authors' published data."* Committing another paper's
+  supplementary tables into a **public, DOI-minted** archive is a redistribution-rights
+  question. Fine in her working repo; **must be resolved before the snapshot.**
+  → **Phase 8 action:** default to NOT shipping them — replace with a download manifest
+  (the file→sheet table already in `tan_reanalysis/README.md`). Removes W-1 entirely.
+- **W-3 — path collision.** Yul's data now lives at `yul:data/`, which will collide with
+  our layout on import. → **Phase 3 placement decision** (`code/upstream/` per Q1 keeps
+  it namespaced).
 
 ## EXECUTION ORDER (v3.1 — the phase numbers are NOT the run order)
 

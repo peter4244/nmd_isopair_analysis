@@ -141,6 +141,30 @@ Correlation") but previously had no M-section — it was covered only at claim l
 - **Output:** `nmd:tmp/gsea_mashr_gene_2026.3.10_run2026-05-18.tsv` (per ONBOARDING).
 - **Method:** fgsea against MSigDB (Hallmark, KEGG, Reactome, GO-BP), genes ranked by signed posterior mean logFC, min=15, max=500, FDR<0.05.
 
+### §1–3 supplemental-figure producers — POINTER (added 2026-07-20)
+
+Yul's 2026-07-20 push (`yul/main` commit `78f1a8c`) added per-figure render scripts for
+the §1–3 supplements that previously had no in-repo producer, all wired into
+`yul:Figures/make_supplemental_figures.Rmd`. **NOT yet threaded into the SF claim rows
+below** — that is Phase 2 of the consolidation plan, done after the Yul import + the
+deliverables ledger. Recorded here so the producers are not re-discovered:
+
+| Supplement(s) | Producer (`yul:Figures/`) |
+|---|---|
+| SR↔LR correlation (Fig 1A + SF) | `render_sr_lr_correlation.R` |
+| Isoform length | `render_isoform_length.R` |
+| Pairwise expression | `render_pairwise_expression.R` |
+| SQANTI3 categories | `render_sqanti_categories.R` |
+| mashr sharing | `render_mashr_sharing.R` |
+| Proportion vs expression | `render_proportion_vs_expression.R` |
+| SF20 % output lost, gene level | `render_output_lost_gene.R` |
+| SF21 per-isoform output lost | `render_output_lost_per_isoform.R` |
+| SF22 output lost by CPM threshold | `render_output_lost_threshold.R` |
+
+RBP rosters now committed at `yul:data/` (`encode_rbp_roster_vannostrand2020.csv`,
+`gerstberger_2014_rbp_census.csv`). Tan tables committed at `yul:tan_reanalysis/data/`
+**via Git LFS** — see consolidation plan W-1 (LFS + snapshot) and W-2 (redistribution).
+
 ### M8a. RNA-binding protein + SR protein enrichment among NMD targets
 
 Added 2026-07-20. This was the map's only true hole — a full Supplemental Methods
