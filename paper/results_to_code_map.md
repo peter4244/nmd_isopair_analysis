@@ -13,7 +13,7 @@
 | Section | Verifiable / total | Primary blockers |
 |---|---|---|
 | §1 (Isoform discovery) | ~1 / 15 | Yul-side `Isoform_Landscape.Rmd`, `correlation_analysis.Rmd` |
-| §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul; Tan reanalysis Rmd path unknown |
+| §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul. (Tan reanalysis code RESOLVED 2026-07-20 → `yul:tan_reanalysis/`; still needs the Tan supplementary `.xlsx` downloads.) |
 | §3 (Output Lost + PCI) | ~1 / 26 | **All three primary §3 Rmds are Yul-side** (`transcriptional_output.Rmd`, `comparison_analysis.Rmd`, `productive_compensation.Rmd`) — §3 is the most Yul-blocked section |
 | §4 (Isopair / splice events / PTC) | 46 / 46 | All local. Verified by the pass-7 (37 checks) + cross-check (57 checks) verifiers under `reproducibility/`. Both PASS. |
 | §5 (DL model) | ~30 / 31 | Essentially all local — `model:` (trained weights cached) |
@@ -42,7 +42,7 @@ Manuscript-quoted DIE/DGE numbers are **mashr posterior estimates** (lfsr, poste
 
 ```
 limma + mashr in one Rmd (Yul-side, canonical)         →  canonical CSV (in this repo)
-yul:Isoform-Level_Quantification.Rmd                      nmd:isocall_dge/mashr/nmd_mashr_die_{at,dd,fb,mv}_2026.3.10.csv
+yul:Isoform_Level_Quantification.Rmd                      nmd:isocall_dge/mashr/nmd_mashr_die_{at,dd,fb,mv}_2026.3.10.csv
 ```
 
 Pete also has a parallel limma implementation at `nmd:code/isocall_limma_dge_fullmodel_2026.3.1.Rmd` and a deleted-2026-06-16 Pete-side run at `nmd:isocall_dge/limma/pete/` (see `isocall_dge/limma/README.md`). Per Pete's confirmed ownership model: **Yul owns limma + mashr DGE; Pete owns Isopair + the deep-learning model.** Yul's Rmd is canonical for the manuscript mashr CSVs; the Pete-side Rmd is a QC/sanity-check parallel implementation that should not be cited as canonical.
@@ -95,6 +95,21 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 - **SQANTI3 classification:** config file at `randell:results/sqanti_runs/merged_collapsed/sqanti3_config_cts_2subj_5reads_2025.12.20_merged-collapsed.yaml`.
 - **Filtered count matrix consumed by limma:** `nmd:sqanti/nmd_lungcells/results/nmd_lungcells_filtered.count_matrix.txt` (per `isocall_limma_dge_fullmodel_2026.3.1.Rmd` setup chunk).
 
+### M3a. Platform correlation (SR ↔ LR)
+
+Added 2026-07-20. Has a standalone Supplemental Methods subsection ("Platform
+Correlation") but previously had no M-section — it was covered only at claim level
+(rows 1.6–1.8).
+
+- **Code:** `yul:correlation_analysis.Rmd` (analysis). Panel render is
+  `yul:Figures/make_panels.R` → panel 1A (see the §2 figure table) — the analysis Rmd
+  does *not* render the figure.
+- **Inputs:** `dge_gene_unfiltered_2026.1.2.rds`, `salmon.merged.gene_counts_length_scaled.rds`.
+- **Claims:** 1.6 (mean Pearson r = 0.90, mean Spearman ρ = 0.890, 26 matched samples,
+  29,185 common genes), 1.7, 1.8 (Figure 1A).
+- **Status:** cite-only. Also the basis for excluding DD_ALI / DO_ALI from the
+  4-CT manuscript scope (low SR-vs-LR effect-size correlation).
+
 ### M4. Isoform-landscape characterization (DMSO-only)
 
 - **Code (best guess):** `yul:Isoform_Landscape.Rmd` (per code-map doc).
@@ -111,7 +126,7 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 
 - **SR gene level (limma + mashr in one Rmd):** `yul:NMD_shortread_dge_fullmodel_2026.5.5.Rmd` → CSVs in `nmd:shortread_dge/mashr/`.
 - **LR gene level:** code path not in Pete's code-map doc. The manuscript reports "long-read gene-level analysis tested 19,056 genes" — flag for Yul to identify the Rmd that produces this (it may be folded into another script).
-- **LR isoform level (limma + mashr in one Rmd, canonical):** `yul:Isoform-Level_Quantification.Rmd` → CSVs in `nmd:isocall_dge/mashr/`. Per Pete's ownership model, Yul owns this — canonical end-to-end implementation for the manuscript numbers.
+- **LR isoform level (limma + mashr in one Rmd, canonical):** `yul:Isoform_Level_Quantification.Rmd` → CSVs in `nmd:isocall_dge/mashr/`. Per Pete's ownership model, Yul owns this — canonical end-to-end implementation for the manuscript numbers.
 - **LR isoform level — parallel Pete-side limma (QC / sanity, NOT canonical for manuscript):** `nmd:code/isocall_limma_dge_fullmodel_2026.3.1.Rmd`. Reads SQANTI-filtered Isocall count matrix; writes limma contrast tables to `nmd:isocall_dge/`. Useful for cross-checking Yul's results but not the source of the mashr CSVs. The previously-tracked `nmd:isocall_dge/limma/pete/` snapshot was deleted on 2026-06-16 (see `isocall_dge/limma/README.md`).
 - **Convention:** design = `~ cell_type + treatment + cell_type:treatment`, reference = LAE, donor block via duplicateCorrelation.
 
@@ -126,11 +141,35 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 - **Output:** `nmd:tmp/gsea_mashr_gene_2026.3.10_run2026-05-18.tsv` (per ONBOARDING).
 - **Method:** fgsea against MSigDB (Hallmark, KEGG, Reactome, GO-BP), genes ranked by signed posterior mean logFC, min=15, max=500, FDR<0.05.
 
+### M8a. RNA-binding protein + SR protein enrichment among NMD targets
+
+Added 2026-07-20. This was the map's only true hole — a full Supplemental Methods
+subsection with **no M-section and no claim rows**. Code landed 2026-07-20 (commit
+`1fb49d8`). Distinct from M8, which is gene-level GSEA/pathway enrichment.
+
+- **Code:** `yul:nmd_rbp_enrichment.Rmd` (RBP-category enrichment: LR DIE mashr NMD
+  calls intersected with the Gerstberger 2014 RBP census) and `yul:rbp_sr.Rmd`
+  (SR/hnRNP-focused analysis + the ENCODE eCLIP roster). Figure render is
+  `yul:Figures/make_sr_isopair.R` (per-gene SR-protein isoform structure +
+  donor-paired logFC), orchestrated by `yul:Figures/make_supplemental_figures.Rmd`.
+- **Inputs:** `dge_isoform_longread_filtered_2026.3.3.rds`,
+  `mashr_isoform_{posterior_means,lfsr}_2026.3.10.csv`,
+  `gerstberger_2014_rbp_census.csv`, `encode_rbp_roster_vannostrand2020.csv`.
+- **Method:** NMD target = mashr lfsr < 0.05 & posterior mean > 0; background = all
+  genes with an isoform tested in the DIE/mashr set; one-sided Fisher per RBP category.
+- **Status:** code resolved. **Two open data items:**
+  (a) `gerstberger_2014_rbp_census.csv` is a published census — external download, fine;
+  (b) `encode_rbp_roster_vannostrand2020.csv` lives in Yul's `New_NMD_Files/` and
+  appears **curated, not a straight download** — confirm with Yul whether it needs
+  depositing rather than citing.
+- **Path caveat (D3):** both Rmds hardcode `/udd/reyle/nmd_lungcells_2026` and set
+  `.libPaths("/udd/reyle/Rlibs")` — needs relative-path rewrite before the citable repo.
+
 ### M9. Tan et al. (2025) reanalysis
 
-- **Code:** **gap** — not in code-map doc. Methods describe converting EBSeq PostFC + PPEE to bhat/shat and fitting mashr jointly across the 8 conditions (3 UPF2 + 1 UPF3B × hESC + NPC).
-- **Inputs:** Tan et al. Supplementary Tables S1, S2, S4, S6.
-- **Status:** flag for Yul / search Yul's `final/` dir for a `tan*` or `wilkinson*` Rmd.
+- **Code:** `yul:tan_reanalysis/tan_transcript_reanalysis.R` (+ `tan_reanalysis/README.md`). Gap CLOSED 2026-07-20 (commit `de08b94`). Converts EBSeq PostFC + PPEE to bhat/shat and fits mashr jointly across the 8 conditions (3 UPF2 + 1 UPF3B × hESC + NPC), then a Tan-style binary NMD-target overlap between hESC and NPC.
+- **Inputs:** Tan et al. Supplementary Tables S1, S2, S4, S6 (`.xlsx`). **Not redistributed** — published author data, downloaded from the paper's supplementary material. The per-condition file→sheet manifest is in the script's README.
+- **Status:** code resolved; inputs external-but-public (acceptable for the citable repo with a download note).
 
 ### M10. Transcriptional output lost + PCI
 
@@ -183,7 +222,7 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 |---|---|---|---|
 | 1.6 | "mean Pearson r = 0.90 (range 0.83–0.91), mean Spearman ρ = 0.890 (range 0.849–0.901), 26 matched samples, 29,185 common genes" | `yul:correlation_analysis.Rmd` (per code-map doc). | Cite-only. |
 | 1.7 | "Per cell type Pearson means 0.880 (FB) — 0.901 (AT2)" | Same. | Cite-only. |
-| 1.8 | **Figure 1A** (sample-wise SR↔LR correlation plot) | Render code TBD — likely embedded in `yul:correlation_analysis.Rmd` or in a downstream `Gene-Level_DGE_Summary_mashR.Rmd` plot block. | Cite-only. **Figure-source-script location is the main `figures/` gap.** |
+| 1.8 | **Figure 1A** (sample-wise SR↔LR correlation plot) | Analysis `yul:correlation_analysis.Rmd`; render `yul:Figures/make_panels.R` → `fig_panels/figure_composite.py` (Methods M3a). | Cite-only. Render script RESOLVED 2026-07-20. |
 
 ### Paragraph 3 — cell-type-specific expression (Figure 1B + SFx)
 
@@ -195,7 +234,7 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 | 1.12 | "LAE 8,087; AT2 2,267; MV 2,015; FB 1,131 cell-type-restricted isoforms; 0.36–2.24% of each CT's expressed isoforms" | `yul:Isoform_Landscape.Rmd`. | Cite-only. |
 | 1.13 | "27.8% (LAE) to 51.7% (MV) of CT-restricted isoforms passed the additional expression filter" | Same. | Cite-only. |
 | 1.14 | "Pairwise Jaccard indices 0.86–0.92" | Same. | Cite-only. |
-| 1.15 | **Figure 1B** (expressed + restricted isoform counts per CT) | Render code TBD; likely embedded in `yul:Isoform_Landscape.Rmd`. | Cite-only. |
+| 1.15 | **Figure 1B** (expressed + restricted isoform counts per CT) | `yul:Figures/make_panels.R` → `fig_panels/figure_composite.py`; input `dge_isoform_longread_2026.3.3.rds`. NOT `yul:Isoform_Landscape.Rmd` (that Rmd holds the §1 landscape analysis, not the panel render). | Cite-only. Render script RESOLVED 2026-07-20. |
 
 ---
 
@@ -207,12 +246,12 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 |---|---|---|---|
 | 2.1 | "25,955 genes per CT" tested at SR level | `yul:NMD_shortread_dge_fullmodel_2026.5.5.Rmd` filterByExpr step → `nmd:shortread_dge/mashr/nmd_mashr_dge_*_2026.3.10.csv` (row count). | Cite-only; CSV row count verifiable locally. |
 | 2.2 | "3,122–6,753 significant genes per CT (49–67% NMD susceptible)" — see also Short-Read mashr table (AT2 3,638 / 62.56%; LAE 6,753 / 49.25%; FB 3,122 / 66.18%; MV 3,428 / 67.39%) | Same Rmd; subsetting on `adj.P.Val < 0.05` for "significant" and `lfsr < 0.05 & posterior_mean > 0` for "NMD susceptible". | Verifiable locally by reading the 4 per-CT mashr CSVs. **Watch:** "Significant" here is the *limma adj.P.Val* denominator, not mashr lfsr — the mixed-denominator phrasing is fine but verification needs to use the right column. |
-| 2.3 | "162,800 isoforms per CT" tested at LR level | `yul:Isoform-Level_Quantification.Rmd` (filterByExpr) → `nmd:isocall_dge/mashr/nmd_mashr_die_*_2026.3.10.csv`. | Cite-only; CSV row count verifiable locally. |
+| 2.3 | "162,800 isoforms per CT" tested at LR level | `yul:Isoform_Level_Quantification.Rmd` (filterByExpr) → `nmd:isocall_dge/mashr/nmd_mashr_die_*_2026.3.10.csv`. | Cite-only; CSV row count verifiable locally. |
 | 2.4 | "24,803–35,336 significant isoforms per CT (90.9–92.0% NMD susceptible)" — see DIE mashr table (AT2 24,847 / 91.96%; LAE 35,336 / 91.24%; FB 24,803 / 90.92%; MV 27,834 / 90.87%; logFC 1.60–2.97) | Same Rmd; same dual-denominator pattern. | Verifiable locally from CSVs. |
 | 2.5 | "34,387 unique NMD susceptible isoforms across CTs" | Likely `yul:interpret_isoform_patterns_mashr_2026.3.10.Rmd` — union over per-CT NMD-susceptible sets. | Cite-only. Verifiable locally by union over the 4 mashr CSVs. |
 | 2.6 | "19,803 (57.6%) core targets shared across all CTs; 9,161 (26.6%) CT-specific (LAE 83.4% of those)" | Same Rmd — intersect/setdiff over per-CT NMD-susceptible sets. | Cite-only; locally verifiable from CSVs. |
-| 2.7 | **Figure 1C** — volcano plots per CT for LR DIE (logFC vs −log10 lfsr, color by NMD-susceptible threshold) | Figure-render script TBD. Inputs are `nmd:isocall_dge/mashr/nmd_mashr_die_{ct}_2026.3.10.csv`. | Cite-only. **Render script location is an open question.** |
-| 2.8 | **Figure 1D** — distribution of posterior mean logFC for NMD-susceptible features at SR-gene vs LR-isoform | Figure-render script TBD. Inputs are both sets of mashr CSVs. | Cite-only. |
+| 2.7 | **Figure 1C** — volcano plots per CT for LR DIE (logFC vs −log10 lfsr, color by NMD-susceptible threshold) | `yul:Figures/make_panels.R` → `fig_panels/figure_composite.py`. Inputs are `nmd:isocall_dge/mashr/nmd_mashr_die_{ct}_2026.3.10.csv`. | Cite-only. Render script RESOLVED 2026-07-20. |
+| 2.8 | **Figure 1D** — distribution of posterior mean logFC for NMD-susceptible features at SR-gene vs LR-isoform | `yul:Figures/make_panels.R` → `fig_panels/figure_composite.py`. Inputs are both sets of mashr CSVs. | Cite-only. |
 | 2.9 | "mean posterior logFC substantially larger at LR isoform than SR gene level" | Same Rmd as 2.8. | Cite-only. |
 
 ### Paragraph 2 — NMD-susceptible isoform proportion + expression distribution (SFx panels)
@@ -230,7 +269,7 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 | 2.13 | Per-CT specificity at LR-isoform level: LAE 23.7%, AT2/FB/MV 0.8–3.4% | Same Rmd. | Cite-only. |
 | 2.14 | Pairwise sharing at SR-gene level: LAE-involving 51–70%; AT2/FB/MV trio 83–90% | Same Rmd — fraction with concordant direction + within 2-fold magnitude on mashr posteriors. | Cite-only. |
 | 2.15 | Pairwise sharing at LR-isoform level: LAE-involving 35–72%; AT2/FB/MV trio 68–83% | Same Rmd. | Cite-only. |
-| 2.16 | **Figure 1E** — fraction of NMD-susceptible genes + isoforms classified as CT-specific (bar / dot plot) | Figure-render script TBD. | Cite-only. |
+| 2.16 | **Figure 1E** — fraction of NMD-susceptible genes + isoforms classified as CT-specific (bar / dot plot) | `yul:Figures/make_panels.R` → `fig_panels/figure_composite.py`. | Cite-only. |
 
 ### Paragraph 4 — Tan et al. (2025) reanalysis
 
@@ -246,7 +285,7 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 | 2.19 | "5 pathways significant in 3 of 4 CTs (LAE, FB, MV; FDR 0.002–0.048); AT2 trending (NES 1.65–1.83 below FDR)" — Table X — Pathways Significant | `nmd:code/gsea_mashr_2026.3.10.R` → output TSV `nmd:tmp/gsea_mashr_gene_2026.3.10_run2026-05-18.tsv` (per ONBOARDING §9). Input: signed mashr posterior-mean logFC ranking per CT from `nmd:shortread_dge/mashr/nmd_mashr_dge_*_2026.3.10.csv`. | **Verifiable locally** — both code and output are in the repo. |
 | 2.20 | Pathways named: cellular response to topologically incorrect protein, cellular response to unfolded protein, response to topologically incorrect protein, intrinsic apoptotic signaling in response to ER stress, Reactome unfolded protein response | Same GSEA output TSV. | Verifiable locally. |
 | 2.21 | "Leading-edge genes converging on ATF4, DDIT3, PPP1R15A, ATF3, CHAC1" | Same GSEA output (leading-edge column from fgsea). | Verifiable locally — need to confirm fgsea was called with leading-edge return. |
-| 2.22 | **Figure 1F** — KEGG Protein Processing in ER pathway enrichment for LAE; corresponding panels for other CTs in SFx | Figure-render script TBD. Could be in `yul:Gene-Level_DGE_Summary_mashR.Rmd` (per code-map doc) or in a sibling `*_p2.Rmd`. | Cite-only. |
+| 2.22 | **Figure 1F** — KEGG Protein Processing in ER pathway enrichment for LAE; corresponding panels for other CTs in SFx | `yul:Figures/make_pathway_allct.R` (renders hsa04141 per CT) → `make_panels.R` → `fig_panels/figure_composite.py`. | Cite-only. |
 
 ### Paragraph 6 — CT-specific pathway enrichments (Table X — Top Pathways)
 
@@ -257,17 +296,34 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 | 2.25 | AT2 + MV: regulation of RNA splicing | Same. | Verifiable locally. |
 | 2.26 | FB: no CT-specific pathways | Same — null result, recompute. | Verifiable locally. |
 
-### Section 2 figure render-script gap
+### Section 2 figure render scripts — CLOSED (2026-07-20)
 
-Figure 1 has 6 panels (A–F). Panel A (SR↔LR sample correlation) was tied to `yul:correlation_analysis.Rmd` in §1. Panels B–F:
+Resolved by `yul:Figures/` (pushed 2026-07-20, commit `de08b94`). Figure 1 is built
+in two stages: per-panel R scripts write PNGs into `fig_panels/`, then a matplotlib
+stitcher composes them. Orchestrated by `yul:Figures/make_main_figures.Rmd`, which
+carries the authoritative panel→script→input table.
 
-- **1B** (CT-restricted isoform bars) — likely `yul:Isoform_Landscape.Rmd`
-- **1C** (volcano plots) — render script TBD
-- **1D** (logFC distribution) — render script TBD
-- **1E** (CT-specific fraction) — likely in `yul:interpret_isoform_patterns_mashr_2026.3.10.Rmd`
-- **1F** (KEGG ER pathway, LAE) — render script TBD; likely `yul:Gene-Level_DGE_Summary_mashR.Rmd` or downstream of `nmd:code/gsea_mashr_2026.3.10.R`
+| Panel | Content | Render script | Data inputs (`nmd_fig_data/`) |
+|---|---|---|---|
+| 1A | SR↔LR gene-expression correlation | `yul:Figures/make_panels.R` | `dge_gene_unfiltered_2026.1.2.rds`, `salmon.merged.gene_counts_length_scaled.rds` |
+| 1B | Expressed + CT-restricted isoforms (DMSO) | `yul:Figures/make_panels.R` | `dge_isoform_longread_2026.3.3.rds` |
+| 1C | LR isoform DIE volcanoes, 4 CTs | `yul:Figures/make_panels.R` | `nmd_mashr_die_{at2,dd,fb,mv}_2026.3.10.csv` |
+| 1D | Posterior-mean logFC distribution, SR gene vs LR isoform | `yul:Figures/make_panels.R` | `nmd_mashr_dge_*`, `nmd_mashr_die_*` |
+| 1E | Pairwise sharing of NMD effects, SR genes vs LR isoforms | `yul:Figures/make_panels.R` | mashr CSVs |
+| 1F | KEGG hsa04141 "protein processing in ER", LAE | `yul:Figures/make_pathway_allct.R` → `make_panels.R` | `nmd_mashr_dge_dd_2026.3.10.csv` |
+| — | Composition of A–F into Figure 1 | `yul:Figures/fig_panels/figure_composite.py` | panel PNGs from the above |
 
-This recurring "render script TBD" pattern is itself the open question #8 from §1 — figure rendering isn't isolated to any single script in either the code-map doc or `nmd:code/`.
+**Corrections to the prior guesses** (all four were wrong — do not reinstate): 1A's
+*render* is `make_panels.R`, not `correlation_analysis.Rmd` (that Rmd holds the §1
+correlation *analysis*, not the panel); 1B is `make_panels.R`, not
+`Isoform_Landscape.Rmd`; 1E is `make_panels.R`, not
+`interpret_isoform_patterns_mashr_2026.3.10.Rmd`; 1F is `make_pathway_allct.R`, not
+`Gene-Level_DGE_Summary_mashR.Rmd` / `gsea_mashr_2026.3.10.R`.
+
+**Open (data, not code):** all six panels read a `nmd_fig_data/` bundle that is not in
+either repo (see `yul:Figures/README.md`) — this is deposit workstream D2.
+`make_pathway_allct.R` additionally fetches the KEGG `hsa04141` template at run time
+if it is not cached in `fig_panels/`.
 
 ### Section 2 verifiable-locally summary
 
