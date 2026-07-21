@@ -83,11 +83,18 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 ### M2. Short-read RNA-seq processing (nf-core/rnaseq)
 
 - **Pipeline:** nf-core/rnaseq v3.14.0 + Nextflow 24.04.4 (per Methods).
-- **Code:** **run by John Ziniti** (bioinformatician; co-author) — NOT Yul, NOT Pete.
-  Launcher script / config not yet obtained. **Under standard D-5 (raw reads + code, no
-  interim files) this is the #1 open gap:** without it, a reader with GEO GSE329233
-  cannot produce the salmon gene counts, so the short-read chain has no entry point.
-  → **Ask John Ziniti.**
+- **Code:** run by **John Ziniti** (bioinformatician; co-author) — not Yul, not Pete.
+- **Status: ACCEPTED GAP — closed as a decision, not a task (Pete, 2026-07-20).** The
+  launcher script/config will **not** be obtained or deposited. Do not re-open this as an
+  action item.
+- **Why this is defensible:** nf-core/rnaseq is a standardized, versioned community
+  pipeline, and the Methods pin **v3.14.0 + Nextflow 24.04.4**. The launcher is
+  parameterization, not novel logic, so a reader can reconstruct the run from the Methods
+  description + the pinned versions. This differs from bespoke code, where a missing
+  script means a missing method.
+- **The limitation, stated honestly:** the chain is therefore not *literally* one-command
+  runnable from GEO to salmon gene counts — that step must be re-created from the Methods.
+  The Methods description carries this load, so it must stay accurate and complete.
 - **Outputs feeding downstream analysis:** Salmon-quantified gene/isoform counts via tximport (used only at gene level here; Isocall is canonical for isoform).
 - **Where the gene-level counts land:** referenced by `yul:NMD_shortread_dge_fullmodel_2026.5.5.Rmd` (input file path TBD — need to read the Rmd header).
 

@@ -86,10 +86,16 @@ is a hard break at step one.
   citation list of repos the paper needs. Same failure class as "the map is a keep-list":
   using a document for a purpose it was not built for. Also still true: the stale
   unversioned mirror at `results/isoform_transitions/NMD_orf_model_v5/` must not ship.
-- **M2 — OPEN, and now the single highest-priority gap in the project.** The
-  nf-core/rnaseq run was done by **John Ziniti** (bioinformatician, co-author). Need his
-  launcher script / config. Until then a reader with GSE329233 **cannot produce the
-  salmon gene counts**, so the short-read chain has no entry point. **→ Ask John, not Yul.**
+- **M2 — ACCEPTED GAP, closed by decision (Pete, 2026-07-20). NOT a task.** The
+  nf-core/rnaseq run was John Ziniti's. His launcher/config will **not** be obtained.
+  *(Retracting my earlier framing of this as "the single highest-priority gap" — that was
+  written before Pete's call and is superseded.)*
+  **Defensible because** nf-core/rnaseq is a standardized, versioned community pipeline
+  with **v3.14.0 + Nextflow 24.04.4** pinned in the Methods; the launcher is
+  parameterization, not novel logic. **Consequence to state plainly:** the chain is not
+  literally one-command runnable from GEO → salmon counts; that step is reconstructed
+  from the Methods, which therefore must stay accurate. **⇒ There is now NO blocking
+  upstream code gap** (M3 closed via `Isocall_v1`, M2 accepted).
 
 **What is UNCHANGED — do not conflate deposit with verification:**
 We still cannot *run* Yul's §1–3 scripts locally without her intermediates, so:
