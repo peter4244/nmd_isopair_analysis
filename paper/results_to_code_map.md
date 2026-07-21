@@ -277,6 +277,35 @@ subsection with **no M-section and no claim rows**. Code landed 2026-07-20 (comm
 
 ---
 
+## Tables → code
+
+Added 2026-07-21. The map previously had **no tables section at all**, which made any
+"every table traces to a producer" gate vacuous. Manuscript citation counts: ST4 ×6,
+ST3 ×2, Tables 1–4 ×2 each.
+
+**Caption convention (do not mis-read):** in the manuscript the caption sits **BELOW**
+its table. Line 187's table (header "Number of *Genes* Tested") is captioned Table 1 at
+line 194; line 196's table (header "Number of *Transcripts* Tested") is captioned Table 2
+at line 203. Table 3's caption notes "FB only reached significance in 3 pathways" and the
+table above it has exactly 3 FB rows. All four pairings are correct.
+
+| Table | Content | Producer | Status |
+|---|---|---|---|
+| **Table 1** | SR gene DGE per CT: tested / significant / NMD-susceptible / % / mean logFC | `nmd:shortread_dge/mashr/nmd_mashr_dge_{at,dd,fb,mv}_2026.3.10.csv` (M6 → M7) | ✅ **VERIFIED 2026-07-21** — all 4 CTs × 5 columns exact (25,955 tested; AT2 3,638/2,276/62.56%/0.80; LAE 6,753/3,326/49.25%/0.94; FB 3,122/2,066/66.18%/0.80; MV 3,428/2,310/67.39%/0.98) |
+| **Table 2** | LR isoform DIE per CT, same columns | `nmd:isocall_dge/mashr/nmd_mashr_die_{at,dd,fb,mv}_2026.3.10.csv` (M6 → M7) | ✅ **VERIFIED 2026-07-21** — all 4 CTs × 5 columns exact (162,800 tested; AT2 24,847/22,850/91.96%/2.09; LAE 35,336/32,239/91.24%/2.97; FB 24,803/22,552/90.92%/1.60; MV 27,834/25,294/90.87%/2.68) |
+| **Table 3** | Top-5 **gene-level** significant pathways per CT (NES, p.adj, size) | GSEA — M8, `nmd:code/gsea_mashr_2026.3.10.R` → `nmd:tmp/gsea_mashr_gene_2026.3.10_run*.tsv` | Not yet re-derived. Verifiable locally (inputs in-repo). |
+| **Table 4** | Top-5 **isoform-level** significant pathways per CT | **Producer unconfirmed.** M8 is documented as gene-level only, so the isoform-level GSEA run is not yet mapped. → flag for Yul. | **OPEN — genuine gap.** |
+| **ST3** | CT-associated isoform counts (28,930 / 22,131 / 21,429 / 18,422); Gerstberger OR 4.0 / 6.9 | Counts = one-vs-rest mashr (M5). OR = RBP enrichment (**M8a**, `yul:nmd_rbp_enrichment.Rmd`). | Partially mapped; not re-derived. |
+| **ST4** | Productive-response direction calls, level-vs-composition split, SR-protein enrichment | `yul:productive_response.Rmd` (M10 area) | **Blocked** — §3 is parked (see M10 note); ST4 is the most-cited table in the paper. |
+
+**Workbook artifact:** `nmd:PJC_Tables/NMD_Tables.xlsx` — 4 sheets (`DGE summary`,
+`DIE_summary`, `DGEtoIso`, `IsotoDGE`). Hand-maintained, **no generating script**; the
+`DGE summary` / `DIE_summary` sheets correspond to Tables 1–2, whose numbers are now
+verified against the mashr CSVs directly. Note
+`isopair_wrapper/build_paper_tables.R` builds Isopair's **internal** `table1`–`table13`,
+a different numbering — it does **not** produce manuscript Tables 1–4.
+Housekeeping: `PJC_Tables/~$NMD_Tables.xlsx` is a tracked Excel lock file → untrack.
+
 ## Section 1 (Isoform Discovery via Long-read RNA-sequencing) → code
 
 ### Paragraph 1 — sequencing summary + SQANTI categories + isoform-count distribution
@@ -773,7 +802,7 @@ This block records the §4 and §5 supplemental-figure work started 2026-07-08 (
 | SF39 A/B (Attention distribution NMD vs Control) | Existing dir `SupplementalFigures/SF39_AttentionDistribution/` (matplotlib) | Existing render; restyle pending (Task #153) |
 | SF40 (Branch SHAP by PTC subclass) | Existing dir `SupplementalFigures/SF40_PTCSubclassBranchSHAP/` (matplotlib) | Existing render; restyle pending (Task #153) |
 | SF41 (Discrimination performance by PTC subclass) | Existing dir `SupplementalFigures/SF41_PTCSubclassPerformance/` (matplotlib) | Existing render; restyle pending (Task #153) |
-| SF43 (NMDetective-B / NMDEP comparison) | Existing dir `SupplementalFigures/SF43_ModelComparison/` (matplotlib) | Existing render; restyle pending (Task #153) |
+| SF43 (NMDetective-B / NMDEP comparison) | Render: `SupplementalFigures/SF43_ModelComparison/` (matplotlib). **Upstream analysis: `nmd:code/nmd_predictor_comparison/`** — `01_extract_our_isoforms.R` → `02_score_nmdetective_b.R` / `03_score_nmdep_rule_baseline.R` → `04_compute_metrics.R`, report `nmd_predictor_comparison.Rmd`, methods `METHODS.md`, cluster inference under `explorer_run/`. Outputs `metrics_summary_2026.7.11.tsv`, `per_isoform_scores_2026.7.11.tsv`. | Existing render; restyle pending (Task #153). **Producer mapped 2026-07-21** — this directory previously had **zero** map citations despite producing SF43 and being the source for the manuscript's NMDetective-B / NMDEP comparison (cited 4×). It is the third demonstration that the map is not a keep-list: uncited ≠ unused. |
 
 ### Section 5 verifiable-locally summary
 
