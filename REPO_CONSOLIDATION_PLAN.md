@@ -68,13 +68,19 @@ framing that drove v1–v3.1.
 **What this ELEVATES to critical — the catch:**
 Without deposited intermediates, the code chain must be **unbroken from raw reads
 forward**. A missing pipeline step used to be patchable by depositing its output; now it
-is a hard break at step one. The two links nearest the raw reads are both open:
-- **M2** — nf-core/rnaseq launcher script: *"path not yet identified — flag for Yul"*
-- **M3** — isocall output location *"TBD — flag for Yul"*; SQANTI3 config at a `randell:`
-  Channing path in neither repo
-⇒ **A reader with GSE329233 currently cannot take step one.** Closing M2 + M3 is now the
-single highest-priority gap in the whole project. **The Yul ask flips** from "send the
-`.rds` bundle" to "where is the processing code."
+is a hard break at step one.
+
+**Ownership corrected 2026-07-20 (Pete): neither upstream gap is Yul's.**
+- **M3 — CLOSED.** The long-read pipeline is **Pete's own `peter4244/Isocall_v1`**
+  (verified reachable; ships `main.nf`, `Dockerfile`, `environment.yml`). ⚠ The working
+  copy at `isocall_pipeline/` is **gitignored, not a submodule** — invisible to this repo
+  and to any snapshot. Must be **cited by URL/DOI or made a real submodule**.
+  **This makes FOUR external repos, not three** (Isopair, `NMD_orf_model_v5_4ct`,
+  `NMD_orf_model_v5`, `Isocall_v1`) — Q4 must cover all four.
+- **M2 — OPEN, and now the single highest-priority gap in the project.** The
+  nf-core/rnaseq run was done by **John Ziniti** (bioinformatician, co-author). Need his
+  launcher script / config. Until then a reader with GSE329233 **cannot produce the
+  salmon gene counts**, so the short-read chain has no entry point. **→ Ask John, not Yul.**
 
 **What is UNCHANGED — do not conflate deposit with verification:**
 We still cannot *run* Yul's §1–3 scripts locally without her intermediates, so:

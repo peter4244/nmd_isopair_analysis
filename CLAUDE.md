@@ -103,6 +103,7 @@ nmd  = gene[gene["nmd_responsive"] == True]
 | `peter4244/Isopair` | The Isopair R/Bioconductor package (gene-matched isoform pair analysis, splicing event detection, PTC attribution) |
 | `peter4244/NMD_orf_model_v5_4ct` | Canonical source for the manuscript's deep-learning model — `03_train.py`, `config.yaml`, `model.py`, `METHODS.md`, DeepSHAP scripts |
 | `peter4244/NMD_orf_model_v5` | Predecessor of v5_4ct; logic-identical training code, pre-4-CT-scope |
+| `peter4244/Isocall_v1` | **The long-read processing pipeline (M3)** — Pete's Nextflow wrapper around PacBio Isocall: `main.nf`, `Dockerfile`, `environment.yml`, `conf/`, `modules/`. Turns raw Kinnex reads into isoforms. A working copy sits at `isocall_pipeline/` but is **gitignored and not a submodule**, so it is invisible to this repo — cite the GitHub repo, don't rely on the local dir. Channing mirror: `changit:repjc/Isocall_v1`. |
 | `peter4244/Isoscope`, `peter4244/Isovar` | Per-gene isoform annotation/visualization; variant→isoform sQTL tooling |
 
 When writing or auditing methods text, pull from the linked repos' METHODS.md / vignettes as the source of truth — not from anything in this repo's `results/`.

@@ -83,15 +83,29 @@ Wet-lab protocols; not in scope for code mapping. Quoted in Methods sections "Is
 ### M2. Short-read RNA-seq processing (nf-core/rnaseq)
 
 - **Pipeline:** nf-core/rnaseq v3.14.0 + Nextflow 24.04.4 (per Methods).
-- **Code:** wherever the nf-core launcher script lives on Channing (path not yet identified — flag for Yul).
+- **Code:** **run by John Ziniti** (bioinformatician; co-author) — NOT Yul, NOT Pete.
+  Launcher script / config not yet obtained. **Under standard D-5 (raw reads + code, no
+  interim files) this is the #1 open gap:** without it, a reader with GEO GSE329233
+  cannot produce the salmon gene counts, so the short-read chain has no entry point.
+  → **Ask John Ziniti.**
 - **Outputs feeding downstream analysis:** Salmon-quantified gene/isoform counts via tximport (used only at gene level here; Isocall is canonical for isoform).
 - **Where the gene-level counts land:** referenced by `yul:NMD_shortread_dge_fullmodel_2026.5.5.Rmd` (input file path TBD — need to read the Rmd header).
 
 ### M3. Long-read RNA-seq processing (PacBio Kinnex → Isocall)
 
 - **Library + sequencing:** PacBio protocol 103-238-700 REV07 (per Methods).
-- **Alignment + quantification:** PacBio Isocall pipeline (`github.com/PacificBiosciences/isocall`). NOT oarfish (deprecated per Pete 2026-06-13).
-- **Where Isocall outputs land:** Channing `/proj/regeps/.../Randell_Lung_Cells_2025/results/` (specific subfolder TBD — flag for Yul).
+- **Alignment + quantification:** **run by Pete**, using his own Nextflow wrapper —
+  **`peter4244/Isocall_v1`** (verified reachable on GitHub 2026-07-20; Channing mirror
+  `changit:repjc/Isocall_v1`). Ships `main.nf`, `Dockerfile`, `environment.yml`, `conf/`,
+  `modules/`. **M3 code gap CLOSED.** Wraps the PacBio Isocall pipeline; NOT oarfish
+  (deprecated per Pete 2026-06-13).
+- **⚠ Repo hygiene:** a working copy sits at `nmd:isocall_pipeline/` but is
+  **gitignored** (`.gitignore:38`) with **no `.gitmodules`** — an untracked nested repo,
+  invisible to this repo and to any snapshot. For the citable deposit it must be **cited
+  by URL/DOI** (like Isopair) or made a real submodule; it will not travel on its own.
+  A second copy, `isocall_pipeline.channing-backup/` (7.5 M), is also nested + untracked.
+- **Where Isocall outputs land:** Channing `/proj/regeps/.../Randell_Lung_Cells_2025/results/`
+  (interim products — under D-5 these are **not** deposited).
 - **SQANTI3 classification:** config file at `randell:results/sqanti_runs/merged_collapsed/sqanti3_config_cts_2subj_5reads_2025.12.20_merged-collapsed.yaml`.
 - **Filtered count matrix consumed by limma:** `nmd:sqanti/nmd_lungcells/results/nmd_lungcells_filtered.count_matrix.txt` (per `isocall_limma_dge_fullmodel_2026.3.1.Rmd` setup chunk).
 
