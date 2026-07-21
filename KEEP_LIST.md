@@ -96,6 +96,47 @@ superseded by the `peter4244/Isopair` package — same pattern as the ~49 `code/
 sources `../NMD_orf_model_v5_4ct/make_architecture_figure.R` — a **cross-repo dependency**
 that must be resolved for the citable snapshot (plan Q4).
 
+---
+
+## E. PETE'S RULINGS (2026-07-21) — keep-set FINAL
+
+**Ruling 1: the `peter4244/Isopair` package supersedes the in-repo event-detection code.**
+**Ruling 2: `scripts/nmd/` reviewed → archive.**
+
+Safety checks run before accepting both:
+
+- **`isopair_wrapper` is self-contained.** Its `source("visualization_functions.R")` and
+  `source("analysis_functions.R")` are **bare relative paths**, resolving to the wrapper's
+  own directory — *not* `scripts/core/`. Verified in `05_final_report_mashr.Rmd:42` and
+  `06_orf_analysis_mashr.Rmd:37`. Archiving `scripts/core/` therefore cannot break §4.
+  ⇒ **Resolves D-3**: the wrapper's 538-line copy is live; `scripts/core`'s 530-line copy
+  is stale and archives with it.
+- **`scripts/tests/`** sources `scripts/core/event_detection_functions.R`, so it travels
+  with core (test harness for superseded code).
+- **`scripts/nmd/`** — zero inbound references from any keep-set file, and reads the
+  deprecated `dge_isoform_nofilter_2026.2.7.rds`. It is the **predecessor numbered
+  pipeline** (01→15), superseded by `isopair_wrapper`'s own 01→06. ⇒ archive.
+
+### Final tally
+
+| Class | files |
+|---|---|
+| **KEEP** | **~143** |
+| **ARCHIVE** | **~158** |
+
+Archive set = 106 original + `results/ptc/scripts` 10 + `scripts/dev` 7 +
+`scripts/archive` 10 + **`scripts/core` 9** + **`scripts/tests` 3** + **`scripts/nmd` 11**.
+
+Keep set = `figures/` (multipanel, SF25–43, `lib`), `code/upstream/` (Yul),
+`code/nmd_predictor_comparison/`, `reproducibility/`, `Version_6.0/isopair_wrapper/`,
+`paper/`, plus the 2 reclassified provenance files (§B).
+
+**Coherent story:** everything archived is one of — (a) the pre-Isopair event-detection
+lineage now owned by the `Isopair` package, (b) the predecessor numbered pipeline
+superseded by `isopair_wrapper`, (c) exploratory/rmats work absent from the manuscript, or
+(d) already-archived. Nothing archived is cited by the map or reachable from a keep-set
+`source()`.
+
 ## Open before Phase 4 (prune)
 1. **Pete's review of category C** — especially the ~49 event-detection lineage: confirm
    the Isopair package fully supersedes them.
