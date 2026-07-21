@@ -1,30 +1,17 @@
-suppressMessages({library(edgeR); library(limma)})
-setwd("/Users/petecastaldi/claude_projects/nmd")
-CT_KEEP <- c("AT2","LAE","FB","MV")
-y_iso <- readRDS("nmd_fig_data/dge_isoform_longread_filtered_2026.3.3.rds")
-keep_s <- y_iso$samples$treatment=="DMSO" & y_iso$samples$ct %in% CT_KEEP
-y <- y_iso[, keep_s]
-ct  <- droplevels(factor(as.character(y$samples$ct), levels=CT_KEEP))
-don <- droplevels(factor(as.character(y$samples$id)))
-cat("samples:", ncol(y), " donors:", nlevels(don), "\n")
-design <- model.matrix(~ 0 + ct); colnames(design) <- gsub("^ct","",colnames(design))
-cm <- makeContrasts(
-  AT2_vs_rest = AT2 - (LAE + FB + MV)/3,
-  LAE_vs_rest = LAE - (AT2 + FB + MV)/3,
-  FB_vs_rest  = FB  - (AT2 + LAE + MV)/3,
-  MV_vs_rest  = MV  - (AT2 + LAE + FB)/3,
-  levels = design)
-keep <- filterByExpr(y, design=design, min.count=5, min.total.count=10)
-y2 <- y[keep,, keep.lib.sizes=FALSE]; y2 <- calcNormFactors(y2, method="TMM")
-cat("retained:", nrow(y2), "(claim 1.9: 105,938)\n")
-v <- voom(y2, design, plot=FALSE)
-cat("running duplicateCorrelation...\n")
-cf <- duplicateCorrelation(v, design, block=don)
-cat("consensus correlation:", round(cf$consensus.correlation,3), "\n")
-fit <- lmFit(v, design, block=don, correlation=cf$consensus.correlation)
-fit2 <- eBayes(contrasts.fit(fit, cm))
-cat("\n=== 1.10: significant at 5% FDR per CT (claim: LAE 28,930 | AT2 22,131 | MV 21,429 | FB 18,422) ===\n")
-for (cn in colnames(cm)) {
-  tt <- topTable(fit2, coef=cn, number=Inf, sort.by="none")
-  cat(sprintf("  %-12s %6d\n", cn, sum(tt$adj.P.Val < 0.05)))
-}
+suppressMessages({library(mashr); library(ashr)})
+fit2 <- readRDS("/tmp/ct_de_fit2.rds")
+bhat <- fit2$coefficients; shat <- fit2$coefficients / fit2$t
+fin <- apply(shat, 1, function(x) all(is.finite(x) & x > 0))
+bhat <- bhat[fin,,drop=FALSE]; shat <- shat[fin,,drop=FALSE]
+d0 <- mash_set_data(Bhat=bhat, Shat=shat)
+strong <- get_significant_results(mash_1by1(d0), thresh=0.05)
+set.seed(42)
+idx <- sample(seq_len(nrow(bhat)), min(20000, nrow(bhat)))
+Vhat <- estimate_null_correlation_simple(mash_set_data(Bhat=bhat[idx,,drop=FALSE], Shat=shat[idx,,drop=FALSE]))
+md <- mash_set_data(Bhat=bhat, Shat=shat, V=Vhat)
+U_pca <- if (length(strong)>=5) cov_pca(md, npc=min(5,ncol(bhat)-1), subset=strong) else list()
+m <- mash(md, Ulist=c(U_pca, cov_canonical(md)), outputlevel=2)
+pm <- get_pm(m); lf <- get_lfsr(m)
+cat("claim: LAE 28,930 | AT2 22,131 | MV 21,429 | FB 18,422\n\n")
+cat("-- MARKER rule (Methods): lfsr<0.05 & posterior mean logFC > 1 --\n")
+for (cn in colnames(lf)) cat(sprintf("   %-12s %6d\n", cn, sum(lf[,cn]<0.05 & pm[,cn]>1)))
