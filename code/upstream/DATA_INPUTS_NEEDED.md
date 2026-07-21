@@ -19,11 +19,17 @@ to ship with the code (if small enough).
 | `tan_tx_mashr_model.rds` | Tan reanalysis | fitted mashr object |
 | `gmap_ENSGv115_2025.08.12.rds`, `gmap_txlevel_ENSGv115_...rds` | annotation | gene/tx maps (ENSEMBL v115) |
 
-## B. Randell isoform-discovery pipeline outputs (`randell:` — separate deposit)
-SQANTI3 / isocall products on Channing. Route: study data deposit + Randell attribution,
-not Yul's Zenodo.
+## B. Isoform-discovery pipeline outputs (`randell:`) — **NO IDENTIFIED HOME**
+SQANTI3 / isocall products under the Randell lab's Channing tree. Not Yul's outputs, so
+not hers to supply.
 - `nmd_lungcells_corrected.cds.gff3`, `nmd_lungcells_corrected.fasta`,
   `nmd_lungcells_filtered.gtf`, `nmd_isocall.isoforms.gtf`
+
+**Open — do not record this as settled.** The manuscript's Data Availability lists only
+**GEO GSE329233** + the Isopair GitHub link. GSE329233 is an expression record and will
+not hold GTF/GFF3/FASTA pipeline products, so these files currently have no deposit
+target — the same gap as the group-A bundle. Resolve with Scott Randell / Yul; do not
+assume a separate "Randell deposit" exists.
 
 ## C. Example-gene annotation (small; may ship with code)
 - `srsf.gtf` / `srsf.cds.gff3` / `srsf.fasta`, `sr_simple_cds.gtf`,
