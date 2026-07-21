@@ -75,8 +75,17 @@ is a hard break at step one.
   (verified reachable; ships `main.nf`, `Dockerfile`, `environment.yml`). ⚠ The working
   copy at `isocall_pipeline/` is **gitignored, not a submodule** — invisible to this repo
   and to any snapshot. Must be **cited by URL/DOI or made a real submodule**.
-  **This makes FOUR external repos, not three** (Isopair, `NMD_orf_model_v5_4ct`,
-  `NMD_orf_model_v5`, `Isocall_v1`) — Q4 must cover all four.
+  **External repos the deposit must cover = THREE: `Isopair`, `NMD_orf_model_v5_4ct`,
+  `Isocall_v1`.** (Corrected 2026-07-20 — I had briefly said four by including
+  `NMD_orf_model_v5`. **v5 is DEPRECATED and must NOT be included:** it is never cited as
+  a result source anywhere in the map, `model:` resolves exclusively to `v5_4ct`, and
+  v5's AUPRC 0.781 does not match the manuscript's 0.833. Same reasoning excludes
+  `Isoscope` / `Isovar`.)
+  **Root cause of that error, worth not repeating:** I built the list from `CLAUDE.md`'s
+  *Linked repos* table, which is a **navigation** aid listing repos Pete has — not a
+  citation list of repos the paper needs. Same failure class as "the map is a keep-list":
+  using a document for a purpose it was not built for. Also still true: the stale
+  unversioned mirror at `results/isoform_transitions/NMD_orf_model_v5/` must not ship.
 - **M2 — OPEN, and now the single highest-priority gap in the project.** The
   nf-core/rnaseq run was done by **John Ziniti** (bioinformatician, co-author). Need his
   launcher script / config. Until then a reader with GSE329233 **cannot produce the
