@@ -36,10 +36,11 @@ R 4.5.2 (2025-10-31)   |   Bioconductor 3.22
 | limma | 3.66.0 | | tidyverse | 2.0.0 |
 | ashr | 2.2.63 | | DT | 0.34.0 |
 
-**`topGO` — NOT INSTALLED locally.** Used by `code/upstream/productive_response.Rmd`
-(Yul runs it on Channing against `/udd/reyle/Rlibs`). Consequence: that chunk cannot be
-re-run or verified on this laptop. Either install it here or record Channing's version
-from Yul — otherwise the §3 GO enrichment is unreproducible outside her environment.
+**`topGO` — not installed locally.** Used by `code/upstream/productive_response.Rmd`
+(Yul runs it against `/udd/reyle/Rlibs`). Low priority: GO over-representation with the
+elim algorithm is stable across versions, so the *version* is not worth pinning, and §3
+is parked. If we ever need to re-run that chunk here, `BiocManager::install("topGO")`
+covers it — no need to involve Yul.
 
 ## Python
 ```
@@ -62,6 +63,8 @@ runtime and will drift.
 
 ## Not captured here
 Yul's Channing environment (`/udd/reyle/Rlibs`), which is what actually produced the
-§1–3 results. Her scripts set `.libPaths()` to it. **Ask Yul for `sessionInfo()` from the
-run that generated the manuscript numbers** — the versions above are Pete-side and may
-differ from hers.
+§1–3 results (her scripts set `.libPaths()` to it). The versions above are Pete-side and
+may differ. **Secondary ask** — worth requesting `sessionInfo()` from the manuscript run
+when we next email her about the data bundle, but not a blocker on its own. The versions
+that would actually matter are `mashr` / `ashr` (posterior computation) and `limma` /
+`edgeR` (the DE fits), not the downstream annotation packages.
