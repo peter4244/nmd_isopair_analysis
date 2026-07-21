@@ -88,3 +88,8 @@ nmd_orf_model_v5_4ct/
 
 # node deps for the SF docx builder (kept local, not tracked)
 paper/node_modules/
+
+# Yul's analysis data bundle — primary-cell-derived intermediates.
+# Local-verification use only; NEVER committed (this repo auto-pushes to public GitHub).
+# Not deposited either, per reproducibility standard D-5 (raw reads + code only).
+nmd_fig_data/
