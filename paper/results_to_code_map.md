@@ -360,8 +360,8 @@ Housekeeping: `PJC_Tables/~$NMD_Tables.xlsx` is a tracked Excel lock file → un
 
 | # | Claim | Source code | Notes / status |
 |---|---|---|---|
-| 2.10 | "Isoforms concentrated at low isoform proportions — majority < 50% of parent gene expression, substantial fraction < 10%, span > 4 orders of magnitude of absolute expression" (SF: All Proportion vs Expression: DMSO; SF: NMD Only Proportion vs Expression: DMSO) | Likely `yul:interpret_isoform_patterns_mashr_2026.3.10.Rmd` or `yul:Isoform_Landscape.Rmd`. Inputs: DMSO-only CPM × NMD-susceptible flag from mashr CSVs. | Cite-only. |
-| 2.11 | "Clear upward shift in proportion and absolute expression between DMSO and SMG1i" (SF: NMD-Responsive Isoforms: DMSO vs SMG1i) | Same Rmd. | Cite-only. |
+| 2.10 | ⛔ **BLOCKED — WRONG INPUT UNIVERSE (2026-07-21).** `nmd:all_proportions_2026.1.20.rds` is **not** the isocall isoform set: it is keyed on ENST reference IDs (300,209 distinct), whereas the mashr DIE set uses isocall/SQANTI gene-anchored IDs (`ENSG…novel1`; only 55,605 of 162,800 start with ENST). Raw ID overlap is **5,752**, so any join against it covers <17% of NMD-susceptible isoforms and is unrepresentative. Attempted figures from that join are discarded, not reported. **→ Identify the isoform-proportion table built on the isocall universe before verifying 2.10/2.11.** "Isoforms concentrated at low isoform proportions — majority < 50% of parent gene expression, substantial fraction < 10%, span > 4 orders of magnitude of absolute expression" (SF: All Proportion vs Expression: DMSO; SF: NMD Only Proportion vs Expression: DMSO) | Likely `yul:interpret_isoform_patterns_mashr_2026.3.10.Rmd` or `yul:Isoform_Landscape.Rmd`. Inputs: DMSO-only CPM × NMD-susceptible flag from mashr CSVs. | Cite-only. |
+| 2.11 | ⛔ **BLOCKED — same wrong-input issue as 2.10.** "Clear upward shift in proportion and absolute expression between DMSO and SMG1i" (SF: NMD-Responsive Isoforms: DMSO vs SMG1i) | Same Rmd. | Cite-only. |
 
 ### Paragraph 3 — quantitative CT specificity vs pairwise sharing (Figure 1E, SF: Sharing)
 
