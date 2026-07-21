@@ -141,8 +141,23 @@ Correlation") but previously had no M-section — it was covered only at claim l
   Claims 1.6–1.8 depend on this.
 - **Claims:** 1.6 (mean Pearson r = 0.90, mean Spearman ρ = 0.890, 26 matched samples,
   29,185 common genes), 1.7, 1.8 (Figure 1A).
-- **Status:** cite-only. Also the basis for excluding DD_ALI / DO_ALI from the
-  4-CT manuscript scope (low SR-vs-LR effect-size correlation).
+- **Status: ✅ VERIFIED LOCALLY 2026-07-21** — re-derived end-to-end from the data bundle,
+  independent of Yul's rendered output. Every published value reproduces:
+
+  | Quantity | Published | Re-derived |
+  |---|---|---|
+  | Common genes (post expressed-filter) | 29,185 | **29,185** |
+  | Matched samples | 26 | **26** |
+  | Mean Pearson r | 0.90 (0.83–0.91) | **0.896** (0.834–0.906) |
+  | Mean Spearman ρ | 0.890 (0.849–0.901) | **0.890** (0.849–0.901) |
+
+  First §1–3 claim verified on this laptop. Also confirms (a) the
+  `dge_gene_unfiltered_2026.1.2.rds` input is correct — see the do-not-modernize warning
+  above — and (b) `salmon...FULL.rds` is the same object as
+  `salmon.merged.gene_counts_length_scaled.rds`, renamed when Yul staged the bundle
+  (no missing file).
+- Also the basis for excluding DD_ALI / DO_ALI from the 4-CT manuscript scope (low
+  SR-vs-LR effect-size correlation).
 
 ### M4. Isoform-landscape characterization (DMSO-only)
 
