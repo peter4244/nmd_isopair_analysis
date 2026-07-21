@@ -56,6 +56,46 @@ not the keep-list.**
 | `code/ptcneg_go_handoff/` | 1 | check before archiving. |
 | knitr `_files/` dir | 2 | regenerable render artifacts. |
 
+---
+
+## D. TRACE RESULTS (1.1b, run 2026-07-21) — three findings
+
+**D-1 ✅ The original 106 are confirmed safe on the `source()` channel.** Audited all 37
+`source()` calls in the keep-set: 21 literal, 16 dynamic. Every dynamic one resolves —
+`VIS` → `isopair_wrapper/visualization_functions.R`, `mc_path` → `figures/lib/mechanism_class.R`,
+`UPSTREAM` → the external `NMD_orf_model_v5_4ct` repo, the rest to `figures/lib`,
+`isopair_wrapper`, `scripts/core`. **None points at any of the 106.**
+
+**D-2 ⚠️ The seed was TOO COARSE — this is the trace's main catch.** Treating all of
+`Version_6.0/` as seed swept in exploratory clusters. Map-citation by subdirectory:
+
+| Subdir | files | cited | verdict |
+|---|---|---|---|
+| `isopair_wrapper/` | 13 | **9** | **KEEP** — the §4 pipeline |
+| `scripts/core/` | 9 | 0 | **KEEP** — load-bearing (`event_detection_functions.R` sourced by `scripts/tests`) |
+| `scripts/tests/` | 3 | 0 | KEEP — test infrastructure |
+| `results/ptc/scripts/` | 10 | 0 | **→ ARCHIVE.** rmats appears **0 times** in the manuscript, supplement, *and* map |
+| `scripts/dev/` | 7 | 0 | **→ ARCHIVE** (dev) |
+| `scripts/archive/` | 10 | 0 | **→ ARCHIVE** (already so named) |
+| `scripts/nmd/` | 11 | 0 | **→ REVIEW** — check before archiving |
+
+⇒ **+27 archive candidates** beyond the original 106 (ptc 10 + dev 7 + archive 10), with
+`scripts/nmd/` (11) needing a look. Found via the data-flow channel: these read the
+**deprecated 2026.1.18 oarfish DGE outputs**, which the map records as superseded by the
+2026.3.10 isocall pipeline — a self-consistent dead cluster.
+
+**D-3 ⚠️ Divergent duplicate.** `visualization_functions.R` exists in **both**
+`scripts/core/` (530 lines) and `isopair_wrapper/` (538 lines) and they **differ**. Every
+cited reference points at the **wrapper** copy (confirmed via SF25's `VIS` absolute path),
+so the `scripts/core/` copy is stale. Do not let the prune keep the wrong one.
+Related: `scripts/core/` is the Isopair *development* source (event detection) and may be
+superseded by the `peter4244/Isopair` package — same pattern as the ~49 `code/` files.
+**Pete decision.**
+
+**Also recorded:** `figures/multipanel/figure5_dl_model/figure5_panelA_architecture.R`
+sources `../NMD_orf_model_v5_4ct/make_architecture_figure.R` — a **cross-repo dependency**
+that must be resolved for the citable snapshot (plan Q4).
+
 ## Open before Phase 4 (prune)
 1. **Pete's review of category C** — especially the ~49 event-detection lineage: confirm
    the Isopair package fully supersedes them.
