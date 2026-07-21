@@ -98,3 +98,4 @@ nmd_fig_data/
 # Pulled locally for verification only. NOT redistributed (see plan W-2); the
 # download manifest lives in code/upstream/tan_reanalysis/README.md.
 code/upstream/tan_reanalysis/data/
+code/upstream/tan_reanalysis/output/
