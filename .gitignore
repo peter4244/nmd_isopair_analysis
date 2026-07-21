@@ -93,3 +93,8 @@ paper/node_modules/
 # Local-verification use only; NEVER committed (this repo auto-pushes to public GitHub).
 # Not deposited either, per reproducibility standard D-5 (raw reads + code only).
 nmd_fig_data/
+
+# Tan et al. (2025) supplementary tables — another paper published data.
+# Pulled locally for verification only. NOT redistributed (see plan W-2); the
+# download manifest lives in code/upstream/tan_reanalysis/README.md.
+code/upstream/tan_reanalysis/data/
