@@ -29,7 +29,7 @@ About half of the manuscript's quantitative claims are directly verifiable from 
 | Tag | Means |
 |---|---|
 | `nmd:` | This repo. Canonical at GitHub `peter4244/nmd_isopair_analysis` ≡ Channing GitLab `repjc/nmd_lungcells_2026` ≡ local `~/claude_projects/nmd/`. Pete-side. |
-| `yul:` | Yul's `/udd/reyle/nmd_lungcells_2026/code/final/` on Channing. Presumed mirrored to changit at `reyle/nmd_lungcells_2026` (need member access). Not directly readable from this laptop yet — cited by path only. |
+| `yul:` | Yul's upstream analysis code. **IMPORTED into this repo 2026-07-20 (Phase 3): `yul:<path>` now resolves to `code/upstream/<path>`.** Source of record = Yul's canonical GitHub `YLeshem18/nmd_lungcells_2026` (per Pete, O-1). The prefix is retained as a provenance marker (Yul owns §1–3 + DGE/DIE/mashr; see `code/upstream/IMPORT_PROVENANCE.md`). Verified: all `yul:` citations resolve under `code/upstream/` **except** `yul:productive_compensation.Rmd`, which is a known-wrong filename (actual: `productive_response.Rmd`) left in place because §3 is parked. |
 | `isopair:` | Isopair package. Canonical at GitHub `peter4244/Isopair` ≡ local `~/claude_projects/Isopair/`. |
 | `model:` | DL model. Canonical at GitHub `peter4244/NMD_orf_model_v5_4ct` ≡ local `~/claude_projects/NMD_orf_model_v5_4ct/`. Trained on Northeastern Discovery. |
 | `randell:` | Long-read isoform-discovery pipeline at Channing `/proj/regeps/regep00/studies/ExternalCellLines/data/longread/mrna/Randell_Lung_Cells_2025/`. Possibly also a changit repo (TBD — Pete to check with Yul). |
