@@ -47,6 +47,43 @@ mirror at `results/isoform_transitions/NMD_orf_model_v5/` that must not ship.
 
 ---
 
+## D-5 (Pete, 2026-07-20) — REPRODUCIBILITY STANDARD, supersedes "FULL"
+
+> "We need to make available the starting files (raw reads, which are provided in GEO)
+> and the code that processes our data and produces the results in the paper, but we do
+> not need to provide all interim data files."
+
+**Standard = raw reads (GEO GSE329233) + complete code chain. Interim files NOT deposited.**
+This is the conventional genomics standard and replaces the earlier "FULL reproducibility"
+framing that drove v1–v3.1.
+
+**What this REMOVES (large simplification):**
+- The `nmd_fig_data/` bundle no longer needs a deposit → **group A of
+  `code/upstream/DATA_INPUTS_NEEDED.md` is no longer a deliverable.**
+- The SQANTI/isocall products no longer need a deposit → **group B's "no identified home"
+  problem is MOOT.** (Do not resurrect it.)
+- Most of workstream **D2** (deposit strategy) drops away.
+- Phase 6.5's "large `.rds`" audit is moot — no intermediates ship.
+
+**What this ELEVATES to critical — the catch:**
+Without deposited intermediates, the code chain must be **unbroken from raw reads
+forward**. A missing pipeline step used to be patchable by depositing its output; now it
+is a hard break at step one. The two links nearest the raw reads are both open:
+- **M2** — nf-core/rnaseq launcher script: *"path not yet identified — flag for Yul"*
+- **M3** — isocall output location *"TBD — flag for Yul"*; SQANTI3 config at a `randell:`
+  Channing path in neither repo
+⇒ **A reader with GSE329233 currently cannot take step one.** Closing M2 + M3 is now the
+single highest-priority gap in the whole project. **The Yul ask flips** from "send the
+`.rds` bundle" to "where is the processing code."
+
+**What is UNCHANGED — do not conflate deposit with verification:**
+We still cannot *run* Yul's §1–3 scripts locally without her intermediates, so:
+- Phase **1.1b (empirical trace)** remains blocked for §1–3 → those stay hand-reviewed.
+- Phase **5.2 (re-render)** can only verify §4/§5 here. **Someone must still verify the
+  §1–3 chain actually runs** — most practically Yul, on Channing. Shipping code we have
+  never confirmed executes end-to-end is the residual risk of this standard, and it is
+  a real one.
+
 ## Decisions settled
 
 - **D-1: prune in place on a branch, THEN fresh-init a snapshot.** `.git` is 1.1 GB

@@ -1,5 +1,16 @@
 # Data inputs needed to run Yul's upstream scripts (D1 inventory)
 
+> **⚠ SCOPE CHANGED 2026-07-20 (plan D-5).** Pete set the standard: **raw reads (GEO
+> GSE329233) + complete code chain; interim data files are NOT deposited.** Therefore
+> **groups A, B, and C below are NO LONGER DELIVERABLES** — they are interim products.
+> This file is retained as a *runtime* inventory (what you need on hand to actually
+> execute these scripts), not as a deposit checklist. Group B's "no identified home"
+> problem is moot — do not resurrect it.
+>
+> **The obligation this creates instead:** every step that *produces* these files must
+> have its code in the repo. The open gaps are **M2** (nf-core launcher) and **M3**
+> (isocall / SQANTI3 config) — see the plan.
+
 Extracted 2026-07-20 from the 22 imported scripts under `code/upstream/` that read a
 `nmd_fig_data/` bundle. **None of these files are in either repo.** Full reproducibility
 (the project target) requires each to be obtainable. Grouped by provenance + likely
