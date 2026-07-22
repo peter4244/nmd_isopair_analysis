@@ -43,6 +43,36 @@ below). **This decision is made — do not re-litigate it.** What remains is exe
 
 Supporting detail and the options considered are kept below for the record.
 
+### ⚠️ The repo split is by KIND, not by manuscript section
+
+A natural but **wrong** assumption is "§1–4 in this repo, §5 in the model repo." Measured
+2026-07-22, this repo holds **25 §5 files**:
+
+- `figures/multipanel/figure5_dl_model/` (10) — all Figure 5 panels
+- `figures/SupplementalFigures/SF37–SF43` (9) — SHAP-across-windows, stop-codon usage,
+  attention distribution, PTC-subclass branch SHAP + performance, GC content, model comparison
+- `code/nmd_predictor_comparison/` (6) — the NMDetective-B / NMDEP benchmark behind SF43
+
+`NMD_orf_model_v5_4ct` holds the model itself: `03_train.py`, `model.py`, `config.yaml`,
+the DeepSHAP/KernelSHAP scripts, its own `METHODS.md`.
+
+| Layer | Where |
+|---|---|
+| §1–3 analysis | this repo (`code/upstream/`, Yul) |
+| §4 Isopair pipeline + figures | this repo |
+| §5 **model training + interpretability computation** | external model repo |
+| §5 **figure rendering + predictor benchmark** | **this repo** |
+
+**The model repo computes; this repo visualizes and benchmarks.** Figure 5 panels read TSV
+exports from the model repo, and `figure5_panelA` additionally `source()`s a script from it.
+
+**Consequence for Code Availability:** do NOT write "sections 1–4 here, section 5 there" —
+reproducing **Figure 5 requires both repos**. Phrase by role, e.g.:
+
+> Analysis and figure-generation code: [this repo DOI]. Deep-learning model training and
+> interpretability: [`NMD_orf_model_v5_4ct` DOI]. Long-read processing pipeline:
+> [`Isocall_v1` DOI]. Isoform-pair analysis package: [`Isopair` DOI].
+
 ---
 
 ## Background — external repo packaging (options as considered)
