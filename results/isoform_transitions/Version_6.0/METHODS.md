@@ -53,7 +53,7 @@ Our analysis proceeds in three phases:
 - Detect all splicing events using a hierarchical pipeline: IR -> boundary shifts -> exon skipping -> terminal events
 - Reconstruct dominant isoform from comparator + events and verify coordinates match
 - Generate splicing choice profiles
-- Shared libraries: `scripts/core/event_detection_functions.R`, `scripts/core/reconstruction_functions.R`
+- Shared libraries: `event_detection_functions.R`, `reconstruction_functions.R` — **archived 2026-07-21** to `superseded/results/isoform_transitions/Version_6.0/scripts/core/`. This event-detection code is superseded by the **`peter4244/Isopair`** package (`detectEvents()`, `reconstructIsoform()`); the description below records how the published results were generated.
 
 **Phase 3: Downstream Statistical Analysis**
 - Complexity relationship (nmd/09)
@@ -1326,6 +1326,8 @@ Format: One row per (dominant, non-dominant) comparison
 - `glmnet`: LASSO/ridge regression for co-occurrence analysis
 - `metafor`: Random-effects meta-analysis (Phase 2 cross-comparison)
 
+> **⚠️ Archive note (2026-07-21).** The repo was consolidated to paper-necessary code. Of the inventory below, **`scripts/core/02`–`05` and `scripts/nmd/01`, `06` remain in place** — they are the only tracked producers of the seven isoform-intrinsic objects `02_build_profiles_mashr.R` consumes. Everything else in `scripts/core/`, `scripts/nmd/`, `scripts/dev/`, `scripts/tests/` and `results/ptc/scripts/` moved to `superseded/<original/path>` (reversible; rollback branch `archive/pre-consolidation`). Paths below are as-published and describe how the results were generated.
+
 **Scripts** (Version 6.0) — organized into `scripts/core/` (generic) and `scripts/nmd/` (NMD study-specific):
 
 **NMD-specific (`scripts/nmd/`):**
@@ -1436,7 +1438,7 @@ for self-containment:
 | `union_exons.rds` | `scripts/core/03_build_union_exons.R` | `buildUnionExons()` — atomic union exon model per gene |
 | `isoform_union_mapping.rds` | `scripts/core/03_build_union_exons.R` | `mapIsoformsToUnion()` — isoform-to-union-exon mapping |
 | `annotated_ue.rds` | `scripts/core/05_annotate_region_types.R` | `annotateUnionExons()` — union exons with CDS/UTR labels |
-| `cds_exons.rds` | `scripts/core/04_extract_cds_annotations.R` | CDS mapped to individual exons |
+| `cds_exons.rds` | **`isopair_wrapper/00b_build_cds_exons.R`** | `Isopair::extractCdsExons()` — CDS mapped to individual exons. **Corrected 2026-07-21:** this row previously credited `scripts/core/04`, which does **not** write this file — nothing in the repo did. The on-disk copy was produced by an ad-hoc step (dated a day after its six siblings). `00b` was written to close that gap and its output is byte-identical to the existing object (755,368 × 5). |
 
 ### Sample Exclusion
 
