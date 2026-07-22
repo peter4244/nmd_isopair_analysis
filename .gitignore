@@ -24,7 +24,10 @@ __pycache__/
 .idea/
 
 # Large data and results directories
-results/
+# ANCHORED to repo root 2026-07-21. A bare `results/` matches a dir named
+# `results` at ANY depth — it was silently catching superseded/results/... and
+# would catch any future nested results dir. Version_6.0 stays force-tracked.
+/results/
 data/
 reference_files/
 tmp/
@@ -68,6 +71,11 @@ isocall_dge/old/
 
 # Archive folders - old versions and backups
 **/archive/
+# Exempt archive dirs that hold TRACKED files (paper/archive, the superseded/
+# tree). Without these, `**/archive/` silently untracks them — it nearly
+# swallowed all 158 archived files on 2026-07-21.
+!paper/archive/
+!superseded/**/archive/
 **/archive_*/
 
 # Large cache files from R Markdown
