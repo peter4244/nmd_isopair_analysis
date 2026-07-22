@@ -285,3 +285,40 @@ Only the `.pdf` outputs differed (wall-clock `/CreationDate`), confirming the pl
 finding that **PNG byte-compare is valid and PDF is not**. Tree restored clean.
 
 ⇒ **The archive is verified in practice, not just statically.**
+
+---
+
+## I. INTERMEDIATE-PRODUCER AUDIT (2026-07-22)
+
+Driven by Pete's rule: **the citable repo ships CODE only** — starting data lives in GEO
+(GSE329233); no intermediate data, figures, or rendered reports. That rule makes code
+completeness the binding constraint: any intermediate that isn't shipped MUST have a
+producer in the repo, or the chain breaks there.
+
+### Method note — automated scanning FAILED, twice over
+Regex-based read/write matching produced an unusable false-negative rate: writes are
+constructed dynamically (`fwrite(file.path(OUT, sprintf("panel%s_long.tsv", slug)))` at
+`figure4/data_export.R:240`), so ~12 panel TSVs were flagged as producerless when their
+producer was directly readable. Consistent with the plan's F-2 finding (only 13–32% of
+*reads* use literal paths) — writes are no better. **Do not trust a static producer scan
+on this codebase.** The reliable checks are hand-inspection and actually running the chain.
+
+### Hand-checked result — no `cds_exons`-class hole remains
+
+| Input | Verdict |
+|---|---|
+| `ref_expression_fraction.tsv` | ✅ produced — `SF28_ReferenceShare/data_export.R:55` (scan false positive) |
+| panel*/`profiles_c*`/`isoforms_per_gene` etc. | ✅ produced via constructed paths (scan false positives) |
+| `orf_landscape.rds`, `orfik_scan.rds`, `unified_model.rds` | ⚠️ **no producer anywhere** — but **absent from the live 4-CT `data_mashr/analysis_cache/` (83 objects)** and present *only* in `data_mashr.bak_6ct_2026-07-11/`. Read solely by `05_final_report_mashr.Rmd` — **explicitly DEPRECATED** (map:258, "retained for reference", carries deprecation banners) — and `06_orf_analysis_mashr.Rmd`. ⇒ **vestigial reads of pre-rescope 6-CT artifacts, not live gaps.** |
+| `utr5_features_all.rds`, `tx_summary.tsv` | ⚠️ same class — no writer found; lower confidence than the three above, **verify by running before the snapshot**. |
+
+**Externally sourced by design** (correctly absent from this repo): `nmd_mashr_*`, `dge_*`,
+`salmon.*` (Yul upstream) · `nmd_lungcells_*`, `sqanti3_corrected.cds.gff3` (`Isocall_v1`)
+· `kernel_shap_*`, `predictions_*`, `model_comparison.rds` (`NMD_orf_model_v5_4ct`) ·
+`gmap_*`, RBP rosters (third-party reference) · `pheno/*.csv` (starting metadata).
+
+### Consequence for Phase 7
+The live 4-CT chain has no known producer gap. The deprecated `05_final_report_mashr.Rmd`
+**cannot run** from a clean checkout (its 6-CT cache inputs have no producer) — that is
+acceptable *only* because it is retained as provenance for SF25/30/31/32, not as a runnable
+step. **Say so in the snapshot README rather than implying the whole tree executes.**
