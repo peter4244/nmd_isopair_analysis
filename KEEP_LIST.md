@@ -252,3 +252,36 @@ the same commit as the prune, or the §4 methods description goes stale.
 3. ~~`pheno/` IRB decision (8.1)~~ — **RESOLVED, see §F.** Codes match the public GEO/SRA submission; not a blocker.
 4. Non-code tracked files (526 total − 301 code = **225**) are **not yet classified** —
    plan 1.4 requires this before the snapshot.
+
+---
+
+## H. ✅ PHASE 4 EXECUTED + RENDER TEST PASSED (2026-07-21)
+
+**Archive executed:** 158 files → `superseded/<original/path>`. Active tracked code
+**301 → 157**. Nothing deleted; rollback branch `archive/pre-consolidation` (05713a4)
+pushed to GitHub.
+
+⚠️ **`archive/` was unusable** — `.gitignore:70`'s `**/archive/` would have silently
+untracked all 158. Caught with `git check-ignore` pre-move; used `superseded/`.
+**Third** near-miss from these globs (after the modelled fresh-init dropping 118 files,
+and the bare `results/` rule hiding the real infra builder). **Fix `.gitignore` before
+Phase 7.**
+
+### Render test (plan 5.2) — the empirical backstop
+
+Re-rendered one figure per family and byte-compared PNGs against the committed versions:
+
+| Render | Family | Exercises | Result |
+|---|---|---|---|
+| `SF33_CdsAnd3UTR_GENCODE/figure_sf33.py` | SF, Python | `figures/lib`, six-validator gate | **byte-identical** |
+| `figure3_isopair_and_ptc/figure3_panelC_event_prevalence.py` | multipanel, Python | multipanel data export | **byte-identical** |
+| `SF25_SpliceEventCategories/render_sf25_canonical.R` | SF, **R** | sources `isopair_wrapper/visualization_functions.R` | **byte-identical** |
+
+The third is the decisive one: it is the **D-3 divergent-duplicate** case, and it renders
+correctly against the *kept* wrapper copy — empirically confirming the right one of the two
+was archived.
+
+Only the `.pdf` outputs differed (wall-clock `/CreationDate`), confirming the plan's N-2
+finding that **PNG byte-compare is valid and PDF is not**. Tree restored clean.
+
+⇒ **The archive is verified in practice, not just statically.**
