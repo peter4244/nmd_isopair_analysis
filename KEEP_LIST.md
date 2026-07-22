@@ -165,6 +165,84 @@ the codes is in fact **desirable** — a reader needs them to map repo files to 
 - **Lesson:** check the existing disclosure record before treating something as a new
   disclosure decision. The answer was on disk the whole time.
 
+---
+
+## G. 🛑 PRE-PRUNE REVIEW FOUND A REAL BREAK — keep-set CORRECTED (2026-07-21)
+
+**Verdict: the split as specified in §E was NOT safe.** An adversarial review found one
+concrete way the prune breaks Figures 3, 4, 5 and SF26–34 + SF43. **Verified independently
+before accepting.**
+
+### The break
+`isopair_wrapper/02_build_profiles_mashr.R:89–94` (**KEEP**, the §4 pipeline) loads seven
+isoform-intrinsic objects and **builds none of them**:
+`structures.rds`, `union_exons.rds`, `isoform_union_mapping.rds`, `cds.rds`,
+`annotated_ue.rds`, `ptc.rds`.
+
+A repo-wide `saveRDS` scan over all tracked code returns **four** writers — **every one in
+the ARCHIVE set**:
+
+| Producer | writes |
+|---|---|
+| `scripts/core/02_extract_isoform_structures.R` | `isoform_structures.rds` |
+| `scripts/core/03_build_union_exons.R` | `union_exons.rds`, `isoform_union_mapping.rds` |
+| `scripts/core/04_extract_cds_annotations.R` | CDS metadata |
+| `scripts/core/05_annotate_region_types.R` | `isoform_union_exons_annotated.rds` |
+| `scripts/nmd/06_filter_to_analysis_subset.R` | the 7 `*_filtered.rds` variants *(missed by the review too — found on independent check)* |
+
+⇒ Under D-5 a reader gets through `01_prepare_data_mashr.R`, then
+`02_build_profiles_mashr.R` dies on a missing `structures.rds`. **29 KEEP files** read the
+downstream `profiles_c2/c4_*` or infra objects, including all three multipanel
+`data_export.R` scripts and `nmd_predictor_comparison/01_extract_our_isoforms.R` (SF43).
+
+### Why my Ruling 1 was wrong
+"The Isopair package supersedes the in-repo event-detection code" is true of the
+**functions** — `Isopair` exports `parseIsoformStructures`, `buildUnionExons`,
+`extractCdsAnnotations`, `annotateRegionTypes`, `computePtcStatus` — but **not of the
+driver scripts** that call them to produce these specific artifacts. No KEEP file calls
+those functions against `data_mashr`. **Having the library ≠ having the pipeline step.**
+The static scan missed it because the dependency travels through **data files**, not
+script basenames — the same channel that caught the `scripts/nmd` cluster in §D-2.
+
+### Corrections
+**ARCHIVE → KEEP:** `scripts/core/02`, `03`, `04`, `05`; `scripts/nmd/01_prepare_expression_data.R`
+(its `--source isocall` branch feeds `core/02`+`04`; §E's rationale cited the wrong
+`--source oarfish` branch); `scripts/nmd/06_filter_to_analysis_subset.R`.
+Remainder of `scripts/core` (`08`, `09`, `event_detection_functions.R`,
+`reconstruction_functions.R`), `scripts/tests`, `scripts/nmd/09–15` stay ARCHIVE —
+confirmed no KEEP file calls any of their 30 defined functions.
+
+**Revised tally: ~151 KEEP / ~150 ARCHIVE** (also reconcile §E's "~143/~158" — a
+`git ls-files` count gives 145/156; fix before using as a checksum).
+
+### Confirmed-safe by the review (no change)
+The ~49 `code/` lineage (spot-checked 4: all read the deprecated
+`v4.0_reference_based/` tree, zero tracked files there); `scripts/dev`; `scripts/archive`;
+`results/ptc/scripts`; `scripts/tests`; D-3's divergent duplicate; the `source()` and glob
+channels; zero knitr `child=` in the keep set.
+
+### Mechanism risks to honor at execution
+1. **`.gitignore:27` is a bare `results/`.** Any archive move to a path *under* `results/`
+   drops files silently. Use `git mv` to a path **outside** `results/`, and assert
+   `git ls-files results/isoform_transitions/Version_6.0 | wc -l` before/after.
+2. **Preserve full relative paths** — flat archive collides: `event_detection_functions.R`
+   in two dirs, `visualization_functions.R` in core *and* kept wrapper, three distinct
+   `01_prepare_*.R`.
+3. Move the 5 orphaned rendered `.html` and `code/isoform_transition_splicing_analysis_files/`
+   with their sources.
+
+### Pre-existing hole (not caused by the prune, do not certify around it)
+`cds_exons.rds` is read by KEEP `03b_rebuild_cache.R:54` and `05_final_report_mashr.Rmd:383`
+but **nothing in the repo writes it**, tracked or untracked. `Isopair::extractCdsExons` is
+exported and never called. Separately, `isopair_wrapper/archive/02_build_profiles.R` — the
+*actual* working producer, calling the Isopair functions — is **untracked** (`.gitignore:27`)
+and would not survive a fresh-init snapshot either. Resolve both before Phase 7.
+
+### Documentation debt
+`Version_6.0/METHODS.md` (§4 methods source of truth, incl. the provenance table at
+:1427–1439) and `Version_6.0/README.md` document much of the archive set. Update them in
+the same commit as the prune, or the §4 methods description goes stale.
+
 ## Open before Phase 4 (prune)
 1. **Pete's review of category C** — especially the ~49 event-detection lineage: confirm
    the Isopair package fully supersedes them.
