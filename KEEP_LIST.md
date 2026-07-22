@@ -137,12 +137,40 @@ superseded by `isopair_wrapper`, (c) exploratory/rmats work absent from the manu
 (d) already-archived. Nothing archived is cited by the map or reachable from a keep-set
 `source()`.
 
+---
+
+## F. DONOR CODES — RESOLVED, NOT A BLOCKER (2026-07-21)
+
+Plan item **8.1 is closed.** The `DD###X` / `001V`-style codes in the repo are the **same
+de-identified study codes already submitted for public release** in the GEO/SRA
+submission (`~/claude_projects/ncbi_submissions/nmd_lung_cells/`, GSE329233, public
+2026-09-01):
+
+- `sample_metadata_longread.csv` → `sample_alias` = `AT2_001V_DMSO_LR`,
+  `sample_title` = "AT2 donor 001V DMSO (long-read)", plus an explicit `donor_id` column.
+- `sra/sra_biosample_attributes.tsv` → the **required, public** BioSample `*isolate`
+  field is the donor code itself; `*age` = "not collected".
+
+⇒ The repo does **not** exceed the disclosure already made to a public archive. Keeping
+the codes is in fact **desirable** — a reader needs them to map repo files to GEO samples.
+**No scrub, no IRB escalation, no snapshot blocker.**
+
+**Corrections to my earlier flag, recorded so the mistakes aren't repeated:**
+- I said "2 files"; it is **8** — I missed `pheno/fastq_sample_map2.fofn`, three rendered
+  `code/*.html` reports, `isopair_wrapper/05_final_report_gencode_scope_2026-07-11.html`
+  (in the **keep** set), and `REPO_CONSOLIDATION_PLAN.md` (where I wrote them myself).
+- I framed it as "will they ship?" when `peter4244/nmd_isopair_analysis` is **public**
+  (`"private": false`) — they already had. The right question was never *whether to
+  publish* but *whether publication was already authorized*. It was.
+- **Lesson:** check the existing disclosure record before treating something as a new
+  disclosure decision. The answer was on disk the whole time.
+
 ## Open before Phase 4 (prune)
 1. **Pete's review of category C** — especially the ~49 event-detection lineage: confirm
    the Isopair package fully supersedes them.
 2. **Empirical trace (1.1b)** — not yet run; would upgrade C from "no static reference"
    to "not opened at runtime." The data bundle is now local, so §1–3 scripts can finally
    be traced.
-3. **`pheno/` IRB decision (8.1)** — 2 files with donor codes; gates whether they ship.
+3. ~~`pheno/` IRB decision (8.1)~~ — **RESOLVED, see §F.** Codes match the public GEO/SRA submission; not a blocker.
 4. Non-code tracked files (526 total − 301 code = **225**) are **not yet classified** —
    plan 1.4 requires this before the snapshot.
