@@ -228,6 +228,61 @@ that Methods actually covers it.
 
 ---
 
+### F-13 ⚪ INFO — §2 claims 2.24 / 2.25 are stale; the specifics left the manuscript
+
+The map carried two claims about **cell-type-specific pathways**: 2.24 ("AT2-specific:
+translation-regulatory programs, xenobiotic metabolism") and 2.25 ("AT2 + MV: regulation of
+RNA splicing"). Both were flagged "re-check pending under msigdbr 26.1.0".
+
+**Checked 2026-07-24: neither is in the manuscript.** `xenobiotic` and `translation-regulatory`
+appear **0 times** in *both* the 2026.7.17 and 2026.2.5 versions; the single "regulation of RNA
+splicing" hit is a general statement in the **Discussion**, not the AT2+MV cell-type-specific
+finding. The current §2 text says only:
+
+> "Beyond this shared core, each cell type harbored cell type-specific enriched pathways …
+> **(supplemental results)**"
+
+So the specifics moved into a **supplemental results document that is not on disk** (only
+supplemental *figures* are). Re-running GSEA under 26.1.0 would have verified claims the paper
+no longer makes — the same trap as §3's retired PCI claims.
+
+**Action:** obtain the supplemental results document before these can be verified; until then
+2.24/2.25 are retired from the map. 🔵 **Pete** — is there a supplemental results file to add?
+
+---
+
+### F-14 🟡 🟣 YUL — §1's "expressed" / "restricted" denominators cannot be reproduced from the Methods
+
+Two §1 claims quote percentages that do not reproduce, while their **counts are exact**:
+
+- **1.12** "0.36–2.24% of each cell type's expressed isoforms" → I get **0.88–5.48%**
+  (counts LAE 8,087 · AT2 2,267 · MV 2,015 · FB 1,131 are **exact**).
+- **1.13** "Only 27.8% (LAE) to 51.7% (MV) of cell type-restricted isoforms passed the
+  additional expression filter required for differential testing."
+
+**Progress 2026-07-24 (`verify_section1_claim113.R`):** the filter is **per-cell-type**, not a
+global one. Of nine candidate filters, per-CT `filterByExpr` is the **only** one reproducing
+the claim's ordering (LAE lowest, MV highest):
+
+| filter | AT2 | LAE | FB | MV | ordering |
+|---|---|---|---|---|---|
+| **per-CT filterByExpr (defaults)** | 31.7 | **25.6** | 37.2 | **45.0** | ✅ matches |
+| DMSO-only filterByExpr (the 2026-07-21 attempt) | 26.4 | 25.2 | 20.5 | 26.3 | ✗ |
+| all-samples filterByExpr | 26.0 | 24.8 | 20.9 | 26.5 | ✗ |
+| CPM ≥ 1 in ≥ 2 samples | 50.6 | 48.0 | 37.0 | 37.0 | ✗ |
+
+Claimed LAE 27.8 / MV 51.7 vs recomputed 25.6 / 45.0 — right structure, values 2–7 points low.
+
+**Note the two mismatches point opposite ways** (1.12 recomputed *higher* than claimed, 1.13
+*lower*), which is consistent with Yul's "expressed" and "restricted" definitions differing
+slightly from the Methods text rather than with an error in either.
+
+**Ask:** what exactly are the "expressed isoforms" denominator (1.12) and the "additional
+expression filter" (1.13)? Both are currently unspecified in Methods, so neither can be
+reproduced by a reader. The substantive counts are exact either way.
+
+---
+
 ### F-12 🟡 🟣 YUL — the UPR half of §3 ¶2's enrichment claim is weaker than stated
 
 **Claim:** "Genes where productive output rose were enriched in the unfolded-protein response
