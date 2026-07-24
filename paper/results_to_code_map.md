@@ -14,7 +14,7 @@
 |---|---|---|
 | §1 (Isoform discovery) | ~1 / 15 | Yul-side `Isoform_Landscape.Rmd`, `correlation_analysis.Rmd` |
 | §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul. (Tan reanalysis code RESOLVED 2026-07-20 → `yul:tan_reanalysis/`; still needs the Tan supplementary `.xlsx` downloads.) |
-| §3 (Output Lost + Productive Response) | **4 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1 (3.1–3.4) verified exact; ¶2–¶5 recomputable, not yet run. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
+| §3 (Output Lost + Productive Response) | **10 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1 (3.1–3.4) + ¶2 (3.5–3.10) verified — ¶2 by executing Yul's own code; ¶3–¶5 recomputable, not yet run. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
 | §4 (Isopair / splice events / PTC) | 46 / 46 | All local. Verified by the pass-7 (37 checks) + cross-check (57 checks) verifiers under `reproducibility/`. Both PASS. |
 | §5 (DL model) | ~30 / 31 | Essentially all local — `model:` (trained weights cached) |
 
@@ -531,22 +531,29 @@ NMD-susceptible isoforms (yields 3.0–9.9%), report it explicitly as a composit
 TVD measure, or add a permutation baseline showing the treatment effect exceeds donor-level
 variability.
 
-### Paragraph 2 — custom NMD-anchored normalization + productive DE (Fig 2B, ST4) — NOT YET VERIFIED
+### Paragraph 2 — custom NMD-anchored normalization + productive DE (Fig 2B, ST4) — ✅ VERIFIED (3.5–3.10)
 
-Canonical source `yul:productive_response.Rmd` (local: `code/upstream/productive_response.Rmd`).
-Inputs all local: `nmd_fig_data/dge_isoform_longread_filtered_2026.3.3.rds`, isoform + SR
-mashr posterior means / lfsr, SQANTI classification.
+**Verified 2026-07-24** by `code/upstream/verify_section3_p2.R`, which purls
+`productive_response.Rmd`, repoints its `/udd/reyle` paths at local copies of the identical
+inputs, and executes **Yul's own code** through the `mashr` chunk. Every quoted number
+reproduces. Two **disclosed deviations**, both lookup-only (no data/threshold/computation
+changed): the repo's mashr CSVs predate the April-2026 rename, so `resolve_mash_col()` and
+`resolve_sr()` were widened to accept `Smg1i_in_AT`/`_in_DD` as aliases for AT2/LAE.
 
 | # | Claim | Source code | Status |
 |---|---|---|---|
-| 3.5 | Correction preserves gene rankings: Spearman ≥ 0.99 (adjusted vs uncorrected logFC) | `productive_response.Rmd` normalization + reproducibility battery | Recomputable |
-| 3.6 | Non-NMD genes closely matched DMSO vs adjusted-Smg1i: Spearman ≥ 0.96 **(SF23)** | Same | Recomputable |
-| 3.7 | FB treated as provisional due to donor confounding | Methods + same Rmd | Verify the stated reason |
-| 3.8 | Median adjusted log2FC near zero: AT2 +0.14, LAE −0.04, FB +0.10, MV +0.05 | Same; mashr over genes carrying an NMD-susceptible isoform | Recomputable |
-| 3.9 | No significant change in ~83% of genes **(Fig 2B; ST4)** | Same | Recomputable — pin the significance rule |
-| 3.10 | Downregulated 88 (AT2) – 1337 (LAE); upregulated 635 (MV) – 888 (LAE) **(ST4)** | Same | Recomputable |
-| 3.11 | Up-genes enriched for UPR (leading edge *HSPA5*/BiP, *XBP1*, *EIF2AK3*) and NF-κB/TNFα **(ST4)** | Same; GSEA / topGO | Recomputable |
+| 3.5 | Correction preserves gene rankings: Spearman ≥ 0.99 (adjusted vs uncorrected logFC) | `productive_response.Rmd`, `cor(custom, Kitagawa)` | ✅ **VERIFIED** — 0.9980 (LAE) – 0.9997 (FB/AT2); NMD-only 0.9984–0.9997 |
+| 3.6 | Non-NMD genes closely matched DMSO vs adjusted-Smg1i: Spearman ≥ 0.96 **(SF23)** | Same, chunk `R5-control-corr` | ✅ **VERIFIED** — 0.9643 (LAE) – 0.9705 (FB); min ≥ 0.96 holds |
+| 3.7 | FB treated as provisional due to **donor confounding** | Methods + same Rmd | ⚠️ **MISMATCH — see F-7.** `productive_response.Rmd:61` gives a different reason: "smaller effect sizes; fails part of the reproducibility battery". |
+| 3.8 | Median adjusted log2FC near zero: AT2 +0.14, LAE −0.04, FB +0.10, MV +0.05 | Same, chunk `base-build` | ✅ **EXACT** — AT2 0.141, LAE −0.040, FB 0.098, MV 0.051 |
+| 3.9 | No significant change in ~83% of genes **(Fig 2B; ST4)** | Same, chunk `mashr` | ⚠️ **numbers reproduce, framing misleading — see F-6.** Per-CT: AT2 82.9, FB 93.8, LAE **59.8**, MV 83.9. "83%" = median across CTs (83.4), not pooled (79.7 all / 75.2 excl FB). |
+| 3.10 | Downregulated 88 (AT2) – 1337 (LAE); upregulated 635 (MV) – 888 (LAE) **(ST4)** | Same | ⚠️ **all four numbers EXACT, range framing wrong — see F-5.** FB (down 11, up 306) falls below both stated minima. |
+| 3.11 | Up-genes enriched for UPR (leading edge *HSPA5*/BiP, *XBP1*, *EIF2AK3*) and NF-κB/TNFα **(ST4)** | Same; GSEA / topGO | Not yet run — **`topGO` not installed locally** |
 | 3.12 | **Figure 2B** — productive mean logFC distribution, NMD vs non-NMD genes | `productive_response.Rmd` | Locate exact chunk |
+
+**Population note.** The manuscript's DE population is genes with ≥1 NMD-susceptible isoform
+(`gene_category == "NMD"`): AT2 5,104 · FB 5,101 · LAE 5,535 · MV 5,301 after the expression
+floor. An `"unsure"` category (borderline `0.05 ≤ lfsr < 0.20`) is held to the supplement.
 
 ### Paragraph 3 — Kitagawa decomposition (ST4) — NOT YET VERIFIED
 
@@ -582,10 +589,13 @@ Producer confirmed: `productive_response.Rmd:730` writes `kitagawa_decomposition
 | | |
 |---|---|
 | ¶1 (3.1–3.4) | ✅ verified exact; findings F-1 (minor), F-2 (map), F-3 (substantive) |
-| ¶2–¶5 (3.5–3.24) | recomputable, not yet run |
+| ¶2 (3.5–3.10) | ✅ verified — every number reproduces via Yul's own code; findings F-5, F-6, F-7 |
+| ¶2 (3.11–3.12) | 3.11 blocked on `topGO` (not installed); 3.12 chunk not yet located |
+| ¶3–¶5 (3.13–3.24) | recomputable, not yet run |
 | Blocking access | **none** — code and data both local |
-| Open for Yul | **F-3** metric interpretation · F-1 SF21 quartiles · F-4 SRSF2 cell type |
-| Verification scripts | `code/upstream/verify_section3_p1.R`, `code/upstream/verify_section3_p1_metric_diagnostics.R` |
+| Open for Yul | **F-3** metric interpretation · **F-6** the "83%" · **F-5** FB in ranges · **F-7** FB provisional reason · F-1 SF21 quartiles · F-4 SRSF2 cell type |
+| Verification scripts | `verify_section3_p1.R`, `verify_section3_p1_metric_diagnostics.R`, `verify_section3_p2.R` (all `code/upstream/`) |
+| Running issues list | `paper/VERIFICATION_ISSUES.md` |
 ---
 
 ## Section 4 (Isopair: attributing NMD to splicing events) → code
