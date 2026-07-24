@@ -14,7 +14,7 @@
 |---|---|---|
 | §1 (Isoform discovery) | ~1 / 15 | Yul-side `Isoform_Landscape.Rmd`, `correlation_analysis.Rmd` |
 | §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul. (Tan reanalysis code RESOLVED 2026-07-20 → `yul:tan_reanalysis/`; still needs the Tan supplementary `.xlsx` downloads.) |
-| §3 (Output Lost + Productive Response) | **21 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1–¶5 all verified (3.1–3.23) by executing Yul's own code. Every computation reproduces; open issues are framing/attribution. 🔴 F-3, F-9, F-11. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
+| §3 (Output Lost + Productive Response) | **24 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1–¶5 all verified (3.1–3.23) by executing Yul's own code. Every computation reproduces; open issues are framing/attribution. 🔴 F-3, F-9, F-11. **All 24 claims now addressed.** All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
 | §4 (Isopair / splice events / PTC) | 46 / 46 | All local. Verified by the pass-7 (37 checks) + cross-check (57 checks) verifiers under `reproducibility/`. Both PASS. |
 | §5 (DL model) | ~30 / 31 | Essentially all local — `model:` (trained weights cached) |
 
@@ -548,8 +548,8 @@ changed): the repo's mashr CSVs predate the April-2026 rename, so `resolve_mash_
 | 3.8 | Median adjusted log2FC near zero: AT2 +0.14, LAE −0.04, FB +0.10, MV +0.05 | Same, chunk `base-build` | ✅ **EXACT** — AT2 0.141, LAE −0.040, FB 0.098, MV 0.051 |
 | 3.9 | No significant change in ~83% of genes **(Fig 2B; ST4)** | Same, chunk `mashr` | ⚠️ **numbers reproduce, framing misleading — see F-6.** Per-CT: AT2 82.9, FB 93.8, LAE **59.8**, MV 83.9. "83%" = median across CTs (83.4), not pooled (79.7 all / 75.2 excl FB). |
 | 3.10 | Downregulated 88 (AT2) – 1337 (LAE); upregulated 635 (MV) – 888 (LAE) **(ST4)** | Same | ⚠️ **all four numbers EXACT, range framing wrong — see F-5.** FB (down 11, up 306) falls below both stated minima. |
-| 3.11 | Up-genes enriched for UPR (leading edge *HSPA5*/BiP, *XBP1*, *EIF2AK3*) and NF-κB/TNFα **(ST4)** | Same; GSEA / topGO | Not yet run — **`topGO` not installed locally** |
-| 3.12 | **Figure 2B** — productive mean logFC distribution, NMD vs non-NMD genes | `productive_response.Rmd` | Locate exact chunk |
+| 3.11 | Up-genes enriched for UPR (leading edge *HSPA5*/BiP, *XBP1*, *EIF2AK3*) and NF-κB/TNFα **(ST4)** | `leading-edge-check` (GO:0006986) + `step16-2-up-NFkB` (`HALLMARK_TNFA_SIGNALING_VIA_NFKB`) | ⚠️ **PARTIAL** (`verify_section3_p2_claim311.R`). **NF-κB/TNFα ✅** — productive pm shifted UP in NMD genes in all 4 CTs (p 4.3e-05…0.008). **UPR ⚠️** — all three named genes appear, but no single CT has all three (AT2: HSPA5+EIF2AK3; LAE/MV: HSPA5+XBP1; FB: HSPA5 only), and a direct Fisher test of UPR membership among up-genes is significant in only 2 of 4 CTs (LAE p=0.004, MV p=0.034; FB p=0.053, **AT2 p=0.44**). See F-12. |
+| 3.12 | **Figure 2B** — productive mean logFC distribution, NMD vs non-NMD genes | ✅ **TRACED** — `productive_response.Rmd:505` (chunk `dist-others`): `plot_dist(base, "custom", "Adjusted productive log2FC", xlim=c(-2,2), vline=0)`; `plot_dist()` facets by cell type and fills by `gene_category`, matching the legend | Producer identified |
 
 **Population note.** The manuscript's DE population is genes with ≥1 NMD-susceptible isoform
 (`gene_category == "NMD"`): AT2 5,104 · FB 5,101 · LAE 5,535 · MV 5,301 after the expression
@@ -624,7 +624,7 @@ values themselves identify the intended CT.
 | 3.21 | *SHMT2* (**MV**): NMD susceptible, **significantly** increased; productive 86.5 → 111.1 CPM, adjusted logFC +0.42, SR logFC +0.56 **(Fig 2C)** | Every value matches **AT2**, not MV (86.5 / 111.1 / 0.421 / 0.561). MV is 44.1 / 54.8 / 0.391 / 1.161. And SHMT2 is **`ns` in all four CTs** | 🔴 **CONTRADICTED — see F-11** |
 | 3.22 | *SRSF2*: productive 84 → 50 CPM, adjusted logFC −0.73, fraction 91% → 26% **(Fig 2D)** | **MV**: 84.1 → 50.4, custom **−0.728**, fraction **91.0% → 26.4%** | ✅ **EXACT** — and this **resolves F-4**: the numbers confirm MV, so the Fig 2D legend is right; only the prose omits the CT |
 | 3.23 | *PCNA* (**LAE**): productive 251 → 130 CPM, adjusted logFC −0.95, fraction 100% → 93%, SR logFC −0.81 **(Fig 2E)** | **LAE**: 251.5 → 129.9, custom **−0.947**, fraction **99.5% → 92.5%**, sr_logFC **−0.811** | ✅ **EXACT** |
-| 3.24 | Fig 2C/2D/2E rendered using **Isopair** | — | `isopair:` plotting functions — locally readable, not yet traced |
+| 3.24 | Fig 2C/2D/2E rendered using **Isopair** | ✅ **TRACED** — `Isopair::plotIsoformPair()`, defined `Isopair/R/visualization.R:47`, exported at `NAMESPACE:41` | Confirmed |
 
 **Quoting-basis note.** SRSF2 and PCNA both quote the **adjusted** SMG1i productive CPM
 (50.4→"50"; 129.9→"130"). SHMT2's "111.1" is the **raw** value (`prodCPM_SMG_raw`); its
@@ -637,7 +637,7 @@ figure. So the three examples are not quoted on a consistent basis (part of F-11
 |---|---|
 | ¶1 (3.1–3.4) | ✅ verified exact; findings F-1 (minor), F-2 (map), F-3 (substantive) |
 | ¶2 (3.5–3.10) | ✅ verified — every number reproduces via Yul's own code; findings F-5, F-6, F-7 |
-| ¶2 (3.11–3.12) | 3.11 blocked on `topGO` (not installed); 3.12 chunk not yet located |
+| ¶2 (3.11–3.12) | ✅ 3.12 traced to `dist-others`; ⚠️ 3.11 partial — NF-κB verified, UPR enrichment holds in 2 of 4 CTs (F-12) |
 | ¶3 (3.13–3.15) | ✅ verified exact via Yul's `kit_nmd_table()`; residual = NA joins, not ties; finding F-8 |
 | ¶4 (3.16–3.20) | ✅ 3.16/3.17/3.18/3.19 verified exact; ⚠️ **3.20 partially contradicted** (F-9); F-10 minor |
 | ¶5 (3.21–3.24) | ✅ 3.22/3.23 exact (SRSF2=MV, PCNA=LAE); 🔴 **3.21 SHMT2 contradicted** (F-11); 3.24 not traced |

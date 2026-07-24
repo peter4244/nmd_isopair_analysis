@@ -228,6 +228,53 @@ that Methods actually covers it.
 
 ---
 
+### F-12 🟡 🟣 YUL — the UPR half of §3 ¶2's enrichment claim is weaker than stated
+
+**Claim:** "Genes where productive output rose were enriched in the unfolded-protein response
+pathway (leading-edge genes including the ER chaperone *HSPA5* (BiP) and the UPR transducers
+*XBP1* and *EIF2AK3*) and for NF-κB/TNFα inflammatory signaling **(ST4)**."
+
+**NF-κB/TNFα half ✅ verified.** `HALLMARK_TNFA_SIGNALING_VIA_NFKB` productive pm is shifted
+UP in NMD genes in **all four** cell types (AT2 p=0.005, LAE p=4.3e-05, FB p=0.008,
+MV p=0.001).
+
+**UPR half ⚠️ two caveats.**
+
+1. **No single cell type contains all three named genes:**
+
+| CT | UPR productive-UP genes | *HSPA5* | *XBP1* | *EIF2AK3* |
+|---|---|---|---|---|
+| AT2 | 15 | ✅ | — | ✅ |
+| LAE | 24 | ✅ | ✅ | — |
+| FB | 9 | ✅ | — | — |
+| MV | 16 | ✅ | ✅ | — |
+
+All three appear in the **union** across cell types, so the sentence is defensible as written
+— but a reader would likely assume they co-occur. *EIF2AK3* appears in AT2 only.
+
+2. **"Enriched" is not demonstrated by the cited chunk.** Yul's `leading-edge-check` chunk
+   *lists membership* in GO:0006986; it runs no enrichment test. A direct Fisher test of UPR
+   membership among productive-UP vs other NMD genes gives:
+
+| CT | OR | p |
+|---|---|---|
+| LAE | 2.09 | **0.004** ✅ |
+| MV | 1.89 | **0.034** ✅ |
+| FB | 2.05 | 0.053 (ns) |
+| AT2 | 1.26 | **0.436** (ns) |
+
+Significant in 2 of 4, and clearly absent in AT2.
+
+**Important caveat:** the word "leading-edge" implies a **GSEA** that I have not located — the
+claim cites **ST4**, so the real enrichment statistic likely lives in the supplementary-table
+code rather than in `leading-edge-check`. My Fisher test is a *different* test and should not
+be treated as refuting Yul's. **Ask which analysis backs the "enriched" wording**, and check
+whether it too is cell-type-restricted.
+
+**Evidence:** `code/upstream/verify_section3_p2_claim311.R`
+
+---
+
 ### F-1 🟡 🟣 YUL — SF21 quartile range is wrong for MV
 
 "IQR 30–100%" does not hold for MV: observed quartiles **Q1 25.7 / Q3 96.2**
