@@ -14,7 +14,7 @@
 |---|---|---|
 | §1 (Isoform discovery) | ~1 / 15 | Yul-side `Isoform_Landscape.Rmd`, `correlation_analysis.Rmd` |
 | §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul. (Tan reanalysis code RESOLVED 2026-07-20 → `yul:tan_reanalysis/`; still needs the Tan supplementary `.xlsx` downloads.) |
-| §3 (Output Lost + PCI) | ~1 / 26 | **All three primary §3 Rmds are Yul-side** (`transcriptional_output.Rmd`, `comparison_analysis.Rmd`, `productive_compensation.Rmd`) — §3 is the most Yul-blocked section |
+| §3 (Output Lost + Productive Response) | **4 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1 (3.1–3.4) verified exact; ¶2–¶5 recomputable, not yet run. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
 | §4 (Isopair / splice events / PTC) | 46 / 46 | All local. Verified by the pass-7 (37 checks) + cross-check (57 checks) verifiers under `reproducibility/`. Both PASS. |
 | §5 (DL model) | ~30 / 31 | Essentially all local — `model:` (trained weights cached) |
 
@@ -244,10 +244,11 @@ subsection with **no M-section and no claim rows**. Code landed 2026-07-20 (comm
 - **Inputs:** Tan et al. Supplementary Tables S1, S2, S4, S6 (`.xlsx`). **Not redistributed** — published author data, downloaded from the paper's supplementary material. The per-condition file→sheet manifest is in the script's README.
 - **Status:** code resolved; inputs external-but-public (acceptable for the citable repo with a download note).
 
-### M10. Transcriptional output lost + PCI
+### M10. Transcriptional output lost + productive isoform response
 
-- **Code:** `yul:transcriptional_output.Rmd` (% output lost) and `yul:productive_compensation.Rmd` (PCI). Per code-map doc.
-- **Status:** cite-only.
+- **Code:** `yul:transcriptional_output.Rmd` (% output lost) and `yul:productive_response.Rmd` (custom NMD-anchored normalization + Kitagawa decomposition). **Both local** under `code/upstream/`.
+- ⚠️ **The PCI framework (`productive_compensation.Rmd`) is RETIRED** — that analysis is no longer in the manuscript (2026-07-24 check: `GPR180`/`compensat*` appear 0 times). Do not cite it as the §3 source.
+- **Status:** ¶1 verified exact 2026-07-24 (`code/upstream/verify_section3_p1.R`); ¶2–¶5 recomputable. ⚠️ See §3 finding **F-3** — the "% output lost" metric is provably a total variation distance (symmetric; 21–55% NMD-attributable). Interpretation needs Yul's sign-off before submission.
 
 ### M11. Isopair pairs analysis (canonical Rmd 2026-07-11; 25% reference-share floor)
 
@@ -451,89 +452,140 @@ These are the most efficient first targets when we move from mapping into actual
 
 ---
 
-## Section 3 (Transcriptional Output Lost + PCI) → code
+## Section 3 (Transcriptional Output Lost + Productive Isoform Response) → code
 
-### Paragraph 1 — % transcriptional output lost (Figure 2A, SFx)
+> **⚠ REWRITTEN 2026-07-24.** This section previously mapped a **PCI (productive
+> compensation index)** framework with a **GPR180** worked example (old claim IDs 3.6–3.26).
+> **That analysis is no longer in the manuscript.** Checked against
+> `paper/NMD manuscript 2026.7.17.md`: `GPR180` and `compensat*` appear **0 times**, and
+> `PCI` appears only inside base64 image blobs. §3 was replaced by a **custom NMD-anchored
+> normalization + Kitagawa decomposition** analysis whose canonical source is
+> `yul:productive_response.Rmd` — **not** the `productive_compensation.Rmd` cited
+> previously. Old IDs 3.6–3.26 are retired; the tables below renumber against the current
+> text. Do not re-verify the retired claims.
+>
+> **Access status changed:** all three §3 Rmds are now local under `code/upstream/`
+> (`transcriptional_output.Rmd`, `productive_response.Rmd`, `comparison_analysis.Rmd`) and
+> every data input they read is on disk (`nmd_fig_data/`). **§3 is recomputable — no longer
+> cite-only.**
 
-| # | Claim | Source code | Notes / status |
+### Paragraph 1 — % transcriptional output lost (Fig 2A, SF20, SF21) — ✅ VERIFIED
+
+**Verified 2026-07-24** by independent recomputation from the long-read DGEList:
+`code/upstream/verify_section3_p1.R` (reads no cached result). Every published number
+reproduces exactly.
+
+| # | Claim | Source code | Status |
 |---|---|---|---|
-| 3.1 | Gene-level % output lost: 11.1% (AT2) — 12.5% (MV) (SF: % Transcriptional Output Lost, Gene Level) | `yul:transcriptional_output.Rmd` — computes Σmax(CPM_SMG1i − CPM_DMSO, 0) / ΣCPM_SMG1i over NMD-susceptible features. Inputs: per-CT mashr CSVs + DMSO/SMG1i CPM tables. | Cite-only. Locally verifiable from the mashr CSVs + CPM matrices in `nmd:shortread_dge/` if Yul wrote out the CPM table. |
-| 3.2 | Isoform-level % output lost: 14.4% (AT2) — 18.2% (LAE) | Same Rmd, isoform-level computation. Inputs: per-CT DIE mashr CSVs + DMSO/SMG1i CPM matrices. | Cite-only. |
-| 3.3 | Per-isoform percent lost: median 60–67%, IQR 30–100% (SF: Per-Isoform Percent Lost) | Same Rmd — per-isoform fraction = (SMG1i CPM − DMSO CPM)/SMG1i CPM for NMD-susceptible with positive delta. | Cite-only. |
-| 3.4 | **Figure 2A** — % output lost at isoform level across CTs | Render script TBD; likely embedded in `yul:transcriptional_output.Rmd`. | Cite-only. |
+| 3.1 | Gene-level % output lost: 11.1% (AT2) — 12.5% (MV) **(SF20)** | `yul:transcriptional_output.Rmd` chunks `gene-level-output` + `gene-level-global-metric`; LR isoform CPM aggregated to gene via `rowsum` | ✅ **EXACT** — recomputed AT2 11.06, FB 11.83, LAE 12.03, MV 12.50; argmin/argmax CTs match. |
+| 3.2 | Isoform-level % output lost: 14.4% (AT2) — 18.2% (LAE) **(Fig 2A)** | Same Rmd, chunk `global-metric` | ✅ **EXACT** — recomputed AT2 14.40, FB 14.56, MV 15.53, LAE 18.23; argmin/argmax match. |
+| 3.3 | Per-isoform % lost: median 60–67%, IQR 30–100% **(SF21)** | Same Rmd, chunk `boxplot-isoform` (filtered isoform set, `frac_lost > 0`) | ⚠️ **median EXACT** (60.2 MV – 67.1 LAE); **quartile range imprecise** — see F-1. |
+| 3.4 | **Figure 2A** — isoform-level % output lost across CTs | `yul:transcriptional_output.Rmd` chunk `barplot-global` (writes `pct_output_lost_barplot.png`) | Producer identified (previously "TBD"). |
 
-### Paragraph 2 — isoform vs gene discrepancy + PCI definition (in-text 63–90%)
+**Definition as implemented** (per cell type; paired within donor, matched pairs only —
+AT2 3, FB 3, LAE 4, MV 3):
 
-| # | Claim | Source code | Notes / status |
+```
+% output lost = 100 × Σ_i Σ_d max(CPM_smg1i − CPM_dmso, 0) / Σ_i Σ_d CPM_smg1i
+```
+
+Normalization is plain CPM with `normalized.lib.sizes = FALSE` (TMM deliberately avoided —
+it would scrub the compositional shift NMD inhibition creates).
+
+### §3 ¶1 findings
+
+**F-1 (documentation, minor).** SF21's stated "IQR 30–100%" does not hold for MV: observed
+quartiles are Q1 25.7 / Q3 96.2 (AT2 31.4/100, FB 30.2/100, LAE 31.6/100). Either widen the
+stated range to ~26–100% or scope it to AT2/FB/LAE. Note also that the manuscript uses "IQR"
+to mean the Q1–Q3 *interval*, not the IQR width (which is 68.4–70.5).
+
+**F-2 (map correction).** The previous map entry described this metric as computed "over
+NMD-susceptible features." **It is not** — `global-metric` sums over **all** isoforms in
+`results_all` (645,272 isoforms × donor pairs) with no susceptibility filter.
+
+**F-3 (result correctness — RAISE WITH YUL BEFORE SUBMISSION).** The statistic is provably
+the **total variation distance** between the DMSO and Smg1i isoform-composition vectors, not
+a directional measure of degraded output. Diagnostics:
+`code/upstream/verify_section3_p1_metric_diagnostics.R`.
+
+- **Closed composition.** Every CPM column sums to exactly 1e6, so `sum(Δ) = 0` and therefore
+  `Σmax(Δ,0) ≡ Σmax(−Δ,0) ≡ ½Σ|Δ|`.
+- **D2 symmetry.** Recomputed in the reverse direction (DMSO − Smg1i) the value is
+  **identical** in all four CTs (14.40 / 14.56 / 18.23 / 15.53). The statistic cannot by
+  itself distinguish output "lost" from output "gained" — the totals are equal by
+  construction (the contributing isoform *sets* do differ).
+- **D1 attribution.** Only **20.7–54.5%** of the signal comes from isoforms that are
+  statistically NMD susceptible (mashr lfsr<0.05 & posterior mean>0): AT2 4.58 of 14.40,
+  FB 3.01 of 14.56, LAE 9.93 of 18.23, MV 6.03 of 15.53 percentage points. The remainder is
+  sub-threshold NMD and/or noise — `max(Δ,0)` has positive expectation even when true Δ=0.
+- **D3 no-treatment baseline.** The same statistic between two **DMSO** samples from
+  different donors gives 13.4–33.3%, exceeding the treatment value in 3 of 4 CTs.
+  **Caveat:** cross-donor contrasts carry genuine donor biology, so this is an upper bound on
+  a no-treatment baseline, not a matched technical null.
+
+**Why it matters.** This metric backs an **Abstract** claim ("NMD degraded 11–18% of
+transcriptional output"), **Fig 2A**, **SF20/SF21**, and the **Discussion** comparison to
+Fair et al. (15%). The numbers reproduce exactly (step 1 ✅); what is unresolved is whether
+the statistic supports the *interpretation* (step 2). Options: restrict the numerator to
+NMD-susceptible isoforms (yields 3.0–9.9%), report it explicitly as a compositional-shift /
+TVD measure, or add a permutation baseline showing the treatment effect exceeds donor-level
+variability.
+
+### Paragraph 2 — custom NMD-anchored normalization + productive DE (Fig 2B, ST4) — NOT YET VERIFIED
+
+Canonical source `yul:productive_response.Rmd` (local: `code/upstream/productive_response.Rmd`).
+Inputs all local: `nmd_fig_data/dge_isoform_longread_filtered_2026.3.3.rds`, isoform + SR
+mashr posterior means / lfsr, SQANTI classification.
+
+| # | Claim | Source code | Status |
 |---|---|---|---|
-| 3.5 | Isoform-to-gene ratio of % output lost: 1.23–1.52 across CTs | `yul:transcriptional_output.Rmd` — ratio of isoform-level to gene-level totals. | Cite-only. |
-| 3.6 | PCI definition (significant unproductive↑ + significant productive↓; LFSR<0.05 in both, signs opposed) | Methods M10. Implementation in `yul:productive_compensation.Rmd` (per code-map doc). | Cite-only. The full pseudo-feature aggregation framework (protein-coding-only, ambiguous-multi-locus exclusion, productive/unproductive split, separate limma + mashr fit) is documented in Methods. |
-| 3.7 | "63–90% of genes with significant NMD-isoform accumulation showed concurrent significant productive-isoform decrease" | `yul:productive_compensation.Rmd` — count over genes meeting both PCI criteria, divided by count of genes with significant unproductive accumulation. | Cite-only. **Verification target:** this is a key headline number; pin down the exact denominator and PCI-class threshold from the Rmd when accessible. |
+| 3.5 | Correction preserves gene rankings: Spearman ≥ 0.99 (adjusted vs uncorrected logFC) | `productive_response.Rmd` normalization + reproducibility battery | Recomputable |
+| 3.6 | Non-NMD genes closely matched DMSO vs adjusted-Smg1i: Spearman ≥ 0.96 **(SF23)** | Same | Recomputable |
+| 3.7 | FB treated as provisional due to donor confounding | Methods + same Rmd | Verify the stated reason |
+| 3.8 | Median adjusted log2FC near zero: AT2 +0.14, LAE −0.04, FB +0.10, MV +0.05 | Same; mashr over genes carrying an NMD-susceptible isoform | Recomputable |
+| 3.9 | No significant change in ~83% of genes **(Fig 2B; ST4)** | Same | Recomputable — pin the significance rule |
+| 3.10 | Downregulated 88 (AT2) – 1337 (LAE); upregulated 635 (MV) – 888 (LAE) **(ST4)** | Same | Recomputable |
+| 3.11 | Up-genes enriched for UPR (leading edge *HSPA5*/BiP, *XBP1*, *EIF2AK3*) and NF-κB/TNFα **(ST4)** | Same; GSEA / topGO | Recomputable |
+| 3.12 | **Figure 2B** — productive mean logFC distribution, NMD vs non-NMD genes | `productive_response.Rmd` | Locate exact chunk |
 
-### Paragraph 3 — SR↔LR concordance of NMD calls (Figure 2B)
+### Paragraph 3 — Kitagawa decomposition (ST4) — NOT YET VERIFIED
 
-| # | Claim | Source code | Notes / status |
-|---|---|---|---|
-| 3.8 | "23–30% of genes with NMD susceptible isoforms (LR) classified NMD susceptible at gene level (SR)" | `yul:comparison_analysis.Rmd` (per code-map doc; "Short-read vs Long-read Comparison Analysis (logFC, etc.)"). Roll up LR isoform NMD-susceptible flags to gene, intersect with SR gene-level NMD-susceptible set. | Cite-only. |
-| 3.9 | "60–68% of SR NMD-susceptible genes had at least one detectable LR NMD-susceptible isoform" | Same Rmd, reverse intersection. | Cite-only. |
-| 3.10 | "Approximately 40% of SR NMD-susceptible genes lacked sufficient LR isoform coverage" | Same Rmd — depth threshold + filterByExpr drop-out analysis. **Methods don't explicitly define "sufficient coverage"** — pin down when accessible. | Cite-only. **Watch:** quantitative threshold for "sufficient coverage" is not specified in Methods text; verify against Rmd. |
-| 3.11 | **Figure 2B** — SR↔LR NMD-call concordance (Venn / scatter / bar) | Render script TBD; likely embedded in `yul:comparison_analysis.Rmd`. | Cite-only. |
+Producer confirmed: `productive_response.Rmd:730` writes `kitagawa_decomposition_<DATE>.csv`.
 
-### Paragraph 4 — PCI control analysis on non-NMD genes (SFx)
+| # | Claim | Status |
+|---|---|---|
+| 3.13 | Level term dominant in 86.2% of genes, composition term in 13.5% | Recomputable — note 86.2 + 13.5 = 99.7; confirm the residual 0.3% (interaction/tie handling) |
+| 3.14 | Productive-up genes: 99.2% level, 0.3% composition | Recomputable |
+| 3.15 | Productive-down genes: 32.1% composition-dominated, 67.9% transcription reduction | Recomputable |
+| 3.16 | Conclusion holds under the custom NMD-anchored normalization with SR gene-level induction as an external transcriptional signal | Recomputable |
 
-| # | Claim | Source code | Notes / status |
-|---|---|---|---|
-| 3.12 | Productive isoforms in NMD-isoform-containing genes: median logFC −0.41 to −0.67 (across the 4 CTs) | `yul:productive_compensation.Rmd` — control analysis per Methods M10 (parallel limma + mashr on genes lacking NMD-targeted isoforms, then per-CT logFC distribution comparison). | Cite-only. |
-| 3.13 | Productive isoforms in non-NMD-isoform genes: median logFC −0.006 to −0.015 | Same. | Cite-only. |
-| 3.14 | Wilcoxon p < 10⁻⁵ in all CTs (one-sided rank-sum) | Same; explicit one-sided Wilcoxon between the two productive-logFC distributions. | Cite-only. |
+### Paragraph 4 — two mechanisms partitioning productive-down genes (ST4) — NOT YET VERIFIED
 
-### Paragraph 5 — GPR180 worked example (Figure 2D, 2E, 2F)
+| # | Claim | Status |
+|---|---|---|
+| 3.17 | Composition-shift genes enriched for RNA splicing (OR 2.5, p < 10⁻³) | Recomputable |
+| 3.18 | SR/hnRNP factors (OR 6.8, p < 10⁻³) | Recomputable |
+| 3.19 | Of the 12 canonical SR proteins, every significant productive change was a **decrease** (8 LAE, 3 AT2, 2 MV) | Recomputable — cross-check against the Discussion's "11 of the 12 canonical SR proteins express an NMD susceptible isoform in every cell type" |
+| 3.20 | Transcriptional-repression genes enriched for DNA replication and repair (OR 2.1, p < 10⁻³) | Recomputable |
 
-| # | Claim | Source code | Notes / status |
-|---|---|---|---|
-| 3.15 | GPR180 in FB: 3 novel unproductive isoforms 5.2 → 15.7 CPM under SMG1i | `yul:productive_compensation.Rmd` — gene-specific drill-down on GPR180 in FB. Inputs: per-isoform CPM matrix from FB. | Cite-only. **Verifiable:** if Yul's Rmd outputs a gene-detail TSV for GPR180 we can confirm directly. |
-| 3.16 | Productive isoforms 40.5 → 30.2 CPM | Same. | Cite-only. |
-| 3.17 | Productive fraction 88.6% → 65.7% | Computed from above. | Locally derivable. |
-| 3.18 | **Figure 2D** — GPR180 productive/unproductive isoform expression DMSO vs SMG1i | Render script TBD. Likely in `yul:productive_compensation.Rmd`. | Cite-only. |
-| 3.19 | **Figure 2E** — GPR180 isoform structures grouped by productive classification, "rendered using Isopair" | `isopair:` plotting function (specific function TBD — check `isopair:R/plot_*.R` or `isopair:vignettes/`). Driver call in Yul's Rmd. | Cite-only. The fact that the figure caption explicitly attributes rendering to Isopair means the function must be in the Isopair package — locally readable. |
-| 3.20 | **Figure 2F** — GPR180 isoform-level logFC, "rendered using Isopair" | Same — Isopair plotting function. | Cite-only. |
+### Paragraph 5 — three worked examples (Fig 2C, 2D, 2E) — NOT YET VERIFIED
 
-### Paragraph 6 — PCI gene baseline properties + logistic regression (Figure 2C)
+| # | Claim | Status |
+|---|---|---|
+| 3.21 | *SHMT2* (MV): NMD susceptible, productive 86.5 → 111.1 CPM, adjusted logFC +0.42, SR logFC +0.56 **(Fig 2C)** | Recomputable from the filtered DGEList |
+| 3.22 | *SRSF2*: productive 84 → 50 CPM, adjusted logFC −0.73, productive fraction 91% → 26% **(Fig 2D)** | Recomputable. ⚠️ **F-4:** the prose never states the cell type; only the Fig 2D legend supplies "in MV". SHMT2 and PCNA both name theirs in prose. |
+| 3.23 | *PCNA* (LAE): productive 251 → 130 CPM, adjusted logFC −0.95, productive fraction 100% → 93%, SR logFC −0.81 **(Fig 2E)** | Recomputable |
+| 3.24 | Fig 2C/2D/2E rendered using **Isopair** | `isopair:` plotting functions — locally readable |
 
-| # | Claim | Source code | Notes / status |
-|---|---|---|---|
-| 3.21 | PCI genes more highly expressed at baseline: 109–164 CPM (PCI) vs 26–48 CPM (non-PCI NMD susceptible) — across the 4 CTs | `yul:productive_compensation.Rmd` — per-CT median (or mean) baseline total gene CPM stratified by PCI status. Inputs: gene-level DMSO CPM + PCI flag. | Cite-only. |
-| 3.22 | Baseline productive fraction: 0.98 (PCI) vs 0.82–0.94 (non-PCI NMD susceptible) | Same; per-CT productive fraction = productive pseudo-feature CPM / total gene CPM under DMSO. | Cite-only. |
-| 3.23 | Logistic regression: total gene CPM OR 2.1–3.0 per SD (p<10⁻⁵ in all CTs); dominant isoform fraction contributes independently in 3 of 4 CTs | Same Rmd. Methods M10 specifies per-CT logistic regression with standardized predictors (log₁₀ total gene CPM, dominant isoform fraction, productive isoform count). | Cite-only. |
-| 3.24 | **Figure 2C** — violin plots: baseline expression and dominant productive isoform fraction, PCI vs non-PCI | Render script TBD; likely in `yul:productive_compensation.Rmd`. | Cite-only. |
+### Section 3 status summary (2026-07-24)
 
-### Paragraph 7 — PCI pathway enrichment (SF: compensation pathways)
-
-| # | Claim | Source code | Notes / status |
-|---|---|---|---|
-| 3.25 | "PCI in all 4 CTs" set: enriched for oxidative phosphorylation / mito energy metabolism — specifically: mitochondrial electron transport NADH→ubiquinone (p=1.4×10⁻⁶), respiratory chain complex I assembly/function (p=8.3×10⁻⁶), proton motive force / ATP synthesis (p=2.0×10⁻⁵), ATP metabolic process (p=3.3×10⁻²) | `yul:productive_compensation.Rmd` (Methods M10 specifies topGO with elim algorithm + Fisher's exact, background = all pseudo-feature-passable genes per CT, threshold elim Fisher p<0.05, "shared = sig in ≥2 CTs"). | Cite-only. **Watch:** the p-values quoted aren't labeled as cross-CT vs single-CT — verify whether they're per-CT or pooled. Methods M10 says "terms significant in at least two cell types were reported as cross-cell-type shared enrichments," so these are presumably the cross-CT shared list. |
-| 3.26 | Additional enrichments: mRNA splicing, ribosomal subunits, proteasomal components | Same Rmd / topGO output. | Cite-only. |
-
-### Section 3 figure render-script gap
-
-Figure 2 has 6 panels (A–F):
-
-- **2A** (% output lost isoform-level) — likely `yul:transcriptional_output.Rmd`
-- **2B** (SR↔LR concordance) — likely `yul:comparison_analysis.Rmd`
-- **2C** (PCI vs non-PCI violins) — likely `yul:productive_compensation.Rmd`
-- **2D** (GPR180 expression bars/lines) — likely `yul:productive_compensation.Rmd`
-- **2E** (GPR180 isoform structures) — **Isopair plotting function**, locally readable in `isopair:` package
-- **2F** (GPR180 isoform-level logFC) — **Isopair plotting function**, locally readable in `isopair:`
-
-The 2E + 2F Isopair-rendered panels are the first concrete figure-script targets I can identify locally. The other 4 are still TBD on Yul's side.
-
-### Section 3 verifiable-locally summary
-
-- **3.17** (GPR180 productive fraction shift 88.6% → 65.7%) — arithmetic from 3.15/3.16, locally derivable once Yul's per-isoform CPM table for GPR180 is accessible
-- **Figure 2E + 2F rendering logic** — Isopair source is `isopair:` (local). The driver calls (with GPR180 as input) live in Yul's Rmd but the actual plotting functions are locally readable.
-
-Most of §3 still requires Yul-side access. Compared to §2 (high local-verifiability), §3 is heavily concentrated in `yul:transcriptional_output.Rmd`, `yul:productive_compensation.Rmd`, and `yul:comparison_analysis.Rmd` — making this section a top priority for getting Yul's repo access set up.
-
+| | |
+|---|---|
+| ¶1 (3.1–3.4) | ✅ verified exact; findings F-1 (minor), F-2 (map), F-3 (substantive) |
+| ¶2–¶5 (3.5–3.24) | recomputable, not yet run |
+| Blocking access | **none** — code and data both local |
+| Open for Yul | **F-3** metric interpretation · F-1 SF21 quartiles · F-4 SRSF2 cell type |
+| Verification scripts | `code/upstream/verify_section3_p1.R`, `code/upstream/verify_section3_p1_metric_diagnostics.R` |
 ---
 
 ## Section 4 (Isopair: attributing NMD to splicing events) → code
@@ -855,12 +907,12 @@ Headline biological-claim verification targets:
 ### Figure-render-script gaps (Yul-side)
 
 9. **Figure 1 panels** (A, C, D, F) — render scripts TBD; nominally Yul-side.
-10. **Figure 2 panels** (A, B, C, D) — render scripts TBD; nominally Yul-side. Panels 2E and 2F (GPR180 isoform structure + logFC) are rendered via `isopair:R/visualization.R::plotIsoformPair()` — locally available.
+10. **Figure 2 panels** — ⚠️ **re-scoped 2026-07-24.** Figure 2 is now A–E, not A–F. **2A** producer identified: `yul:transcriptional_output.Rmd` chunk `barplot-global`. **2B** (productive logFC distribution) TBD in `yul:productive_response.Rmd`. **2C/2D/2E** (*SHMT2*, *SRSF2*, *PCNA* structure + logFC) rendered via `isopair:R/visualization.R::plotIsoformPair()` — locally available. The former **GPR180** 2E/2F panels are retired with the PCI analysis.
 
 ### Methods-text / claim verification flags (Yul-side)
 
-11. **SR↔LR coverage threshold** (Section 3 claim 3.10: "~40% lacked sufficient LR isoform coverage") — Methods don't define "sufficient coverage" quantitatively. Pin down the threshold from `yul:comparison_analysis.Rmd`.
-12. **PCI 63–90% denominator** (Section 3 claim 3.7) — exact denominator (genes with significant unproductive accumulation vs all NMD-isoform genes) and PCI-class threshold worth pinning from `yul:productive_compensation.Rmd`.
+11. ~~**SR↔LR coverage threshold** (old §3 claim 3.10, "~40% lacked sufficient LR isoform coverage")~~ — **RETIRED from §3 2026-07-24** (the SR↔LR concordance paragraph is no longer in §3). ⚠️ Before closing, check whether this claim migrated to §1/§2; if it did, the undefined "sufficient coverage" threshold still needs pinning from `yul:comparison_analysis.Rmd` (now local).
+12. ~~**PCI 63–90% denominator** (old §3 claim 3.7)~~ — **RETIRED 2026-07-24**; the PCI analysis is not in the manuscript. Superseded by §3 finding **F-3** (the "% output lost" metric is a total variation distance) as the open §3 methods question for Yul.
 
 ### Figure-numbering inconsistencies
 
