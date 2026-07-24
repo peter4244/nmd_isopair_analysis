@@ -130,7 +130,35 @@ symlink**. Two ways forward, Pete's call:
 *Confirm version-vs-concept DOI for each; cite the **version** DOI (or the concept DOI if
 you want it to track a future v2). Draft Code Availability text goes here once all four exist.*
 
-## NEW WORKSTREAM — simplify the model repo too (`NMD_orf_model_v5_4ct`)
+## ▶ ACTIVE NEXT TASK (decided 2026-07-24): simplify the model repo → v2
+
+Pete chose **option (b)**: simplify `NMD_orf_model_v5_4ct`, then publish a **`v2.0.0`**
+release and cite that. `v1.0.0` = DOI `…502` stays as history. **This is the next session's
+job** — start it in a FRESH window (this one ran long; a context compaction already caused
+one re-do this session).
+
+**Before touching anything in the model repo, reconcile its dirty state:**
+- It has **4 uncommitted changes** — inspect and commit/stash first.
+- **No local tag** for v1.0.0 (the release was made via GitHub web; `git fetch --tags`
+  to pull it, so the prune branches off the right point).
+- Remote: `github.com/peter4244/NMD_orf_model_v5_4ct` (single remote, not dual-push).
+
+**Method — identical discipline to this repo's prune (which worked; see §§E–I and the
+pre-prune review that caught a real break):**
+1. Seed from manuscript deliverables: `03_train.py`, `model.py`, `utils.py`, `config.yaml`,
+   the interpretability exporters (`04_interpret_attention.py`, `06`/`08_export_deepshap`,
+   `11_kernel_shap_branches.py`, the `09_*` exporters that feed Fig 5 + SF37–43), METHODS.md.
+2. Build a keep-set; get Pete's ruling on ambiguous files; **run an adversarial pre-prune
+   review before moving anything** (it earned its keep here).
+3. Archive the rest to `superseded/` (NOT `archive/` — check that repo's `.gitignore` too).
+4. **Resolve the broken `nmd_orf_data.h5` symlink** — the deposited repo must be runnable,
+   or document how the `.h5` is produced/fetched. This is the `cds_exons` lesson; do not
+   deposit around it.
+5. **Code-only rule:** `results_4ct/` derived TSVs are intermediates — ship producers, not
+   products.
+6. Render/verify a Fig-5 family output if feasible; then Pete cuts `v2.0.0`.
+
+## NEW WORKSTREAM — background/scope: simplify the model repo (`NMD_orf_model_v5_4ct`)
 
 Pete (2026-07-24): the model-development repo needs the **same** code-simplification
 pass this repo got. Scope: **87 tracked files, 56 code**; prefixes show the same
