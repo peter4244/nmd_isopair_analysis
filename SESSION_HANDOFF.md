@@ -112,7 +112,7 @@ file (or document a "clone as siblings" setup step).
 | Repo | DOI | status |
 |---|---|---|
 | `Isocall_v1` | **10.5281/zenodo.21536486** | ✅ minted 2026-07-24 |
-| `Isopair` | — | pending |
+| `Isopair` | **10.5281/zenodo.21536495** | ✅ minted 2026-07-24 |
 | `NMD_orf_model_v5_4ct` | — | pending (do the model-repo simplification first — its keep-set IS the deposited artifact) |
 | this repo (citable snapshot) | — | pending Phase 7 |
 
