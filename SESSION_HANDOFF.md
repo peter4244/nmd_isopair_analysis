@@ -107,6 +107,18 @@ file (or document a "clone as siblings" setup step).
 
 ---
 
+## DOIs — collected as Pete mints them (Code Availability)
+
+| Repo | DOI | status |
+|---|---|---|
+| `Isocall_v1` | **10.5281/zenodo.21536486** | ✅ minted 2026-07-24 |
+| `Isopair` | — | pending |
+| `NMD_orf_model_v5_4ct` | — | pending (do the model-repo simplification first — its keep-set IS the deposited artifact) |
+| this repo (citable snapshot) | — | pending Phase 7 |
+
+*Note: confirm whether 21536486 is the version DOI or the concept DOI; cite the
+**version** DOI in the paper. Draft Code Availability text goes here once all four exist.*
+
 ## NEW WORKSTREAM — simplify the model repo too (`NMD_orf_model_v5_4ct`)
 
 Pete (2026-07-24): the model-development repo needs the **same** code-simplification
