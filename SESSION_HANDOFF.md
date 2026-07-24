@@ -107,6 +107,30 @@ file (or document a "clone as siblings" setup step).
 
 ---
 
+## NEW WORKSTREAM — simplify the model repo too (`NMD_orf_model_v5_4ct`)
+
+Pete (2026-07-24): the model-development repo needs the **same** code-simplification
+pass this repo got. Scope: **87 tracked files, 56 code**; prefixes show the same
+canonical-pipeline-mixed-with-one-offs pattern (`05`, `09`×3, `patch_`, `relabel_`,
+`make_shap_interpretation_figure`, `run_infer_all`). Same method: seed from manuscript
+deliverables (Fig 5 + SF37–43 model exports, `03_train.py`, `model.py`, `11_kernel_shap_branches.py`,
+`04_interpret_attention.py`, `06/08_export_deepshap`, the `09_*` exporters), build a keep-set,
+archive the rest.
+
+**Two ways it is NOT a copy-paste of this repo's prune:**
+1. **It gets a DOI directly** — its keep-set *is* the deposited artifact, higher stakes
+   than this repo's internal archive.
+2. **The `nmd_orf_data.h5` feature file is a broken symlink** (`results_4ct/nmd_orf_data.h5`
+   → a deleted `NMD_orf_model_v5/` path; found during the SF40 investigation). The `.h5`
+   defines the scoreable cohort and is required to run inference / SHAP / attention. A
+   deposited repo that can't produce or fetch it cannot be run — the `cds_exons` lesson
+   again. **Resolve h5 provenance (regenerate from a tracked producer, or document a
+   fetch) as part of the model-repo simplification, before its DOI.**
+
+Also relevant: apply the **code-only** rule there too — `results_4ct/` holds many derived
+TSVs (predictions, SHAP, attention exports) that are intermediates; the deposit ships the
+producing scripts + a path to the `.h5`, not the derived TSVs.
+
 ## Phase 7 prerequisites (beyond the decision)
 
 **Pete's, needed regardless:**
