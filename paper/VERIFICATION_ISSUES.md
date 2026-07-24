@@ -46,6 +46,54 @@ permutation baseline demonstrating the treatment effect exceeds donor-level vari
 
 ---
 
+### F-11 🔴 🟣 YUL (+ 🔵 Pete) — the *SHMT2* worked example: wrong cell type, and "significantly" is not supported
+
+**Claim (§3 ¶5, Fig 2C):** "…the direct *ATF4* target *SHMT2* was NMD susceptible yet
+**significantly** increased its productive output upon NMD inhibition (**MV**, 86.5 to 111.1
+CPM; adjusted logFC +0.42), in step with the overall gene induction (short-read logFC +0.56)."
+
+**Three problems.**
+
+**1. The numbers are AT2's, not MV's.** All four quoted values match AT2 exactly:
+
+| quantity | claimed | **AT2** | MV |
+|---|---|---|---|
+| productive DMSO CPM | 86.5 | **86.5** ✅ | 44.1 |
+| productive SMG1i CPM | 111.1 | **111.1** ✅ (raw) | 54.8 |
+| adjusted logFC | +0.42 | **0.421** ✅ | 0.391 |
+| short-read logFC | +0.56 | **0.561** ✅ | 1.161 |
+
+Four independent values agreeing to the decimal is not coincidence. Either the cell type
+label is wrong, or the numbers were pulled from the wrong cell type. **Fig 2C's legend also
+says "in MV"** — so if the panel really plots MV, the figure and the prose are showing
+different things.
+
+**2. SHMT2 is not significant in any cell type.** By the paper's own criterion
+(`dir = case_when(lfsr<0.05 & pm>0 ~ "up", …)`), SHMT2 is **`ns` in all four**:
+
+| CT | pm | lfsr |
+|---|---|---|
+| AT2 | +0.289 | **0.0582** |
+| MV | +0.193 | 0.1142 |
+| FB | +0.178 | 0.1616 |
+| LAE | −0.030 | 0.3760 |
+
+The best case (AT2) is **marginally above** the 0.05 threshold. The word "significantly"
+should come out, or the sentence should be reframed as an illustrative (non-significant)
+trend. Note this also sits oddly with the up-arm being the paper's example of NMD-inhibition
+de-repressing the ATF4 program.
+
+**3. Inconsistent quoting basis.** SRSF2 and PCNA both quote the **adjusted** SMG1i CPM
+(50.4→"50"; 129.9→"130"). SHMT2's "111.1" is the **raw** value — its adjusted value is 116.2 —
+while the "+0.42" beside it is computed from the adjusted figure. Pick one basis.
+
+**Contrast:** the other two examples are flawless (see F-4 resolution below), so this looks
+like a one-gene transcription error rather than a systematic problem.
+
+**Evidence:** `code/upstream/verify_section3_p5.R`
+
+---
+
 ### F-9 🔴 🟣 YUL — §3 ¶4's "instead enriched for DNA replication and repair (OR 2.1)" is not supported as stated
 
 **Claim:** "Composition-shift genes were specifically enriched for RNA splicing (OR 2.5…) and
@@ -195,8 +243,13 @@ Medians are **exact** as published (60.2–67.1 vs claimed 60–67).
 
 ### F-4 🟢 🟣 YUL — SRSF2 example does not state its cell type in prose
 
-§3 ¶5 gives *SHMT2* (MV) and *PCNA* (LAE) with cell types in the prose, but *SRSF2* has none
-— only the Fig 2D legend supplies "in MV". Add for parallelism.
+§3 ¶5 gives *SHMT2* and *PCNA* with cell types in the prose, but *SRSF2* has none — only the
+Fig 2D legend supplies "in MV". Add for parallelism.
+
+**✅ Cell type confirmed 2026-07-24:** the recomputed values identify **MV** unambiguously
+(84.1 → 50.4 CPM, custom −0.728, fraction 91.0% → 26.4%, vs the claimed 84 → 50, −0.73,
+91% → 26%). The Fig 2D legend is **correct**; this is purely a prose omission.
+(Contrast [F-11](#f-11), where the stated cell type is actually wrong.)
 
 ---
 

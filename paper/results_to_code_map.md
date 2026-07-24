@@ -14,7 +14,7 @@
 |---|---|---|
 | §1 (Isoform discovery) | ~1 / 15 | Yul-side `Isoform_Landscape.Rmd`, `correlation_analysis.Rmd` |
 | §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul. (Tan reanalysis code RESOLVED 2026-07-20 → `yul:tan_reanalysis/`; still needs the Tan supplementary `.xlsx` downloads.) |
-| §3 (Output Lost + Productive Response) | **18 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1–¶4 verified (3.1–3.20) by executing Yul's own code; ¶5 not yet run. ⚠️ F-9 is a substantive contradiction in ¶4. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
+| §3 (Output Lost + Productive Response) | **21 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1–¶5 all verified (3.1–3.23) by executing Yul's own code. Every computation reproduces; open issues are framing/attribution. 🔴 F-3, F-9, F-11. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
 | §4 (Isopair / splice events / PTC) | 46 / 46 | All local. Verified by the pass-7 (37 checks) + cross-check (57 checks) verifiers under `reproducibility/`. Both PASS. |
 | §5 (DL model) | ~30 / 31 | Essentially all local — `model:` (trained weights cached) |
 
@@ -613,14 +613,23 @@ universe 9,196.
 The **composition-side** contrast is clean and strongly specific (RNA splicing 1.19→2.52;
 SR/hnRNP 0.76→6.76). The **transcriptional-side** contrast is not (see F-9).
 
-### Paragraph 5 — three worked examples (Fig 2C, 2D, 2E) — NOT YET VERIFIED
+### Paragraph 5 — three worked examples (Fig 2C, 2D, 2E) — ⚠️ 2 of 3 VERIFIED
 
-| # | Claim | Status |
-|---|---|---|
-| 3.21 | *SHMT2* (MV): NMD susceptible, productive 86.5 → 111.1 CPM, adjusted logFC +0.42, SR logFC +0.56 **(Fig 2C)** | Recomputable from the filtered DGEList |
-| 3.22 | *SRSF2*: productive 84 → 50 CPM, adjusted logFC −0.73, productive fraction 91% → 26% **(Fig 2D)** | Recomputable. ⚠️ **F-4:** the prose never states the cell type; only the Fig 2D legend supplies "in MV". SHMT2 and PCNA both name theirs in prose. |
-| 3.23 | *PCNA* (LAE): productive 251 → 130 CPM, adjusted logFC −0.95, productive fraction 100% → 93%, SR logFC −0.81 **(Fig 2E)** | Recomputable |
-| 3.24 | Fig 2C/2D/2E rendered using **Isopair** | `isopair:` plotting functions — locally readable |
+**Verified 2026-07-24** by `code/upstream/verify_section3_p5.R` (per-gene lookups from Yul's
+`base` / `sr_long` / `prod_dir_mashr`). All four cell types were pulled for each gene so the
+values themselves identify the intended CT.
+
+| # | Claim | Recomputed | Status |
+|---|---|---|---|
+| 3.21 | *SHMT2* (**MV**): NMD susceptible, **significantly** increased; productive 86.5 → 111.1 CPM, adjusted logFC +0.42, SR logFC +0.56 **(Fig 2C)** | Every value matches **AT2**, not MV (86.5 / 111.1 / 0.421 / 0.561). MV is 44.1 / 54.8 / 0.391 / 1.161. And SHMT2 is **`ns` in all four CTs** | 🔴 **CONTRADICTED — see F-11** |
+| 3.22 | *SRSF2*: productive 84 → 50 CPM, adjusted logFC −0.73, fraction 91% → 26% **(Fig 2D)** | **MV**: 84.1 → 50.4, custom **−0.728**, fraction **91.0% → 26.4%** | ✅ **EXACT** — and this **resolves F-4**: the numbers confirm MV, so the Fig 2D legend is right; only the prose omits the CT |
+| 3.23 | *PCNA* (**LAE**): productive 251 → 130 CPM, adjusted logFC −0.95, fraction 100% → 93%, SR logFC −0.81 **(Fig 2E)** | **LAE**: 251.5 → 129.9, custom **−0.947**, fraction **99.5% → 92.5%**, sr_logFC **−0.811** | ✅ **EXACT** |
+| 3.24 | Fig 2C/2D/2E rendered using **Isopair** | — | `isopair:` plotting functions — locally readable, not yet traced |
+
+**Quoting-basis note.** SRSF2 and PCNA both quote the **adjusted** SMG1i productive CPM
+(50.4→"50"; 129.9→"130"). SHMT2's "111.1" is the **raw** value (`prodCPM_SMG_raw`); its
+adjusted value is 116.2 — yet the companion "+0.42" logFC is computed from the adjusted
+figure. So the three examples are not quoted on a consistent basis (part of F-11).
 
 ### Section 3 status summary (2026-07-24)
 
@@ -631,10 +640,10 @@ SR/hnRNP 0.76→6.76). The **transcriptional-side** contrast is not (see F-9).
 | ¶2 (3.11–3.12) | 3.11 blocked on `topGO` (not installed); 3.12 chunk not yet located |
 | ¶3 (3.13–3.15) | ✅ verified exact via Yul's `kit_nmd_table()`; residual = NA joins, not ties; finding F-8 |
 | ¶4 (3.16–3.20) | ✅ 3.16/3.17/3.18/3.19 verified exact; ⚠️ **3.20 partially contradicted** (F-9); F-10 minor |
-| ¶5 (3.21–3.24) | recomputable, not yet run |
+| ¶5 (3.21–3.24) | ✅ 3.22/3.23 exact (SRSF2=MV, PCNA=LAE); 🔴 **3.21 SHMT2 contradicted** (F-11); 3.24 not traced |
 | Blocking access | **none** — code and data both local |
-| Open for Yul | 🔴 **F-3** metric interpretation · 🔴 **F-9** DNA repl/repair "instead" · **F-6** the "83%" · **F-8** LAE drives the 13.5% · **F-5** FB in ranges · **F-7** FB provisional reason · F-1 SF21 quartiles · F-4 SRSF2 cell type · F-10 SR-protein denominator |
-| Verification scripts | `verify_section3_p1.R`, `verify_section3_p1_metric_diagnostics.R`, `verify_section3_p2.R`, `verify_section3_p3.R`, `verify_section3_p4.R`, harness `_run_productive_response.R` (all `code/upstream/`) |
+| Open for Yul | 🔴 **F-3** metric interpretation · 🔴 **F-9** DNA repl/repair "instead" · 🔴 **F-11** SHMT2 wrong CT + "significantly" · **F-6** the "83%" · **F-8** LAE drives the 13.5% · **F-5** FB in ranges · **F-7** FB provisional reason · F-1 SF21 quartiles · F-4 SRSF2 cell type · F-10 SR-protein denominator |
+| Verification scripts | `verify_section3_p1.R`, `verify_section3_p1_metric_diagnostics.R`, `verify_section3_p2.R`, `verify_section3_p3.R`, `verify_section3_p4.R`, `verify_section3_p5.R`, harness `_run_productive_response.R` (all `code/upstream/`) |
 | Running issues list | `paper/VERIFICATION_ISSUES.md` |
 ---
 
