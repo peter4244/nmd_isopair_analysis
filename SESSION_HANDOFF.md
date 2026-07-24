@@ -113,11 +113,22 @@ file (or document a "clone as siblings" setup step).
 |---|---|---|
 | `Isocall_v1` | **10.5281/zenodo.21536486** | ✅ minted 2026-07-24 |
 | `Isopair` | **10.5281/zenodo.21536495** | ✅ minted 2026-07-24 |
-| `NMD_orf_model_v5_4ct` | — | pending (do the model-repo simplification first — its keep-set IS the deposited artifact) |
+| `NMD_orf_model_v5_4ct` | **10.5281/zenodo.21536502** | ✅ minted 2026-07-24 — ⚠️ see note |
 | this repo (citable snapshot) | — | pending Phase 7 |
 
-*Note: confirm whether 21536486 is the version DOI or the concept DOI; cite the
-**version** DOI in the paper. Draft Code Availability text goes here once all four exist.*
+⚠️ **The model DOI (…502) was minted BEFORE the model-repo simplification**, so `v1.0.0`
+archives the current *unsimplified* state — including the **broken `nmd_orf_data.h5`
+symlink**. Two ways forward, Pete's call:
+- **(a) Accept …502 as the citable version.** The code is all present; simplification
+  becomes optional. But the archived tarball contains a dangling symlink and the one-off
+  scripts. Also fix the broken h5 before relying on it for reproduction.
+- **(b) Simplify, then mint a `v2.0.0`** and cite that version DOI instead (…502 stays as
+  v1 history). Recommended if we want the deposited model artifact clean + runnable.
+- Either way, the **concept DOI** (Zenodo's "Cite all versions") always resolves to the
+  latest — citing the concept DOI in the paper future-proofs a later v2.
+
+*Confirm version-vs-concept DOI for each; cite the **version** DOI (or the concept DOI if
+you want it to track a future v2). Draft Code Availability text goes here once all four exist.*
 
 ## NEW WORKSTREAM — simplify the model repo too (`NMD_orf_model_v5_4ct`)
 
