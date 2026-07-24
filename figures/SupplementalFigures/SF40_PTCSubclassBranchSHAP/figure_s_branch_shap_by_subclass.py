@@ -1,7 +1,9 @@
 """
 Supplemental Figure — Branch-level KernelSHAP stratified by PTC subclass
-across the FULL n = 888 ref-AUG-traceable subset (not test-set-restricted;
-post 25% reference-share floor 2026-07-10).
+across the ref-AUG-traceable subset (not test-set-restricted; post 25%
+reference-share floor 2026-07-10). Shown: the 1,570 of 1,638 ref-AUG-traceable
+isoforms that have a computed model branch attribution (68 fall outside the
+model's scored cohort — see data_export.R join coverage).
 
 Style: matches Figure 5 Panel C exactly — branch order Structural / Stop /
 ATG, same colour palette, percent label above each bar, mean |SHAP|
@@ -10,10 +12,9 @@ per subgroup) share a common y-axis so heights compare directly.
 
 Companion to the §5 manuscript sentence:
 
-    "We also examined the Shapley scores for the START and STOP windows
-     stratified by isoform PTC subclass, and we observed that the START
-     window information is roughly three times more important in the
-     NMD+/PTC- than in the NMD+/PTC+ isoforms (SFx)."
+    "In NMD+/PTC- isoforms ... the model ... assigned twice as much
+     importance to the start window compared to the NMD+/PTC+ isoforms."
+     (manuscript 2026.7.17, §5)
 
 KEY NUMBER (full cohort, no test-set restriction; post-floor):
   Mean within-isoform ATG-branch share:
@@ -28,10 +29,11 @@ subgroup mean |SHAP|), giving:
     NMD+/PTC-   Structural 49.6% / Stop 33.5% / ATG 17.0%
     Control     Structural 63.0% / Stop 26.7% / ATG 10.3%
 
-Manuscript text reads "roughly three times more important" — the actual
-post-floor ratio is ~2× (share-of-total 1.87×; was
-2.21× pre-floor). The §5 prose overstates it; flag for the manuscript
-find/replace pass (see REFERENCE_FLOOR_NUMBERS_DELTA.md).
+Manuscript ↔ figure now agree: the current §5 text says "twice as much
+importance", matching the post-floor share-of-total ratio of 1.87×
+(NMD+/PTC- 17.0% vs NMD+/PTC+ 9.1%). An earlier draft said "roughly three
+times"; that was corrected to "twice" and this figure is consistent with the
+corrected text. (Pre-floor the ratio was 2.21×.)
 
 Data: data/branch_shap_by_subclass_refaug.tsv (built by data_export.R).
 """
