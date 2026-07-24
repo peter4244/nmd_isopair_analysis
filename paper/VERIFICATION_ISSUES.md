@@ -46,6 +46,33 @@ permutation baseline demonstrating the treatment effect exceeds donor-level vari
 
 ---
 
+### F-8 🟡 🟣 YUL — §3 ¶3's pooled 13.5% composition share is almost entirely an LAE phenomenon
+
+**Claim:** "…the level term was dominant in 86.2% of genes and the composition term in only
+13.5%…" and "Among significant productive-down NMD genes, 32.1% were composition-dominated."
+
+**All three percentages reproduce exactly.** The issue is again pooling (same class as
+[F-6](#f-6)). Per cell type, composition-dominance:
+
+| CT | composition-dominated | n genes |
+|---|---|---|
+| AT2 | **1.1%** | 871 |
+| MV | **5.9%** | 853 |
+| LAE | **21.3%** | 2,225 |
+
+LAE supplies **56% of the pooled population**, so the 13.5% headline is driven by it.
+"Composition matters in only 13.5% of genes" reads as a transcriptome-wide constant, when it
+ranges from ~1% (AT2) to ~21% (LAE). Since the paragraph's conclusion is mechanistic — that
+isoform-pool shifts are "a meaningful driver of productive loss" — the cell-type dependence
+seems worth stating rather than averaging away.
+
+**Also:** ¶3's population **excludes FB** (provisional), but the prose does not restate this;
+a reader would reasonably assume all four cell types. Including FB gives 87.1% / 12.5%.
+
+**Evidence:** `code/upstream/verify_section3_p3.R`
+
+---
+
 ### F-6 🟡 🟣 YUL — §3 ¶2's "roughly 83%" is a median across cell types, not a pooled proportion
 
 **Claim:** "…with no significant change in roughly 83% of genes **(Fig 2B; ST4)**."

@@ -14,7 +14,7 @@
 |---|---|---|
 | §1 (Isoform discovery) | ~1 / 15 | Yul-side `Isoform_Landscape.Rmd`, `correlation_analysis.Rmd` |
 | §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul. (Tan reanalysis code RESOLVED 2026-07-20 → `yul:tan_reanalysis/`; still needs the Tan supplementary `.xlsx` downloads.) |
-| §3 (Output Lost + Productive Response) | **10 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1 (3.1–3.4) + ¶2 (3.5–3.10) verified — ¶2 by executing Yul's own code; ¶3–¶5 recomputable, not yet run. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
+| §3 (Output Lost + Productive Response) | **13 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1–¶3 verified (3.1–3.15) — ¶2/¶3 by executing Yul's own code; ¶4–¶5 recomputable, not yet run. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
 | §4 (Isopair / splice events / PTC) | 46 / 46 | All local. Verified by the pass-7 (37 checks) + cross-check (57 checks) verifiers under `reproducibility/`. Both PASS. |
 | §5 (DL model) | ~30 / 31 | Essentially all local — `model:` (trained weights cached) |
 
@@ -555,16 +555,34 @@ changed): the repo's mashr CSVs predate the April-2026 rename, so `resolve_mash_
 (`gene_category == "NMD"`): AT2 5,104 · FB 5,101 · LAE 5,535 · MV 5,301 after the expression
 floor. An `"unsure"` category (borderline `0.05 ≤ lfsr < 0.20`) is held to the supplement.
 
-### Paragraph 3 — Kitagawa decomposition (ST4) — NOT YET VERIFIED
+### Paragraph 3 — Kitagawa decomposition (ST4) — ✅ VERIFIED (3.13–3.15)
 
-Producer confirmed: `productive_response.Rmd:730` writes `kitagawa_decomposition_<DATE>.csv`.
+**Verified 2026-07-24** by `code/upstream/verify_section3_p3.R`, calling Yul's own
+`kit_nmd_table()` / `kitagawa_decomp()` via the shared harness
+`code/upstream/_run_productive_response.R`. **All three percentages reproduce exactly.**
 
-| # | Claim | Status |
-|---|---|---|
-| 3.13 | Level term dominant in 86.2% of genes, composition term in 13.5% | Recomputable — note 86.2 + 13.5 = 99.7; confirm the residual 0.3% (interaction/tie handling) |
-| 3.14 | Productive-up genes: 99.2% level, 0.3% composition | Recomputable |
-| 3.15 | Productive-down genes: 32.1% composition-dominated, 67.9% transcription reduction | Recomputable |
-| 3.16 | Conclusion holds under the custom NMD-anchored normalization with SR gene-level induction as an external transcriptional signal | Recomputable |
+Population (per the code, not restated in the manuscript prose): significant NMD genes
+(`dir ∈ {up,down}`, `gene_category=="NMD"`), **FB excluded as provisional** →
+AT2 871 · LAE 2,225 · MV 853 = **3,949 genes**. Decomposition identity holds
+(max |dP − (level+composition)| = 9.1e−13).
+
+| # | Claim | Recomputed | Status |
+|---|---|---|---|
+| 3.13 | Level dominant 86.2%, composition 13.5% | level 3,403 = **86.2%**; composition 534 = **13.5%** | ✅ **EXACT** |
+| 3.14 | Productive-up: 99.2% level, 0.3% composition | level 2,288 = **99.2%**; composition 7 = **0.3%** | ✅ **EXACT** |
+| 3.15 | Productive-down: 32.1% composition, 67.9% transcription | composition 527 = **32.1%**; level 1,115 = **67.9%** | ✅ **EXACT** |
+| 3.16 | Conclusion holds under the custom normalization with SR induction as an external signal | — | Not yet run (S6b `down-arm-mechanism`, past the harness stop point) |
+
+**Residual resolved.** The sums (99.7% / 99.5% / 99.9%) are **not** an interaction term and
+**not** ties (exact `|composition| == |level|` ties = **0 of 3,949**). They are **NA rows** —
+12 overall, 11 in the up-arm, 1 in the down-arm — genes present in `prod_dir_mashr` but
+dropped from `base` by the expression floor, so the `left_join` in `kit_nmd_table()` yields
+no CPM. NAs sit in the denominator, so the published percentages very slightly understate the
+split among genes with a defined driver (86.2% → 86.4% if NA rows are dropped). Cosmetic, but
+it explains the arithmetic.
+
+**Sensitivity.** Including FB shifts the headline to 87.1% level / 12.5% composition.
+⚠️ The FB exclusion is **not restated in the ¶3 prose** — see F-8.
 
 ### Paragraph 4 — two mechanisms partitioning productive-down genes (ST4) — NOT YET VERIFIED
 
@@ -591,10 +609,11 @@ Producer confirmed: `productive_response.Rmd:730` writes `kitagawa_decomposition
 | ¶1 (3.1–3.4) | ✅ verified exact; findings F-1 (minor), F-2 (map), F-3 (substantive) |
 | ¶2 (3.5–3.10) | ✅ verified — every number reproduces via Yul's own code; findings F-5, F-6, F-7 |
 | ¶2 (3.11–3.12) | 3.11 blocked on `topGO` (not installed); 3.12 chunk not yet located |
-| ¶3–¶5 (3.13–3.24) | recomputable, not yet run |
+| ¶3 (3.13–3.15) | ✅ verified exact via Yul's `kit_nmd_table()`; residual = NA joins, not ties; finding F-8 |
+| ¶4–¶5 (3.16–3.24) | recomputable, not yet run |
 | Blocking access | **none** — code and data both local |
-| Open for Yul | **F-3** metric interpretation · **F-6** the "83%" · **F-5** FB in ranges · **F-7** FB provisional reason · F-1 SF21 quartiles · F-4 SRSF2 cell type |
-| Verification scripts | `verify_section3_p1.R`, `verify_section3_p1_metric_diagnostics.R`, `verify_section3_p2.R` (all `code/upstream/`) |
+| Open for Yul | **F-3** metric interpretation · **F-6** the "83%" · **F-8** LAE drives the 13.5% · **F-5** FB in ranges · **F-7** FB provisional reason · F-1 SF21 quartiles · F-4 SRSF2 cell type |
+| Verification scripts | `verify_section3_p1.R`, `verify_section3_p1_metric_diagnostics.R`, `verify_section3_p2.R`, `verify_section3_p3.R`, harness `_run_productive_response.R` (all `code/upstream/`) |
 | Running issues list | `paper/VERIFICATION_ISSUES.md` |
 ---
 
