@@ -640,7 +640,7 @@ figure. So the three examples are not quoted on a consistent basis (part of F-11
 | ¶2 (3.11–3.12) | ✅ 3.12 traced to `dist-others`; ⚠️ 3.11 partial — NF-κB verified, UPR enrichment holds in 2 of 4 CTs (F-12) |
 | ¶3 (3.13–3.15) | ✅ verified exact via Yul's `kit_nmd_table()`; residual = NA joins, not ties; finding F-8 |
 | ¶4 (3.16–3.20) | ✅ 3.16/3.17/3.18/3.19 verified exact; ⚠️ **3.20 partially contradicted** (F-9); F-10 minor |
-| ¶5 (3.21–3.24) | ✅ 3.22/3.23 exact (SRSF2=MV, PCNA=LAE); 🔴 **3.21 SHMT2 contradicted** (F-11); 3.24 not traced |
+| ¶5 (3.21–3.24) | ✅ 3.22/3.23 exact (SRSF2=MV, PCNA=LAE); 🔴 **3.21 SHMT2 contradicted** (F-11); 3.24 traced to `Isopair::plotIsoformPair()` |
 | Blocking access | **none** — code and data both local |
 | Open for Yul | 🔴 **F-3** metric interpretation · 🔴 **F-9** DNA repl/repair "instead" · 🔴 **F-11** SHMT2 wrong CT + "significantly" · **F-6** the "83%" · **F-8** LAE drives the 13.5% · **F-5** FB in ranges · **F-7** FB provisional reason · F-1 SF21 quartiles · F-4 SRSF2 cell type · F-10 SR-protein denominator |
 | Verification scripts | `verify_section3_p1.R`, `verify_section3_p1_metric_diagnostics.R`, `verify_section3_p2.R`, `verify_section3_p3.R`, `verify_section3_p4.R`, `verify_section3_p5.R`, harness `_run_productive_response.R` (all `code/upstream/`) |
