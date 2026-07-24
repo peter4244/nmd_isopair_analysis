@@ -46,6 +46,51 @@ permutation baseline demonstrating the treatment effect exceeds donor-level vari
 
 ---
 
+### F-9 🔴 🟣 YUL — §3 ¶4's "instead enriched for DNA replication and repair (OR 2.1)" is not supported as stated
+
+**Claim:** "Composition-shift genes were specifically enriched for RNA splicing (OR 2.5…) and
+SR/hnRNP factors (OR 6.8…). … **Transcriptional-repression genes were instead enriched for DNA
+replication and repair (OR 2.1, p < 10⁻³).**"
+
+Recomputed with Yul's own `theme_enrichment()` (transcriptional n=1,631; composition n=430):
+
+| theme | trans_OR | trans_p | comp_OR | comp_p |
+|---|---|---|---|---|
+| RNA splicing | 1.19 | 1.0e-01 (ns) | **2.52** | 9.7e-07 |
+| SR/hnRNP factors | 0.76 | 7.6e-01 (ns) | **6.76** | 2.6e-04 |
+| DNA replication | **2.12** | 9.3e-07 | **2.03** | 4.5e-03 |
+| DNA repair | **1.57** | 3.4e-05 | **1.88** | 4.2e-04 |
+
+**Two problems.**
+
+1. **One OR is quoted for two themes.** "DNA replication and repair (OR 2.1)" matches DNA
+   **replication** (2.12). DNA **repair** is **1.57** — it has no OR near 2.1.
+2. **"Instead" implies specificity that the data do not show.** Composition genes are enriched
+   for DNA replication almost identically (2.03 vs 2.12), and are enriched for DNA repair
+   **more** than transcriptional genes are (**1.88 vs 1.57**). So neither DNA theme
+   distinguishes the two classes — the contrast word is doing work the numbers don't support.
+
+**Note the asymmetry:** the *composition* side of the same sentence is textbook-clean and
+strongly specific (RNA splicing 1.19 ns → 2.52; SR/hnRNP 0.76 ns → 6.76). Only the
+transcriptional half is the problem. Suggested fix: quote DNA replication alone with its own
+OR, and drop or soften "instead" for the DNA themes.
+
+**Evidence:** `code/upstream/verify_section3_p4.R`
+
+---
+
+### F-10 🟢 🟣 YUL — "the 12 canonical SR proteins" — only 11 are present in the data
+
+§3 ¶4 says "of the **12** canonical SR proteins". The dataset contains **11** (SRSF1–SRSF11);
+**SRSF12 is absent entirely**. The counts themselves are exact (LAE 8, AT2 3, MV 2, all
+decreases, zero increases), so only the denominator wording is affected.
+
+Consistent with the Discussion, which already says "**11 of the 12** canonical SR proteins
+(*SRSF1–SRSF11*)" — so the two sections disagree slightly on the denominator. Recommend
+making ¶4 match.
+
+---
+
 ### F-8 🟡 🟣 YUL — §3 ¶3's pooled 13.5% composition share is almost entirely an LAE phenomenon
 
 **Claim:** "…the level term was dominant in 86.2% of genes and the composition term in only

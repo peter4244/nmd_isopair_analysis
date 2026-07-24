@@ -14,7 +14,7 @@
 |---|---|---|
 | §1 (Isoform discovery) | ~1 / 15 | Yul-side `Isoform_Landscape.Rmd`, `correlation_analysis.Rmd` |
 | §2 (NMD response) | ~10 / 26 | Sharing/specificity computed by Yul. (Tan reanalysis code RESOLVED 2026-07-20 → `yul:tan_reanalysis/`; still needs the Tan supplementary `.xlsx` downloads.) |
-| §3 (Output Lost + Productive Response) | **13 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1–¶3 verified (3.1–3.15) — ¶2/¶3 by executing Yul's own code; ¶4–¶5 recomputable, not yet run. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
+| §3 (Output Lost + Productive Response) | **18 / 24** | **REWRITTEN 2026-07-24 — see §3.** ¶1–¶4 verified (3.1–3.20) by executing Yul's own code; ¶5 not yet run. ⚠️ F-9 is a substantive contradiction in ¶4. All three §3 Rmds **and** their inputs are now LOCAL (`code/upstream/`, `nmd_fig_data/`) — no longer Yul-blocked. The PCI/GPR180 framework (old 3.6–3.26) is retired; canonical source is now `productive_response.Rmd`. ⚠️ finding **F-3** open. |
 | §4 (Isopair / splice events / PTC) | 46 / 46 | All local. Verified by the pass-7 (37 checks) + cross-check (57 checks) verifiers under `reproducibility/`. Both PASS. |
 | §5 (DL model) | ~30 / 31 | Essentially all local — `model:` (trained weights cached) |
 
@@ -584,14 +584,34 @@ it explains the arithmetic.
 **Sensitivity.** Including FB shifts the headline to 87.1% level / 12.5% composition.
 ⚠️ The FB exclusion is **not restated in the ¶3 prose** — see F-8.
 
-### Paragraph 4 — two mechanisms partitioning productive-down genes (ST4) — NOT YET VERIFIED
+### Paragraph 4 — two mechanisms partitioning productive-down genes (ST4) — ⚠️ MOSTLY VERIFIED
 
-| # | Claim | Status |
-|---|---|---|
-| 3.17 | Composition-shift genes enriched for RNA splicing (OR 2.5, p < 10⁻³) | Recomputable |
-| 3.18 | SR/hnRNP factors (OR 6.8, p < 10⁻³) | Recomputable |
-| 3.19 | Of the 12 canonical SR proteins, every significant productive change was a **decrease** (8 LAE, 3 AT2, 2 MV) | Recomputable — cross-check against the Discussion's "11 of the 12 canonical SR proteins express an NMD susceptible isoform in every cell type" |
-| 3.20 | Transcriptional-repression genes enriched for DNA replication and repair (OR 2.1, p < 10⁻³) | Recomputable |
+**Verified 2026-07-24** by `code/upstream/verify_section3_p4.R`, replicating Yul's S6b chunk
+`down-arm-mechanism` with her own `classify_mech()` / `theme_enrichment()` / `THEME_SETS`.
+Population: `dir=="down"`, FB excluded → transcriptional 1,631 · composition 430 ·
+universe 9,196.
+
+| # | Claim | Recomputed | Status |
+|---|---|---|---|
+| 3.16 | Conclusion holds under the custom normalization + SR induction | 3-way split: transcriptional **70.1%**, composition 16.5%, mixed 13.4% — agrees with Kitagawa's 67.9% level-dominated | ✅ **SUPPORTED** |
+| 3.17 | Composition genes × RNA splicing, OR 2.5, p<10⁻³ | OR **2.52**, p = 9.68e-07 | ✅ **EXACT** |
+| 3.18 | Composition genes × SR/hnRNP factors, OR 6.8, p<10⁻³ | OR **6.76**, p = 2.61e-04 | ✅ **EXACT** |
+| 3.19 | Of 12 canonical SR proteins, every significant productive change was a **decrease** (8 LAE, 3 AT2, 2 MV) | LAE **8**, AT2 **3**, MV **2**, all `down`; **zero** significant increases | ✅ **EXACT** — but only **11 of 12** SRSF genes exist in the data (SRSF12 absent); see F-10 |
+| 3.20 | Transcriptional genes **instead** enriched for DNA replication and repair, OR 2.1, p<10⁻³ | DNA **replication** trans OR **2.12** ✅; DNA **repair** trans OR **1.57** ✗ — and neither is specific to the transcriptional class | ⚠️ **PARTIALLY CONTRADICTED — see F-9** |
+
+**Full theme-enrichment table (Yul's `theme_enrichment()` output):**
+
+| theme | trans_OR | trans_p | comp_OR | comp_p |
+|---|---|---|---|---|
+| Mitotic cell cycle | 0.98 | 5.7e-01 | 1.28 | 9.9e-02 |
+| DNA replication | **2.12** | 9.3e-07 | **2.03** | 4.5e-03 |
+| DNA repair | **1.57** | 3.4e-05 | **1.88** | 4.2e-04 |
+| RNA splicing | 1.19 | 1.0e-01 | **2.52** | 9.7e-07 |
+| SR/hnRNP factors | 0.76 | 7.6e-01 | **6.76** | 2.6e-04 |
+| ISR/UPR | 0.70 | 9.3e-01 | 0.51 | 9.3e-01 |
+
+The **composition-side** contrast is clean and strongly specific (RNA splicing 1.19→2.52;
+SR/hnRNP 0.76→6.76). The **transcriptional-side** contrast is not (see F-9).
 
 ### Paragraph 5 — three worked examples (Fig 2C, 2D, 2E) — NOT YET VERIFIED
 
@@ -610,10 +630,11 @@ it explains the arithmetic.
 | ¶2 (3.5–3.10) | ✅ verified — every number reproduces via Yul's own code; findings F-5, F-6, F-7 |
 | ¶2 (3.11–3.12) | 3.11 blocked on `topGO` (not installed); 3.12 chunk not yet located |
 | ¶3 (3.13–3.15) | ✅ verified exact via Yul's `kit_nmd_table()`; residual = NA joins, not ties; finding F-8 |
-| ¶4–¶5 (3.16–3.24) | recomputable, not yet run |
+| ¶4 (3.16–3.20) | ✅ 3.16/3.17/3.18/3.19 verified exact; ⚠️ **3.20 partially contradicted** (F-9); F-10 minor |
+| ¶5 (3.21–3.24) | recomputable, not yet run |
 | Blocking access | **none** — code and data both local |
-| Open for Yul | **F-3** metric interpretation · **F-6** the "83%" · **F-8** LAE drives the 13.5% · **F-5** FB in ranges · **F-7** FB provisional reason · F-1 SF21 quartiles · F-4 SRSF2 cell type |
-| Verification scripts | `verify_section3_p1.R`, `verify_section3_p1_metric_diagnostics.R`, `verify_section3_p2.R`, `verify_section3_p3.R`, harness `_run_productive_response.R` (all `code/upstream/`) |
+| Open for Yul | 🔴 **F-3** metric interpretation · 🔴 **F-9** DNA repl/repair "instead" · **F-6** the "83%" · **F-8** LAE drives the 13.5% · **F-5** FB in ranges · **F-7** FB provisional reason · F-1 SF21 quartiles · F-4 SRSF2 cell type · F-10 SR-protein denominator |
+| Verification scripts | `verify_section3_p1.R`, `verify_section3_p1_metric_diagnostics.R`, `verify_section3_p2.R`, `verify_section3_p3.R`, `verify_section3_p4.R`, harness `_run_productive_response.R` (all `code/upstream/`) |
 | Running issues list | `paper/VERIFICATION_ISSUES.md` |
 ---
 
