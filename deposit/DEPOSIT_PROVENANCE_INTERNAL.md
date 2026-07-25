@@ -48,9 +48,23 @@ Both scripts self-verify and abort on mismatch. Confirmed 2026-07-24:
 | `nmd_lungcells_counts_4ct.csv` | counts vs `dge_isoform_longread_2026.3.3` | **identical** |
 | `salmon_gene_counts_4ct.csv` | counts vs `dge_shortread_gene_2026.3.2` | **identical** |
 
-All 645,272 isoforms are retained in the isoform matrix. (An earlier version of this note
-claimed trimming would change published results. That was wrong — it was tested and is lossless.
-The actual reasons for retaining them are below.)
+**The deposit is trimmed to observed features.** Isoforms 645,272 → 614,992 and genes
+78,899 → 46,571; a feature with zero counts in every sample is not part of this dataset, and
+leaving such rows in invites questions the paper does not answer.
+
+Verified result-neutral before trimming: the `filterByExpr` sets are identical from the full and
+trimmed universes, and percent-output-lost is unchanged to four decimals. The published filtered
+sets contain no all-zero features.
+
+Trimmed consistently across every keyed file — both count matrices, SQANTI classification,
+corrected FASTA, filtered GTF and corrected CDS GFF3 — all now carrying an identical 614,992
+isoform ID set. `trim_deposit_to_observed.sh` (this repo, internal) performs it; the GTF/GFF3
+pass is two-pass so original line order is preserved and gene records are retained wherever a
+gene keeps at least one transcript.
+
+*(Superseded: an earlier version of this note argued against trimming, on the grounds that
+trimming the counts alone would leave the deposit's files disagreeing. That was resolved by
+trimming all of them.)*
 
 ## Open action — GEO
 
