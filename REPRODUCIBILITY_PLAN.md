@@ -86,6 +86,10 @@ before the baseline is re-captured — not in between.
 
 `~/claude_projects/nmd_deposit_2026/` — **10 files, 4.0 GB**
 
+**Reserved DOI: `10.5281/zenodo.21544337`** (uploaded 2026-07-25, **draft — not published**). Reserved
+DOIs are final, so this string can be cited before publication. Publish only after the gates in
+§6 pass; the record returns 404 until then, which is the expected state.
+
 | Path | Contents |
 |---|---|
 | `nmd_lungcells_counts_4ct.csv` | Long-read isoform counts, 614,992 × 26 |
@@ -243,7 +247,7 @@ history to fall back on, so this gate is not optional.
 | A | **`05_final_report_mashr.Rmd` — recommend excluding.** Deprecated, cannot run from a clean checkout, its feeders (`05l`/`05v`) are intentionally absent, and no shipped figure reads its outputs. Pete's call. |
 | B | **Example-gene annotation** (`srsf.*`, `sub.isoforms.gtf`) is not on this laptop. Audit whether any figure reads it; if none does, close decision 4 as "not needed". |
 | C | **`REPRODUCTION.md` not yet written** — the runbook mapping claim/figure → script → expected output, stating plainly what is *not* reproducible (M2, model retraining, the Tan download). |
-| D | **Zenodo metadata before publishing:** expand author given-names, add ORCIDs, add related-identifier links to the code DOI once minted. Immutable at mint. |
+| D | **Zenodo metadata before publishing** (DOI `10.5281/zenodo.21544337` reserved): expand author given-names, add ORCIDs, add related-identifier links to the code DOI once minted. Immutable at mint. |
 | E | **ORFik version risk** — now directly testable via §6.1b: regenerate `05s` from the deposited FASTA and diff against the retained `orfik_scan.rds`. Do this early; it is cheap and closes the risk before the DOI. |
 | F | **GEO GSE329233** must be reduced to the four cell types' reads, after verification (Pete, 2026-07-25). |
 | G | 📌 **Draft `CORRECTNESS_PLAN.md` (Task 2) once the rewrite is complete.** Deliberately deferred (Pete, 2026-07-25) so it can be written against the finished layout rather than the current one. It should carry over: the 14 open findings in `paper/VERIFICATION_ISSUES.md`; the §1/§2 remainder (figure-render claims 1.8, 1.15, 2.7, 2.8, 2.16, 2.22, plus 1.1 and 2.20); re-verification of §4 and §5 under the 5-step protocol; and the rule that any correctness fix altering a **computation** requires re-capturing the regression baseline. |

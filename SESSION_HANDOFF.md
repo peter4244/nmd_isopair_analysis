@@ -11,7 +11,7 @@ Written 2026-07-22 at the end of a long session, for a fresh-context successor.
 
 | | |
 |---|---|
-| Source-data deposit | ✅ built, trimmed, validated — `~/claude_projects/nmd_deposit_2026/` (10 files, 4.0 GB). Pete uploading to Zenodo. |
+| Source-data deposit | ✅ built, validated, **uploaded to Zenodo as a draft** — reserved DOI **`10.5281/zenodo.21544337`**. Do not publish until the §6 gates pass. |
 | New consolidated repo | ✅ `nmd_lung_longread_2026` — 395 files, §1–§5 in one place |
 | Regression baseline | ✅ captured **before** any edit — `reproducibility/baseline_verification/` (9 scripts, ~47 claims) |
 | §1–§3 verification | ✅ complete — 14 findings in `paper/VERIFICATION_ISSUES.md`; write-up for Yul in `paper/MANUSCRIPT_REVIEW_FOR_YUL.md` |
@@ -156,7 +156,8 @@ file (or document a "clone as siblings" setup step).
 | `NMD_orf_model_v5_4ct` v1.0.0 | **10.5281/zenodo.21536502** | history (unsimplified) |
 | `NMD_orf_model_v5_4ct` **v2.0.0** | **10.5281/zenodo.21539601** | ✅ minted 2026-07-24 (code-only simplified; **cite this**) |
 | `NMD_orf_model_v5_4ct` concept | **10.5281/zenodo.21536501** | always-latest |
-| `nmd_isopair_analysis` v1.0.0 | **10.5281/zenodo.21539735** (concept **21539734**) | ✅ minted 2026-07-24 |
+| `nmd_isopair_analysis` v1.0.0 | **10.5281/zenodo.21539735** (concept **21539734**) | ✅ minted 2026-07-24 — superseded by the consolidated repo |
+| **source data** (Zenodo record) | **10.5281/zenodo.21544337** | 🔒 **reserved, draft — publish after verification** |
 
 **Code Availability section drafted** → `paper/code_availability.md` (concept DOIs, all four repos + GEO GSE329233, verified via Zenodo API). Paste into the Google Doc; make "Figure 5" a live cross-ref. All four Zenodo records still need full author metadata added (with Yul).
 
