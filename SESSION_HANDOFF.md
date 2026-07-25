@@ -55,7 +55,18 @@ Remaining: Phase 7 (citable snapshot) and Phase 8 (submission compliance).
 
 ---
 
-## ✅ DECIDED (Pete, 2026-07-22): external repo packaging = **Option B**
+## ⚠️ SUPERSEDED 2026-07-25 — external repo packaging = Option B
+
+> **Do not act on this section.** It planned four separately-DOI'd repos with a vendored
+> `make_architecture_figure.R`. Superseded by the consolidation: §1–§5 code now lives in **one**
+> repo (`nmd_lung_longread_2026`), which removes the cross-repo `source()` entirely rather than
+> vendoring around it, and Code Availability becomes 3 code DOIs + 1 data DOI, not 4 code DOIs.
+> The DOIs already minted (below) remain valid as historical records. Retained for the record;
+> see `REPRODUCIBILITY_PLAN.md` decisions 9–11 for what is current.
+
+### Original text (historical)
+
+## ~~DECIDED (Pete, 2026-07-22): external repo packaging = Option B~~
 
 **Each external repo gets its own Zenodo DOI**, cited from Code Availability. Submodules
 are ruled out; vendoring is used only for the single cross-repo file (see "Recommended"
