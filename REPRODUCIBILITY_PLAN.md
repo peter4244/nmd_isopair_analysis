@@ -1,52 +1,21 @@
 # Reproducibility plan — NMD long-read lung study
 
-**Current as of 2026-07-25.** Supersedes the 2026-07-24 draft; settled decisions are folded in
-rather than left as open questions.
-
-**Goal.** A reader with the Zenodo source-data record and the code repositories can reproduce
-every number and figure in §1–§5 — on a machine with no Channing access, with no path edits,
-and without retraining the model.
-
-```
-GEO GSE329233 (raw reads)
-      │   documented, NOT on the reproduction path (the M2 gap lives here)
-      ▼
-★ ZENODO SOURCE-DATA RECORD  ←── reproduction starts here
-      │
-      ▼
-nmd_lung_longread_2026  (§1–§5)  ·  Isopair  ·  Isocall_v1
-      │
-      ▼
-every §1–§5 number, table and figure
-```
-
+**v2, 2026-07-25.** Rewritten after an independent adversarial review found v1 unsafe to
+execute. Findings are referenced by their review IDs (B1–B8, S1–S8, M1–M5).
 
 ---
 
 ## 0. Scope — this plan is Task 1 of two
 
-Pete, 2026-07-25: these are two tasks and should be sequential.
-
-| | Task 1 — **Reproducibility / fidelity** (this plan) | Task 2 — **Correctness** (`CORRECTNESS_PLAN.md`) |
+| | Task 1 — **fidelity** (this plan) | Task 2 — **correctness** (`CORRECTNESS_PLAN.md`, deferred) |
 |---|---|---|
-| Question | Does the rewritten code, run from the deposit, produce **the same** numbers as before, and do those match the paper? | Are those numbers **right**? |
+| Question | Does the rewritten code, run from the deposit, produce **the same** numbers? | Are those numbers **right**? |
 | Success | Every number identical | A wrong number is found and **changed** |
-| Method | Regression baseline · stage-wise intermediate comparison · clean-room test | The 5-step verification protocol; adversarial re-derivation |
-| Status | Baseline captured; rewrite next | §1–§3 done (14 findings); §4 46/46; §5 ~30/31 |
+| Status | Instrument being rebuilt; rewrite blocked | §1–§3 done (14 findings); §4 46/46; §5 ~30/31 |
 
-**Why they must not run concurrently.** Their success criteria are contradictory: Task 1 requires
-numbers to stay identical, Task 2 may require a number to change. Interleaved, a genuine
-regression is indistinguishable from a deliberate correction, and the regression baseline — the
-only instrument proving the rewrite is faithful — becomes unusable.
-
-**Ordering.** Task 1 first, against **frozen analysis semantics**: the rewrite changes only paths
-and cell-type scope, never a computation. Task 2 then proceeds against the rewritten codebase,
-where any change to a result is deliberate, reviewed, and followed by re-capturing the baseline.
-
-**Practical consequence.** Several open correctness findings (F-6 pooled "83%", F-9 DNA-theme
-enrichment, F-11 the *SHMT2* example) are with Yul. Those that alter only prose are harmless to
-Task 1. **Any that alter a computation must wait** until the rewrite is verified, or be applied
-before the baseline is re-captured — not in between.
+Their success criteria contradict, so they must not interleave: a regression would be
+indistinguishable from a correction. Task 1 runs against **frozen analysis semantics** — the
+rewrite changes paths, sample-name parsing and cell-type scope, never a computation.
 
 ---
 
@@ -54,200 +23,217 @@ before the baseline is re-captured — not in between.
 
 | Phase | State |
 |---|---|
-| 1. Scope + decisions | ✅ complete (§2) |
-| 2. Source-data deposit | ✅ built, trimmed, validated (§3) — Pete uploading to Zenodo |
-| 3. New repository | ✅ created, 395 files (§4) |
-| 4. Regression baseline | ✅ captured and committed **before** any edit (§6.1) |
-| 5. **The rewrite** | ⬜ **next — the subject of this plan** (§5) |
-| 6. Regression check | ⬜ after the rewrite (§6.1) |
-| 7. Clean-room test | ⬜ the gate before minting the code DOI (§6.2) |
+| Source-data deposit | ⚠️ built and uploaded as a **draft**, DOI `10.5281/zenodo.21544337` reserved — **but its column format is incompatible with the code (B4)** |
+| New repository | ✅ `nmd_lung_longread_2026`, 395 files |
+| Regression baseline v1 | ❌ **invalid** — measures cached outputs of the files the rewrite edits (B1) |
+| **Instrument rebuild** | ⬜ **next — §5** |
+| The rewrite | ⬜ blocked on §5 and §4 |
+| Verification gates | ⬜ §6 |
+
+**v1's central error.** The baseline read `nmd_fig_data/dge_*.rds` and the mashr CSVs — the
+*outputs* of `Isoform_Level_Quantification.Rmd` and `NMD_shortread_dge_fullmodel_2026.5.5.Rmd`,
+which are exactly the files §5.2 edits. A rewrite that broke the design matrix, reference level
+or mashr fit would have produced a green check. The instrument measured something other than
+the thing being changed.
 
 ---
 
 ## 2. Settled decisions
 
-| # | Decision |
+1. **Tier 1 only** in the deposit. 2. Full SQANTI classification. 3. Isopair cache regenerated, not
+deposited. 4. Example-gene annotation — **now a blocker, see §4**. 5. Tan tables cited, not
+redistributed. 6. ORF-scan objects are 4-CT-valid. 7. Source data gets its own DOI
+(`…21544337`, reserved). 8. No sign-off needed to deposit derived objects. 9. One consolidated
+code repo. 10. **Option C** — code is 4-cell-type native. 11. **The repo holds the code that
+produced the paper's results, and not more**; correctness rests on verification, not provenance.
+
+**New (v2):**
+
+12. **The deposit is an interface, not just a file set.** Its column format is part of the
+    contract with the code, and changing one requires changing the other (B4).
+13. **`relevel(..., ref = "LAE")` is load-bearing** and must never be unified with display
+    order (B8).
+14. **No rewrite begins until the instrument can detect its failure** (B1, B2).
+
+---
+
+## 3. Deposit — status and the interface defect
+
+`10.5281/zenodo.21544337` (reserved, draft). 9 files, 4.0 GB, at
+`~/claude_projects/nmd_deposit_2026/`.
+
+Validated: counts, classification, FASTA, GTF and GFF3 all carry an **identical 614,992 isoform
+ID set**; genes 46,571. Trimming to observed features is result-neutral — `filterByExpr` sets
+identical, percent-output-lost identical to 4 dp, and **TMM `norm.factors` bit-identical**
+(verified 2026-07-25, closing review item M5).
+
+Fixed after review: `.DS_Store` removed from the record (M2); `MANIFEST.sha256` entries
+re-rooted so the documented `shasum -c` works (M1). **Both need re-uploading to the draft.**
+
+### 3.1 ⛔ The column-format defect (B4)
+
+The deposit uses `001V_DMSO_AT2`. Three parsers expect `Sample##_CT_ID_Treatment`:
+
+| parser | effect when fed the deposit |
 |---|---|
-| 1 | **Tier 1 only.** Deposit the irreducible starting files; anything a shipped script regenerates stays out. |
-| 2 | SQANTI `classification.txt` deposited in full (no slimmed copy). |
-| 3 | Isopair `analysis_cache` **not** deposited — regeneration is tested instead. |
-| 4 | Example-gene annotation included **if** a figure reads it (see §7 B). |
-| 5 | **Tan et al. tables not redistributed** — the README cites the article DOI and names tables/sheets. |
-| 6 | ORF-scan objects are 4-CT-valid (the scan is sequence-derived; only labels are cell-type-specific). |
-| 7 | Source data gets **its own Zenodo DOI**, separate from the code record. |
-| 8 | No sign-off required to deposit derived objects. |
-| 9 | **One consolidated code repo** (`nmd_lung_longread_2026`) for §1–§5; Isopair and Isocall stay separate. |
-| 10 | **Option C — the code is rewritten to be 4-cell-type native.** No shipped script loads other conditions and drops them. |
-| 11 | **The repo holds the code that produced the paper's results, and not more.** History and internal process docs are excluded; correctness rests on verification, not provenance. |
+| `Isoform_Level_Quantification.Rmd:219-227` | parses treatment=`AT2`, donor=`DMSO`, ct=`001V`; duplicate check passes → **silent corruption** until `relevel(ref="LAE")` errors |
+| `NMD_shortread_dge_fullmodel_2026.5.5.Rmd:108-135` | de-canonicalises AT2→AT, LAE→DD to match count columns; every sample "not found", dropped |
+| `01_prepare_data_mashr.R` `parse_sample()` | same break |
+
+**Resolution: change the parsers, not the deposit.** The canonical format is the point of
+decision 10; reverting the deposit to `Sample##_` would reintroduce internal codes and defeat
+it. This is **declared work in §5.3**, not cleanup.
 
 ---
 
-## 3. Source-data deposit — final contents
+## 4. ⛔ Blockers — inputs with neither a deposit entry nor a shipped producer
 
-`~/claude_projects/nmd_deposit_2026/` — **10 files, 4.0 GB**
+Must be resolved or **explicitly scoped out of the reproducibility claim** before the rewrite
+is worth doing.
 
-**Reserved DOI: `10.5281/zenodo.21544337`** (uploaded 2026-07-25, **draft — not published**). Reserved
-DOIs are final, so this string can be cited before publication. Publish only after the gates in
-§6 pass; the record returns 404 until then, which is the expected state.
-
-| Path | Contents |
-|---|---|
-| `nmd_lungcells_counts_4ct.csv` | Long-read isoform counts, 614,992 × 26 |
-| `salmon_gene_counts_4ct.csv` | Short-read gene counts, 46,571 × 26 |
-| `sqanti/` | classification · corrected CDS GFF3 · filtered GTF · corrected FASTA |
-| `annotation/` | Ensembl v115 gene + transcript maps |
-| `model/` | trained model weights |
-| `MANIFEST.sha256`, `README.md`, `.zenodo.json` | checksums, contents, metadata |
-
-**Validated:** the count matrix, classification and FASTA carry an **identical isoform ID set**
-(614,992) — not merely equal counts.
-
-**Restricted to observed features.** Features with zero counts in every sample were removed
-(isoforms 645,272 → 614,992; genes 78,899 → 46,571) after verifying it is result-neutral: the
-`filterByExpr` sets are identical and percent-output-lost is unchanged to four decimals.
-
-**Excluded because shipped code regenerates them:** DGELists, mashr results, the Isopair cache,
-ORF-scan objects, the model HDF5, and all interpretability exports.
-
----
-
-## 4. The repository
-
-`nmd_lung_longread_2026` — 395 files.
-
-```
-analysis/{upstream,isopair,predictor_comparison}   §1–§3 · §4 · §5 benchmark
-model/                                             §5 training + interpretability
-figures/{lib,multipanel,supplemental}              Figures 1–5, SF1–43
-verification/                                      verifier suite + regression baseline
-metadata/, docs/, config/
-```
-
-Two defects fixed by construction: the §4 pipeline no longer sits under `results/` (whose bare
-gitignore rule caused four near-misses), and the model is in-tree, removing the absolute
-cross-repo `source()` that made Figure 5 panel A unrunnable off one laptop.
-
-**Producer recovery.** `05s_orfik_scan.R`, `05t_ref_cds_features.R` and
-`05u_paralog_annotation.R` were restored from history after a 2026-07-11 cleanup deleted them as
-"legacy report feeders". They are the sole producers of the model's ORF feature inputs; without
-them the model chain had no producer at all. A sweep of all 11 scripts named in `PIPELINE.md`
-found no further gaps — `05l`/`05v` are correctly absent (deprecated-report feeders only) and
-`04` was a stale reference, superseded by the present `03b_rebuild_cache.R`.
-
----
-
-## 5. The rewrite — execution plan
-
-Two changes applied in **one pass**, because they touch the same files and separating them would
-force two full re-verifications.
-
-### 5.1 Path portability
-
-**Measured:** 17 of 59 files under `analysis/upstream/` carry `/udd/reyle/...`; `05s` carries an
-absolute FASTA path; the `verify_section*.R` scripts carry `~/claude_projects/nmd`.
-
-1. `config/paths.yml` — one root per input class (`DEPOSIT`, `CACHE`, `OUT`), defaulting to
-   `./data_deposit/` so an unpacked Zenodo record works with no edits.
-2. `R/load_config.R` plus a Python equivalent to resolve them.
-3. Rewrite every hardcoded path to resolve through config.
-4. **CI linter** failing on `/udd/`, `/proj/`, `/home/`, `~/claude_projects` in tracked code —
-   without it, absolute paths creep back.
-
-### 5.2 4-cell-type native
-
-1. Delete the sample-dropping blocks (`Isoform_Level_Quantification.Rmd`,
-   `NMD_shortread_dge_fullmodel_2026.5.5.Rmd`). The deposited matrices contain only the four
-   cell types, so these are already no-ops.
-2. Keep `CELL_TYPES` as a **scope declaration** (it orders factors and documents scope); remove
-   the *drop* framing and references to other conditions across ~32 files.
-3. Normalise cell-type naming to `AT2`/`LAE` throughout. The deposit already uses canonical
-   names, removing the alias-patching that `resolve_mash_col()`, `resolve_sr()` and
-   `CELLTYPE_MAP` currently need.
-4. Update READMEs and in-repo docs to state four-cell-type scope.
-
-### 5.3 Pre-declared expected differences
-
-Recorded in advance so they are predictions, not post-hoc excuses:
-
-- `verify_section3_p1.txt` — **exactly two lines** change (`DGEList dimensions:` and
-  `CPM matrix:`), because the deposit is trimmed to observed isoforms; values become 614992.
-- **All nine numeric-result lines must be identical.** Anything else differing is a defect.
-
----
-
-## 6. Verification gates
-
-### 6.1 Regression check — gate on the rewrite
-
-`verification/capture_verification_baseline.sh --check`. Baseline captured 2026-07-24 before any
-edit: 9 scripts, 358 lines, covering ~47 verified claims across §1–§3. Requirement: every number
-identical apart from §5.3's two declared lines.
-
-⚠️ The script's baseline path must be updated for the new layout (`reproducibility/` →
-`verification/`) before `--check` will run there.
-
-### 6.1b Stage-wise intermediate comparison — the strongest available check
-
-**Added 2026-07-25 (Pete):** *"intermediate data is available still for you to verify against,
-even if it is not made publicly available."*
-
-The deposit ships Tier 1 only, but **we retain every Tier 2 intermediate locally**. They are not
-public, and they are not needed by a reader — but they are a known-good reference for us. That
-converts verification from end-to-end into **stage-by-stage**, which matters because under
-decision 1 there are no deposited baselines, so an end-to-end-only check would surface drift at
-the final number and force bisecting a six-stage pipeline to locate it.
-
-Available references:
-
-| Stage | Reference | Held |
+| Input | Needed by | Consequence |
 |---|---|---|
-| DGEList construction | `nmd_fig_data/dge_*.rds` | 5 objects |
-| limma + mashr | per-CT and shared mashr CSVs | 20 files |
-| Isopair pipeline | `data_mashr/analysis_cache/` | 83 objects |
-| ORF scan (`05s`/`05t`/`05u`) | `orfik_scan`, `ref_cds_features_all`, `paralog_genes` | 3 objects |
-| Model | trained weights; HDF5 and interpretability exports on Explorer | — |
+| `sub.isoforms.gtf` | `Figures/make_gene_examples.R:26` → **Figure 1 C/D/E** | Three main-figure panels unreproducible (B7 — was §7 "open item B") |
+| `nmd_isocall.isoforms.gtf.gz` | `01_prepare_data_mashr.R:41`, `scripts/core/02_extract_isoform_structures.R:86` | §4 cannot run from the deposit |
+| `gencode.v49...annotation.gff3.gz` | `02_extract_isoform_structures.R:89`, `04_extract_cds_annotations.R:82` | ditto; external download, undocumented |
+| `isoseq/collapse/merge-collapsed.gff` | `02_extract_isoform_structures.R:90` | ditto |
+| `FB_MV_pheno_2025.8.2.csv`, `DD_DO_AT_pheno_2025.8.15.csv` | `NMD_shortread_dge_fullmodel:125,131` | no SR DGEList → §1 and §3 SR chains dead |
+| `tx_summary_6ct.tsv` | `model/relabel_tx_summary_4ct.R:45` | no shipped producer; model labels unbuildable |
 
-**Procedure.** After the rewrite, regenerate each stage *from the deposit* and compare against
-its stored reference — dimensions, dimnames and values, not just summary statistics. The first
-stage that differs localises the defect exactly.
-
-**This closes or de-risks three items that were otherwise deferred:**
-
-- **§7 E (ORFik version risk) becomes testable now.** Run `05s_orfik_scan.R` against the
-  deposited FASTA with ORFik 1.30.2 and compare to the existing `orfik_scan.rds`. If identical,
-  the risk is closed before publication rather than discovered at the clean-room test. If it
-  differs, we learn that while the deposited weights and reference objects still exist.
-- **§4 and §5 gain regression coverage.** The nine `verify_section*.R` scripts cover §1–§3 only,
-  so the regression check in §6.1 cannot detect a rewrite that breaks Isopair or the model.
-  Comparing the Isopair cache (83 objects) and the model inputs closes that hole.
-- **Trim safety extends beyond what was tested.** Trimming to observed features was verified
-  neutral for `filterByExpr` and percent-output-lost; comparing regenerated Isopair and model
-  intermediates tests it for §4 and §5, where proportions over a feature universe could shift.
-
-**Caveat.** These references are local and unpublished, so this check is available to us and not
-to a reader. It strengthens our confidence before minting the DOI; it does not replace §6.2,
-which is what establishes the claim for anyone else.
-
-### 6.2 Clean-room test — gate on the DOI
-
-Fresh clone into an empty directory on a machine with no Channing access; download the Zenodo
-record; unpack to `./data_deposit/`; run `REPRODUCTION.md` end to end. Compare **numbers exactly**
-and **figures by PNG byte-compare** (PDFs embed a creation timestamp and never match).
-
-**Success = a fresh clone reproduces §1–§5 with zero path edits.** Until it passes, the honest
-claim is "the code is archived", not "the paper is reproducible". Under decision 11 there is no
-history to fall back on, so this gate is not optional.
+v1's producer sweep covered only `PIPELINE.md`'s 11 isopair scripts. **§5.1 extends it to
+`scripts/core/`, `analysis/upstream/` and `model/`.**
 
 ---
 
-## 7. Open items
+## 5. Rebuilding the instrument — before any rewrite
+
+### 5.1 Complete the input audit
+
+Enumerate every input of every shipped script; classify as deposited / produced-by-shipped-code
+/ **missing**. Every missing entry is resolved, or named in `REPRODUCTION.md` as out of scope.
+
+### 5.2 Make the verifiers survive the rewrite (B2)
+
+`verify_section3_p2.R` and `verify_section2_claims_210_211.R` purl their target Rmds and patch
+them by regex (`^proj <-`, `^resolve_mash_col <- function`, the `saveRDS(m, file.path(OUT_DIR`
+truncation anchor). §5.3 destroys all of those, so the measuring instrument breaks — and once
+edited to work again, the baseline it produced is no longer a baseline.
+
+**Fix:** give the Rmds a stable, documented entry point (a `params:` block or sourced config
+object) that the verifiers target by name and the rewrite may not rename. Refactor the
+verifiers onto it, **then** re-baseline.
+
+### 5.3 Rebuild the baseline so it measures the rewrite (B1)
+
+New **gate 6.0**: regenerate the DGELists and mashr CSVs *from the deposit with the rewritten
+code*, and bit-compare against the pre-rewrite copies retained locally. Claim-level verifiers
+run only after that passes, and against deposit-derived inputs rather than `nmd_fig_data/`.
+
+Also fix the harness (`capture_verification_baseline.sh`):
+
+- **stop stripping warnings** (S2) — the rewrite changes factor handling and join keys, exactly
+  what warnings would surface; sort/dedupe them instead of discarding
+- fix the two dead filters (S3) — `select\(\) returned` never matches the real
+  `'select()' returned …`, and unanchored terms (`tidyverse`, `geom_smooth`) can delete
+  legitimate result lines
+- update `SCRIPTS` for the new layout (`code/upstream/` → `verification/`)
+
+### 5.4 Add §4/§5 fixtures (S4)
+
+The nine verifiers cover §1–§3 only; §5's headline AUPRC 0.833 is unguarded. Pin, at minimum:
+Isopair `data_mashr/*.rds` dimensions and column checksums; `tx_summary.tsv` label counts;
+and `predictor_comparison/metrics_summary_2026.7.11.tsv` as an expected-output fixture.
+
+### 5.5 Compute the expected diff mechanically (B3)
+
+v1 predicted "exactly two lines". At least a third changes —
+`isoform x ct x donor rows: 8388536` → `7994896` (645,272 × 13 → 614,992 × 13) — and
+`gene-level CPM matrix: 30355` and the `unfiltered DGEList:` line are also at risk.
+**Generate the literal expected diff by running the current verifiers against deposit-derived
+inputs, and paste it into the plan.** A wrong prediction is worse than none: several
+unexplained diffs arriving together invites absorbing them all as "expected".
+
+---
+
+## 6. The rewrite — declared work
+
+### 6.1 Sample-name interface (B4) — newly declared
+
+Rewrite the three parsers to consume `<donor>_<treatment>_<CT>` canonical columns directly,
+deleting the `Sample##` reformat and the de-canonicalisation in
+`NMD_shortread_dge_fullmodel:108-135`.
+
+### 6.2 Hard-stop guards (B5) — newly declared
+
+v1 asserted the sample-dropping blocks were "already no-ops". They are not:
+`01_prepare_data_mashr.R:93-98` hard-`stop()`s when it cannot find two named `DO` samples, and
+`:106-113` asserts `setequal(unique(ct), c("AT","DD","FB","MV"))` — both fatal against the
+deposit. **Audit every `stop()`/`stopifnot()` referencing sample counts or cell-type codes.**
+
+### 6.3 Factor-order contract (B8)
+
+`relevel(factor(pheno$ct), ref="LAE")` gives design order `LAE, AT2, FB, MV`; display
+constants use `AT2, LAE, FB, MV`; `makeContrasts` hardcodes the former and
+`NMD_shortread_dge_fullmodel:296-297` pairs names **positionally**. Unifying them under one
+constant would silently swap the AT2 and LAE result tables. Keep two named constants —
+`CT_DESIGN_REF <- "LAE"` and `CT_DISPLAY_ORDER <- c("AT2","LAE","FB","MV")` — and never
+substitute one for the other.
+
+### 6.4 Cell-type code mapping must fail loudly (S1)
+
+Three regimes coexist: consumers expect `at2`/`lae`, `model/relabel_tx_summary_4ct.R:14`
+expects `at`/`dd`, and the tracked CSVs use `AT`/`DD`.
+`Isoform-Level_DIE_Summary_p1.Rmd:129-135` **drops unmapped rows with a message**, so a
+half-finished rename yields tables silently computed over two cell types. Add
+`stopifnot(all(codes %in% names(CELLTYPE_MAP)))` and assert four cell types at each load site
+**before** renaming anything.
+
+### 6.5 Path portability — rescoped (S5, S6)
+
+v1 said "17 of 59 files". Measured: **119 files carry an absolute path**; 54 carry
+`/Users/petecastaldi/...`, of which 51 match none of v1's patterns; **15 `setwd()` calls** point
+at a directory that no longer exists; and `model/` uses a fifth root
+(`/projects/talisman/...`, `/home/p.castaldi/cc/...`).
+
+- Linter regex `^[^#]*["'](/|~/)` plus an explicit `setwd(` ban, with a small allowlist.
+- Config needs a **fourth root** beyond `DEPOSIT`/`CACHE`/`OUT`: the §1–§3 → §4/§5 handoff
+  intermediates (`nmd_fig_data/`, `isocall_dge/mashr/`, `shortread_dge/mashr/`), with a
+  documented build order.
+
+### 6.6 4-cell-type native
+
+Delete the drop blocks (after 6.2's audit), keep `CELL_TYPES` as a scope declaration only
+(never as factor order — 6.3), normalise naming to `AT2`/`LAE`, update in-repo docs.
+
+---
+
+## 7. Verification gates
+
+| Gate | Requirement |
+|---|---|
+| **6.0 Intermediate regeneration** *(new)* | DGELists and mashr CSVs regenerated from the deposit **bit-compare** to the retained pre-rewrite copies |
+| **6.1 Regression check** | Every number identical apart from §5.5's mechanically-computed expected diff |
+| **6.1b Stage-wise comparison** | Regenerate each stage from the deposit and diff against retained references — 5 DGELists, 20 mashr CSVs, 83 Isopair cache objects, 3 ORF-scan objects, model inputs. Localises a defect to a stage instead of a final number. These references are ours, not a reader's. |
+| **6.2 Clean-room test** — *gate on the DOI* | Fresh clone, no Channing access, unpack the Zenodo record, run `REPRODUCTION.md`. Numbers exact; figures by **PNG** byte-compare (PDFs embed timestamps). |
+
+⚠️ **`REPRODUCTION.md` must be written before 6.2, not after** (M4) — it is the artifact the
+clean-room test executes. v1 sequenced it wrongly.
+
+⚠️ **§1–§3 numbers were produced in Yul's Channing environment** (`/udd/reyle/Rlibs`), so
+"reproduce exactly" is achievable against local re-derivations, not against the manuscript
+itself. State this plainly in `REPRODUCTION.md` (S8).
+
+---
+
+## 8. Open items
 
 | # | Item |
 |---|---|
-| A | **`05_final_report_mashr.Rmd` — recommend excluding.** Deprecated, cannot run from a clean checkout, its feeders (`05l`/`05v`) are intentionally absent, and no shipped figure reads its outputs. Pete's call. |
-| B | **Example-gene annotation** (`srsf.*`, `sub.isoforms.gtf`) is not on this laptop. Audit whether any figure reads it; if none does, close decision 4 as "not needed". |
-| C | **`REPRODUCTION.md` not yet written** — the runbook mapping claim/figure → script → expected output, stating plainly what is *not* reproducible (M2, model retraining, the Tan download). |
-| D | **Zenodo metadata before publishing** (DOI `10.5281/zenodo.21544337` reserved): expand author given-names, add ORCIDs, add related-identifier links to the code DOI once minted. Immutable at mint. |
-| E | **ORFik version risk** — now directly testable via §6.1b: regenerate `05s` from the deposited FASTA and diff against the retained `orfik_scan.rds`. Do this early; it is cheap and closes the risk before the DOI. |
-| F | **GEO GSE329233** must be reduced to the four cell types' reads, after verification (Pete, 2026-07-25). |
-| G | 📌 **Draft `CORRECTNESS_PLAN.md` (Task 2) once the rewrite is complete.** Deliberately deferred (Pete, 2026-07-25) so it can be written against the finished layout rather than the current one. It should carry over: the 14 open findings in `paper/VERIFICATION_ISSUES.md`; the §1/§2 remainder (figure-render claims 1.8, 1.15, 2.7, 2.8, 2.16, 2.22, plus 1.1 and 2.20); re-verification of §4 and §5 under the 5-step protocol; and the rule that any correctness fix altering a **computation** requires re-capturing the regression baseline. |
+| A | `05_final_report_mashr.Rmd` — recommend excluding (deprecated, non-runnable, no shipped figure reads it). |
+| C | `REPRODUCTION.md` unwritten — resequenced ahead of 6.2. |
+| D | Zenodo metadata before publishing: author given-names, ORCIDs, related-identifier links. Immutable at mint. Re-upload the fixed `MANIFEST.sha256`. |
+| E | ORFik version — **pre-check now**: regenerate `05s` under 1.30.2 and compare row counts/hashes to the cached `orfik_scan.rds`, rather than waiting for 6.2 (M4). |
+| F | GEO GSE329233 reduced to four cell types, after verification. |
+| G | 📌 Draft `CORRECTNESS_PLAN.md` (Task 2) once the rewrite is complete. |
+| H | `ENVIRONMENT.md` lists msigdbr **25.1.1** in one table and **26.1.0** in another; these cannot both have produced Tables 3–4 (S8). Also records a `pathview` KEGG template fetched from the network at runtime — a live dependency inside the reproduction path. |
+| I | `model/relabel_tx_summary_4ct.R` docstring says non-NMD is `adj.P.Val > 0.50`; the code sets `0.30` (M3). This defines the model's negative class. Reconcile before touching the file. |
