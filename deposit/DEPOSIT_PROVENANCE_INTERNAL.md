@@ -48,10 +48,9 @@ Both scripts self-verify and abort on mismatch. Confirmed 2026-07-24:
 | `nmd_lungcells_counts_4ct.csv` | counts vs `dge_isoform_longread_2026.3.3` | **identical** |
 | `salmon_gene_counts_4ct.csv` | counts vs `dge_shortread_gene_2026.3.2` | **identical** |
 
-All 645,272 isoforms are retained in the isoform matrix, including those with zero counts in
-these samples — the percent-transcriptional-output-lost measure and the
-cell-type-restricted-expression analyses are defined over the full universe, so trimming would
-change published results.
+All 645,272 isoforms are retained in the isoform matrix. (An earlier version of this note
+claimed trimming would change published results. That was wrong — it was tested and is lossless.
+The actual reasons for retaining them are below.)
 
 ## Open action — GEO
 
