@@ -1,5 +1,8 @@
 # Verification issues — running list
 
+> **Collaborator-facing summary:** `paper/MANUSCRIPT_REVIEW_FOR_YUL.md` folds the §1–§3
+> findings into one document for Yul. This file stays the internal, exhaustive record.
+
 Open items surfaced by the 5-step verification passes, with routing. **Living document**
 — append as issues are found, strike through when resolved. Started 2026-07-24 during the
 §3 pass.
