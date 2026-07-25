@@ -20,6 +20,34 @@ nmd_lung_longread_2026  (§1–§5)  ·  Isopair  ·  Isocall_v1
 every §1–§5 number, table and figure
 ```
 
+
+---
+
+## 0. Scope — this plan is Task 1 of two
+
+Pete, 2026-07-25: these are two tasks and should be sequential.
+
+| | Task 1 — **Reproducibility / fidelity** (this plan) | Task 2 — **Correctness** (`CORRECTNESS_PLAN.md`) |
+|---|---|---|
+| Question | Does the rewritten code, run from the deposit, produce **the same** numbers as before, and do those match the paper? | Are those numbers **right**? |
+| Success | Every number identical | A wrong number is found and **changed** |
+| Method | Regression baseline · stage-wise intermediate comparison · clean-room test | The 5-step verification protocol; adversarial re-derivation |
+| Status | Baseline captured; rewrite next | §1–§3 done (14 findings); §4 46/46; §5 ~30/31 |
+
+**Why they must not run concurrently.** Their success criteria are contradictory: Task 1 requires
+numbers to stay identical, Task 2 may require a number to change. Interleaved, a genuine
+regression is indistinguishable from a deliberate correction, and the regression baseline — the
+only instrument proving the rewrite is faithful — becomes unusable.
+
+**Ordering.** Task 1 first, against **frozen analysis semantics**: the rewrite changes only paths
+and cell-type scope, never a computation. Task 2 then proceeds against the rewritten codebase,
+where any change to a result is deliberate, reviewed, and followed by re-capturing the baseline.
+
+**Practical consequence.** Several open correctness findings (F-6 pooled "83%", F-9 DNA-theme
+enrichment, F-11 the *SHMT2* example) are with Yul. Those that alter only prose are harmless to
+Task 1. **Any that alter a computation must wait** until the rewrite is verified, or be applied
+before the baseline is re-captured — not in between.
+
 ---
 
 ## 1. Status
