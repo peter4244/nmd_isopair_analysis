@@ -1,6 +1,7 @@
-# New analysis repo — file manifest (draft)
+# `nmd_lung_longread_2026` — file manifest
 
-**Drafted 2026-07-24.** Proposal for review. Nothing created or moved yet.
+**Drafted 2026-07-24. Decisions settled by Pete the same day — see §3.** Repo name:
+**`nmd_lung_longread_2026`**. Nothing created or moved yet.
 
 **Principle (Pete):** the repo contains the code that produced the paper's results — **and not
 more**. Project history, exploratory lineage, and internal process documents are out of scope,
@@ -70,26 +71,22 @@ Two structural fixes are folded in:
 | `paper/VERIFICATION_ISSUES.md`, `paper/MANUSCRIPT_REVIEW_FOR_YUL.md` | 2 | ⚠️ **Must not ship** — these enumerate unresolved manuscript problems by gene and cell type. Internal only. |
 | `PJC_Tables/`, `lit_review/`, `isocall_dge/limma/README.md` | 4 | Manuscript tables (`.xlsx`, plus an `~$` lock-file artifact), a literature review, and a pointer doc. Not code. |
 
-**Excluded total ≈ 234 files.**
+**Excluded total ≈ 234 files.** (ptc 19 and ptcneg 5 confirmed excluded.)
 
 ---
 
-## 3. Decisions needed before I build it
+## 3. Decisions — SETTLED (Pete, 2026-07-24)
 
-1. **`verification/`** — include the verifier suite and my `verify_section*.R` scripts? They are
-   not "code that produced the results"; they are code that *proves* the results. Given your
-   condition that the correctness work must be thorough, I'd argue they belong — and they make
-   the deposit self-checking. **Recommend include.**
-2. **`docs/results_to_code_map.md`** — the claim → script trace. Not a producer, but it is the
-   single most useful file for a reader trying to locate the code behind a number.
-   **Recommend include**, after stripping the internal verification-status annotations.
-3. **`Version_6.0/results/ptc/`** (19) — confirm exclusion. It is tracked and has METHODS/RESULTS
-   docs, but it is rmats-based and absent from the manuscript.
-4. **`code/ptcneg_go_handoff/`** (5) — confirm exclusion.
-5. **Repo name.** `nmd_isopair_analysis` no longer describes a repo spanning §1–§5 with the DL
-   model. Suggest something like `nmd-lung-nmd-2026` or `nmd_lungcells_2026`.
-6. **Isopair vendoring** — `analysis/isopair/` is the *wrapper + drivers*; the `Isopair`
-   **package** stays its own repo with its own DOI. Confirm that split is what you want.
+1. ✅ **`verification/` — INCLUDE.** The verifier suite + `verify_section*.R`. Makes the deposit
+   self-checking, which is what Pete's "provided the correctness work is thorough" condition
+   requires.
+2. ✅ **`docs/results_to_code_map.md` — INCLUDE**, after stripping the internal
+   verification-status annotations (which reference open manuscript issues).
+3. ✅ **`Version_6.0/results/ptc/` (19) — EXCLUDE.**
+4. ✅ **`code/ptcneg_go_handoff/` (5) — EXCLUDE.**
+5. ✅ **Repo name: `nmd_lung_longread_2026`.**
+6. ✅ **Isopair split confirmed** — `analysis/isopair/` holds the wrapper + drivers; the
+   `Isopair` **package** remains its own repo with its own DOI.
 
 ---
 
