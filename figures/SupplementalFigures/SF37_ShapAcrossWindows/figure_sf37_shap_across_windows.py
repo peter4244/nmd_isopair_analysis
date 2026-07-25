@@ -35,10 +35,12 @@ from ggplot_style import (
     panel_letter,
 )
 
-apply_ggplot_rcparams()
-
 NATIVE_W = 11.5
 BODY_FS = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick sizes, and the local BODY_FS
+# shadows the module constant (see apply_ggplot_rcparams docstring).
+apply_ggplot_rcparams(BODY_FS)
 
 DATA = HERE / "data"
 
@@ -59,7 +61,7 @@ def smooth(series, window=11):
 
 
 def draw_panel(ax, agg, *, codon_label):
-    style_axes_ggplot(ax)
+    style_axes_ggplot(ax, body_fs=BODY_FS)
     ax.plot(agg["relative_position"], smooth(agg["nmd_abs_shap"]),
             color=NMD_COLOR, linewidth=1.6, label="NMD susceptible", zorder=3)
     ax.plot(agg["relative_position"], smooth(agg["ctrl_abs_shap"]),
@@ -86,8 +88,13 @@ def main():
     facet_header(axes[0], "Start codon window", height=0.08)
     facet_header(axes[1], "Stop codon window",   height=0.08)
 
-    panel_letter(axes[0], "A", x=-0.07, y=1.14)
-    panel_letter(axes[1], "B", x=-0.07, y=1.14)
+    # Named coords so both letters stay structurally symmetric. y raised
+    # from 1.14 → 1.19 on 2026-07-25: at the corrected BODY_FS (18 pt, was
+    # 14) panel B's top ytick "0.05" grew to within 0.3 px of the letter.
+    # Panel B carries one more tick than A, so A had cleared it by 17 px.
+    LETTER_X, LETTER_Y = -0.07, 1.19
+    panel_letter(axes[0], "A", x=LETTER_X, y=LETTER_Y)
+    panel_letter(axes[1], "B", x=LETTER_X, y=LETTER_Y)
 
     # Shared legend in the bottom margin — the |SHAP| curves fill both
     # panels, so an in-panel legend can't clear the data; both panels share

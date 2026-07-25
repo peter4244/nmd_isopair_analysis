@@ -1100,6 +1100,99 @@ def assert_style_symmetric(fig, *, tolerance_pt=0.5):
         )
 
 
+def assert_tick_title_hierarchy(fig, *, tolerance_pt=0.5):
+    """Raise if any tick label renders LARGER than an axis title.
+
+    The typographic invariant: an axis title outranks its tick labels, so
+    within an axes ``min(axis titles) >= max(tick labels)``. Ticks may sit
+    below the titles — a deliberate, uniform reduction is legitimate
+    hierarchy — but they may never rise above them.
+
+    Complements `assert_style_symmetric`, which compares each role across
+    *sibling* axes and returns early on a single-axes figure. This one
+    compares roles *within* each axes, so it fires on single-panel
+    figures too.
+
+    Two real defects this catches:
+
+    1. **The shadowing bug.** A panel sets ``BODY_FS =
+       docx_body_fs(NATIVE_W)`` — the prescribed docx-scale pattern —
+       which shadows the module-level ``BODY_FS``. Explicit
+       ``fontsize=BODY_FS`` args on ``set_xlabel`` / ``set_ylabel`` use
+       the local value while tick labels, driven by rcParams, keep the
+       module default. Where ``NATIVE_W < ~9.3``, ticks come out larger
+       than titles. Found 2026-07-25 in 6 SF panels; SF31 had 12 pt
+       titles under 14 pt ticks.
+    2. **Inverted hierarchy.** An axis title explicitly set to
+       ``BODY_FS - 2`` while ticks stay at ``BODY_FS`` (SF40).
+
+    Deliberate reductions pass unflagged: SF41/SF43 set ticks to
+    ``BODY_FS - 2``, and SF33/SF36 drop tilted 2-row category labels to
+    ``BODY_FS - 4`` toward `PAPER_FLOOR_PT`. Both keep titles on top, so
+    both are legitimate and need no opt-out. That is deliberate — an
+    exceptions list nobody revisits rots faster than a rule with none
+    (see `feedback_validator_surgical_skip.md`).
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+    tolerance_pt : float
+        Slack before a tick that exceeds a title is flagged. Default
+        0.5 pt, which absorbs float drift without hiding a 1 pt error.
+    """
+    fig.canvas.draw()
+
+    def _first_visible_size(labels):
+        for t in labels:
+            if t.get_visible() and t.get_text() and t.get_text().strip():
+                return t.get_fontsize()
+        return None
+
+    offenders = []
+    for i, ax in enumerate(fig.axes):
+        if not getattr(ax, "axison", True):
+            continue
+        roles = {}
+        sz = _first_visible_size(ax.get_xticklabels())
+        if sz is not None:
+            roles["xtick"] = sz
+        sz = _first_visible_size(ax.get_yticklabels())
+        if sz is not None:
+            roles["ytick"] = sz
+        if ax.xaxis.label.get_text() and ax.xaxis.label.get_text().strip():
+            roles["xlabel"] = ax.xaxis.label.get_fontsize()
+        if ax.yaxis.label.get_text() and ax.yaxis.label.get_text().strip():
+            roles["ylabel"] = ax.yaxis.label.get_fontsize()
+
+        ticks = {r: s for r, s in roles.items() if r in ("xtick", "ytick")}
+        titles = {r: s for r, s in roles.items() if r in ("xlabel", "ylabel")}
+        if not ticks or not titles:
+            continue  # nothing to rank against
+
+        biggest_tick = max(ticks.values())
+        smallest_title = min(titles.values())
+        if biggest_tick - smallest_title > tolerance_pt:
+            detail = ", ".join(
+                f"{r}={roles[r]:g}pt" for r in sorted(roles, key=roles.get)
+            )
+            offenders.append(
+                f"  axes {i}: {detail}  "
+                f"(tick {biggest_tick:g}pt exceeds title {smallest_title:g}pt "
+                f"by {biggest_tick - smallest_title:g}pt)"
+            )
+
+    if offenders:
+        raise AssertionError(
+            "Tick labels render LARGER than an axis title — an axis title "
+            "must outrank its ticks. Two usual causes: (a) BODY_FS = "
+            "docx_body_fs(NATIVE_W) was passed to set_xlabel/set_ylabel but "
+            "NOT to apply_ggplot_rcparams(BODY_FS) or style_axes_ggplot(ax, "
+            "body_fs=BODY_FS), so ticks kept the module default; (b) an axis "
+            "title was explicitly set below BODY_FS while ticks stayed at "
+            "BODY_FS:\n" + "\n".join(offenders)
+        )
+
+
 # ============================================================================
 # assert_docx_readable
 #

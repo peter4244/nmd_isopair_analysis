@@ -47,7 +47,7 @@ from ggplot_style import (
 NATIVE_W = 8.0
 BODY_FS = docx_body_fs(NATIVE_W)
 
-apply_ggplot_rcparams()
+apply_ggplot_rcparams(BODY_FS)
 
 DATA = HERE / "data"
 
@@ -140,7 +140,7 @@ def main():
 
     fig, ax = plt.subplots(figsize=(NATIVE_W, 5.0))
     fig.subplots_adjust(left=0.12, right=0.92, top=0.86, bottom=0.14)
-    style_axes_ggplot(ax)
+    style_axes_ggplot(ax, body_fs=BODY_FS)
 
     ax.scatter(x, y, s=6, alpha=0.18, color="#3a3a3a",
                 edgecolors="none", zorder=3, rasterized=True)

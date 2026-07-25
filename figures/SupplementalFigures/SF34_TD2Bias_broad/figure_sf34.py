@@ -23,12 +23,15 @@ from ggplot_style import (
     apply_ggplot_rcparams, style_axes_ggplot, panel_letter, docx_body_fs,
     render_and_validate, TITLE_C, AXIS_C,
 )
-apply_ggplot_rcparams()
 # Native figure width — passed through to docx_body_fs so BODY_FS lands at
 # the 10 pt docx-scale target regardless of native render size, and to
 # assert_docx_readable so the 9 pt floor is enforced against the right scale.
 NATIVE_W = 11.0
 BODY_FS  = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick/legend/title sizes, and the
+# local BODY_FS shadows the module constant (see apply_ggplot_rcparams).
+apply_ggplot_rcparams(BODY_FS)
 # Read from the shared TD2BiasEvidence/data dir that data_export.R writes to
 # (the local ./data was a pre-reorg leftover; see REFERENCE_FLOOR_PLAN.md).
 DATA = HERE.parents[1] / "TD2BiasEvidence" / "data"

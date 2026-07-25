@@ -38,13 +38,21 @@ from ggplot_style import (
     HEADER_FS,
 )
 
-apply_ggplot_rcparams()
-
 NATIVE_W = 6.5
 # Single wide panel with ample whitespace — target 13 pt (below the ~14 pt
 # ceiling) so axis titles read well; the default 10 pt floor looked
 # undersized against the rcParams-default tick labels (Pete 2026-07-10).
+#
+# NB 2026-07-25: that comparison was against ticks stuck at the module's
+# 14 pt — the shadowing bug, now fixed. Ticks follow BODY_FS, so the
+# original reason for target_pt=13 no longer applies. Kept because 13 pt
+# was a visual call on the rendered panel, not a derived value; revisit
+# if this figure is ever restyled.
 BODY_FS = docx_body_fs(NATIVE_W, target_pt=13)
+
+# Must follow BODY_FS: rcParams drive tick/legend/title sizes, and the
+# local BODY_FS shadows the module constant (see apply_ggplot_rcparams).
+apply_ggplot_rcparams(BODY_FS)
 
 DATA = HERE / "data"
 

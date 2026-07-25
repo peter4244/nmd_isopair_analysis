@@ -31,10 +31,12 @@ from ggplot_style import (
     HEADER_FS,
 )
 
-apply_ggplot_rcparams()
-
 NATIVE_W = 6.5
 BODY_FS = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick sizes, and the local BODY_FS
+# shadows the module constant (see apply_ggplot_rcparams docstring).
+apply_ggplot_rcparams(BODY_FS)
 
 DATA = HERE / "data"
 
@@ -48,7 +50,7 @@ def main():
     fig, ax = plt.subplots(figsize=(NATIVE_W, 4.0))
     fig.subplots_adjust(left=0.11, right=0.90, top=0.88, bottom=0.14)
 
-    style_axes_ggplot(ax)
+    style_axes_ggplot(ax, body_fs=BODY_FS)
 
     # Histogram with 1-count bins
     counts = iso["n_isoforms"].astype(int)

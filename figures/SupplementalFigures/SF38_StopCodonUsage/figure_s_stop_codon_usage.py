@@ -34,10 +34,13 @@ from ggplot_style import (
     CONTROL_COLOR,
     TITLE_C,
 )
-apply_ggplot_rcparams()
 
 NATIVE_W = 6.5
 BODY_FS = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick/legend/title sizes, and the
+# local BODY_FS shadows the module constant (see apply_ggplot_rcparams).
+apply_ggplot_rcparams(BODY_FS)
 
 DATA = Path("/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/"
             "results_4ct/stop_codon_freq_by_class_sf37.tsv")

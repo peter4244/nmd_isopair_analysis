@@ -29,12 +29,15 @@ from ggplot_style import (
     TITLE_C,
     AXIS_C,
 )
-apply_ggplot_rcparams()
 
 # Native figure width — passed through to docx_body_fs so BODY_FS lands at
 # the 10 pt docx-scale target regardless of native render size.
 NATIVE_W = 12.0
 BODY_FS  = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick/legend/title sizes, and the
+# local BODY_FS shadows the module constant (see apply_ggplot_rcparams).
+apply_ggplot_rcparams(BODY_FS)
 
 # Shared export dir data_export.R writes to (local ./data was a pre-reorg leftover).
 DATA = HERE.parents[1] / "CDSand3UTR_GENCODEonly" / "data"

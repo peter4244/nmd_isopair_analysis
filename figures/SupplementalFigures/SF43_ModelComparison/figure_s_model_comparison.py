@@ -40,10 +40,13 @@ from ggplot_style import (
     docx_body_fs,
     render_and_validate,
 )
-apply_ggplot_rcparams()
 
 NATIVE_W = 12.0
 BODY_FS = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick/legend/title sizes, and the
+# local BODY_FS shadows the module constant (see apply_ggplot_rcparams).
+apply_ggplot_rcparams(BODY_FS)
 
 ANALYSIS = HERE.parents[3] / "code" / "nmd_predictor_comparison"
 SCORES = ANALYSIS / "per_isoform_scores_2026.7.11.tsv"

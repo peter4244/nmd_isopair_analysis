@@ -43,10 +43,12 @@ from ggplot_style import (
     panel_letter,
 )
 
-apply_ggplot_rcparams()
-
 NATIVE_W = 11.5
 BODY_FS = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick sizes, and the local BODY_FS
+# shadows the module constant (see apply_ggplot_rcparams docstring).
+apply_ggplot_rcparams(BODY_FS)
 
 DATA = HERE / "data"
 
@@ -64,7 +66,7 @@ def load(branch):
 
 
 def draw_panel(ax, df, *, codon_label):
-    style_axes_ggplot(ax)
+    style_axes_ggplot(ax, body_fs=BODY_FS)
     ax.axvline(0, color="#555555", linewidth=0.8, linestyle=":", zorder=2)
     for cls, color, label in [
         ("NMD",     NMD_COLOR,     "NMD susceptible"),

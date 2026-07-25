@@ -38,10 +38,13 @@ from ggplot_style import (
     TITLE_C,
     AXIS_C,
 )
-apply_ggplot_rcparams()
 
 NATIVE_W = 11.0
 BODY_FS = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick/legend/title sizes, and the
+# local BODY_FS shadows the module constant (see apply_ggplot_rcparams).
+apply_ggplot_rcparams(BODY_FS)
 LABEL_FS = BODY_FS - 2
 
 DATA_ATTN = Path("/Users/petecastaldi/claude_projects/NMD_orf_model_v5_4ct/"

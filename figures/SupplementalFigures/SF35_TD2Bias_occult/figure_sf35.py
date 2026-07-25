@@ -24,9 +24,12 @@ from ggplot_style import (
     apply_ggplot_rcparams, style_axes_ggplot, panel_letter, docx_body_fs,
     render_and_validate, TITLE_C, AXIS_C,
 )
-apply_ggplot_rcparams()
 NATIVE_W = 11.0
 BODY_FS  = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick/legend/title sizes, and the
+# local BODY_FS shadows the module constant (see apply_ggplot_rcparams).
+apply_ggplot_rcparams(BODY_FS)
 DATA = HERE.parents[1] / "TD2BiasEvidence" / "data"
 
 # Panel A uses the Panel B colour regime: Reference = blue, TD2 = salmon.

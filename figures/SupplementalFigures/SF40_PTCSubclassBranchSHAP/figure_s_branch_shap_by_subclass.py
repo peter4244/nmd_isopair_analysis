@@ -58,11 +58,16 @@ from ggplot_style import (
     TITLE_C as C_TITLE,
     AXIS_C as C_AXIS,
 )
-apply_ggplot_rcparams()
-
 NATIVE_W = 15.0
 BODY_FS = docx_body_fs(NATIVE_W)
 HEADER_FS = BODY_FS + 4
+
+# Must follow BODY_FS/HEADER_FS: rcParams drive tick sizes, and the local
+# BODY_FS shadows the module constant (see apply_ggplot_rcparams docstring).
+# This panel happens to size every text element explicitly, so the bare
+# call was harmless — but anything added later would have inherited the
+# module's 14 pt instead of this figure's 23 pt.
+apply_ggplot_rcparams(BODY_FS, HEADER_FS)
 
 BRANCH_COLORS = {
     "Structural": "#d95f02",
@@ -138,8 +143,11 @@ def draw_panel(ax, summary: pd.DataFrame, group_label: str, n: int, y_top: float
 
     ax.set_xticks(list(x))
     ax.set_xticklabels([BRANCH_DISPLAY[b] for b in branches],
-                       fontsize=BODY_FS, color=C_TITLE)
-    ax.tick_params(axis="y", labelsize=BODY_FS, colors=C_TITLE)
+                       fontsize=BODY_FS - 2, color=C_TITLE)
+    # Ticks one step under the axis title, matching sibling panels
+    # SF41/SF43. Was BODY_FS, which put ticks ABOVE the ylabel — an
+    # inverted hierarchy caught by assert_tick_title_hierarchy 2026-07-25.
+    ax.tick_params(axis="y", labelsize=BODY_FS - 2, colors=C_TITLE)
     ax.set_ylim(0, y_top)
 
     # Facet-style grey strip header naming the subgroup + its n.
@@ -170,6 +178,9 @@ def build_figure():
                    n_by_group[group], y_top)
 
     # Y-axis label only on leftmost panel (matches Panel C).
+    # Stays at BODY_FS-2: at BODY_FS (23 pt) this string rotated 90° is
+    # ~1056 px on a 1080 px canvas and clips. The ticks come down to meet
+    # it instead — see tick_params above.
     axes[0].set_ylabel("Within-subgroup share of |SHAP| (%)",
                        fontsize=BODY_FS - 2, color=C_TITLE)
     # Tick marks every 20% — clean for a 0–75% range.

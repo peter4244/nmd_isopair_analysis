@@ -81,13 +81,22 @@ def docx_body_fs(native_width_in, *, target_pt=PAPER_TARGET_PT):
     """Native BODY_FS that renders at `target_pt` in the 6.5 " docx.
 
     Every panel that will be embedded in the supplemental Word doc SHOULD
-    set its own BODY_FS via this helper at the top of the module, e.g.
+    set its own BODY_FS via this helper at the top of the module, then
+    feed it to BOTH the rcParams call and any per-axes styling:
 
         NATIVE_W = 11.0
         BODY_FS  = docx_body_fs(NATIVE_W)
+        apply_ggplot_rcparams(BODY_FS)          # <- must pass it
+        ...
+        style_axes_ggplot(ax, body_fs=BODY_FS)  # <- and here
 
     rather than accepting the shared 14-pt constant blindly — the shared
     constant is calibrated for a 6.5 "-wide render, not a 16 "-wide one.
+
+    Passing it to only *some* of those is the failure mode: the local
+    BODY_FS shadows the module constant, so explicit ``fontsize=BODY_FS``
+    args and rcParams-driven ticks silently diverge. `assert_tick_title_hierarchy`
+    in validate_figure_layout.py catches the residue.
     """
     return int(round(target_pt * native_width_in / PAPER_CONTENT_W_IN))
 
@@ -101,9 +110,10 @@ def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
                         run_data_free=True, run_tick_disjoint=True,
                         strict_per_axis=True,
                         run_legend_clear=True,
+                        run_tick_title_hierarchy=True,
                         legend_clearance_px=4,
                         legend_overlap_tolerance_px=0):
-    """Run the full seven-validator gate + save the figure in one call.
+    """Run the full eight-validator gate + save the figure in one call.
 
     This is the SSOT for the figure-shipping contract. Every figure's
     main() should reduce to::
@@ -139,6 +149,14 @@ def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
         Skip `assert_legend_clear` (the zero-tolerance legend-vs-data
         clearance check). Only set False for figures where a
         specific, reviewed legend overlap has been accepted.
+    run_tick_title_hierarchy : bool
+        Skip `assert_tick_title_hierarchy` (no tick label may render
+        larger than an axis title). Deliberately shrunk ticks —
+        BODY_FS-2, or tilted multi-row categories down toward
+        PAPER_FLOOR_PT — already pass, since they keep titles on top.
+        There is currently no figure that needs this opt-out; if you
+        reach for it, first check whether the panel really wants a tick
+        bigger than its own axis title.
     legend_clearance_px : int
         Keep-out zone around every data pixel for the legend check
         (default 4 ≈ 1pt at DPI=300). Increase for stricter breathing
@@ -157,6 +175,7 @@ def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
     # Local imports to avoid a top-level ggplot_style ↔ validate cycle.
     from validate_figure_layout import (
         assert_style_symmetric,
+        assert_tick_title_hierarchy,
         assert_docx_readable,
         assert_data_free,
         assert_tick_labels_disjoint,
@@ -167,6 +186,8 @@ def render_and_validate(fig, out_path, *, native_width_in, dpi=300,
 
     assert_text_within_canvas(fig)
     assert_style_symmetric(fig)
+    if run_tick_title_hierarchy:
+        assert_tick_title_hierarchy(fig)
     assert_docx_readable(fig, native_width_in=native_width_in)
     if run_tick_disjoint:
         assert_tick_labels_disjoint(fig)
@@ -340,27 +361,46 @@ def grant_effective_pt(native_pt, native_width_in,
     return native_pt * page_w_in / native_width_in
 
 
-def apply_ggplot_rcparams():
+def apply_ggplot_rcparams(body_fs=None, header_fs=None):
     """Set matplotlib rcParams to fonts/embedding compatible with SF1-SF23.
 
     Call this once at import time in a panel script (before creating any
     Figure). Sets Arial-family fonts and PDF/PS fonttype=42 so text is
     embedded as vector glyphs (searchable, non-rasterised).
+
+    ⚠️ **Pass your panel's own `BODY_FS`.** A panel that follows the
+    prescribed docx-scale pattern
+
+        NATIVE_W = 8.0
+        BODY_FS  = docx_body_fs(NATIVE_W)      # -> 12, not the module's 14
+
+    creates a *local* BODY_FS that shadows the module constant. Explicit
+    ``fontsize=BODY_FS`` arguments then pick up 12 while rcParams-driven
+    tick labels keep the module's 14 — axis titles and ticks render at
+    different sizes, in whichever direction ``NATIVE_W`` happens to fall
+    (ticks larger below ~9.3 ", smaller above). That mismatch shipped in
+    7 of 17 SF panels before it was caught on 2026-07-25.
+
+    So: ``apply_ggplot_rcparams(BODY_FS)``, not ``apply_ggplot_rcparams()``.
+    Omitting the argument keeps the module defaults and is correct only
+    when the panel also uses the module's BODY_FS unchanged.
     """
+    b = BODY_FS if body_fs is None else body_fs
+    h = HEADER_FS if header_fs is None else header_fs
     plt.rcParams.update({
         "font.family": "sans-serif",
         "font.sans-serif": ["Arial", "Helvetica Neue", "Helvetica", "DejaVu Sans"],
         "pdf.fonttype": 42,
         "ps.fonttype": 42,
-        "axes.titlesize": HEADER_FS,
-        "axes.labelsize": BODY_FS,
-        "xtick.labelsize": BODY_FS,
-        "ytick.labelsize": BODY_FS,
-        "legend.fontsize": BODY_FS,
+        "axes.titlesize": h,
+        "axes.labelsize": b,
+        "xtick.labelsize": b,
+        "ytick.labelsize": b,
+        "legend.fontsize": b,
     })
 
 
-def style_axes_ggplot(ax, *, xgrid=True, ygrid=True, minor=False):
+def style_axes_ggplot(ax, *, xgrid=True, ygrid=True, minor=False, body_fs=None):
     """Apply the ggplot theme_grey look to `ax`.
 
     - Grey panel background (`PANEL_BG`).
@@ -371,6 +411,8 @@ def style_axes_ggplot(ax, *, xgrid=True, ygrid=True, minor=False):
     - Text drawn in `TITLE_C`.
 
     Call this immediately after creating the axes and before drawing.
+    Pass `body_fs` whenever the panel computes its own docx-scaled
+    BODY_FS — see the warning on `apply_ggplot_rcparams`.
     """
     ax.set_facecolor(PANEL_BG)
     for side in ("top", "right", "bottom", "left"):
@@ -393,7 +435,7 @@ def style_axes_ggplot(ax, *, xgrid=True, ygrid=True, minor=False):
         which="both",
         length=0,
         colors=TITLE_C,
-        labelsize=BODY_FS,
+        labelsize=BODY_FS if body_fs is None else body_fs,
     )
     # Axis labels — set colour only; leave the actual label text to caller.
     ax.xaxis.label.set_color(TITLE_C)
@@ -423,7 +465,7 @@ def panel_letter(ax, letter, *, x=-0.02, y=1.02):
     """Place a bold A/B/C letter in the top-left of a panel axes.
 
     Matches the sequential letter labels convention documented in
-    ~/.claude/memory/figures_style_publications.md (composite letter
+    ~/.claude/skills/figures/references/figures_style_publications.md (composite letter
     label position).
 
     NB: this text sits ABOVE the axes (y > 1). If you also have a

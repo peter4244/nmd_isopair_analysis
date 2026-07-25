@@ -37,10 +37,12 @@ from ggplot_style import (
     HEADER_FS,
 )
 
-apply_ggplot_rcparams()
-
 NATIVE_W = 11.0
 BODY_FS = docx_body_fs(NATIVE_W)
+
+# Must follow BODY_FS: rcParams drive tick sizes, and the local BODY_FS
+# shadows the module constant (see apply_ggplot_rcparams docstring).
+apply_ggplot_rcparams(BODY_FS)
 
 DATA = HERE / "data"
 
@@ -85,7 +87,7 @@ def main():
 
     fig, ax = plt.subplots(figsize=(NATIVE_W, 5.4))
     fig.subplots_adjust(left=0.08, right=0.98, top=0.85, bottom=0.33)
-    style_axes_ggplot(ax, xgrid=False, ygrid=True)
+    style_axes_ggplot(ax, xgrid=False, ygrid=True, body_fs=BODY_FS)
 
     bars_nmd = ax.bar(x - bar_width / 2, df["pct_NMD_GAIN"], width=bar_width,
                        color=NMD_COLOR, edgecolor="white", linewidth=0.6,
@@ -107,7 +109,7 @@ def main():
 
     ax.set_xticks(x)
     ax.set_xticklabels([DISPLAY_LABEL.get(e, e) for e in events],
-                       fontsize=BODY_FS - 1, color=TITLE_C,
+                       fontsize=BODY_FS, color=TITLE_C,
                        rotation=90, ha="right", va="center",
                        rotation_mode="anchor")
     ax.set_xlabel("")
