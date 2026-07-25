@@ -186,14 +186,39 @@ Phases 2–4 are worth doing before submission regardless. Phase 5 is what conve
 
 ---
 
-## 7. Open questions for Pete
+## 7. Decisions (Pete, 2026-07-24)
 
-1. **Tier 2** — deposit the regenerable checkpoints as baselines (recommended, +360 MB), or omit them and rely purely on regeneration?
-2. ✅ ~~SQANTI corrected FASTA~~ — **decided: deposit it.**
-3. **SQANTI classification** — full 368 MB, a slimmed column subset (~5 MB), or both?
-4. ✅ ~~Model H5~~ — **resolved: excluded**, regenerable once the ORF-scan inputs (I) are deposited.
-   New question in its place: **confirm the three ORF-scan objects are genuinely cell-type-independent**, since they come from the 6-CT backup.
-5. **Tan tables** — document-the-download, or check whether the licence permits redistribution?
-6. **Does the data record get its own DOI**, or become a new version of `nmd_isopair_analysis`?
-   (Separate record is cleaner: data and code version independently.)
-7. **Yul's sign-off** — less pressing now that the DGELists are Tier 2 rather than required inputs, but still worth asking before depositing her derived objects.
+| # | Question | **Decision** |
+|---|---|---|
+| 1 | Deposit Tier 2 regenerable checkpoints? | ❌ **No.** Deposit Tier 1 only. |
+| 2 | SQANTI `classification.txt` — full / slim / both? | **Full, Zenodo only.** No slimmed copy in GitHub. |
+| 3 | Isopair `analysis_cache` — ship or test regeneration? | ✅ **Test regeneration.** |
+| 4 | Example-gene annotation (`srsf.*`, `sub.isoforms.gtf`) | ✅ **Include.** |
+| 5 | Tan et al. supplementary tables | ✅ **Redistribute them** in the deposit. ⚠️ *Noted once: third-party supplementary tables normally carry the publisher's copyright — worth a licence check before the record goes public. Pete's call; recorded as decided.* Our `tan_tx_mashr_model.rds` is included too. |
+| 6 | Are the ORF-scan objects 4-CT compliant? | ✅ **Confirmed — and it is documented, not inferred.** `README.md:128` and `CLAUDE.md:43–45` state the ORFik scan is *shared with original v5* and cell-type-independent; only the **labels** are 4-CT, applied by `relabel_tx_summary_4ct.R`. The 6-CT-provenance `orfik_scan.rds` is the intended input, not a stale artifact. |
+| 7 | Data record DOI | ✅ **New Zenodo record with its own DOI**, separate from the code repos. |
+| 8 | Yul sign-off on depositing derived objects | ❌ **Not required.** |
+
+### Consequence of decision 1 — the deposit gets simpler, the test gets stricter
+
+With no Tier 2 baselines, there is nothing to diff regenerated intermediates against *except the
+manuscript itself*. That is the stronger test, and it is what the clean-room run (§5) now has to
+do: regenerate DGELists → mashr → Isopair cache → ORF features → h5 → interpretability exports,
+then compare **the final numbers and figures** to the paper. Any drift shows up at the end
+rather than at the step that caused it, so expect debugging to be slower — worth knowing before
+phase 5 starts.
+
+**Final deposit = Tier 1 only, ≈4.3 GB:**
+
+| item | size |
+|---|---|
+| SQANTI structures (`corrected.cds.gff3`, `filtered.gtf`, `corrected.fasta`) | 3.8 GB |
+| SQANTI `classification.txt` (full) | 368 MB |
+| Isoform count matrix | 65 MB |
+| ORF-scan inputs (`orfik_scan`, `ref_cds_features_all`, `paralog_genes`) | 35 MB |
+| Short-read salmon gene counts | 17 MB |
+| gmap annotation maps | 6.8 MB |
+| Tan et al. supplementary tables + `tan_tx_mashr_model.rds` | small |
+| Example-gene annotation | small |
+| Model weights `best_model_atg500_stop500.pt` | 453 KB |
+| pheno + RBP rosters | <1 MB (GitHub) |
