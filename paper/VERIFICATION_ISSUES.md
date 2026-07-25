@@ -281,7 +281,36 @@ slightly from the Methods text rather than with an error in either.
 expression filter" (1.13)? Both are currently unspecified in Methods, so neither can be
 reproduced by a reader. The substantive counts are exact either way.
 
-#### 🔴 Update 2026-07-24 — the two halves of the 1.13 sentence cannot both hold
+#### ✅ RESOLVED 2026-07-24 (Pete) — the apparent contradiction below was my error
+
+**Pete's explanation:** "cell restricted" expression considers a **larger universe of isoforms
+than the 162k in the DIE analysis** — because a cell-type-restricted isoform, by definition,
+may well fail the expression filter.
+
+That dissolves the contradiction: the "% passed the filter" denominator and the "% significant"
+denominator are **different populations**, so no ceiling argument applies. **The 🔴 finding
+below is withdrawn.**
+
+Confirmed structurally — defining restricted isoforms on the **unfiltered** DGEList and
+intersecting with the DIE universe reproduces 1.12's counts exactly:
+
+| CT | restricted (unfiltered) | ∩ DIE universe | 1.12 claims |
+|---|---|---|---|
+| LAE | 72,508 | **8,087** | 8,087 ✅ |
+| AT2 | 30,240 | **2,267** | 2,267 ✅ |
+| MV | 39,456 | **2,015** | 2,015 ✅ |
+| FB | 25,361 | **1,131** | 1,131 ✅ |
+
+**Still open (the original F-14 ask, unchanged):** neither universe reproduces 27.8% / 51.7%.
+The unfiltered denominator gives LAE 11.2% / MV 5.1% with the wrong ordering; the filtered
+denominator with a per-CT `filterByExpr` gives LAE 25.6% / MV 45.0% — correct ordering, 2–7
+points low. Note Yul's `Isoform_Landscape.Rmd` reads the **filtered** DGEList and defines
+`get_expressed` as `rowSums(counts) > 0`, so her landscape numbers are post-filter; that
+implies 1.13's "additional expression filter" is a *further* filter on top of the 162,800,
+with "all reached significance" referring to that step rather than the mashr DIE. **Confirming
+the exact definition is still the ask.**
+
+<details><summary>Withdrawn 🔴 finding (kept for the record — rested on assuming a single universe)</summary>
 
 > "Only **27.8% (LAE)** … of cell type-restricted isoforms **passed the additional expression
 > filter required for differential testing**, but **among those that did all reached
@@ -309,6 +338,12 @@ than the mashr DIE used everywhere else in the paper.
 explanation is that 1.13 refers to a different population or testing step than the one I can
 reconstruct. But as written, a reader applying the paper's own definitions gets a
 contradiction. **Yul: which testing step and which restricted set does 1.13 refer to?**
+
+</details>
+
+**Lesson recorded:** before calling two claims mutually inconsistent, check whether they are
+computed over the same universe. Here they were not — the restricted-isoform universe is the
+unfiltered set, the DIE universe is the 162,800.
 
 ---
 
