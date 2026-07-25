@@ -1,6 +1,6 @@
 # `figures/lib/` — shared figure tooling
 
-**Before editing anything in this directory or drafting a figure that imports from here, open `~/.claude/memory/figures_workflow_INDEX.md`.** That's the universal entry point — decision gate, doc map, known failure modes.
+**Before editing anything in this directory or drafting a figure that imports from here, open `the `figures` skill (~/.claude/skills/figures/SKILL.md)`.** That's the universal entry point — decision gate, doc map, known failure modes.
 
 ## What lives here
 
@@ -19,12 +19,12 @@
 
 ## Universal docs (read these before writing panel code)
 
-1. `~/.claude/memory/figures_workflow_INDEX.md` — start here (decision gate + doc map).
-2. `~/.claude/memory/figures_workflow_publications.md` — 9-phase sequenced runbook.
-3. `~/.claude/memory/figures_principles.md` — universal principles.
-4. `~/.claude/memory/figures_style_publications.md` — publication-specific conventions.
-5. `~/.claude/memory/figures_matplotlib.md` — Python/matplotlib tool addendum.
-6. `~/.claude/memory/figures_validators.md` — validator catalog.
+1. `the `figures` skill (~/.claude/skills/figures/SKILL.md)` — start here (decision gate + doc map).
+2. `~/.claude/skills/figures/references/figures_workflow_publications.md` — 9-phase sequenced runbook.
+3. `~/.claude/skills/figures/references/figures_principles.md` — universal principles.
+4. `~/.claude/skills/figures/references/figures_style_publications.md` — publication-specific conventions.
+5. `~/.claude/skills/figures/references/figures_matplotlib.md` — Python/matplotlib tool addendum.
+6. `~/.claude/skills/figures/references/figures_validators.md` — validator catalog.
 
 ## Canonical templates
 

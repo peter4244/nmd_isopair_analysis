@@ -85,7 +85,7 @@ data_mashr/ (RDS caches: profiles_c{2,4}, cds, structures, ref_atg_analysis,
 
 ## How updates flow
 
-This directory mirrors Pete's personal figure-tooling helpers (originally at `~/.claude/utils/` and `~/.claude/memory/figures_*.md`). The version here is the **shared, repo-tracked** copy — when a primitive or validator is improved by either contributor, the canonical version is the one here.
+This directory mirrors Pete's personal figure-tooling helpers (originally at `~/.claude/utils/` and `~/.claude/skills/figures/references/figures_*.md`). The version here is the **shared, repo-tracked** copy — when a primitive or validator is improved by either contributor, the canonical version is the one here.
 
 If you find a bug or add a primitive useful for the manuscript figures, edit the file in this directory, commit, push. The change becomes visible to all collaborators on next `git pull`.
 

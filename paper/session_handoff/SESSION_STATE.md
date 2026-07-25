@@ -58,7 +58,7 @@ Recent commits in `~/claude_projects/nmd`:
 - **Every git push goes to public GitHub** + Channing GitLab dual-push per CLAUDE.md — review before committing.
 - **`~/miniforge3/bin/python`** is the Python interpreter with matplotlib/pandas/seaborn — the base python3 lacks pandas.
 - **Cross-project utils** at `~/.claude/utils/`: `figure_template.py` (starter), `figure_lint.py` (checks no-fontsize-literals + render_and_validate present).
-- **Workflow doc** at `~/.claude/memory/figures_workflow_publications.md` — prescribes `render_and_validate` as canonical Phase 4.
+- **Workflow doc** at `~/.claude/skills/figures/references/figures_workflow_publications.md` — prescribes `render_and_validate` as canonical Phase 4.
 
 ## Immediate next steps if continuing
 

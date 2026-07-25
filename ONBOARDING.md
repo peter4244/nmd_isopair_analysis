@@ -142,7 +142,7 @@ These are things that have bitten people before. Internalize before writing anal
 
 ## 7. Figure conventions (the immediate collaboration focus)
 
-For publication / grant-quality figures the lab follows a specific set of conventions. The full principles document lives at `~/.claude/memory/figures_principles.md` on Pete's machine (which is not in this repo — see follow-up note below). The headline rules:
+For publication / grant-quality figures the lab follows a specific set of conventions. The full principles document lives at `~/.claude/skills/figures/references/figures_principles.md` on Pete's machine (which is not in this repo — see follow-up note below). The headline rules:
 
 - **Validator-clean output as the bar.** A figure isn't "done" until a layout-validator pass returns zero warnings.
 - **Two font sizes only** in a figure; body text never bold.

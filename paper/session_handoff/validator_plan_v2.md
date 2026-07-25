@@ -152,7 +152,7 @@ Two media, one formula, one constant that varies: that is precisely a value that
 belongs as a field of a `Style`, and the duplicated helpers collapse to
 `style.body_fs(native_w)` and `style.effective_pt(native_pt)`. `PAPER` and `GRANT`
 are the two style overlays that already exist as prose —
-`~/.claude/memory/figures_style_publications.md` and `figures_style_grants.md` —
+`~/.claude/skills/figures/references/figures_style_publications.md` and `figures_style_grants.md` —
 made executable.
 
 **Design — a `Style` bundles a render envelope and a visual identity.**

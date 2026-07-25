@@ -23,7 +23,7 @@ The legend and the rendered figure are authored/generated separately, so they dr
 - [ ] **US spelling**: color / center / gray / analyze (no coloured/centred/grey/analyse).
 - [ ] **No project jargon** in paper-facing legend text: no `pop_BC`, `pair-set`, `profiles_c2`, chunk/Rmd names, category codes. Use accepted terms: "main open reading frame" (not priority ORF), "occult PTC" (not hidden PTC), "TransDecoder2".
 
-## C. Style & scope (see `~/.claude/memory/figures_style_publications.md`; read it BEFORE drafting)
+## C. Style & scope (see `~/.claude/skills/figures/references/figures_style_publications.md`; read it BEFORE drafting)
 - [ ] **Title Case** for the `SF## | …` title, preserving domain acronyms (CDS, NMD, PTC, |SHAP|, ORF; `mashr` stays lowercase).
 - [ ] **No back-references to manuscript sections** ("as described in §5") — legends are standalone.
 - [ ] **No narration of the visual shape** ("the violin is bimodal"), and **no mechanism/biology interpretation**. State what is plotted, not what it means.

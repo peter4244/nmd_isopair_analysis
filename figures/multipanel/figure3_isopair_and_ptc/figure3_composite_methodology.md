@@ -79,7 +79,7 @@ The whole chain is byte-deterministic on the current cached RDS inputs (verified
 - Per-panel methodology: `figure3_panel{A,B,C,D,E,F}_methodology.md`
 - Source: `figure3_composite.py`
 - Grant convention reference: `~/claude_projects/grants/nmd_2026/figure_nmd_prelim_composite_3by1.py`
-- Figure principles: `~/.claude/memory/figures_principles.md` and `figures/lib/principles.md`
+- Figure principles: `~/.claude/skills/figures/references/figures_principles.md` and `figures/lib/principles.md`
 - Verification: covered by Pass 4 (reproducibility) of the 5-pass scientific-report verification protocol — `verify_pass4_reproducibility.sh` re-runs the entire panel + composite chain end-to-end and confirms byte-identical regeneration.
 
 ## Layout validator coverage
