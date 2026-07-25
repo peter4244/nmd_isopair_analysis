@@ -54,8 +54,19 @@ nmd/
 **Per-cell-type mashr CSVs** (`shortread_dge/mashr/`, `isocall_dge/mashr/`, `isocall_dge/old/mashr/`):
 - `ensembl_gene_id_version` (or `txid`), `logFC`, `adj.P.Val`, `nmd_responsive`, `hgnc_symbol` (and `gene_id`)
 - `logFC` is the **mashr posterior mean**.
-- `adj.P.Val` is the **limma-voom FDR** underlying mashr (NOT the mashr `lfsr`).
-- `nmd_responsive == TRUE` means `mashr lfsr < 0.05 AND posterior mean > 0`.
+- ⚠️ **`adj.P.Val` is the mashr `lfsr`, despite the limma-style column name.** Verified
+  2026-07-24 across all 8 per-CT `2026.3.10` files (4 gene-level + 4 isoform-level):
+  `adj.P.Val` is identical to the matching `Smg1i_in_<CT>` column of
+  `mashr_{,isoform_}lfsr_2026.3.10.csv`, and `logFC` identical to the posterior-means
+  column — max |difference| = 0 in every case.
+  *(An earlier version of this note said `adj.P.Val` was the limma-voom FDR "NOT the mashr
+  lfsr". That was wrong. Do **not** join to the shared lfsr file to apply the mashr rule —
+  the per-CT file already carries it.)*
+  Not verified for the archived 6-CT files under `isocall_dge/old/mashr/`, nor for
+  `*_doali` / `*_ddali`, which have no column in the 4-CT shared objects.
+- `nmd_responsive == TRUE` means `mashr lfsr < 0.05 AND posterior mean > 0` — which in these
+  files is therefore **exactly** `adj.P.Val < 0.05 & logFC > 0` (0 discordant rows of 25,955
+  genes / 162,800 isoforms per cell type).
 
 **Shared mashr objects** (`mashr_{lfsr, posterior_means, ...}_2026.3.10.csv`):
 - Wide format with one column per cell type (`Smg1i_in_DD`, `Smg1i_in_AT`, etc.)

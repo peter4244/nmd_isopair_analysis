@@ -281,6 +281,35 @@ slightly from the Methods text rather than with an error in either.
 expression filter" (1.13)? Both are currently unspecified in Methods, so neither can be
 reproduced by a reader. The substantive counts are exact either way.
 
+#### 🔴 Update 2026-07-24 — the two halves of the 1.13 sentence cannot both hold
+
+> "Only **27.8% (LAE)** … of cell type-restricted isoforms **passed the additional expression
+> filter required for differential testing**, but **among those that did all reached
+> significance**."
+
+Significance requires having been tested, so "% passed the filter" is an upper bound on
+"% significant". For LAE:
+
+| quantity | value |
+|---|---|
+| LAE-restricted isoforms | **8,087** (matches 1.12 exactly) |
+| … that are NMD susceptible in the LAE DIE (`nmd_responsive`) | **4,499 = 55.6%** |
+| cap implied by the claim (27.8% of 8,087) | **2,248** |
+
+**4,499 significant vs a 2,248 ceiling — twice the cap.** Both halves cannot be true of the
+same restricted set.
+
+**Related observation:** all 8,087 LAE-restricted isoforms are **present in the DIE table**
+(which holds all 162,800). So whatever the "additional expression filter" is, it did **not**
+remove them from the mashr DIE — implying "passed the filter" and "reached significance" refer
+to some *other* testing step (perhaps a per-CT limma inside `Isoform_Landscape.Rmd`) rather
+than the mashr DIE used everywhere else in the paper.
+
+**This is a question, not an accusation** — the definitions are unspecified, so the most likely
+explanation is that 1.13 refers to a different population or testing step than the one I can
+reconstruct. But as written, a reader applying the paper's own definitions gets a
+contradiction. **Yul: which testing step and which restricted set does 1.13 refer to?**
+
 ---
 
 ### F-12 🟡 🟣 YUL — the UPR half of §3 ¶2's enrichment claim is weaker than stated
