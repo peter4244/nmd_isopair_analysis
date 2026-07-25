@@ -55,6 +55,12 @@ Mechanical, independently checkable, prerequisite to everything (R2-7).
   the baseline is at `verification/baseline_verification`. `verification/baseline/` is empty.
 - All 15 verifier scripts hardcode `~/claude_projects/nmd` (the *excluded* old repo), plus three
   `setwd()` calls to it.
+- **Establish determinism.** Run each script **twice, unchanged**, and confirm byte-identical
+  output. This is a precondition for phase 1's whole guarantee: an unseeded script produces
+  run-to-run diffs, which would push us to loosen byte-compare to tolerance and forfeit the
+  property. Anything non-deterministic must be seeded or explicitly exempted *before* it can
+  serve as a reference.
+- **Enumerate every output per script**, so phase 1 compares the full set rather than a sample.
 - Harness hygiene (R1-S2/S3): stop stripping warnings — the later phases change factor handling
   and join keys, exactly what warnings surface. Fix the two dead filters
   (`select\(\) returned` never matches the real `'select()' returned …`) and the unanchored
@@ -76,6 +82,24 @@ restructuring. If a diff does anything but move a path, it belongs to a later ph
    absolute-path literal, 54 containing `/Users/petecastaldi`, 15 `setwd()` calls (R2-11).
 
 **Gate:** every edited script reproduces its own outputs byte-for-byte from unchanged inputs.
+
+**Why this rules out silent errors** (Pete, 2026-07-25). A silent error changes a result without
+announcing itself; byte-identical output proves nothing changed. No assertions required and no
+reasoning about which failure modes are possible. It holds under three conditions, all handled
+in phase 0:
+
+1. **Determinism established** — otherwise run-to-run noise forces a tolerance and the guarantee
+   is lost.
+2. **All outputs compared**, not a sample.
+3. **Presence checked, not just content** — several scripts *fail soft*
+   (`build_manuscript_tables.R`: "if an input is missing the workbook is skipped with a message
+   rather than erroring"). A bad path there yields no error and no wrong file: it yields **no
+   file**. Comparing only files that exist would miss it.
+
+**Design implication: push as much work into phase 1 as possible.** Anything expressible as a
+path-only change inherits this guarantee. Only what genuinely needs different inputs — the
+cell-type semantics — falls back on phase 2's weaker checks, which is why §4.3's assertions
+exist at all.
 
 ---
 
