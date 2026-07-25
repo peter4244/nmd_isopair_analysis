@@ -53,14 +53,29 @@ This yields a **two-tier deposit**.
 |---|---|---|---|
 | **A** | **Isoform count matrix** — `nmd_lungcells_filtered.count_matrix.txt` | 65 MB | SQANTI/isocall output; regenerating needs raw reads + heavy compute |
 | **B** | **SQANTI `classification.txt`** | 368 MB (slim ≈5 MB) | Same pipeline. **Distinct from the GFF** — supplies `structural_category` (1.4), `coding` (protein-coding definition in `productive_response`), `associated_gene` |
-| **C** | **SQANTI structures** — `_corrected.cds.gff3` (1.1 GB), `_filtered.gtf` (1.1 GB), `_corrected.fasta` (1.6 GB) | **3.8 GB** | §4 isoform structures + ORF/PTC projection. **See scoping question §7.2** — the FASTA may be droppable if the model is not re-run |
+| **C** | **SQANTI structures** — `_corrected.cds.gff3` (1.1 GB), `_filtered.gtf` (1.1 GB), `_corrected.fasta` (1.6 GB) | **3.8 GB** | §4 isoform structures + ORF/PTC projection. ✅ **Decided 2026-07-24 (Pete): deposit the corrected FASTA.** |
 | **D** | Short-read gene counts — `salmon.merged.gene_counts_length_scaled` | 17 MB | **nf-core/rnaseq (M2) output, and M2 is the accepted gap** — so this is genuinely a starting point, not an intermediate |
 | **E** | Gene/transcript annotation maps — `gmap_ENSGv115`, `gmap_txlevel_ENSGv115` | 6.8 MB | Built outside this project (`/udd/repjc/RESEARCH/REUSABLE_CODE/`), so no producer here |
 | **F** | Sample/phenotype metadata — `pheno/*` | <1 MB | ✅ already tracked; keep in GitHub |
 | **G** | RBP rosters | 135 KB | Third-party. ⚠️ on disk but silently gitignored by a bare `data/` rule (`.gitignore:31`) |
-| **H** | **NMD model** — `best_model_atg500_stop500.pt` + **the interpretation export TSVs** | ~50–100 MB | Retraining is out of scope by your rule. Weights alone do **not** reproduce Fig 5 / SF37–43 — those panels read the export TSVs, and **we stripped them from the model repo in the v2.0.0 simplification**, so they currently exist in neither repo |
+| **H** | **NMD model weights** — `best_model_atg500_stop500.pt` | 453 KB | The single irreducible model artifact, since retraining is out of scope by your rule |
+| **I** | **ORF-scan inputs** — `orfik_scan.rds` (31 MB), `ref_cds_features_all.rds` (2.2 MB), `paralog_genes.rds` (1.6 MB) | **35 MB** | ⚠️ **Chain break found 2026-07-24.** `export_rds.R` (model repo, kept in v2.0.0) requires all three, but they are **absent from the live 4-CT `analysis_cache`** and **no repo produces them** — they survive only in `data_mashr.bak_6ct_2026-07-11/`. Without them the model repo cannot regenerate its own ORF features. Same class as the `cds_exons` hole. *These appear CT-independent (an ORFik scan over transcript sequences, plus annotation-derived CDS/paralog tables), so their 6-CT provenance should not matter — **worth confirming, as this is an inference from what the objects are, not a verified fact.*** |
 
-**Tier 1 ≈ 4.3 GB** (≈0.5 GB if the three large SQANTI structure files are scoped out).
+**Tier 1 ≈ 4.3 GB**, dominated by the SQANTI structures (3.8 GB).
+
+**Why this makes the H5 and the interpretability exports droppable.** With **I** deposited, the
+whole model chain is scripted end to end and every downstream model artifact becomes Tier 2:
+
+```
+orfik_scan + ref_cds_features_all + paralog_genes   (Tier 1, 35 MB)
+   → export_rds.R          → orf_features / tx_summary / ref_cds / td2 / junctions TSVs
+   → data_prep.py          → nmd_orf_data.h5 (4 GB)  + selected_orfs.tsv
+   → + weights (Tier 1)    → 04/05/06/07/08/09*/10/11 exporters
+   → interpretability TSVs → Figure 5 + SF37–43
+```
+
+Net effect of Pete's point: we drop the 4 GB H5 **and** ~50–100 MB of export TSVs, and pay
+35 MB for the ORF-scan inputs instead.
 
 ### 1.2 Tier 2 — regenerable checkpoints (deposit as baselines, not requirements)
 
@@ -74,6 +89,8 @@ us prove regeneration matches rather than assuming it.
 | The 4 DGELists (+ `dge_gene_unfiltered`) | 48 MB | `Isoform_Level_Quantification.Rmd`, `NMD_shortread_dge_fullmodel_2026.5.5.Rmd` |
 | Complete mashr results — per-CT CSVs, shared lfsr/posterior-means/sharing objects, fitted `mashr_*_model.rds` | 166 MB | same two scripts + `ct_de.Rmd` |
 | Isopair `data_mashr/analysis_cache` (83 objects) | 149 MB | `scripts/core/02–05` → `isopair_wrapper/01–06` |
+| `nmd_orf_data.h5` | 4 GB | `data_prep.py` — **regenerable, so excluded from the deposit** |
+| Model interpretability exports (predictions, attention, DeepSHAP, motif, GC, subgroup, kernel-SHAP) | ~50–100 MB | the 17 exporters in `NMD_orf_model_v5_4ct` v2.0.0 |
 
 **Tier 2 ≈ 360 MB.** Label it plainly in the deposit as *derived checkpoints, regenerable from
 Tier 1*, so nobody mistakes it for primary data.
@@ -83,7 +100,7 @@ Tier 1*, so nobody mistakes it for primary data.
 | # | Item | Size | The question |
 |---|---|---|---|
 | **K** | Isopair `analysis_cache` | 149 MB | Now Tier 2 (regenerable). Question is only whether we **test** that regeneration works, or ship it and skip the test. Recommend: test it. |
-| **L** | `nmd_orf_data.h5` | **4 GB** | Needed only to *re-run* inference/SHAP. Under "no retraining", J's TSVs suffice. Recommend **exclude**, and document how to rebuild it via `data_prep.py`. |
+| ~~**L**~~ | `nmd_orf_data.h5` | 4 GB | ✅ **Resolved** — regenerable via `data_prep.py` once **I** is deposited. Excluded; rebuild documented. |
 | **M** | Tan et al. supplementary tables | small | Third-party; redistribution is questionable and they were deliberately gitignored. Recommend **document the download**, do not redistribute — 2.18 then reproduces from a documented fetch. |
 | **N** | `tan_tx_mashr_model.rds` | small | Our fitted object over Tan's data — depositing it makes 2.18 reproducible even if their download moves. Recommend **include**. |
 | **O** | Example-gene annotation (`srsf.*`, `sub.isoforms.gtf`, …) | small | Only if figure panels read them. **Audit, then include if used.** |
@@ -172,9 +189,10 @@ Phases 2–4 are worth doing before submission regardless. Phase 5 is what conve
 ## 7. Open questions for Pete
 
 1. **Tier 2** — deposit the regenerable checkpoints as baselines (recommended, +360 MB), or omit them and rely purely on regeneration?
-2. **SQANTI structures (C, 3.8 GB)** — is the 1.6 GB `corrected.fasta` needed if the model is not re-run, or do §4/ORF analyses require sequence? This one decision moves Tier 1 between ~0.5 GB and ~4.3 GB.
+2. ✅ ~~SQANTI corrected FASTA~~ — **decided: deposit it.**
 3. **SQANTI classification** — full 368 MB, a slimmed column subset (~5 MB), or both?
-4. **Model H5** (4 GB) — exclude and document, as recommended?
+4. ✅ ~~Model H5~~ — **resolved: excluded**, regenerable once the ORF-scan inputs (I) are deposited.
+   New question in its place: **confirm the three ORF-scan objects are genuinely cell-type-independent**, since they come from the 6-CT backup.
 5. **Tan tables** — document-the-download, or check whether the licence permits redistribution?
 6. **Does the data record get its own DOI**, or become a new version of `nmd_isopair_analysis`?
    (Separate record is cleaner: data and code version independently.)
