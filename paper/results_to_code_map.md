@@ -126,18 +126,28 @@ Correlation") but previously had no M-section — it was covered only at claim l
   `yul:Figures/make_panels.R` → panel 1A (see the §2 figure table) — the analysis Rmd
   does *not* render the figure.
 - **Inputs:** `dge_gene_unfiltered_2026.1.2.rds`, `salmon.merged.gene_counts_length_scaled.FULL.rds`.
-- **⚠ DO NOT "MODERNIZE" `dge_gene_unfiltered_2026.1.2.rds` — verified 2026-07-21.** It
-  looks deprecated by every heuristic (oldest date stamp, loose in the project root while
-  everything else is filed under `long_read/`/`short_read/`, and a newer
-  `dge_shortread_gene_2026.3.2.rds` exists). **It is required.** In
-  `render_sr_lr_correlation.R` it is not the expression source (salmon is) — it supplies
-  the **metadata that identifies DD_ALI samples**, which appear in salmon column names
-  mislabeled as plain `_DD`. The script rebuilds canonical IDs from this DGEList and drops
-  any `_DD` column whose `_DD_ALI` counterpart exists. That works **only because this
-  object predates the 4-CT restriction and still contains DD_ALI**.
-  **Measured on the real objects:** Jan (6-CT, 38 samples) → **6 DD_ALI columns dropped**;
-  Mar (4-CT, 26 samples) → **0 dropped**. Substituting the newer file silently
-  contaminates Figure 1A with 6 DD_ALI samples — no error, just wrong numbers.
+- **⚠ `dge_gene_unfiltered_2026.1.2.rds` — required on the LEGACY path only. Superseded
+  2026-07-25.** It looks deprecated by every heuristic (oldest date stamp, loose in the
+  project root, a newer `dge_shortread_gene_2026.3.2.rds` exists) and it *is* deprecated —
+  but only once the input is the Zenodo deposit. On the legacy path it is **required**: it
+  is not the expression source (salmon is), it supplies the **metadata identifying DD_ALI
+  samples**, which the salmon SummarizedExperiment mislabels as plain `_DD`.
+  `render_sr_lr_correlation.R` rebuilds canonical IDs from it and drops any `_DD` column
+  whose `_DD_ALI` counterpart exists — which works **only because this object predates the
+  4-CT restriction and still contains DD_ALI**. Measured: Jan (6-CT, 38 samples) → **6
+  DD_ALI columns dropped**; Mar (4-CT, 26 samples) → **0 dropped**. Substituting the newer
+  file on the legacy path silently contaminates Figure 1A with 6 DD_ALI samples.
+  **Reading `salmon_gene_counts_4ct.csv` from the deposit removes the need entirely** —
+  `build_4ct_salmon_counts.R` already resolved the mislabeling at source by taking its
+  sample list from the SR DGEList. Verified 2026-07-25: the deposit's 26 columns are
+  **the same sample set** the drop step arrives at, so both the drop step and this
+  dependency become dead code.
+  **One measured side effect:** the deposit's salmon matrix is trimmed to genes observed in
+  the 26 samples, which removes 735 genes that are zero in short-read but expressed in
+  long-read and are therefore currently kept by `expressed_short | expressed_long`. Effect
+  on the reported per-cell-type correlations: **−0.0010 to −0.0015** (AT 0.8995→0.8983,
+  DD 0.9001→0.8990, FB 0.8786→0.8771, MV 0.8971→0.8958) — below two-decimal reporting
+  precision, but recorded here rather than left for someone to rediscover.
   Claims 1.6–1.8 depend on this.
 - **Claims:** 1.6 (mean Pearson r = 0.90, mean Spearman ρ = 0.890, 26 matched samples,
   29,185 common genes), 1.7, 1.8 (Figure 1A).
