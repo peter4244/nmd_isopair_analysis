@@ -105,7 +105,7 @@ before escalating (the `05s`/`05t`/`05u` recovery showed history often holds the
 | Input | Needed by | Where to look |
 |---|---|---|
 | `sub.isoforms.gtf` (+ `gene_ex/`) | `Figures/make_gene_examples.R:26` → **Figure 1 C/D/E** | **Ask Yul.** No producer anywhere: nothing in the repo, `superseded/`, or git history writes a GTF. Her repo was imported as *files, not history* (59 files), so a producer may exist there and never have come across. |
-| `tx_summary_6ct.tsv` | `model/relabel_tx_summary_4ct.R:45` | **Pete's own cluster** — the model repo carries it as a symlink to `/home/p.castaldi/cc/nmd_orf_model/results/`, which resolved live on Explorer. Retrieve from there. |
+| ~~`tx_summary_6ct.tsv`~~ | ~~`model/relabel_tx_summary_4ct.R:45`~~ | ✅ **RESOLVED 2026-07-25 — not missing.** It is `export_rds.R`'s own `tx_summary.tsv` under an old name. The `_6ct` suffix records *when* it was generated, not 6-CT-specific content: the ORF summary is per-transcript ORF structure, and the README confirms the scan is "shared with original v5", i.e. cell-type-independent. The only gap was an undocumented manual rename, which existed so the relabel step would not read and overwrite its own output filename. **Fix in the rewrite:** have `export_rds.R` write `tx_summary_unlabeled.tsv` and `relabel_tx_summary_4ct.R` read that, writing `tx_summary.tsv`. Removes the manual step and the misleading name. |
 | `merge-collapsed.gff` | `scripts/core/02_extract_isoform_structures.R:90` | PacBio isoseq collapse output. Likely Channing/Randell-side; confirm whether §4 still needs it or whether the SQANTI GTF supersedes it. |
 
 ⚠️ **Channing is unreachable from this machine** (`changit.bwh.harvard.edu` does not resolve
