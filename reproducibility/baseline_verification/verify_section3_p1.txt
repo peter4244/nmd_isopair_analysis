@@ -1,0 +1,50 @@
+=== INPUTS ===
+unfiltered DGEList:  
+DGEList dimensions: 645272 26 
+samples: 26 -> 26 after CT_KEEP filter
+cell types: AT2, FB, LAE, MV 
+matched donor pairs per CT:
+# A tibble: 4 × 2
+  ct    n_pairs
+  <chr>   <int>
+1 AT2         3
+2 FB          3
+3 LAE         4
+4 MV          3
+CPM matrix: 645272 isoforms x 26 samples
+isoform x ct x donor rows: 8388536 
+gene-level CPM matrix: 30355 genes x 26 samples
+filtered isoform set: 162800 
+isoform-donor rows after filter: 1076208 
+=========== RECOMPUTED RESULTS ===========
+-- C2 ISOFORM-level % output lost (claim: 14.4 AT2 -- 18.2 LAE) --
+   ct pct_output_lost
+1 LAE           18.23
+2  MV           15.53
+3  FB           14.56
+4 AT2           14.40
+-- C1 GENE-level % output lost (claim: 11.1 AT2 -- 12.5 MV) --
+   ct pct_output_lost
+1  MV           12.50
+2 LAE           12.03
+3  FB           11.83
+4 AT2           11.06
+-- C4 isoform:gene ratio (old map 3.5 claim: 1.23--1.52) --
+   ct pct_isoform pct_gene ratio
+1 LAE       18.23    12.03 1.515
+2  MV       15.53    12.50 1.242
+3  FB       14.56    11.83 1.231
+4 AT2       14.40    11.06 1.302
+-- C3 per-isoform % lost, filtered set (claim: median 60-67, IQR 30-100) --
+   ct      n   Q1 median    Q3  IQR
+1 AT2 247381 31.4   62.4 100.0 68.6
+2  FB 244538 30.2   64.1 100.0 69.8
+3 LAE 335413 31.6   67.1 100.0 68.4
+4  MV 248876 25.7   60.2  96.2 70.5
+=========== CLAIM CHECK ===========
+C1 gene-level range (%)                        observed 11.1-12.5      claimed 11.1-12.5
+C2 isoform-level range (%)                     observed 14.4-18.2      claimed 14.4-18.2
+C3 per-isoform median (%)                      observed 60.2-67.1      claimed 60.0-67.0
+C1 argmin/argmax CT: AT2 / MV   (claim: AT2 low, MV high)
+C2 argmin/argmax CT: AT2 / LAE   (claim: AT2 low, LAE high)
+sessionInfo R: R version 4.5.2 () | edgeR 4.8.2 

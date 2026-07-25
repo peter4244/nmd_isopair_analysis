@@ -1,0 +1,45 @@
+'select()' returned 1:1 mapping between keys and columns
+'select()' returned 1:1 mapping between keys and columns
+'select()' returned 1:1 mapping between keys and columns
+'select()' returned 1:1 mapping between keys and columns
+'select()' returned 1:1 mapping between keys and columns
+Yul's pipeline ran clean.
+=========== RECOMPUTED §3 ¶2 ===========
+-- 3.8 median adjusted log2FC, NMD genes (claim AT2 +0.14, LAE -0.04, FB +0.10, MV +0.05) --
+   AT2    LAE     FB     MV 
+ 0.141 -0.040  0.098  0.051 
+-- 3.5 Spearman(custom, Kitagawa) = adjusted vs uncorrected logFC (claim >= 0.99) --
+   ct     n spearman pearson
+1 AT2 12082   0.9996  0.9997
+2  FB 10985   0.9997  0.9997
+3 LAE 11499   0.9980  0.9987
+4  MV 11020   0.9991  0.9994
+   NMD genes only:
+   ct    n spearman
+1 AT2 5640   0.9997
+2  FB 5369   0.9997
+3 LAE 6191   0.9984
+4  MV 5675   0.9993
+-- 3.6 non-NMD genes: Spearman(prodCPM_DMSO, prodCPM_SMG_adj) (claim >= 0.96) --
+   ct    n spearman pearson_log median_log2fc
+1 AT2 5091   0.9671      0.9793        0.0853
+2  FB 4303   0.9705      0.9872        0.0784
+3 LAE 3822   0.9643      0.9799       -0.0270
+4  MV 4091   0.9661      0.9845        0.0041
+-- 3.9 / 3.10 significant productive change (mashr lfsr) --
+dir levels: down | ns | up 
+gene_category levels: NMD | non-NMD | unsure 
+[all gene categories]
+   ct down   ns   up
+1 AT2  204 7849 1143
+2  FB   36 8668  492
+3 LAE 2240 5606 1350
+4  MV  438 7810  948
+[NMD genes only — the manuscript's stated population]
+   ct down   ns  up total pct_no_change
+1 AT2   88 4233 783  5104          82.9
+2  FB   11 4784 306  5101          93.8
+3 LAE 1337 3310 888  5535          59.8
+4  MV  218 4448 635  5301          83.9
+   claim 3.9  : ~83% of genes show no significant change
+   claim 3.10 : down 88 (AT2) - 1337 (LAE); up 635 (MV) - 888 (LAE)

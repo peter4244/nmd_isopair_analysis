@@ -1,0 +1,19 @@
+=== D0 closed composition ===
+all CPM column sums == 1e6?  TRUE 
+=> sum(delta)=0 for every pair => sum(max(d,0)) == sum(max(-d,0)) == 0.5*sum|d|
+=> the metric IS the total variation distance between the two CPM vectors.
+=== D1-D3 diagnostics (all values are % of Smg1i total CPM) ===
+  ct n_nmd_iso D_forward_published D2_reverse D1_from_nmd_susceptible
+ AT2     22850               14.40      14.40                    4.58
+  FB     22552               14.56      14.56                    3.01
+ LAE     32239               18.23      18.23                    9.93
+  MV     25294               15.53      15.53                    6.03
+ D1_share_of_signal_pct D3_null_DMSOvsDMSO n_null_pairs
+                   31.8              20.81            2
+                   20.7              33.30            2
+                   54.5              13.44            3
+                   38.9              15.99            2
+=== READING ===
+D2 == D_forward exactly  -> metric is symmetric; 'lost' is not established by the statistic.
+D1_share   20.7-54.5 % of the signal traces to NMD-susceptible isoforms; the remainder is sub-threshold or noise.
+D3 vs forward: null is LARGER in 3 of 4 cell types (caveat: cross-donor null includes donor biology).

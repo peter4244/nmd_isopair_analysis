@@ -1,0 +1,59 @@
+=========== RECOMPUTED §3 ¶4 ===========
+-- 3.16 down-arm mechanism split (custom normalization + SR induction) --
+       mechanism    n  pct
+     composition  476 16.5
+           mixed  386 13.4
+ transcriptional 2020 70.1
+   per cell type:
+  ct       mechanism    n  pct
+ AT2     composition   11  5.4
+ AT2           mixed   35 17.2
+ AT2 transcriptional  158 77.5
+ LAE     composition  414 18.5
+ LAE           mixed  283 12.6
+ LAE transcriptional 1543 68.9
+  MV     composition   51 11.6
+  MV           mixed   68 15.5
+  MV transcriptional  319 72.8
+transcriptional=1631 | composition=430 | universe=9196
+-- 3.17 / 3.18 / 3.20 theme enrichment --
+   claim 3.17 composition x RNA splicing      : OR 2.5, p < 1e-3
+   claim 3.18 composition x SR/hnRNP factors  : OR 6.8, p < 1e-3
+   claim 3.20 transcriptional x DNA repl/repair: OR 2.1, p < 1e-3
+              theme trans_OR  trans_p trans_n comp_OR   comp_p comp_n
+ Mitotic cell cycle     0.98 5.74e-01     114    1.28 9.88e-02     38
+    DNA replication     2.12 9.28e-07      69    2.03 4.51e-03     20
+         DNA repair     1.57 3.42e-05     121    1.88 4.22e-04     40
+       RNA splicing     1.19 1.00e-01      79    2.52 9.68e-07     41
+   SR/hnRNP factors     0.76 7.64e-01       4    6.76 2.61e-04      7
+            ISR/UPR     0.70 9.33e-01      16    0.51 9.32e-01      3
+-- 3.19 canonical SR proteins SRSF1-SRSF12 --
+   claim: EVERY significant productive change was a decrease (8 LAE, 3 AT2, 2 MV)
+all SRSF rows by ct x dir (all cell types incl. FB):
+  ct down ns
+ AT2    3  8
+  FB    0 11
+ LAE    8  3
+  MV    2  9
+SIGNIFICANT SRSF changes only (dir != ns), per CT:
+  ct  dir n
+ AT2 down 3
+ LAE down 8
+  MV down 2
+gene-level detail of every significant SRSF change:
+  ct hgnc_symbol  dir         pm         lfsr gene_category
+ AT2       SRSF2 down -0.4290375 2.820309e-04           NMD
+ AT2       SRSF3 down -0.3108503 1.760264e-02           NMD
+ AT2       SRSF9 down -0.3397908 4.629772e-03           NMD
+ LAE       SRSF1 down -0.3116223 3.529854e-03           NMD
+ LAE      SRSF10 down -0.2825501 1.600133e-05           NMD
+ LAE       SRSF2 down -0.7062670 2.220446e-16           NMD
+ LAE       SRSF3 down -0.3703159 2.971042e-07           NMD
+ LAE       SRSF4 down -0.1948569 3.289185e-02           NMD
+ LAE       SRSF6 down -0.2900328 4.005361e-02           NMD
+ LAE       SRSF7 down -0.2598870 5.334124e-04           NMD
+ LAE       SRSF8 down -0.2248950 2.093465e-02           NMD
+  MV       SRSF2 down -0.5925525 1.947019e-06           NMD
+  MV       SRSF3 down -0.3235246 1.411826e-02           NMD
+any significant SRSF INCREASE? no — consistent with the claim
+distinct SRSF genes detected: 11 of 12 (SRSF1, SRSF10, SRSF11, SRSF2, SRSF3, SRSF4, SRSF5, SRSF6, SRSF7, SRSF8, SRSF9)

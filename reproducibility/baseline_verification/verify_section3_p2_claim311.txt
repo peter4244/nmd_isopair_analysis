@@ -1,0 +1,35 @@
+=========== RECOMPUTED §3 ¶2 claim 3.11 ===========
+'select()' returned 1:many mapping between keys and columns
+GO:0006986 (response to unfolded protein) ENSEMBL genes: 171
+-- (a) UPR genes among productive-UP NMD genes, per CT --
+'select()' returned 1:1 mapping between keys and columns
+AT2  UPR-UP n=15  | named-in-paper present: HSPA5, EIF2AK3
+       BAK1, BOK, DERL2, DNAJA1, DNAJB2, EIF2AK3, HERPUD1, HSPA5, HSPA8, HSPH1, PPP1R15B, RHBDD1, SELENOS, TMEM33, VCP 
+'select()' returned 1:1 mapping between keys and columns
+LAE  UPR-UP n=24  | named-in-paper present: HSPA5, XBP1
+       BAK1, BFAR, BOK, DERL2, DNAJA1, DNAJB1, DNAJB2, DNAJB5, DNAJC3, HERPUD1, HERPUD2, HSP90AA1, HSP90AB1, HSPA5, HSPA8, HSPD1, HSPE1, HSPH1, MBTPS1, SELENOS, SERPINH1, STC2, VCP, XBP1 
+'select()' returned 1:1 mapping between keys and columns
+FB   UPR-UP n=9   | named-in-paper present: HSPA5
+       BAK1, BOK, DNAJA1, DNAJB2, HERPUD1, HSPA5, HSPA8, SELENOS, STC2 
+'select()' returned 1:1 mapping between keys and columns
+MV   UPR-UP n=16  | named-in-paper present: HSPA5, XBP1
+       BAK1, BFAR, BOK, DERL2, DNAJA1, DNAJB2, DNAJC3, HERPUD1, HSPA5, HSPA8, HSPH1, RHBDD2, SELENOS, STC2, VCP, XBP1 
+-- (a2) Fisher test: UPR membership, productive-UP vs rest (NMD genes) --
+   (the prose says "enriched"; leading-edge-check only lists membership)
+  ct n_up upr_in_up upr_total   OR       p
+ AT2  783        15        81 1.26 0.43600
+ LAE  888        24        85 2.09 0.00413
+  FB  306         9        79 2.05 0.05280
+  MV  635        16        79 1.89 0.03380
+-- (b) HALLMARK_TNFA_SIGNALING_VIA_NFKB, continuous test on productive pm --
+The `category` argument of `msigdbr()` is deprecated as of msigdbr 10.0.0.
+   NF-kB/TNFa set size: 200
+  ct   class n_in median_pm_in median_pm_out dir       p
+ AT2 non-NMD   57        0.061         0.038  UP   0.135
+ AT2     NMD   38        0.175         0.061  UP   0.005
+ LAE non-NMD   46        0.134        -0.045  UP 2.5e-05
+ LAE     NMD   51        0.178        -0.050  UP 4.3e-05
+  FB non-NMD   59        0.079         0.030  UP 2.2e-04
+  FB     NMD   34        0.088         0.038  UP   0.008
+  MV non-NMD   56        0.049        -0.011  UP   0.002
+  MV     NMD   40        0.091        -0.005  UP   0.001

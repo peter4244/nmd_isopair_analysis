@@ -1,0 +1,27 @@
+filtered DGEList: 162800 isoforms x 26 samples (4 CTs)
+restricted isoform counts (1.12 — verified exact previously):
+ AT2  LAE   FB   MV 
+2267 8087 1131 2015 
+=========== CANDIDATE FILTERS vs CLAIM ===========
+claim: LAE 27.8%% (lowest) -> MV 51.7%% (highest)
+                                    filter n_pass   AT2   LAE    FB    MV
+   A. DMSO-only filterByExpr (min.count=5) 107091  26.4  25.2  20.5  26.3
+ B. ALL samples filterByExpr (min.count=5) 112720  26.0  24.8  20.9  26.5
+    C. ALL samples filterByExpr (defaults)  71483  12.0   8.9   6.7   8.6
+   D. filterByExpr, group = ct x treatment 101671  46.8  42.7  34.2  37.1
+            E. per-CT filterByExpr (union)  88883  34.1  25.9  40.2  47.0
+               F. CPM>=0.25 in >=2 samples 162800 100.0 100.0 100.0 100.0
+               F. CPM>=0.25 in >=3 samples 162800 100.0 100.0 100.0 100.0
+               F. CPM>=1.00 in >=2 samples 104564  57.6  48.7  45.5  46.2
+               F. CPM>=1.00 in >=3 samples  90278  39.4  34.1  27.0  29.4
+closest match: E. per-CT filterByExpr (union)  (LAE 25.9 vs 27.8, MV 47.0 vs 51.7, |err| 6.6)
+ordering check (claim: LAE lowest, MV highest):
+  A. DMSO-only filterByExpr (min.count=5)    min=FB max=AT2 
+  B. ALL samples filterByExpr (min.count=5)  min=FB max=MV 
+  C. ALL samples filterByExpr (defaults)     min=FB max=AT2 
+  D. filterByExpr, group = ct x treatment    min=FB max=AT2 
+  E. per-CT filterByExpr (union)             min=LAE max=MV <-- ordering matches
+  F. CPM>=0.25 in >=2 samples                min=AT2 max=AT2 
+  F. CPM>=0.25 in >=3 samples                min=AT2 max=AT2 
+  F. CPM>=1.00 in >=2 samples                min=FB max=AT2 
+  F. CPM>=1.00 in >=3 samples                min=FB max=AT2 

@@ -1,0 +1,43 @@
+=========== RECOMPUTED §3 ¶5 (worked examples) ===========
+prodfrac columns are PERCENT. 'custom' = adjusted productive log2FC.
+===== 3.21  SHMT2 =====
+claim (MV): productive 86.5 -> 111.1 CPM | adjusted logFC +0.42 | SR logFC +0.56 | NMD susceptible
+  ct gene_category prodCPM_DMSO prodCPM_SMG_adj prodCPM_SMG_raw custom
+ AT2           NMD         86.5           116.2           111.1  0.421
+  FB           NMD         68.9            85.3            82.5  0.304
+ LAE           NMD         76.6            73.9            66.8 -0.051
+  MV           NMD         44.1            58.2            54.8  0.391
+ prodfrac_DMSO prodfrac_SMG sr_logFC dir     pm       lfsr
+          92.0         73.4    0.561  ns  0.289 0.05816197
+          78.2         61.8    0.660  ns  0.178 0.16157471
+          97.5         68.8    0.328  ns -0.030 0.37599580
+          84.3         45.3    1.161  ns  0.193 0.11421608
+===== 3.22  SRSF2 =====
+claim (CT NOT stated in prose; Fig 2D legend = MV):
+  productive 84 -> 50 CPM | adjusted logFC -0.73 | productive fraction 91% -> 26%
+  ct gene_category prodCPM_DMSO prodCPM_SMG_adj prodCPM_SMG_raw custom
+ AT2           NMD         81.6            58.4            55.9 -0.474
+  FB           NMD         90.3            87.3            84.8 -0.048
+ LAE           NMD        170.0           101.3            91.5 -0.741
+  MV           NMD         84.1            50.4            47.4 -0.728
+ prodfrac_DMSO prodfrac_SMG sr_logFC  dir     pm         lfsr
+          92.4         42.7    0.498 down -0.429 2.820309e-04
+          94.2         62.4    0.307   ns -0.170 1.676392e-01
+          90.0         20.2    0.879 down -0.706 2.220446e-16
+          91.0         26.4    0.726 down -0.593 1.947019e-06
+===== 3.23  PCNA =====
+claim (LAE): productive 251 -> 130 CPM | adjusted logFC -0.95 | fraction 100% -> 93% | SR logFC -0.81
+  ct gene_category prodCPM_DMSO prodCPM_SMG_adj prodCPM_SMG_raw custom
+ AT2           NMD        161.0           129.3           123.7 -0.314
+  FB           NMD        156.9           155.0           150.8 -0.018
+ LAE           NMD        251.5           129.9           117.4 -0.947
+  MV           NMD        209.7           120.0           113.0 -0.800
+ prodfrac_DMSO prodfrac_SMG sr_logFC  dir     pm         lfsr
+          99.9         97.3   -0.509 down -0.310 1.263157e-02
+          99.7         98.1   -0.451   ns -0.130 2.977520e-01
+          99.5         92.5   -0.811 down -0.875 4.440892e-16
+          99.9         96.7   -0.604 down -0.652 1.103845e-05
+=========== BEST-MATCHING CELL TYPE (by stated CPM pair) ===========
+SHMT2  claim 86.5 -> 111.1  ==>  best = AT2 (86.5 -> 116.2, |err| 5.12)
+SRSF2  claim 84.0 -> 50.0  ==>  best = MV (84.1 -> 50.4, |err| 0.45)
+PCNA   claim 251.0 -> 130.0  ==>  best = LAE (251.5 -> 129.9, |err| 0.54)

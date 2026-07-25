@@ -1,0 +1,42 @@
+=========== RECOMPUTED §3 ¶3 (Kitagawa) ===========
+population: significant NMD genes, FB excluded — n = 3949
+  ct    n
+ AT2  871
+ LAE 2225
+  MV  853
+identity check: max |dP - (level+composition)| = 9.095e-13
+NA driver rows: 12   NA level: 12   NA composition: 12
+-- 3.13 overall (claim: level 86.2%, composition 13.5%) --
+                driver    n  pct
+ composition-dominated  534 13.5
+       level-dominated 3403 86.2
+                  <NA>   12  0.3
+-- 3.14 productive-UP (claim: 99.2% level, 0.3% composition) --
+                driver    n  pct
+ composition-dominated    7  0.3
+       level-dominated 2288 99.2
+                  <NA>   11  0.5
+-- 3.15 productive-DOWN (claim: 32.1% composition, 67.9% transcription) --
+                driver    n  pct
+ composition-dominated  527 32.1
+       level-dominated 1115 67.9
+                  <NA>    1  0.1
+-- residual probe: exact |composition| == |level| ties --
+ties: 0 of 3949 (0.00%)
+-- sensitivity --
+including FB:
+                driver    n  pct
+ composition-dominated  535 12.5
+       level-dominated 3714 87.1
+                  <NA>   17  0.4
+per-CT driver split (FB excluded):
+  ct                driver    n  pct
+ AT2 composition-dominated   10  1.1
+ AT2       level-dominated  859 98.6
+ AT2                  <NA>    2  0.2
+ LAE composition-dominated  474 21.3
+ LAE       level-dominated 1744 78.4
+ LAE                  <NA>    7  0.3
+  MV composition-dominated   50  5.9
+  MV       level-dominated  800 93.8
+  MV                  <NA>    3  0.4

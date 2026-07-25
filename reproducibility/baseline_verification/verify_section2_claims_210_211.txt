@@ -1,0 +1,38 @@
+    hour, isoweek, isoyear, mday, minute, month, quarter, second, wday,
+    week, yday, year
+    transpose
+    between, first, last
+Yul's Rmd ran clean.
+all_proportions: 3340918 rows | 162800 isoforms | CTs: AT2,FB,LAE,MV | treatments: DMSO,Smg1i
+all_dge: 651200 rows | NMD-susceptible isoform-CT pairs (her rule): 102935
+cross-check, mashr-column rule (lfsr<0.05 & pm>0): 102935 pairs (overlap 102935)
+=========== RECOMPUTED §2 claims 2.10 / 2.11 ===========
+(NB: the expression column is `normalized_cpm`; a bare `cpm` silently resolves to edgeR::cpm)
+NMD-susceptible rows in the proportion table: 632158 (coverage check — the blocked
+ attempt covered <17%; this join covers 92.1% of NMD isoform-CT pairs)
+-- 2.10a DMSO isoform proportion of NMD-susceptible isoforms --
+   claim: "concentrated at low isoform proportions" (SF5)
+ cell_type     n median_prop pct_under_50 pct_under_10
+       AT2 20796         0.1         99.0         96.1
+        FB 18835         0.1         99.0         96.0
+       LAE 31709         0.1         99.2         96.8
+        MV 23450         0.1         99.1         96.8
+-- 2.10b absolute expression span --
+   claim: "spanned more than four orders of magnitude of absolute expression"
+ cell_type     n min_cpm max_cpm log10_span span_p1_p99
+       AT2 15314  0.0317     508       4.21        2.48
+        FB 14536  0.0251     854       4.53        2.73
+       LAE 26561  0.0172    1500       4.94        2.58
+        MV 18415  0.0172     522       4.48        2.76
+-- 2.11 DMSO vs Smg1i shift in proportion and absolute expression --
+   claim: "clear upward shift in both proportion and absolute expression"
+ cell_type     n med_prop_DMSO med_prop_SMG pct_prop_up p_prop med_cpm_DMSO
+       AT2 20796           0.1          1.3        97.6      0         0.07
+        FB 18835           0.1          1.0        96.8      0         0.08
+       LAE 31709           0.1          1.6        97.9      0         0.06
+        MV 23450           0.1          1.4        97.9      0         0.06
+ med_cpm_SMG pct_cpm_up p_cpm
+        0.61      100.0     0
+        0.52       99.7     0
+        0.85      100.0     0
+        0.75      100.0     0
