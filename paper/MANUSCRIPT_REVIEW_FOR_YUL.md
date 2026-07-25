@@ -17,7 +17,8 @@ usually to the decimal (median adjusted log2FC 0.141 / −0.040 / 0.098 / 0.051;
 The items below are therefore **not** about whether the analysis is right. They fall into three
 kinds:
 
-1. **Three places where the prose says more than the statistic shows** (§1).
+1. **Two places where the prose says more than the statistic shows** (§1.2, §1.3). A third
+   (§1.1) I raised and then withdrew — recorded there so the reasoning is on file.
 2. **A recurring pooling pattern** — cell-type-specific spread averaged into one number, with
    LAE the outlier every time (§2).
 3. **Definitions a reader cannot reconstruct from Methods** (§3).
@@ -44,37 +45,36 @@ mismatch, but it is **correct** — in these files `adj.P.Val` *is* the mashr lf
 
 ## 1. Needs a decision before submission
 
-### 1.1 "% transcriptional output lost" is mathematically a total variation distance
+### 1.1 "% transcriptional output lost" — **no action needed** (an earlier concern of mine, withdrawn)
 
-Affects an **Abstract** claim ("NMD degraded 11–18% of transcriptional output"), Fig 2A,
-SF20/21, and the Discussion's comparison to Fair et al.
+An earlier draft of these notes raised this as a serious issue. Having read the Methods in full
+and examined SF22, **I withdraw it**, and record why in case it comes up in review.
 
-The numbers reproduce exactly (gene-level 11.06–12.50; isoform-level 14.40–18.23). The concern
-is what the statistic measures. Because CPM columns each sum to 1e6, `sum(Δ) = 0` for every
-donor pair, and therefore
+The numbers reproduce exactly (gene-level 11.06–12.50; isoform-level 14.40–18.23).
 
-```
-Σ max(Δ,0)  ≡  Σ max(−Δ,0)  ≡  ½ Σ|Δ|
-```
+**What I raised, and why it does not hold.** Because CPM columns each sum to 1e6,
+`sum(Δ) = 0` for every donor pair, so `Σ max(Δ,0) ≡ Σ max(−Δ,0) ≡ ½ Σ|Δ|` — the measure equals
+the **total variation distance** between the DMSO and SMG1i composition vectors. I read that as
+a defect. It is not: it is a property of compositional data. The quantity being measured — what
+fraction of the SMG1i library consists of material absent under DMSO — is meaningful; the
+isoform *sets* contributing on each side differ; and the experimental design supplies the
+direction.
 
-so the quantity is the **total variation distance** between the DMSO and SMG1i composition
-vectors. Three measured consequences:
+I also argued the `max(Δ,0)` operator could inflate the estimate with noise. **SF22 already
+answers this, and more directly than the check I ran** — its floor is applied to the per-feature
+CPM *difference* (`SMG1i − DMSO ≥ t`), which is exactly where noise lives. Even at a ≥10 CPM
+difference floor, isoform-level remains ~7–9% and gene-level ~9–11%. My independent sweep on
+the expression level agrees: the gene-level measure is nearly invariant (11.06 → 10.89 from a
+0 to 5 CPM floor), and the isoform-level measure holds at 10–13% when only 2.2% of isoforms
+survive. **The signal is not a noise artifact.**
 
-| diagnostic | result |
-|---|---|
-| Recompute in reverse (DMSO − SMG1i) | **identical** in all 4 CTs (14.40 / 14.56 / 18.23 / 15.53) |
-| Share contributed by NMD-susceptible isoforms | **20.7–54.5%** (AT2 4.58 of 14.40 pts; FB 3.01 of 14.56) |
-| Same statistic between two **DMSO** samples, different donors | 13.4–33.3%, exceeding the treatment value in 3 of 4 CTs |
+Finally, computing over *all* isoforms — rather than only lfsr<0.05 ones — is the right choice:
+thresholding would make the measure power-dependent (n=3–4 donors) and discard genuine
+sub-threshold targets.
 
-**Two caveats stated up front**, because neither makes the biology wrong: the equal
-forward/reverse totals are a *normalization* consequence — the isoform *sets* going up and down
-differ, so this is not evidence the biology is symmetric. And the cross-donor DMSO baseline
-carries real donor biology, so it is an upper bound, not a matched technical null.
-
-**Options:** (a) restrict the numerator to NMD-susceptible isoforms → 3.0–9.9%; (b) describe it
-explicitly as a compositional-shift / TVD measure; (c) add a permutation baseline showing the
-treatment effect exceeds donor-level variability; (d) keep the framing and document why it is
-defensible. Any works — what would be uncomfortable is a reviewer deriving the symmetry.
+**Optional, at most:** one Methods sentence noting the measure is compositional (relative to
+library composition) and equals the total variation distance between conditions. That framing
+is arguably a strength, not a caveat.
 
 ### 1.2 The *SHMT2* example (§3 ¶5, Fig 2C) — wrong cell type, and "significantly" is unsupported
 
@@ -213,6 +213,7 @@ cannot reproduce either percentage. The substantive counts are exact regardless.
 | **4.4** | **"the 12 canonical SR proteins"** — only **11** are in the data (SRSF1–SRSF11; SRSF12 absent). Counts unaffected. The Discussion already says "11 of the 12", so the two sections disagree. |
 | **4.5** | **The UPR enrichment claim (§3 ¶2).** The NF-κB/TNFα half verifies cleanly (UP in NMD genes, all 4 CTs, p 4.3e-05…0.008). For UPR: all three named genes appear, but **no single cell type has all three** (AT2 HSPA5+EIF2AK3; LAE/MV HSPA5+XBP1; FB HSPA5 only). And `leading-edge-check` lists membership without testing enrichment — a direct Fisher test is significant in LAE (p=0.004) and MV (p=0.034) but not FB (0.053) or **AT2 (0.44)**. Since "leading-edge" implies a GSEA I could not locate (the claim cites ST4), **which analysis backs the "enriched" wording?** My Fisher test is a different test and should not be read as refuting it. |
 | **4.6** | **§2's cell-type-specific pathways.** Two claims tracked internally — AT2-specific translation-regulatory / xenobiotic metabolism, and AT2+MV regulation of RNA splicing — could not be checked because the specifics are in **neither** manuscript version; the text now defers to "(supplemental results)". **Is there a supplemental results document to verify against?** |
+| **4.8** | **SF23 vs the text.** §3 ¶2 claims "Spearman ≥ 0.96" for non-NMD genes, but SF23 itself prints LAE = **0.95** (AT2/FB/MV 0.97). My recomputation sides with the text (LAE **0.9643**, which rounds to 0.96), so SF23 was most likely rendered from an earlier run and not refreshed. Worth re-rendering, since a reviewer comparing the sentence to the figure it cites would see the stated floor violated. |
 | **4.7** | The Kitagawa percentages sum to 99.7 / 99.5 / 99.9 because of **NA rows** (12 / 11 / 1) — genes in `prod_dir_mashr` dropped from `base` by the expression floor. Not ties (there are **zero**) and not an interaction term. Cosmetic; noted so it isn't mistaken for a bug. |
 
 ---
@@ -251,14 +252,14 @@ a decrease, zero increases**; SRSF2 (MV) 84.1 → 50.4, −0.728, 91.0% → 26.4
 
 ## 6. Questions
 
-1. **§1.1** — which framing do you want for "% transcriptional output lost"?
-2. **§1.2** — is the *SHMT2* panel AT2 or MV, and can "significantly" be dropped?
-3. **§1.3** — happy to quote DNA replication alone and soften "instead"?
-4. **§2** — report per-cell-type ranges rather than pooled/median summaries, given LAE is
+1. **§1.2** — is the *SHMT2* panel AT2 or MV, and can "significantly" be dropped?
+2. **§1.3** — happy to quote DNA replication alone and soften "instead"?
+3. **§2** — report per-cell-type ranges rather than pooled/median summaries, given LAE is
    consistently the outlier?
-5. **§3** — what are the "expressed isoforms" denominator (1.12) and the "additional expression
+4. **§3** — what are the "expressed isoforms" denominator (1.12) and the "additional expression
    filter" plus its testing step (1.13)?
-6. **§4.1** — which is the correct reason FB is provisional?
-7. **§4.5** — which analysis produced the UPR "enriched" claim (ST4)?
-8. **§4.6** — is there a supplemental results document holding the cell-type-specific pathway
+5. **§4.1** — which is the correct reason FB is provisional?
+6. **§4.5** — which analysis produced the UPR "enriched" claim (ST4)?
+7. **§4.6** — is there a supplemental results document holding the cell-type-specific pathway
    findings?
+8. **§4.8** — can SF23 be re-rendered so its LAE Spearman matches the text?

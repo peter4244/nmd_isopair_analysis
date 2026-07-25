@@ -16,36 +16,69 @@ Open items surfaced by the 5-step verification passes, with routing. **Living do
 
 ## Open
 
-### F-3 🔴 🟣 YUL (+ 🔵 Pete) — "% transcriptional output lost" is a total variation distance
+### F-3 🟢 ⚪ — "% transcriptional output lost": **substantially downgraded 2026-07-24 (was 🔴)**
 
 **Where it lands:** Abstract ("NMD degraded 11–18% of transcriptional output"), §3 ¶1,
-Fig 2A, SF20, SF21, Discussion (comparison to Fair et al. 15%).
+Fig 2A, SF20, SF21, SF22, Discussion (comparison to Fair et al. 15%).
 
-**Status of the numbers:** ✅ reproduce **exactly** — this is not a reproducibility problem.
-It is an interpretation problem.
+**Status of the numbers:** ✅ reproduce exactly.
 
-**The finding.** Every CPM column sums to exactly 1e6 (closed composition), so `sum(Δ) = 0`
-and therefore `Σmax(Δ,0) ≡ Σmax(−Δ,0) ≡ ½Σ|Δ|`. The statistic **is** the total variation
-distance between the DMSO and Smg1i isoform-composition vectors. Measured consequences:
+#### ⚠️ Correction — my original 🔴 overstated the case
 
-| Diagnostic | Result |
-|---|---|
-| Reverse direction (DMSO − Smg1i) | **Identical** in all 4 CTs (14.40 / 14.56 / 18.23 / 15.53) — the number does not encode direction |
-| Share from NMD-susceptible isoforms (lfsr<0.05 & PM>0) | **20.7–54.5%** (AT2 4.58 of 14.40; FB 3.01 of 14.56; LAE 9.93 of 18.23; MV 6.03 of 15.53 pts) |
-| Same statistic, two **DMSO** samples, different donors | 13.4–33.3% — **exceeds** the treatment value in 3 of 4 CTs |
+After reading the Methods text in full and testing the CPM-floor sensitivity, **most of the
+original criticism does not hold.** Recorded honestly rather than quietly edited.
 
-**Caveats (stated so this isn't overread).** The equal forward/reverse totals are a
-*normalization* consequence; the isoform *sets* moving up vs down differ, so this is not
-evidence the underlying biology is symmetric. The cross-donor DMSO baseline carries genuine
-donor biology, so it is an upper bound on a no-treatment baseline, not a matched technical
-null.
+**1. The noise-inflation concern is answered — and SF22 is a stronger check than the one I
+ran.** `max(Δ,0)` has positive expectation even at true Δ=0, so I argued the measure could be
+noise-inflated. The Methods run the measure with **varied CPM floors (SF22)**, and reading the
+actual figure (PDF p30–31), SF22's floor is applied to the **per-feature CPM difference**
+(`SMG1i − DMSO ≥ t`), not to the expression level. That targets the noise concern directly —
+small positive deltas are exactly what noise produces. **Even at a ≥10 CPM difference floor,
+isoform-level remains ~7–9% and gene-level ~9–11%.**
 
-**Options to resolve:** (a) restrict the numerator to NMD-susceptible isoforms → 3.0–9.9%;
-(b) relabel as a compositional-shift / TVD measure rather than "output lost"; (c) add a
-permutation baseline demonstrating the treatment effect exceeds donor-level variability;
-(d) argue the current framing is defensible and document why.
+My independent sweep applied a floor to the *expression level* instead, and agrees:
 
-**Evidence:** `code/upstream/verify_section3_p1_metric_diagnostics.R` · commit `c74bf2c`
+| floor (CPM) | iso AT2 | iso FB | iso LAE | iso MV | **gene AT2** | **gene LAE** | isoforms kept |
+|---|---|---|---|---|---|---|---|
+| 0 | 14.40 | 14.56 | 18.23 | 15.53 | 11.06 | 12.03 | 645,272 |
+| 1 | 12.21 | 12.99 | 15.85 | 13.80 | 11.01 | 11.98 | 44,231 |
+| 5 | 10.44 | 11.83 | 13.34 | 12.36 | **10.89** | **11.92** | 14,433 |
+
+The **gene-level measure is essentially invariant** (11.06 → 10.89 across the whole range). The
+isoform-level measure declines ~28% relative but remains **10–13% even at a 5-CPM floor**, where
+only 2.2% of isoforms survive and measurement noise is minimal. **The signal is not a noise
+artifact.**
+
+**2. The "only 20.7–54.5% comes from NMD-susceptible isoforms" point was weak.** The Methods
+specify the measure is computed "across all isoforms" *by design*. Restricting to
+lfsr<0.05 would make the measure **power-dependent** (n=3–4 donors per cell type) and would
+discard genuine sub-threshold NMD targets. Computing over all isoforms is the defensible
+choice, and the floor analysis shows the signal persists among well-expressed isoforms.
+
+**3. The cross-donor DMSO "null" should not have been tabulated next to the treatment value.**
+It carries real donor biology and is not a matched null. I flagged that caveat, but presenting
+it as "the null exceeds the signal" invited a stronger reading than the comparison supports.
+
+#### What legitimately remains (🟢, optional Methods polish)
+
+**The identity is real and worth knowing:** because CPM columns sum to 1e6, `sum(Δ)=0`, so
+`Σmax(Δ,0) ≡ Σmax(−Δ,0) ≡ ½Σ|Δ|` — the measure **is** the total variation distance between the
+DMSO and Smg1i composition vectors. This is a *property of compositional data, not a defect*:
+the quantity being measured (what fraction of the Smg1i library consists of material absent
+under DMSO) is meaningful, the contributing isoform *sets* on each side differ, and the
+experimental design supplies the direction.
+
+The one substantive consequence is that the measure is **relative, not absolute** — without
+spike-ins it cannot separate "NMD targets increased" from "everything else decreased." That is
+a standard limitation of CPM-based RNA-seq and at most merits one Methods sentence. It could
+even be stated as a strength: the measure equals the total variation distance between
+conditions, giving it a clean interpretation.
+
+**Suggested action:** none required. Optionally note in Methods that the measure is
+compositional (relative to library composition) and equals the TVD between conditions.
+
+**Evidence:** `code/upstream/verify_section3_p1_metric_diagnostics.R` (original diagnostics) ·
+floor sweep run 2026-07-24 · commits `c74bf2c`, and this correction.
 
 ---
 
@@ -394,6 +427,33 @@ be treated as refuting Yul's. **Ask which analysis backs the "enriched" wording*
 whether it too is cell-type-restricted.
 
 **Evidence:** `code/upstream/verify_section3_p2_claim311.R`
+
+---
+
+### F-15 🟡 🟣 YUL — SF23 displays LAE Spearman = 0.95, but the text claims ≥ 0.96
+
+**Claim (§3 ¶2):** "…left non-NMD genes with closely matched expressions in DMSO and
+adjusted-SMG1i (**Spearman ≥ 0.96**; SF23)."
+
+**SF23 itself (PDF p31)** prints per-panel values: AT2 **0.97** · LAE **0.95** · FB **0.97** ·
+MV **0.97**. The LAE panel therefore **contradicts the text's ≥ 0.96 floor**.
+
+My recomputation sides with the **text**, not the figure:
+
+| CT | SF23 figure | recomputed |
+|---|---|---|
+| AT2 | 0.97 | 0.9671 |
+| **LAE** | **0.95** | **0.9643** |
+| FB | 0.97 | 0.9705 |
+| MV | 0.97 | 0.9661 |
+
+0.9643 rounds to 0.96, so the claim holds on current data; the figure's 0.95 does not. Most
+likely SF23 was rendered from an **earlier run** and not refreshed. Worth re-rendering SF23
+(or confirming which run it reflects) so the figure and text agree — a reviewer comparing them
+would see the stated floor violated by the figure the sentence cites.
+
+**Evidence:** `code/upstream/verify_section3_p2.R` (chunk `R5-control-corr` values) ·
+`paper/Supplemental Figures NMD.pdf` p31
 
 ---
 
