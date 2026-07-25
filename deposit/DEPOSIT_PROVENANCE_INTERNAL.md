@@ -53,9 +53,28 @@ these samples — the percent-transcriptional-output-lost measure and the
 cell-type-restricted-expression analyses are defined over the full universe, so trimming would
 change published results.
 
-## Consistency check still open
+## Open action — GEO
 
-**GEO GSE329233 must contain only the four cell types' reads.** If the submitted record includes
-other conditions, it will not match the paper or the Zenodo deposit, and a reader comparing them
-would see a discrepancy. Verify against
-`~/claude_projects/ncbi_submissions/nmd_lung_cells/` before submission.
+**GEO GSE329233 currently includes the other culture conditions and they must be removed**, so
+the record matches the paper and the Zenodo deposit. Pete, 2026-07-25: do this **after
+verification is complete** — the verification work runs against local data and does not depend
+on the GEO record, so removing samples earlier would gain nothing and risks disturbing a
+submission mid-flight. Submission files: `~/claude_projects/ncbi_submissions/nmd_lung_cells/`.
+
+## Why the deposited files were not trimmed to observed isoforms
+
+Considered and rejected 2026-07-25. The isoform matrix carries 645,272 isoforms, of which 30,280
+have no counts in these samples. Trimming to the 614,992 observed was **verified lossless** —
+identical filterByExpr set, and percent-output-lost identical to four decimals — but rejected
+because:
+
+1. The classification, GTF, GFF3 and FASTA all carry the same 645,272 isoforms. Trimming the
+   counts alone would leave the deposit's files disagreeing with each other, which is a worse
+   inconsistency than the one it fixes. Trimming all of them means parsing 3.8 GB of
+   GTF/GFF3/FASTA for no analytical gain.
+2. SQANTI filters on structural criteria rather than expression, so a filtered set containing
+   isoforms with no assigned counts is ordinary and not, by itself, informative about anything.
+
+The README note that drew attention to it ("including those with zero counts") was removed
+instead. Had we trimmed, exactly two baseline lines would have changed — the DGEList and CPM
+dimension printouts in `verify_section3_p1.txt` — with all nine numeric-result lines unaffected.
