@@ -88,7 +88,7 @@ Tier 1*, so nobody mistakes it for primary data.
 | **N** | `tan_tx_mashr_model.rds` | small | Our fitted object over Tan's data — depositing it makes 2.18 reproducible even if their download moves. Recommend **include**. |
 | **O** | Example-gene annotation (`srsf.*`, `sub.isoforms.gtf`, …) | small | Only if figure panels read them. **Audit, then include if used.** |
 
-### 1.3 Deliberately excluded (documented, not deposited)
+### 1.4 Deliberately excluded (documented, not deposited)
 
 - **Reference genome / GENCODE / Ensembl v115** — large, public, versioned. Pin versions in Methods.
 - **Raw reads** — GEO GSE329233.
