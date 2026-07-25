@@ -447,10 +447,11 @@ My recomputation sides with the **text**, not the figure:
 | FB | 0.97 | 0.9705 |
 | MV | 0.97 | 0.9661 |
 
-0.9643 rounds to 0.96, so the claim holds on current data; the figure's 0.95 does not. Most
-likely SF23 was rendered from an **earlier run** and not refreshed. Worth re-rendering SF23
-(or confirming which run it reflects) so the figure and text agree — a reviewer comparing them
-would see the stated floor violated by the figure the sentence cites.
+0.9643 rounds to 0.96, so the text holds on current data while the figure's 0.95 does not.
+That pattern fits SF23 having been rendered before a data update — but that is an inference,
+not something established. **Routed to Yul as a question for her comment** (Yul doc §4.8 /
+Q8): which run does SF23 reflect? If stale, re-render; if 0.95 is current, the text's ≥0.96
+floor is what needs adjusting. Either way it should be her call, not an assumption.
 
 **Evidence:** `code/upstream/verify_section3_p2.R` (chunk `R5-control-corr` values) ·
 `paper/Supplemental Figures NMD.pdf` p31
