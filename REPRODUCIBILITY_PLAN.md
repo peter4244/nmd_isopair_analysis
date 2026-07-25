@@ -125,6 +125,65 @@ Cite the data DOI in Data Availability alongside GEO, and reference it from each
 
 ---
 
+## 2b. 4-CT-native rewrite (Pete's decision, 2026-07-24 — "Option C")
+
+**Decision: the codebase is rewritten to assume four cell types from the start.** The deposited
+raw counts begin as 4-CT; no script loads six cell types and drops two.
+
+**Rationale (Pete):** interpretability. A reader should never see cell types that are not in the
+paper. Verified: the manuscript mentions the excluded types **zero** times — "air-liquid" 0,
+"ALI" 0, "submerged" 0 — so no published claim depends on them.
+
+**Cost recorded once, then accepted.** The deposited code will no longer be, literally, the code
+that produced the published numbers; it is a rewrite that must be *demonstrated* to produce
+them. Pete's call, made with that trade-off stated. The mitigation below is what makes it safe.
+
+### 2b.1 Scope
+
+| Layer | Change |
+|---|---|
+| **Data** | Subset both count files to the 26 four-CT samples: `nmd_lungcells_filtered.count_matrix.txt` (38→26) and `salmon.merged.gene_counts_length_scaled` (38→26). Per-isoform files (classification, FASTA, GTF, GFF3) have no sample dimension — untouched. Omit `nmd_mashr_dge_{ddali,doali}` and `isocall_dge/old/mashr` from the deposit. |
+| **Drop steps** | Delete the ALI-drop blocks outright (`Isoform_Level_Quantification.Rmd:241-246`, the equivalent in `NMD_shortread_dge_fullmodel_2026.5.5.Rmd`). |
+| **Scope filters** | ~32 files carry `CT_KEEP` / `CELL_TYPES` / `ct %in%` filters. Keep `CELL_TYPES` as a **declaration of scope** (it documents the four types and orders factors); remove the *drop* framing and any reference to the excluded types. |
+| **Docs** | `CLAUDE.md`, `ONBOARDING.md`, repo READMEs: state 4-CT scope; drop the 6-CT tables. |
+
+### 2b.2 Sub-decision needed: canonical cell-type naming
+
+The data uses internal codes `AT`/`DD`, relabelled in-script to display names `AT2`/`LAE`. That
+mismatch cost real time today — the mashr CSVs carry `Smg1i_in_AT`/`Smg1i_in_DD`, so
+`resolve_mash_col()`, `resolve_sr()` and `CELLTYPE_MAP` all needed alias patches before Yul's
+code would run, and it also produced a false "documented backwards" scare in `CLAUDE.md`.
+
+Since the rewrite is happening anyway, **normalising to `AT2`/`LAE` at source would remove that
+entire class of bug.** It costs a mashr re-run to regenerate the column names — cheap, because
+mashr is seeded and deterministic, and mashr outputs are Tier 2 (regenerated, not deposited).
+
+**Question for Pete: normalise the names in the same pass, or leave `AT`/`DD` in the data?**
+
+### 2b.3 The safety net — regression harness (non-negotiable for C)
+
+Because C decouples the deposited code from what was run, it must be *proved* equivalent:
+
+1. **Capture the baseline first.** The `code/upstream/verify_section*.R` scripts built during the
+   §1–§3 verification already reproduce ~47 claims. Run them against the current codebase and
+   dump every number to a machine-readable baseline.
+2. **Rewrite** (2b.1), combined in one pass with the de-hardcoding in §3 — both touch the same
+   files, so one edit and one re-verification.
+3. **Re-run the suite.** Requirement: **every number identical.** Any difference is a defect in
+   the rewrite until proven otherwise.
+4. **Then** the clean-room test (§5) on top.
+
+This reuses today's verification work as the regression suite rather than writing one from
+scratch, and it is the only thing that makes C as trustworthy as B.
+
+### 2b.4 One courtesy issue
+
+C rewrites **Yul's** analysis code, not just its inputs. Depositing her derived data was ruled
+not to need sign-off (decision 8), but rewriting her scripts is a different matter and she is
+first author. Worth telling her before the pass, not after.
+
+---
+
 ## 3. De-hardcoding the code (the portability work)
 
 **Measured:** 17 of 59 tracked files in `code/upstream/` hardcode `/udd/reyle/...`. My own
