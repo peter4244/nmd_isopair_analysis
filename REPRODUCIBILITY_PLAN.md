@@ -154,6 +154,48 @@ identical apart from §5.3's two declared lines.
 ⚠️ The script's baseline path must be updated for the new layout (`reproducibility/` →
 `verification/`) before `--check` will run there.
 
+### 6.1b Stage-wise intermediate comparison — the strongest available check
+
+**Added 2026-07-25 (Pete):** *"intermediate data is available still for you to verify against,
+even if it is not made publicly available."*
+
+The deposit ships Tier 1 only, but **we retain every Tier 2 intermediate locally**. They are not
+public, and they are not needed by a reader — but they are a known-good reference for us. That
+converts verification from end-to-end into **stage-by-stage**, which matters because under
+decision 1 there are no deposited baselines, so an end-to-end-only check would surface drift at
+the final number and force bisecting a six-stage pipeline to locate it.
+
+Available references:
+
+| Stage | Reference | Held |
+|---|---|---|
+| DGEList construction | `nmd_fig_data/dge_*.rds` | 5 objects |
+| limma + mashr | per-CT and shared mashr CSVs | 20 files |
+| Isopair pipeline | `data_mashr/analysis_cache/` | 83 objects |
+| ORF scan (`05s`/`05t`/`05u`) | `orfik_scan`, `ref_cds_features_all`, `paralog_genes` | 3 objects |
+| Model | trained weights; HDF5 and interpretability exports on Explorer | — |
+
+**Procedure.** After the rewrite, regenerate each stage *from the deposit* and compare against
+its stored reference — dimensions, dimnames and values, not just summary statistics. The first
+stage that differs localises the defect exactly.
+
+**This closes or de-risks three items that were otherwise deferred:**
+
+- **§7 E (ORFik version risk) becomes testable now.** Run `05s_orfik_scan.R` against the
+  deposited FASTA with ORFik 1.30.2 and compare to the existing `orfik_scan.rds`. If identical,
+  the risk is closed before publication rather than discovered at the clean-room test. If it
+  differs, we learn that while the deposited weights and reference objects still exist.
+- **§4 and §5 gain regression coverage.** The nine `verify_section*.R` scripts cover §1–§3 only,
+  so the regression check in §6.1 cannot detect a rewrite that breaks Isopair or the model.
+  Comparing the Isopair cache (83 objects) and the model inputs closes that hole.
+- **Trim safety extends beyond what was tested.** Trimming to observed features was verified
+  neutral for `filterByExpr` and percent-output-lost; comparing regenerated Isopair and model
+  intermediates tests it for §4 and §5, where proportions over a feature universe could shift.
+
+**Caveat.** These references are local and unpublished, so this check is available to us and not
+to a reader. It strengthens our confidence before minting the DOI; it does not replace §6.2,
+which is what establishes the claim for anyone else.
+
 ### 6.2 Clean-room test — gate on the DOI
 
 Fresh clone into an empty directory on a machine with no Channing access; download the Zenodo
@@ -174,5 +216,5 @@ history to fall back on, so this gate is not optional.
 | B | **Example-gene annotation** (`srsf.*`, `sub.isoforms.gtf`) is not on this laptop. Audit whether any figure reads it; if none does, close decision 4 as "not needed". |
 | C | **`REPRODUCTION.md` not yet written** — the runbook mapping claim/figure → script → expected output, stating plainly what is *not* reproducible (M2, model retraining, the Tan download). |
 | D | **Zenodo metadata before publishing:** expand author given-names, add ORCIDs, add related-identifier links to the code DOI once minted. Immutable at mint. |
-| E | **ORFik version risk.** 1.30.2 is pinned, but that is what is installed now, not verifiably what produced the original scan. If a regenerated scan drifts, §5 figures will not match — the clean-room test is the detector. |
+| E | **ORFik version risk** — now directly testable via §6.1b: regenerate `05s` from the deposited FASTA and diff against the retained `orfik_scan.rds`. Do this early; it is cheap and closes the risk before the DOI. |
 | F | **GEO GSE329233** must be reduced to the four cell types' reads, after verification (Pete, 2026-07-25). |
