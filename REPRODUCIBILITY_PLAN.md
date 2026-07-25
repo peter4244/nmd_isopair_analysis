@@ -86,24 +86,37 @@ it. This is **declared work in §5.3**, not cleanup.
 
 ---
 
-## 4. ⛔ Blockers — inputs with neither a deposit entry nor a shipped producer
+## 4. ⛔ Missing inputs — triaged 2026-07-25
 
-Must be resolved or **explicitly scoped out of the reproducibility claim** before the rewrite
-is worth doing.
+These are **missing producers or missing files**, not merely undeposited data. Investigated
+before escalating (the `05s`/`05t`/`05u` recovery showed history often holds them).
 
-| Input | Needed by | Consequence |
+### 4.1 Found locally — deposit gap only, no code missing
+
+| Input | Located at | Action |
 |---|---|---|
-| `sub.isoforms.gtf` | `Figures/make_gene_examples.R:26` → **Figure 1 C/D/E** | Three main-figure panels unreproducible (B7 — was §7 "open item B") |
-| `nmd_isocall.isoforms.gtf.gz` | `01_prepare_data_mashr.R:41`, `scripts/core/02_extract_isoform_structures.R:86` | §4 cannot run from the deposit |
-| `gencode.v49...annotation.gff3.gz` | `02_extract_isoform_structures.R:89`, `04_extract_cds_annotations.R:82` | ditto; external download, undocumented |
-| `isoseq/collapse/merge-collapsed.gff` | `02_extract_isoform_structures.R:90` | ditto |
-| `FB_MV_pheno_2025.8.2.csv`, `DD_DO_AT_pheno_2025.8.15.csv` | `NMD_shortread_dge_fullmodel:125,131` | no SR DGEList → §1 and §3 SR chains dead |
-| `tx_summary_6ct.tsv` | `model/relabel_tx_summary_4ct.R:45` | no shipped producer; model labels unbuildable |
+| `nmd_isocall.isoforms.gtf.gz` | `nmd/isocall/nmd_lungcells/results/call/` | add to the deposit |
+| `FB_MV_pheno_2025.8.2.csv` | Dropbox `…/NMD/full_dataset/pheno/` | add to the deposit (or `metadata/pheno/`) |
+| `DD_DO_AT_pheno_2025.8.15.csv` | Dropbox `…/NMD/full_dataset/pheno/` | same |
+| `gencode.v49…annotation.sorted.gtf.gz` | `nmd/reference_files/` | external reference — **document the download**, do not redistribute |
 
-v1's producer sweep covered only `PIPELINE.md`'s 11 isopair scripts. **§5.1 extends it to
-`scripts/core/`, `analysis/upstream/` and `model/`.**
+### 4.2 Genuinely absent — must be sourced
 
----
+| Input | Needed by | Where to look |
+|---|---|---|
+| `sub.isoforms.gtf` (+ `gene_ex/`) | `Figures/make_gene_examples.R:26` → **Figure 1 C/D/E** | **Ask Yul.** No producer anywhere: nothing in the repo, `superseded/`, or git history writes a GTF. Her repo was imported as *files, not history* (59 files), so a producer may exist there and never have come across. |
+| `tx_summary_6ct.tsv` | `model/relabel_tx_summary_4ct.R:45` | **Pete's own cluster** — the model repo carries it as a symlink to `/home/p.castaldi/cc/nmd_orf_model/results/`, which resolved live on Explorer. Retrieve from there. |
+| `merge-collapsed.gff` | `scripts/core/02_extract_isoform_structures.R:90` | PacBio isoseq collapse output. Likely Channing/Randell-side; confirm whether §4 still needs it or whether the SQANTI GTF supersedes it. |
+
+⚠️ **Channing is unreachable from this machine** (`changit.bwh.harvard.edu` does not resolve
+without VPN), so Yul's repo could not be inspected directly.
+
+### 4.3 The ask for Yul
+
+1. Does a script producing **`sub.isoforms.gtf`** / the `gene_ex/` example-gene annotation exist
+   in her repo? It is the only input behind three main-figure panels with no producer at all.
+2. Was anything else under `/udd/reyle/nmd_lungcells_2026/` **not** included in the 59-file
+   import — particularly figure-support or data-prep scripts?
 
 ## 5. Rebuilding the instrument — before any rewrite
 
