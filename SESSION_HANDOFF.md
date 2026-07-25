@@ -5,20 +5,34 @@ Written 2026-07-22 at the end of a long session, for a fresh-context successor.
 
 ---
 
-## ⏭ NEXT (updated 2026-07-24 — read this before the older sections below)
+## ⏭ NEXT (updated 2026-07-25 — read this before anything below)
 
-**Deposit workstream is DONE.** Model repo simplified → `v2.0.0` released → all four Zenodo
-DOIs minted (see DOI table) → Code Availability section drafted at `paper/code_availability.md`.
+**Where things are.** The deposit + repo consolidation work is done; the code rewrite is next.
 
-**Active next task: §3 manuscript verification — 26 unverified claims (parked).** Run them
-through the 5-step process one at a time. Also open: §1 (8/15) and §2 (15/26 + 3 robust)
-stragglers; Claim 1.11 (AT2/LAE Spearman range) pending Yul's rerun.
+| | |
+|---|---|
+| Source-data deposit | ✅ built, trimmed, validated — `~/claude_projects/nmd_deposit_2026/` (10 files, 4.0 GB). Pete uploading to Zenodo. |
+| New consolidated repo | ✅ `nmd_lung_longread_2026` — 395 files, §1–§5 in one place |
+| Regression baseline | ✅ captured **before** any edit — `reproducibility/baseline_verification/` (9 scripts, ~47 claims) |
+| §1–§3 verification | ✅ complete — 14 findings in `paper/VERIFICATION_ISSUES.md`; write-up for Yul in `paper/MANUSCRIPT_REVIEW_FOR_YUL.md` |
+| **The rewrite** | ⬜ **next** — see `REPRODUCIBILITY_PLAN.md` §5 |
 
-**Small closeout items (Yul-dependent):** add full author metadata + ORCIDs to the 4 Zenodo
-records; Yul's sign-off on the deposits; paste Code Availability into the Google Doc (+ make
-"Figure 5" a live cross-ref).
+**The plan is `REPRODUCIBILITY_PLAN.md`** (current, reviewed). Two things it establishes that
+must not be lost:
+
+1. **Two tasks, sequential.** Task 1 = fidelity (rewrite; every number identical). Task 2 =
+   correctness (numbers may *change*). Their success criteria contradict, so interleaving them
+   makes a regression indistinguishable from a correction.
+2. 📌 **`CORRECTNESS_PLAN.md` (Task 2) is to be drafted once the rewrite is done** — deferred
+   deliberately so it targets the finished layout. See plan §7 item G for what it must carry.
+
+**Notable finds this session:** three ORF-feature producer scripts (`05s`/`05t`/`05u`) had been
+deleted by a 2026-07-11 cleanup and were recovered from history — without them the model chain
+had no producer. F-3 (the "% output lost" metric) was raised as blocking and then **withdrawn**
+after SF22 and a floor sweep showed the concern did not hold.
 
 ---
+
 
 ## Where things stand
 
