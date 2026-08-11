@@ -21,6 +21,11 @@ const state = {
   filter: {
     minCpm: 1,          // default threshold — matches the mashr-DIE inclusion floor
     showAnnotated: false,
+    // Which treatment arm(s) the Min. CPM threshold is applied to. Defaults
+    // reproduce the previous DMSO-only behaviour exactly.
+    armDmso: true,
+    armSmg1i: false,
+    combine: "or",      // "or" = pass in either arm; "and" = must pass in both
   },
   geneCache: new Map(),   // gene_id → shard — small LRU (cap: 100 genes, ~1 MB)
   geneOrder: [],          // recency of gene cache entries
@@ -168,6 +173,8 @@ function wireFilterBar() {
   const slider = document.getElementById("cpm-filter");
   const label  = document.getElementById("cpm-filter-value");
   const chk    = document.getElementById("show-gencode-all");
+  const dmso   = document.getElementById("cpm-arm-dmso");
+  const smg1i  = document.getElementById("cpm-arm-smg1i");
   slider.addEventListener("input", () => {
     state.filter.minCpm = parseFloat(slider.value);
     label.textContent = formatCpmThreshold(state.filter.minCpm);
@@ -177,8 +184,30 @@ function wireFilterBar() {
     state.filter.showAnnotated = chk.checked;
     if (state.currentGene) renderGenePanel();
   });
-  // Initialise label
+  [[dmso, "armDmso"], [smg1i, "armSmg1i"]].forEach(([el, key]) => {
+    el && el.addEventListener("change", () => {
+      state.filter[key] = el.checked;
+      syncCombineVisibility();
+      if (state.currentGene) renderGenePanel();
+    });
+  });
+  document.querySelectorAll('input[name="cpm-combine"]').forEach(r => {
+    r.addEventListener("change", () => {
+      if (!r.checked) return;
+      state.filter.combine = r.value;
+      if (state.currentGene) renderGenePanel();
+    });
+  });
+  // Initialise label + and/or visibility
   label.textContent = formatCpmThreshold(state.filter.minCpm);
+  syncCombineVisibility();
+}
+
+// The either/both choice only means anything when both arms are ticked.
+function syncCombineVisibility() {
+  const box = document.getElementById("cpm-combine");
+  if (!box) return;
+  box.hidden = !(state.filter.armDmso && state.filter.armSmg1i);
 }
 function formatCpmThreshold(v) {
   return v === 0 ? "0 (all)" : v.toFixed(1).replace(/\.0$/, "");
@@ -330,6 +359,7 @@ async function selectGene(geneId) {
       }
     }
     state.currentGene = shard;
+    noteSmg1iAvailability(shard);
     state.currentIso  = pickInitialIso(shard);
     // Clear docs hash if we were viewing an About/Methods/Cite page
     if (DOCS_IDS.includes((window.location.hash || "").replace(/^#/, ""))) {
@@ -420,7 +450,10 @@ function renderIsoformTable() {
              <strong>This gene has ${nAnnot} annotated GENCODE transcript${nAnnot > 1 ? "s" : ""} that aren't detected.</strong>
              <button id="enable-annotated-nudge" class="btn-nav" style="margin-left:0.5em">Show them</button></div>`;
       } else {
-        helpMsg = `<div class="hint">No isoforms match the current filter. Slide Min. CPM lower or check "Also show annotated but not detected."</div>`;
+        helpMsg = `<div class="hint">No isoforms match the current filter. Slide Min. CPM lower${
+          state.filter.armDmso && state.filter.armSmg1i && state.filter.combine === "and"
+            ? `, switch <em>AND</em> to <em>OR</em>` : ""
+        }, or check "Also show annotated but not detected."</div>`;
       }
       document.getElementById("iso-id").innerHTML = "—";
       document.getElementById("iso-meta").innerHTML = helpMsg;
@@ -447,21 +480,25 @@ function renderIsoformTable() {
     (state.filter.showAnnotated && totalAnnotated ? ` + ${shownAnnotated.length} of ${totalAnnotated} annotated` : "");
 
   const header = `<thead><tr>
-    <th>Isoform</th><th>Exons</th><th class="numeric">Max CPM</th>
+    <th>Isoform</th><th>Exons</th>
+    <th class="numeric">Max CPM<span class="th-sub">DMSO</span></th>
+    <th class="numeric">Max CPM<span class="th-sub">SMG1i</span></th>
     <th>NMD+ CTs</th>
     </tr></thead>`;
   const rows = shown.map(iso => {
     const nmdCts = iso.nmd_responsive
       ? (CTS.filter(ct => iso.nmd_responsive[ct]).map(ct => CT_SHORT[ct]).join(",") || "—")
       : "—";
-    const mx = maxCpm(iso);
+    const mxD = maxCpm(iso);
+    const mxS = maxCpmSmg1i(iso);
     const sel = (iso.id === state.currentIso?.id) ? "selected" : "";
     const gc = iso.gencode_only ? "gencode-only" : "";
     const isNmd = nmdCts !== "—";
     return `<tr class="${sel} ${gc}" data-iso="${escapeHtml(iso.id)}">
       <td class="iso-id">${escapeHtml(iso.id)}</td>
       <td class="numeric">${iso.n_exons ?? "—"}</td>
-      <td class="numeric">${mx > 0 ? mx.toFixed(2) : "—"}</td>
+      <td class="numeric">${mxD > 0 ? mxD.toFixed(2) : "—"}</td>
+      <td class="numeric">${mxS > 0 ? mxS.toFixed(2) : "—"}</td>
       <td class="${isNmd ? "nmd-true" : "nmd-false"}">${nmdCts}</td>
     </tr>`;
   }).join("");
@@ -473,16 +510,56 @@ function renderIsoformTable() {
     });
   });
 }
-function maxCpm(iso) { return Math.max(...CTS.map(ct => iso.cpm?.[ct] ?? 0)); }
+function maxCpmField(iso, field) {
+  const m = iso[field];
+  return m ? Math.max(...CTS.map(ct => m[ct] ?? 0)) : 0;
+}
+function maxCpm(iso)      { return maxCpmField(iso, "cpm"); }        // DMSO baseline
+function maxCpmSmg1i(iso) { return maxCpmField(iso, "cpm_smg1i"); } // SMG1i arm
+
+// Is the SMG1i arm present in this data build? Older shards predate the
+// cpm_smg1i key; without this check, ticking SMG1i would silently empty the
+// table rather than telling the user the data isn't there.
+let smg1iAvailable = null;   // null = not yet determined
+function noteSmg1iAvailability(shard) {
+  if (smg1iAvailable !== null || !shard?.isoforms?.length) return;
+  smg1iAvailable = shard.isoforms.some(
+    i => i.cpm_smg1i && CTS.some(ct => i.cpm_smg1i[ct] != null));
+  if (!smg1iAvailable) {
+    const box = document.getElementById("cpm-arm-smg1i");
+    const lab = document.getElementById("cpm-arm-smg1i-label");
+    if (box) { box.checked = false; box.disabled = true; }
+    if (lab) {
+      lab.classList.add("disabled");
+      lab.title = "SMG1i CPM is not present in this data build — re-run export_atlas_data.R";
+    }
+    state.filter.armSmg1i = false;
+    syncCombineVisibility();
+  }
+}
+
+// Does this isoform clear the CPM threshold, given the selected arm(s)?
+function passesCpmFilter(iso) {
+  const { minCpm, armDmso, armSmg1i, combine } = state.filter;
+  if (minCpm <= 0) return true;
+  // No arm selected — treat as "no CPM filtering" rather than hiding everything.
+  if (!armDmso && !armSmg1i) return true;
+  const d = maxCpm(iso), s = maxCpmSmg1i(iso);
+  if (armDmso && armSmg1i) {
+    return combine === "and" ? (d >= minCpm && s >= minCpm)
+                              : (d >= minCpm || s >= minCpm);
+  }
+  return armDmso ? d >= minCpm : s >= minCpm;
+}
 
 // Single source of truth for what the filter shows — used by the table AND the
 // stacked view + modal so they stay in sync.
 function getFilteredIsoforms() {
   if (!state.currentGene) return [];
-  const { minCpm, showAnnotated } = state.filter;
+  const { showAnnotated } = state.filter;
   const all = state.currentGene.isoforms;
   const detected = all.filter(i => !i.gencode_only)
-                       .filter(i => maxCpm(i) >= minCpm);
+                       .filter(passesCpmFilter);
   const annotated = showAnnotated
     ? all.filter(i => i.gencode_only === true)
     : [];

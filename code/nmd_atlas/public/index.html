@@ -42,11 +42,20 @@
           <p class="hint">Click an isoform row to view its structure, expression, and NMD response across cell types.</p>
 
           <div class="filter-bar">
-            <label>
-              Min. CPM (any cell type):
+            <label title="Threshold is applied to the highest per-cell-type mean CPM, in the treatment arm(s) selected alongside.">
+              Min. CPM:
               <input type="range" id="cpm-filter" min="0" max="30" step="0.5" value="1">
               <span id="cpm-filter-value" class="mono">1</span>
             </label>
+            <span class="filter-arms" id="cpm-arms">
+              <label><input type="checkbox" id="cpm-arm-dmso" checked> DMSO</label>
+              <label id="cpm-arm-smg1i-label"><input type="checkbox" id="cpm-arm-smg1i"> SMG1i</label>
+              <span class="filter-combine" id="cpm-combine" hidden
+                    title="With both arms selected: OR keeps an isoform that clears the threshold in DMSO or SMG1i; AND requires it to clear in both.">
+                <label><input type="radio" name="cpm-combine" value="or" checked> OR</label>
+                <label><input type="radio" name="cpm-combine" value="and"> AND</label>
+              </span>
+            </span>
             <label>
               <input type="checkbox" id="show-gencode-all"> Also show annotated but not detected
             </label>

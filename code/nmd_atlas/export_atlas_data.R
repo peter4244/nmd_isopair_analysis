@@ -42,7 +42,11 @@ CACHE_RDS <- file.path(REPO, "nmd_orf_model_v5_4ct", "tmp",
 # cache (162k+ isoforms vs 1,912) and stays in lockstep with the mashr scope.
 DGE_RDS   <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
                        "data", "isocall", "dge_isocall_unfiltered.rds")
-CPM_CACHE <- file.path(HERE, ".dmso_cpm_cache.rds")
+# Cache holds BOTH treatment arms (cpm_<ct> = DMSO baseline, cpm_smg1i_<ct> =
+# SMG1i). Filename deliberately differs from the old ".dmso_cpm_cache.rds": a
+# stale single-arm cache would load without error and silently emit shards with
+# no SMG1i values, which the front end can only report as "—".
+CPM_CACHE <- file.path(HERE, ".cpm_by_treatment_cache.rds")
 STR_RDS  <- NULL  # No longer used — SQANTI3 GTF is the primary structural source.
 CDS_RDS  <- file.path(REPO, "results", "isoform_transitions", "Version_6.0",
                       "isopair_wrapper", "data_mashr", "cds.rds")
@@ -201,8 +205,9 @@ for (ct in CTS) setnames(lfsr, sprintf("Smg1i_in_%s", ct), sprintf("lfsr_%s", ct
 lfsr <- lfsr[, .(isoform_id,
                   lfsr_AT, lfsr_DD, lfsr_FB, lfsr_MV)]
 
-cat("Computing per-CT DMSO CPM from full DGEList ...\n")
-build_dmso_cpm_cache <- function() {
+cat("Computing per-CT CPM (DMSO and SMG1i arms) from full DGEList ...\n")
+CPM_COLS <- c(sprintf("cpm_%s", CTS), sprintf("cpm_smg1i_%s", CTS))
+build_cpm_cache <- function() {
   suppressPackageStartupMessages({
     library(edgeR)
   })
@@ -218,24 +223,48 @@ build_dmso_cpm_cache <- function() {
   dge <- dge[keep_iso, , keep.lib.sizes = FALSE]
   dge <- calcNormFactors(dge, method = "TMM")
   cpm_mat <- cpm(dge)
-  # Compute DMSO-baseline mean CPM per CT — Pete's standing rule that baseline
-  # expression is DMSO-only (never pool with Smg1i). Isoforms that pass filter
-  # only because Smg1i induces them will legitimately show small DMSO values.
-  is_dmso <- dge$samples$treatment == "DMSO"
+  # Two SEPARATE per-CT means, one per treatment arm. `cpm_<ct>` remains the
+  # DMSO-only baseline — Pete's standing rule that baseline expression never
+  # pools DMSO with Smg1i still holds, because the arms are never averaged
+  # together. `cpm_smg1i_<ct>` is the treated arm, reported alongside rather
+  # than folded in. Isoforms that pass filter only because Smg1i induces them
+  # will legitimately show small DMSO values and large SMG1i ones — which is
+  # precisely what the second column is for.
+  is_dmso  <- dge$samples$treatment == "DMSO"
+  is_smg1i <- dge$samples$treatment == "Smg1i"
+  if (!any(is_smg1i)) {
+    stop("No samples with treatment == 'Smg1i' in the DGEList. Check the label ",
+         "used in dge$samples$treatment: found ",
+         paste(sort(unique(as.character(dge$samples$treatment))), collapse = ", "))
+  }
   out <- data.table(isoform_id = rownames(cpm_mat))
   for (ct in CTS) {
-    cols <- which(is_dmso & dge$samples$ct == ct)
-    out[[sprintf("cpm_%s", ct)]] <- round(rowMeans(cpm_mat[, cols, drop = FALSE]), 3)
+    d_cols <- which(is_dmso  & dge$samples$ct == ct)
+    s_cols <- which(is_smg1i & dge$samples$ct == ct)
+    if (!length(d_cols) || !length(s_cols)) {
+      stop(sprintf("Cell type %s has %d DMSO and %d Smg1i samples — both arms required.",
+                   ct, length(d_cols), length(s_cols)))
+    }
+    out[[sprintf("cpm_%s", ct)]] <-
+      round(rowMeans(cpm_mat[, d_cols, drop = FALSE]), 3)
+    out[[sprintf("cpm_smg1i_%s", ct)]] <-
+      round(rowMeans(cpm_mat[, s_cols, drop = FALSE]), 3)
   }
-  cat(sprintf("  DMSO-baseline CPM: %d isoforms x %d CTs (%d DMSO of %d total samples used for the mean)\n",
-              nrow(out), length(CTS), sum(is_dmso), ncol(cpm_mat)))
+  cat(sprintf("  Per-CT CPM: %d isoforms x %d CTs x 2 arms (%d DMSO + %d Smg1i of %d samples)\n",
+              nrow(out), length(CTS), sum(is_dmso), sum(is_smg1i), ncol(cpm_mat)))
   saveRDS(out, CPM_CACHE)
   out
 }
 es <- if (file.exists(CPM_CACHE)) {
-  cat(sprintf("  Loading DMSO CPM cache from %s ...\n", basename(CPM_CACHE)))
-  readRDS(CPM_CACHE)
-} else build_dmso_cpm_cache()
+  cat(sprintf("  Loading CPM cache from %s ...\n", basename(CPM_CACHE)))
+  cached <- readRDS(CPM_CACHE)
+  missing_cols <- setdiff(CPM_COLS, names(cached))
+  if (length(missing_cols)) {
+    cat(sprintf("  Cache is missing %d expected column(s) (%s) — rebuilding.\n",
+                length(missing_cols), paste(missing_cols, collapse = ", ")))
+    build_cpm_cache()
+  } else cached
+} else build_cpm_cache()
 
 # ── Reference-AUG projection lookup (paper's canonical CDS methodology) ──
 # For each novel comparator paired to a reference isoform: project the
@@ -432,8 +461,12 @@ iso_record_from_expr_row <- function(r, gc_meta = NULL) {
     tags            = if (is.null(gc_meta)) NULL else gc_meta$tags,
     sqanti_category = if (is.na(r$sqanti_category)) NULL else r$sqanti_category,
     sqanti_subcategory = if (is.na(r$sqanti_subcategory)) NULL else r$sqanti_subcategory,
+    # `cpm` = DMSO baseline (unchanged key, so older front ends keep working).
+    # `cpm_smg1i` = the treated arm, added alongside — never merged into `cpm`.
     cpm = list(AT = round_or_null(r$cpm_AT), DD = round_or_null(r$cpm_DD),
                 FB = round_or_null(r$cpm_FB), MV = round_or_null(r$cpm_MV)),
+    cpm_smg1i = list(AT = round_or_null(r$cpm_smg1i_AT), DD = round_or_null(r$cpm_smg1i_DD),
+                FB = round_or_null(r$cpm_smg1i_FB), MV = round_or_null(r$cpm_smg1i_MV)),
     logfc = list(AT = round_or_null(r$logFC_AT), DD = round_or_null(r$logFC_DD),
                   FB = round_or_null(r$logFC_FB), MV = round_or_null(r$logFC_MV)),
     adjP  = list(AT = round_or_null(r$adjP_AT, 6), DD = round_or_null(r$adjP_DD, 6),
@@ -479,6 +512,7 @@ iso_record_from_gencode <- function(g) {
     gencode_name    = g$tx_name,
     tags            = g$tags,
     cpm   = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),
+    cpm_smg1i = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),
     logfc = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),
     adjP  = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),
     lfsr  = list(AT = NULL, DD = NULL, FB = NULL, MV = NULL),

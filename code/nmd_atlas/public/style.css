@@ -65,6 +65,32 @@ header h1 a:hover { color: var(--c-accent); }
 .filter-bar input[type="range"] { width: 8em; }
 .filter-bar .mono { font-family: var(--font-mono); min-width: 2em; text-align: right; font-weight: 500; }
 
+/* Treatment-arm selector for the Min. CPM threshold. Grouped in a bordered
+   pill so it reads as one control belonging to the slider, not three stray
+   checkboxes. */
+.filter-arms {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.2em 0.55em;
+  padding: 0.1em 0.5em;
+  border: 1px solid var(--c-border); border-radius: 6px; background: #fff;
+}
+.filter-arms label { white-space: nowrap; }
+.filter-arms-label { color: var(--c-muted); font-size: 0.92em; }
+.filter-combine {
+  display: flex; align-items: center; gap: 0.2em 0.5em;
+  padding-left: 0.55em; margin-left: 0.05em;
+  border-left: 1px solid var(--c-border);
+  color: var(--c-muted);
+}
+.filter-combine[hidden] { display: none; }
+.filter-arms label.disabled { opacity: 0.45; cursor: not-allowed; }
+.filter-arms label.disabled input { cursor: not-allowed; }
+
+/* Sub-label under a column heading, e.g. "Max CPM / DMSO". */
+#isoform-table th .th-sub {
+  display: block; font-weight: 400; font-size: 0.82em;
+  color: var(--c-muted); letter-spacing: 0.02em;
+}
+
 .iso-count {
   display: inline-block; font-size: 0.75em; font-weight: 500; color: var(--c-muted);
   background: #f3f4f6; border-radius: 10px; padding: 1px 8px; margin-left: 0.5em;
