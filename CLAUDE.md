@@ -112,12 +112,17 @@ nmd  = gene[gene["nmd_responsive"] == True]
 | Repo | What lives there |
 |---|---|
 | `peter4244/Isopair` | The Isopair R/Bioconductor package (gene-matched isoform pair analysis, splicing event detection, PTC attribution) |
-| `peter4244/NMD_orf_model_v5_4ct` | Canonical source for the manuscript's deep-learning model — `03_train.py`, `config.yaml`, `model.py`, `METHODS.md`, DeepSHAP scripts |
+| `peter4244/NMD_orf_model_v5_4ct` | Canonical source for the manuscript's deep-learning model **code** — `03_train.py`, `config.yaml`, `model.py`, DeepSHAP scripts. **Not its methods:** that repo's `METHODS.md` was retired to a pointer on 2026-08-11 because it had drifted from the paper, and the Supplemental Methods is now the single description. Its `README.md` describes the deposited checkpoint (1000 nt windows, seed 42; test AUC 0.926 / AUPRC 0.818) |
 | `peter4244/NMD_orf_model_v5` | **DEPRECATED — do not cite, do not include in the citable deposit.** Predecessor of v5_4ct; logic-identical training code but pre-4-CT-scope, and its AUPRC (0.781) does not match the manuscript (0.833). Never cited as a result source in `results_to_code_map.md`. |
 | `peter4244/Isocall_v1` | **The long-read processing pipeline (M3)** — Pete's Nextflow wrapper around PacBio Isocall: `main.nf`, `Dockerfile`, `environment.yml`, `conf/`, `modules/`. Turns raw Kinnex reads into isoforms. A working copy sits at `isocall_pipeline/` but is **gitignored and not a submodule**, so it is invisible to this repo — cite the GitHub repo, don't rely on the local dir. Channing mirror: `changit:repjc/Isocall_v1`. |
 | `peter4244/Isoscope`, `peter4244/Isovar` | Per-gene isoform annotation/visualization; variant→isoform sQTL tooling |
 
-When writing or auditing methods text, pull from the linked repos' METHODS.md / vignettes as the source of truth — not from anything in this repo's `results/`.
+**For the deep-learning model, the methods ARE the paper's Supplemental Methods** (section "Deep
+Learning Model") — do not go looking for a fuller version in the model repo, and do not write one
+there. A second methods document is how the two drift: the retired one marked the superseded 500 nt
+window configuration as published, kept the six-cell-type lineage, and reported a 39,938-isoform
+dataset where the deposited model uses 41,776. For the other linked repos, pull from their vignettes
+and READMEs — and never from anything in this repo's `results/`.
 
 ## Working in this repo
 
