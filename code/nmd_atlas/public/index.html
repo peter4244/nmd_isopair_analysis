@@ -42,7 +42,7 @@
           <p class="hint">Click an isoform row to view its structure, expression, and NMD response across cell types.</p>
 
           <div class="filter-bar">
-            <label title="Threshold is applied to the highest per-cell-type mean CPM, in the treatment arm(s) selected alongside.">
+            <label title="Threshold is applied to the highest per-cell-type mean CPM, in the treatment arm(s) selected alongside. Each arm&#39;s maximum is taken independently, so the two Max CPM columns may peak in different cell types — the cell type is shown under each value.">
               Min. CPM:
               <input type="range" id="cpm-filter" min="0" max="30" step="0.5" value="1">
               <span id="cpm-filter-value" class="mono">1</span>

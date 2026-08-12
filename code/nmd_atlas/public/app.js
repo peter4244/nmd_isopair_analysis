@@ -489,16 +489,16 @@ function renderIsoformTable() {
     const nmdCts = iso.nmd_responsive
       ? (CTS.filter(ct => iso.nmd_responsive[ct]).map(ct => CT_SHORT[ct]).join(",") || "—")
       : "—";
-    const mxD = maxCpm(iso);
-    const mxS = maxCpmSmg1i(iso);
+    const mxD = maxCpmWithCt(iso, "cpm");
+    const mxS = maxCpmWithCt(iso, "cpm_smg1i");
     const sel = (iso.id === state.currentIso?.id) ? "selected" : "";
     const gc = iso.gencode_only ? "gencode-only" : "";
     const isNmd = nmdCts !== "—";
     return `<tr class="${sel} ${gc}" data-iso="${escapeHtml(iso.id)}">
       <td class="iso-id">${escapeHtml(iso.id)}</td>
       <td class="numeric">${iso.n_exons ?? "—"}</td>
-      <td class="numeric">${mxD > 0 ? mxD.toFixed(2) : "—"}</td>
-      <td class="numeric">${mxS > 0 ? mxS.toFixed(2) : "—"}</td>
+      ${cpmCell(mxD)}
+      ${cpmCell(mxS)}
       <td class="${isNmd ? "nmd-true" : "nmd-false"}">${nmdCts}</td>
     </tr>`;
   }).join("");
@@ -510,12 +510,40 @@ function renderIsoformTable() {
     });
   });
 }
-function maxCpmField(iso, field) {
+// WHICH CELL TYPE THE MAXIMUM CAME FROM, not just its value.
+//
+// The two Max CPM columns take their maxima INDEPENDENTLY, so they routinely come from
+// DIFFERENT cell types, and a reader comparing across the row then computes a treatment
+// effect that describes no cell type at all. Measured on ENST00000674920.3 (ATF4): the DMSO
+// maximum is AT2 at 32.64 and the SMG1i maximum is LAE at 154.19, so reading across gives
+// 4.7x — while the actual per-cell-type effects are 2.7x, 5.9x, 5.2x and 8.1x. None is 4.7x.
+// The person who built the column made exactly that comparison in the handoff note, which is
+// the evidence that the layout invites it.
+//
+// So every maximum is rendered with its cell type beneath. Two numbers from different
+// populations are still two numbers from different populations; naming them is what stops
+// the invalid subtraction.
+function maxCpmWithCt(iso, field) {
   const m = iso[field];
-  return m ? Math.max(...CTS.map(ct => m[ct] ?? 0)) : 0;
+  if (!m) return { v: 0, ct: null };
+  let best = 0, bestCt = null;
+  for (const ct of CTS) {
+    const v = m[ct] ?? 0;
+    if (v > best) { best = v; bestCt = ct; }
+  }
+  return { v: best, ct: bestCt };
 }
+function maxCpmField(iso, field) { return maxCpmWithCt(iso, field).v; }
 function maxCpm(iso)      { return maxCpmField(iso, "cpm"); }        // DMSO baseline
 function maxCpmSmg1i(iso) { return maxCpmField(iso, "cpm_smg1i"); } // SMG1i arm
+
+// The cell shows the value and, beneath it, the cell type it is the maximum of. When the two
+// arms peak in different cell types the labels differ visibly, which is the whole point.
+function cpmCell(x) {
+  if (!(x.v > 0)) return '<td class="numeric">&mdash;</td>';
+  return `<td class="numeric">${x.v.toFixed(2)}` +
+         `<span class="cell-sub">${CT_SHORT[x.ct] ?? x.ct}</span></td>`;
+}
 
 // Is the SMG1i arm present in this data build? Older shards predate the
 // cpm_smg1i key; without this check, ticking SMG1i would silently empty the

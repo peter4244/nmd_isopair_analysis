@@ -86,6 +86,13 @@ header h1 a:hover { color: var(--c-accent); }
 .filter-arms label.disabled input { cursor: not-allowed; }
 
 /* Sub-label under a column heading, e.g. "Max CPM / DMSO". */
+/* The cell type a Max CPM value is the maximum OF. The two arms peak in different cell types
+   often enough that an unlabelled pair invites a treatment ratio describing neither of them. */
+#isoform-table td .cell-sub {
+  display: block; font-size: 0.72em; font-weight: 400;
+  color: var(--c-muted); letter-spacing: 0.02em; line-height: 1.2;
+}
+
 #isoform-table th .th-sub {
   display: block; font-weight: 400; font-size: 0.82em;
   color: var(--c-muted); letter-spacing: 0.02em;
