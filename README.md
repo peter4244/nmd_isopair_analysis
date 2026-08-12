@@ -1,3 +1,20 @@
+> ## ⚠ Superseded — this is not the analysis code for the paper
+>
+> The reproduction package for **Leshem et al., _Long Read RNA Sequencing in Primary Lung Cell
+> Types Reveals Principles of Nonsense-Mediated Decay_** is
+> **[peter4244/nmd_lung_longread_reproduction](https://github.com/peter4244/nmd_lung_longread_reproduction)**.
+> Go there to reproduce anything in the paper: it is the curated code, it names the Zenodo
+> source-data record the analyses start from, and `REPRODUCTION.md` there runs the chain end to end.
+>
+> This repository is the earlier working tree. **Its numbers are not the paper's**, and the study
+> design described below is a different one: six cell types and 38 samples here, against the four
+> cell types (AT2, LAE, FB, MV) and 26 samples the manuscript reports. Nothing here has been kept
+> in step with the published analysis.
+>
+> It is left public and unchanged because it carries a Zenodo DOI
+> ([10.5281/zenodo.21539734](https://doi.org/10.5281/zenodo.21539734)) that has already been cited,
+> and deleting a citable record is worse than labelling it.
+
 # NMD Inhibition Effects on Isoform Expression
 
 This repository contains analysis code for studying the effects of Nonsense-Mediated Decay (NMD) inhibition on transcript isoform expression patterns across multiple lung cell types using long-read (PacBio) RNA sequencing data.
