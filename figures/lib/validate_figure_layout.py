@@ -28,6 +28,7 @@ import matplotlib.colors as mcolors
 import matplotlib.text as mtext
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
+from matplotlib.cbook import STEP_LOOKUP_MAP
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +87,48 @@ class Issue:
 # ---------------------------------------------------------------------------
 # Extraction: pull texts, segments, and rects from a matplotlib Axes
 # ---------------------------------------------------------------------------
+# A Line2D with more finite points than this is read as a data curve (KDE,
+# ECDF, trace) and contributes no segments. Hand-built connectors, stat
+# brackets and box outlines have 2-6 points; np.linspace defaults to 50 and
+# a seaborn KDE to 200. Text on a data curve is assert_data_free's check,
+# which rasterizes every curve. That check exempts labels of 8 characters or
+# fewer, so a short label on a dense curve is checked by neither.
+LINE2D_MAX_LEG_POINTS = 16
+
+
+def _line2d_legs(line, max_points=LINE2D_MAX_LEG_POINTS):
+    """Drawn legs of a Line2D, as (x0, y0, x1, y1) tuples in data coords.
+
+    One leg per consecutive pair of finite vertices, taken after a steps
+    drawstyle is expanded to the vertices matplotlib draws. A NaN or masked
+    point breaks the line, as it does when drawn. Zero-length legs are
+    dropped.
+
+    Returns [] for a line that draws no stroke (invisible, linestyle 'None',
+    zero width, as in a markers-only plot) and for a line with more than
+    `max_points` finite points (see LINE2D_MAX_LEG_POINTS).
+    """
+    if (not line.get_visible() or line.get_linestyle() == 'None'
+            or (line.get_linewidth() or 0) <= 0):
+        return []
+    xy = np.asarray(line.get_xydata(), dtype=float)
+    n_finite = int(np.isfinite(xy).all(axis=1).sum())
+    if n_finite < 2 or n_finite > max_points:
+        return []
+    x, y = xy[:, 0], xy[:, 1]
+    step = STEP_LOOKUP_MAP.get(line.get_drawstyle())
+    if step is not None:
+        x, y = (np.asarray(v, dtype=float) for v in step(x, y))
+    ok = np.isfinite(x) & np.isfinite(y)
+    legs = []
+    for i in np.flatnonzero(ok[:-1] & ok[1:]):
+        if x[i] == x[i + 1] and y[i] == y[i + 1]:
+            continue
+        legs.append((float(x[i]), float(y[i]),
+                     float(x[i + 1]), float(y[i + 1])))
+    return legs
+
+
 def _extract_elements(fig, ax):
     """Extract texts, segments (arrows/lines), and rects from ax."""
     texts = []
@@ -184,13 +227,11 @@ def _extract_elements(fig, ax):
                 pass
 
         elif isinstance(child, mlines.Line2D):
-            xdata = child.get_xdata()
-            ydata = child.get_ydata()
-            if len(xdata) >= 2:
-                # Treat as segment from first to last point
+            # One segment per drawn leg, so an elbowed connector is checked
+            # along its legs and not along the diagonal between its ends.
+            for x0, y0, x1, y1 in _line2d_legs(child):
                 segments.append(SegmentElement(
-                    idx=seg_idx, x=xdata[0], y=ydata[0],
-                    xend=xdata[-1], yend=ydata[-1]))
+                    idx=seg_idx, x=x0, y=y0, xend=x1, yend=y1))
                 seg_idx += 1
 
     # --- Rects + Polygons + Circles: FancyBboxPatch, Rectangle, Polygon, Circle ---
@@ -1675,3 +1716,103 @@ def assert_legend_clear(fig, ax, *, clearance_px=4,
         f"overlap_tolerance_px=<N> to assert_legend_clear "
         f"(or the corresponding kwarg to render_and_validate)."
     )
+
+
+# ---------------------------------------------------------------------------
+# Self-test: python validate_figure_layout.py
+# ---------------------------------------------------------------------------
+def _self_test():
+    """Test Line2D leg extraction and the text-segment collision check.
+
+    Tests this module's code on synthetic figures, not any real figure.
+    Raises AssertionError on the first failure.
+    """
+    plt.switch_backend("Agg")
+    n_checks = 0
+
+    def check(cond, msg):
+        nonlocal n_checks
+        if not cond:
+            raise AssertionError(f"self-test: {msg}")
+        n_checks += 1
+
+    def new_axes():
+        fig, ax = plt.subplots(figsize=(4, 4))
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        return fig, ax
+
+    def collisions(fig, ax, label):
+        r = validate_figure_layout(fig, ax, verbose=False)
+        return [e for e in r["errors"]
+                if e.check == "text_segment_collision"
+                and f"Text '{label}'" in e.message]
+
+    def bbox_of(fig, ax, label):
+        texts, _, _ = _extract_elements(fig, ax)
+        te = next(te for te in texts if te.label == label)
+        return te.bb_xmin, te.bb_xmax, te.bb_ymin, te.bb_ymax
+
+    # L-shaped 3-point line: down the left side, then along the bottom.
+    # Text on the undrawn diagonal between its ends must not be flagged.
+    fig, ax = new_axes()
+    (line,) = ax.plot([1, 1, 9], [9, 1, 1], color="k")
+    check(_line2d_legs(line) == [(1, 9, 1, 1), (1, 1, 9, 1)],
+          f"L-shape legs: {_line2d_legs(line)}")
+    ax.text(5, 5, "diag", ha="center", va="center", fontsize=10)
+    check(not collisions(fig, ax, "diag"),
+          "text on the undrawn diagonal of an L-shape was flagged")
+    # The same text box does cross that diagonal, so the pass is not vacuous.
+    check(_segment_intersects_rect(1, 9, 9, 1, *bbox_of(fig, ax, "diag")),
+          "probe: 'diag' text box does not cross the diagonal")
+    plt.close(fig)
+
+    # Text on either real leg of the same L-shape must be flagged, once.
+    fig, ax = new_axes()
+    ax.plot([1, 1, 9], [9, 1, 1], color="k")
+    ax.text(5, 1, "bottom", ha="center", va="center", fontsize=10)
+    ax.text(1, 5, "left", ha="center", va="center", fontsize=10)
+    check(len(collisions(fig, ax, "bottom")) == 1,
+          "text on the horizontal leg was not flagged exactly once")
+    check(len(collisions(fig, ax, "left")) == 1,
+          "text on the vertical leg was not flagged exactly once")
+    plt.close(fig)
+
+    # A NaN breaks the line: text in the gap must not be flagged.
+    fig, ax = new_axes()
+    (line,) = ax.plot([1, 3, np.nan, 7, 9], [5, 5, np.nan, 5, 5], color="k")
+    check(_line2d_legs(line) == [(1, 5, 3, 5), (7, 5, 9, 5)],
+          f"NaN-broken legs: {_line2d_legs(line)}")
+    ax.text(5, 5, "gap", ha="center", va="center", fontsize=10)
+    check(not collisions(fig, ax, "gap"), "text in a NaN gap was flagged")
+    check(_segment_intersects_rect(1, 5, 9, 5, *bbox_of(fig, ax, "gap")),
+          "probe: 'gap' text box does not cross the bridged line")
+    plt.close(fig)
+
+    fig, ax = new_axes()
+    # steps-post draws the vertical risers, not the diagonals.
+    (line,) = ax.plot([1, 5, 9], [1, 5, 9], drawstyle="steps-post")
+    check(_line2d_legs(line) == [(1, 1, 5, 1), (5, 1, 5, 5),
+                                 (5, 5, 9, 5), (9, 5, 9, 9)],
+          f"steps-post legs: {_line2d_legs(line)}")
+    # Markers only: nothing is drawn between the points.
+    (line,) = ax.plot([1, 5, 9], [1, 9, 1], linestyle="none", marker="o")
+    check(_line2d_legs(line) == [], "markers-only line produced legs")
+    # A 2-point line is one segment, as before.
+    (line,) = ax.plot([2, 8], [3, 7])
+    check(_line2d_legs(line) == [(2, 3, 8, 7)], "2-point line")
+    # Point cap: at the cap every leg is kept; one point over, none are.
+    xs = np.linspace(1, 9, LINE2D_MAX_LEG_POINTS)
+    (line,) = ax.plot(xs, np.sin(xs) + 5)
+    check(len(_line2d_legs(line)) == LINE2D_MAX_LEG_POINTS - 1,
+          "line at the point cap lost legs")
+    xs = np.linspace(1, 9, LINE2D_MAX_LEG_POINTS + 1)
+    (line,) = ax.plot(xs, np.sin(xs) + 5)
+    check(_line2d_legs(line) == [], "line over the point cap produced legs")
+    plt.close(fig)
+
+    print(f"validate_figure_layout self-test: {n_checks} checks passed")
+
+
+if __name__ == "__main__":
+    _self_test()
