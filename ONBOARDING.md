@@ -4,20 +4,25 @@
 
 Repo: `peter4244/nmd_isopair_analysis` (public). Canonical local path conventions assume `~/claude_projects/nmd/`.
 
+**This repo is not the code the paper cites.** It is the working history. The paper cites
+`peter4244/nmd_lung_longread_reproduction`, which is built from `nmd_lung_longread_2026`. If a
+number or figure here disagrees with those, the paper reports theirs. See section 5 for the full
+map.
+
 ---
 
 ## 1. Project mission and current phase
 
 This is the analysis repo for the NMD long-read paper:
 
-> Leshem, Kasai, Thakur, Paul, Ziniti, Boueiz, Saferali, DeMarzio, Laederach, Randell, Castaldi. **Long-read RNA sequencing in primary lung cell types reveals principles of nonsense-mediated decay.** (In preparation, May 2026.)
+> Leshem, Kasai, Thakur, Paul, Ziniti, Boueiz, Saferali, DeMarzio, Laederach, Randell, Castaldi. **Long-read RNA sequencing in primary lung cell types reveals principles of nonsense-mediated decay.** (Manuscript of record: `paper/NMD manuscript 2026.7.17.md`, exported 2026-08-19.)
 
 **Current phase:** manuscript finalization. The biology is settled. Active work is split between (a) finalizing the manuscript draft itself in a shared Google Doc, and (b) finalizing figures, tables, and methods text in the repo. Pete and Yul are the two principal users of the repo. The two cluster homes are Channing (BWH) for Pete and Northeastern Discovery (`/home/p.castaldi/cc/`) for Yul.
 
 **Headline scientific claims** (so you can sanity-check your contributions against them):
 
 - NMD in primary human lung cells is widespread, isoform-level, cell-type-invariant quantitative regulation, not a binary disposal pathway. ~90–92% of significant isoforms are NMD-responsive across the 4 cell types in scope.
-- The deep-learning model (CNN + ORF features hybrid) reaches AUC ≈ 0.93 / AUPRC ≈ 0.83 on held-out chromosomes.
+- The deep-learning model (CNN + ORF features hybrid) reaches AUC ≈ 0.93 / AUPRC ≈ 0.82 on held-out chromosomes (the 1000 nt window model; an earlier 500 nt version reported 0.83).
 - The headline methodological finding: **NMD prediction is bottlenecked by ORF identification, not by feature engineering.** Length-priority and splicing-aware ORF callers give indistinguishable AUC, but only the splicing-aware caller attributes calls to the correct biological mechanism (PTC vs spurious "long uORF"). Quantitatively, splicing-aware ref-ATG tracing lifts the PTC-attributable fraction of gene-matched NMD pairs from 43% to 77%.
 
 ---
@@ -47,7 +52,7 @@ The lab generated long-read + short-read data on six primary lung cell types und
 ```
 ~/claude_projects/nmd/
 ├── paper/                              # Manuscript draft (markdown export of Google Doc)
-│   └── NMD manuscript 2026.2.5.md     # Current. THE GOOGLE DOC IS THE SOURCE OF TRUTH.
+│   └── NMD manuscript 2026.7.17.md    # Current. THE GOOGLE DOC IS THE SOURCE OF TRUTH.
 ├── code/                               # Analysis scripts (124 tracked R/Rmd/py files)
 ├── pheno/                              # Sample / donor metadata
 ├── shortread_dge/mashr/                # Gene-level mashr DGE per cell type
@@ -101,16 +106,24 @@ Don't conflate them.
 
 | Repo | Purpose | Public? |
 |---|---|---|
-| `peter4244/nmd_isopair_analysis` | THIS REPO. Analysis pipeline, manuscript markdown, code. | ✓ |
-| `peter4244/Isopair` | The Isopair R/Bioconductor package itself (gene-matched isoform-pair analysis, splicing-event detection, PTC attribution). | ✓ |
-| `peter4244/NMD_orf_model_v5_4ct` | **Canonical source for the manuscript's deep-learning model** (training code, config, METHODS.md, DeepSHAP scripts, SLURM wrappers). The model was trained on Northeastern Discovery; this repo is the version-controlled source. | ✓ |
-| `peter4244/NMD_orf_model_v5` | Predecessor of v5_4ct, pre-4-cell-type-scope migration. | ✓ |
+| `peter4244/nmd_isopair_analysis` | THIS REPO. Working history: analysis pipeline, manuscript markdown, figures. **Not cited by the paper.** | ✓ |
+| `peter4244/nmd_lung_longread_reproduction` | **The analysis code the paper cites** (Zenodo 10.5281/zenodo.21897099). Generated from `nmd_lung_longread_2026`; its `PUBLISHED_FROM` file names the source commit. Don't edit it directly. | ✓ |
+| `peter4244/nmd_lung_longread_2026` | Source of the reproduction package (sections 1–5). Code changes for the paper go here. | private |
+| `peter4244/nmd_deposit_2026` | Build scripts and checksums for the Zenodo source-data record (10.5281/zenodo.21544336), which also holds the `nmd_1.3.sif` container. | private |
+| `peter4244/Isopair` | The Isopair R/Bioconductor package itself (gene-matched isoform-pair analysis, splicing-event detection, PTC attribution). Cited; Zenodo 10.5281/zenodo.21536494. | ✓ |
+| `peter4244/Isocall_v1` | The long-read processing pipeline (Nextflow around PacBio isocall). Cited; Zenodo 10.5281/zenodo.21536485. | ✓ |
+| `peter4244/sqanti3_by_chromosome` | Parallelized SQANTI3 QC pipeline. Cited in the supplement. | ✓ |
+| `peter4244/NMD_orf_model_v5_4ct` | **Canonical source for the manuscript's deep-learning model code** (training code, config, DeepSHAP scripts, SLURM wrappers). Cited; Zenodo 10.5281/zenodo.21536501. The model was trained on Northeastern Discovery; this repo is the version-controlled source. Its `METHODS.md` is only a pointer to the Supplemental Methods. | ✓ |
+| `peter4244/NMD_orf_model_v5` | **Deprecated; archived on GitHub.** Predecessor of v5_4ct, pre-4-cell-type scope. Do not cite. | ✓ |
+| `peter4244/nmd_lung_atlas_site` | The browser at nmd-lungcells.castaldilab.org. | private |
+| `peter4244/ncbi_submissions` | GEO submission tooling (GSE329233). | private |
+| `peter4244/nmd_scanning_model_2026` | A **separate, later paper** (the scanning-selection model). Not part of this manuscript. | private |
 | `peter4244/Isoscope` | Per-gene isoform annotation/visualization (long-read + short-read). | ✓ |
 | `peter4244/Isovar` | Variant → isoform splicing functions for COPD GWAS sQTL work. | ✓ |
 | `peter4244/copd-nmd-sqtl-airway-epithelial` | Shiny app for the GWAS-sQTL × NMD integration. | private |
 | `peter4244/nmd-2026-grant` | NMD R01 grant materials. | private |
 
-The manuscript's "Isopair" methods text refers to the Isopair package (v0.99.2 at time of writing); the "deep learning model" methods text refers to `NMD_orf_model_v5_4ct`'s `03_train.py` and `METHODS.md`. If you're writing or auditing methods prose, **pull from those repos' own METHODS.md / vignettes as the source of truth**, not from anything in this repo.
+The manuscript's "Isopair" methods text refers to the Isopair package; pull from its vignettes. **For the deep-learning model, the methods are the paper's Supplemental Methods (section "Deep Learning Model")**; the code is `NMD_orf_model_v5_4ct`'s `03_train.py`. That repo's `METHODS.md` was retired on 2026-08-11 because it had drifted from the paper. Don't write a second methods description there. In neither case should you pull methods from anything in this repo.
 
 ---
 
@@ -161,8 +174,8 @@ For publication / grant-quality figures the lab follows a specific set of conven
 ## 8. Manuscript workflow
 
 - **Source of truth:** the shared Google Doc (Pete + Yul are co-editing).
-- **Repo copy:** `paper/NMD manuscript 2026.2.5.md` is a markdown export periodically synced from the Google Doc. The repo copy gives Claude / scripts something to read and diff against. **Do not** assume the repo markdown is canonical for prose changes — when you want to suggest an edit to the manuscript, *return a list of manual find/replace pairs the user can apply in Google Docs*, not commits to the markdown.
-- **Manuscript methods reconciliation:** the deep-learning model methods text in the manuscript should track `NMD_orf_model_v5_4ct/METHODS.md`. The Isopair methods text should track `Isopair/vignettes/NMD-attribution.Rmd`.
+- **Repo copy:** `paper/NMD manuscript 2026.7.17.md` is a markdown export periodically synced from the Google Doc. The repo copy gives Claude / scripts something to read and diff against. **Do not** assume the repo markdown is canonical for prose changes — when you want to suggest an edit to the manuscript, *return a list of manual find/replace pairs the user can apply in Google Docs*, not commits to the markdown.
+- **Manuscript methods reconciliation:** the Supplemental Methods is the only description of the deep-learning model; check it against `NMD_orf_model_v5_4ct`'s code, not against another document. The Isopair methods text should track `Isopair/vignettes/NMD-attribution.Rmd`.
 
 ---
 
@@ -176,9 +189,10 @@ For publication / grant-quality figures the lab follows a specific set of conven
 | GSEA on March 2026 mashr | `code/gsea_mashr_2026.3.10.R` → `tmp/gsea_mashr_gene_2026.3.10_run2026-05-18.tsv` |
 | Isopair gene-matched pair analysis | `results/isoform_transitions/Version_6.0/isopair_wrapper/05_final_report_mashr.Rmd` |
 | Deep-learning model training | `peter4244/NMD_orf_model_v5_4ct/03_train.py` (clone that repo separately) |
-| Deep-learning model methods text | `peter4244/NMD_orf_model_v5_4ct/METHODS.md` |
+| Deep-learning model methods text | Supplemental Methods, section "Deep Learning Model" |
 | Isopair package vignette | `peter4244/Isopair/vignettes/NMD-attribution.Rmd` |
-| Manuscript markdown | `paper/NMD manuscript 2026.2.5.md` |
+| Manuscript markdown | `paper/NMD manuscript 2026.7.17.md` |
+| The paper's cited analysis code | `peter4244/nmd_lung_longread_reproduction` (built from `nmd_lung_longread_2026`) |
 
 ---
 
