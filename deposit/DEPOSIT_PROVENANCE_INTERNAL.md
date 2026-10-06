@@ -74,20 +74,36 @@ verification is complete** — the verification work runs against local data and
 on the GEO record, so removing samples earlier would gain nothing and risks disturbing a
 submission mid-flight. Submission files: `~/claude_projects/ncbi_submissions/nmd_lung_cells/`.
 
-## Why the deposited files were not trimmed to observed isoforms
+## Two isoform count matrices (2026-07-25)
 
-Considered and rejected 2026-07-25. The isoform matrix carries 645,272 isoforms, of which 30,280
-have no counts in these samples. Trimming to the 614,992 observed was **verified lossless** —
-identical filterByExpr set, and percent-output-lost identical to four decimals — but rejected
-because:
+The published analyses did **not** all start from the same isoform universe:
 
-1. The classification, GTF, GFF3 and FASTA all carry the same 645,272 isoforms. Trimming the
-   counts alone would leave the deposit's files disagreeing with each other, which is a worse
-   inconsistency than the one it fixes. Trimming all of them means parsing 3.8 GB of
-   GTF/GFF3/FASTA for no analytical gain.
-2. SQANTI filters on structural criteria rather than expression, so a filtered set containing
-   isoforms with no assigned counts is ordinary and not, by itself, informative about anything.
+| branch | matrix | isoforms |
+|---|---|---|
+| §1/§2 gene- and isoform-level mashr | SQANTI3-filtered | 645,272 |
+| §3/§4 Isopair | isocall, unfiltered by SQANTI | 645,273 |
 
-The README note that drew attention to it ("including those with zero counts") was removed
-instead. Had we trimmed, exactly two baseline lines would have changed — the DGEList and CPM
-dimension printouts in `verify_section3_p1.txt` — with all nine numeric-result lines unaffected.
+Evidence: `dge_isoform_longread_2026.3.3.rds` has 645,272 rows and lacks `ENST00000441168.6`;
+`expression_data.rds` (the post-filter Isopair CPM matrix) **contains** it.
+
+`ENST00000441168.6` (*ANKMY1*, `ENSG00000144504.17`) carries a 1-bp exon, which is why SQANTI
+drops it. It is not incidental to §3/§4: it clears both the 5% isoform-proportion filter and
+`filterByExpr`, and sits in the published 95,623-isoform Isopair analysis universe.
+
+Depositing only the filtered matrix covered 95,622 / 95,623 of that universe. Substituting it
+would not have been inert — removing the isoform also removes it from its gene's
+isoform-proportion denominator, moving sibling `ENSG00000144504.17.novel34` across the
+`>= 0.05` boundary. A two-way (−1, +1) change to the universe, not a one-sided drop.
+
+Pete, 2026-07-25: deposit both (option **b**), so each branch reads the matrix it actually
+used. `build_4ct_isocall_counts.R` (this repo, internal) builds the second one and verifies:
+every published Isopair isoform present (0 missing), `ENST00000441168.6` present and non-zero
+(21 counts across the 26 samples), and counts for all 614,992 shared isoforms **identical** to
+the filtered matrix.
+
+Both are trimmed to features observed in the 26 samples — 614,992 and 614,993 rows, differing
+by exactly that one isoform.
+
+*(Superseded: an earlier section here argued the deposit files should not be trimmed to
+observed isoforms. They were trimmed; the section contradicted §Faithfulness above and has
+been removed.)*

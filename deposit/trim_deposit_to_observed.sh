@@ -19,6 +19,34 @@
 #   counts (isoform, gene) · SQANTI classification · FASTA · GTF · CDS GFF3
 # =============================================================================
 set -euo pipefail
+
+# =============================================================================
+# RETIRED 2026-07-27 — DO NOT RUN. Superseded by trim_deposit_to_4ct_observed.sh.
+#
+# This script applies the all-zero predicate to BOTH count matrices independently.
+# That is correct for the isoform matrix and WRONG for the gene matrix: the salmon
+# gene matrix is quantified against a REFERENCE transcriptome, so its 78,899 genes are
+# not discovered from these samples. Trimming it deleted 735 genes observed in
+# long-read but not short-read, which correlation_analysis.Rmd:226-229 requires -- it
+# keeps a gene expressed in EITHER platform. That drove §1's concordance count to
+# 27,916 against a published 29,185, and NUMBERS_TO_CHANGE.md accordingly instructed
+# two correct values to be changed.
+#
+# The "verified result-neutral" claim in the header below was true -- for the DE
+# pipeline, where filterByExpr keeps an identical set either way. It was established on
+# one path and generalised to all of them. That is the actual lesson here.
+#
+# The guard is code rather than a comment because a comment is what this file already
+# had. See docs/FINDINGS.md 2026-07-27 in nmd_lung_longread_2026.
+# =============================================================================
+if [ "${I_UNDERSTAND_THIS_SCRIPT_IS_RETIRED:-}" != "yes" ]; then
+  echo "REFUSING TO RUN: trim_deposit_to_observed.sh is retired (2026-07-27)."
+  echo "  It trims the short-read GENE matrix, which is a bug -- it deletes genes seen"
+  echo "  in long-read but not short-read and breaks §1's concordance (29,185 -> 27,916)."
+  echo "  Use:  trim_deposit_to_4ct_observed.sh   (isoform side only)"
+  exit 1
+fi
+
 D="$HOME/claude_projects/nmd_deposit_2026/source_data"
 W="$HOME/claude_projects/nmd_deposit_2026/.trim_work"
 mkdir -p "$W"
