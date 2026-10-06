@@ -10,6 +10,26 @@ NMD long-read paper repo. Manuscript phase (May 2026). Lead authors: Leshem, Kas
 
 **Manuscript scope:** 4 cell types — AT (alveolar type 2), DD (large airway epithelial, submerged), FB (fibroblast), MV (microvascular endothelial). DD_ALI and DO_ALI are in the data and per-cell-type mashr outputs but excluded from primary manuscript analyses due to low SR-vs-LR effect-size correlation.
 
+## This repo is not the paper's cited code
+
+The manuscript of record (`paper/NMD manuscript 2026.7.17.md`, exported 2026-08-19) does not cite
+this repo. This repo is the working history, public on GitHub as `peter4244/nmd_isopair_analysis`.
+The paper's code and data live in these sibling folders under `~/claude_projects/`:
+
+| Folder | Role |
+|---|---|
+| `nmd_lung_longread_reproduction` | **The cited analysis code.** Public, Zenodo 10.5281/zenodo.21897099. It is *generated* from `nmd_lung_longread_2026`; its `PUBLISHED_FROM` file names the source commit. Don't edit it directly. |
+| `nmd_lung_longread_2026` | Private source of the reproduction package (sections 1–5). Make code changes for the paper here. |
+| `nmd_deposit_2026` | Build scripts and checksums for the Zenodo source-data record 10.5281/zenodo.21544336, which also holds the `nmd_1.3.sif` container. |
+| `ncbi_submissions` | GEO GSE329233 submission tooling. |
+| `nmd_lung_atlas_site` | The browser at nmd-lungcells.castaldilab.org. |
+| `nmd_scanning_model_2026` | A **separate, later paper** (the scanning-selection model). Not part of this manuscript. |
+
+The other cited repos (Isopair, Isocall_v1, NMD_orf_model_v5_4ct, sqanti3_by_chromosome) are in
+the linked-repos table below. When a figure or number here disagrees with `nmd_lung_longread_2026`,
+the latter is what the paper reports. Figure 5's composite, for example, is copied from there and
+can't be rebuilt from the panel files in this repo.
+
 ## Repository structure (current)
 
 ```
@@ -18,7 +38,7 @@ nmd/
 ├── README.md                           # Public-facing repo description
 ├── CLAUDE.md                           # This file — navigation
 ├── paper/
-│   └── NMD manuscript 2026.2.5.md     # Manuscript markdown export (Google Doc is source of truth)
+│   └── NMD manuscript 2026.7.17.md    # Manuscript of record, markdown export (Google Doc is source of truth)
 ├── code/                               # Analysis scripts (124 tracked R/Rmd/py files)
 ├── figures/
 │   ├── README.md
@@ -136,5 +156,6 @@ and READMEs — and never from anything in this repo's `results/`.
 
 - Project context, conventions, and collaboration rules → [`ONBOARDING.md`](ONBOARDING.md)
 - Figure tooling and style guide → [`figures/README.md`](figures/README.md)
-- Manuscript markdown → [`paper/NMD manuscript 2026.2.5.md`](paper/NMD%20manuscript%202026.2.5.md)
+- Manuscript markdown → [`paper/NMD manuscript 2026.7.17.md`](paper/NMD%20manuscript%202026.7.17.md)
+- The paper's cited code → `~/claude_projects/nmd_lung_longread_reproduction` (built from `nmd_lung_longread_2026`)
 - Isopair analysis pipeline → [`results/isoform_transitions/Version_6.0/isopair_wrapper/`](results/isoform_transitions/Version_6.0/isopair_wrapper/)
