@@ -107,3 +107,12 @@ nmd_fig_data/
 # download manifest lives in code/upstream/tan_reanalysis/README.md.
 code/upstream/tan_reanalysis/data/
 code/upstream/tan_reanalysis/output/
+
+# Journal submission materials and Word/PDF exports of the manuscript. Kept local:
+# this repo auto-pushes to public GitHub, and the Google Doc is the source of truth.
+# The manuscript .md snapshots stay tracked.
+paper/GenomeBiology/
+paper/cover_letter_*.md
+paper/manuscript_full*.docx
+paper/NMD manuscript *.pdf
+paper/Supplemental Materials NMD.pdf
